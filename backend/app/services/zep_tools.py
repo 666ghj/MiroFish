@@ -1256,19 +1256,22 @@ class ZepToolsService:
         """
         【InterviewAgents - 深度采访】
         
-        采访模拟中的Agent，获取多视角的深度观点：
+        调用真实的OASIS采访API，采访模拟中正在运行的Agent：
         1. 自动读取人设文件，了解所有模拟Agent
         2. 使用LLM分析采访需求，智能选择最相关的Agent
-        3. 模拟采访每个选中的Agent，获取符合其人设的回答
-        4. 整合所有采访结果，生成采访报告
+        3. 使用LLM生成采访问题
+        4. 调用 /api/simulation/interview/batch 接口进行真实采访（双平台同时采访）
+        5. 整合所有采访结果，生成采访报告
+        
+        【重要】此功能需要模拟环境处于运行状态（OASIS环境未关闭）
         
         【使用场景】
         - 需要从不同角色视角了解事件看法
         - 需要收集多方意见和观点
-        - 需要模拟真实采访获取第一手资料
+        - 需要获取模拟Agent的真实回答（非LLM模拟）
         
         Args:
-            simulation_id: 模拟ID（用于定位人设文件）
+            simulation_id: 模拟ID（用于定位人设文件和调用采访API）
             interview_requirement: 采访需求描述（非结构化，如"了解学生对事件的看法"）
             simulation_requirement: 模拟需求背景（可选）
             max_agents: 最多采访的Agent数量
@@ -1277,8 +1280,9 @@ class ZepToolsService:
         Returns:
             InterviewResult: 采访结果
         """
-        import os
-        logger.info(f"InterviewAgents 深度采访: {interview_requirement[:50]}...")
+        from .simulation_runner import SimulationRunner
+        
+        logger.info(f"InterviewAgents 深度采访（真实API）: {interview_requirement[:50]}...")
         
         result = InterviewResult(
             interview_topic=interview_requirement,
@@ -1296,8 +1300,8 @@ class ZepToolsService:
         result.total_agents = len(profiles)
         logger.info(f"加载到 {len(profiles)} 个Agent人设")
         
-        # Step 2: 使用LLM选择要采访的Agent
-        selected_agents, selection_reasoning = self._select_agents_for_interview(
+        # Step 2: 使用LLM选择要采访的Agent（返回agent_id列表）
+        selected_agents, selected_indices, selection_reasoning = self._select_agents_for_interview(
             profiles=profiles,
             interview_requirement=interview_requirement,
             simulation_requirement=simulation_requirement,
@@ -1306,7 +1310,7 @@ class ZepToolsService:
         
         result.selected_agents = selected_agents
         result.selection_reasoning = selection_reasoning
-        logger.info(f"选择了 {len(selected_agents)} 个Agent进行采访")
+        logger.info(f"选择了 {len(selected_agents)} 个Agent进行采访: {selected_indices}")
         
         # Step 3: 生成采访问题（如果没有提供）
         if not result.interview_questions:
@@ -1317,25 +1321,113 @@ class ZepToolsService:
             )
             logger.info(f"生成了 {len(result.interview_questions)} 个采访问题")
         
-        # Step 4: 对每个选中的Agent进行采访
-        for agent in selected_agents:
-            interview = self._conduct_interview(
-                agent=agent,
-                questions=result.interview_questions,
-                interview_requirement=interview_requirement,
-                simulation_requirement=simulation_requirement
+        # 将问题合并为一个采访prompt
+        combined_prompt = "\n".join([f"{i+1}. {q}" for i, q in enumerate(result.interview_questions)])
+        
+        # 添加优化前缀，避免Agent调用工具而直接回复文本
+        INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
+        optimized_prompt = f"{INTERVIEW_PROMPT_PREFIX}{combined_prompt}"
+        
+        # Step 4: 调用真实的采访API（不指定platform，默认双平台同时采访）
+        try:
+            # 构建批量采访列表（不指定platform，双平台采访）
+            interviews_request = []
+            for agent_idx in selected_indices:
+                interviews_request.append({
+                    "agent_id": agent_idx,
+                    "prompt": optimized_prompt  # 使用优化后的prompt
+                    # 不指定platform，API会在twitter和reddit两个平台都采访
+                })
+            
+            logger.info(f"调用批量采访API（双平台）: {len(interviews_request)} 个Agent")
+            
+            # 调用 SimulationRunner 的批量采访方法（不传platform，双平台采访）
+            api_result = SimulationRunner.interview_agents_batch(
+                simulation_id=simulation_id,
+                interviews=interviews_request,
+                platform=None,  # 不指定platform，双平台采访
+                timeout=180.0   # 双平台需要更长超时
             )
-            result.interviews.append(interview)
+            
+            logger.info(f"采访API返回: {api_result.get('interviews_count', 0)} 个结果, success={api_result.get('success')}")
+            
+            # 检查API调用是否成功
+            if not api_result.get("success", False):
+                error_msg = api_result.get("error", "未知错误")
+                logger.warning(f"采访API返回失败: {error_msg}")
+                result.summary = f"采访API调用失败：{error_msg}。请检查OASIS模拟环境状态。"
+                return result
+            
+            # Step 5: 解析API返回结果，构建AgentInterview对象
+            # 双平台模式返回格式: {"twitter_0": {...}, "reddit_0": {...}, "twitter_1": {...}, ...}
+            api_data = api_result.get("result", {})
+            results_dict = api_data.get("results", {}) if isinstance(api_data, dict) else {}
+            
+            for i, agent_idx in enumerate(selected_indices):
+                agent = selected_agents[i]
+                agent_name = agent.get("realname", agent.get("username", f"Agent_{agent_idx}"))
+                agent_role = agent.get("profession", "未知")
+                agent_bio = agent.get("bio", "")
+                
+                # 获取该Agent在两个平台的采访结果
+                twitter_result = results_dict.get(f"twitter_{agent_idx}", {})
+                reddit_result = results_dict.get(f"reddit_{agent_idx}", {})
+                
+                twitter_response = twitter_result.get("response", "")
+                reddit_response = reddit_result.get("response", "")
+                
+                # 合并两个平台的回答
+                response_parts = []
+                if twitter_response:
+                    response_parts.append(f"【Twitter平台回答】\n{twitter_response}")
+                if reddit_response:
+                    response_parts.append(f"【Reddit平台回答】\n{reddit_response}")
+                
+                if response_parts:
+                    response_text = "\n\n".join(response_parts)
+                else:
+                    response_text = "[无回复]"
+                
+                # 提取关键引言（从两个平台的回答中）
+                import re
+                combined_responses = f"{twitter_response} {reddit_response}"
+                key_quotes = re.findall(r'[""「」『』]([^""「」『』]{10,100})[""「」『』]', combined_responses)
+                if not key_quotes:
+                    sentences = combined_responses.split('。')
+                    key_quotes = [s.strip() + '。' for s in sentences if len(s.strip()) > 20][:3]
+                
+                interview = AgentInterview(
+                    agent_name=agent_name,
+                    agent_role=agent_role,
+                    agent_bio=agent_bio[:150],
+                    question=combined_prompt,
+                    response=response_text,
+                    key_quotes=key_quotes[:5]
+                )
+                result.interviews.append(interview)
+            
+            result.interviewed_count = len(result.interviews)
+            
+        except ValueError as e:
+            # 模拟环境未运行
+            logger.warning(f"采访API调用失败（环境未运行？）: {e}")
+            result.summary = f"采访失败：{str(e)}。模拟环境可能已关闭，请确保OASIS环境正在运行。"
+            return result
+        except Exception as e:
+            logger.error(f"采访API调用异常: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            result.summary = f"采访过程发生错误：{str(e)}"
+            return result
         
-        result.interviewed_count = len(result.interviews)
+        # Step 6: 生成采访摘要
+        if result.interviews:
+            result.summary = self._generate_interview_summary(
+                interviews=result.interviews,
+                interview_requirement=interview_requirement
+            )
         
-        # Step 5: 生成采访摘要
-        result.summary = self._generate_interview_summary(
-            interviews=result.interviews,
-            interview_requirement=interview_requirement
-        )
-        
-        logger.info(f"InterviewAgents完成: 采访了 {result.interviewed_count} 个Agent")
+        logger.info(f"InterviewAgents完成: 采访了 {result.interviewed_count} 个Agent（双平台）")
         return result
     
     def _load_agent_profiles(self, simulation_id: str) -> List[Dict[str, Any]]:
@@ -1391,7 +1483,15 @@ class ZepToolsService:
         simulation_requirement: str,
         max_agents: int
     ) -> tuple:
-        """使用LLM选择要采访的Agent"""
+        """
+        使用LLM选择要采访的Agent
+        
+        Returns:
+            tuple: (selected_agents, selected_indices, reasoning)
+                - selected_agents: 选中Agent的完整信息列表
+                - selected_indices: 选中Agent的索引列表（用于API调用）
+                - reasoning: 选择理由
+        """
         
         # 构建Agent摘要列表
         agent_summaries = []
@@ -1444,17 +1544,20 @@ class ZepToolsService:
             
             # 获取选中的Agent完整信息
             selected_agents = []
+            valid_indices = []
             for idx in selected_indices:
                 if 0 <= idx < len(profiles):
                     selected_agents.append(profiles[idx])
+                    valid_indices.append(idx)
             
-            return selected_agents, reasoning
+            return selected_agents, valid_indices, reasoning
             
         except Exception as e:
             logger.warning(f"LLM选择Agent失败，使用默认选择: {e}")
-            # 降级：随机选择前N个
+            # 降级：选择前N个
             selected = profiles[:max_agents]
-            return selected, "使用默认选择策略"
+            indices = list(range(min(max_agents, len(profiles))))
+            return selected, indices, "使用默认选择策略"
     
     def _generate_interview_questions(
         self,
@@ -1503,83 +1606,6 @@ class ZepToolsService:
                 "您认为应该如何解决或改进这个问题？"
             ]
     
-    def _conduct_interview(
-        self,
-        agent: Dict[str, Any],
-        questions: List[str],
-        interview_requirement: str,
-        simulation_requirement: str
-    ) -> AgentInterview:
-        """模拟采访单个Agent"""
-        
-        agent_name = agent.get("realname", agent.get("username", "未知"))
-        agent_role = agent.get("profession", "未知")
-        agent_bio = agent.get("bio", "")
-        agent_persona = agent.get("persona", agent_bio)
-        
-        # 将多个问题合并为一次采访
-        questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])
-        
-        system_prompt = f"""你现在扮演以下角色进行采访：
-
-【角色名称】{agent_name}
-【角色身份】{agent_role}
-【角色简介】{agent_bio}
-【详细人设】
-{agent_persona[:2000]}
-
-【重要】
-1. 你必须完全代入这个角色，用第一人称回答
-2. 你的回答必须符合角色的身份、立场、性格和说话风格
-3. 引用角色人设中的具体观点和经历
-4. 语言风格要符合角色特征（如：学生更随性，官方更正式）
-5. 表达真实的情感和态度"""
-
-        user_prompt = f"""采访背景：{simulation_requirement if simulation_requirement else interview_requirement}
-
-记者提问：
-{questions_text}
-
-请以【{agent_name}】的身份回答以上问题。回答要体现角色的独特视角和立场。"""
-
-        try:
-            response = self.llm.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=2000
-            )
-            
-            # 提取关键引言（包含引号的句子）
-            import re
-            key_quotes = re.findall(r'[""「」『』]([^""「」『』]{10,100})[""「」『』]', response)
-            if not key_quotes:
-                # 提取有力的陈述句
-                sentences = response.split('。')
-                key_quotes = [s.strip() + '。' for s in sentences if len(s.strip()) > 20][:3]
-            
-            return AgentInterview(
-                agent_name=agent_name,
-                agent_role=agent_role,
-                agent_bio=agent_bio[:150],
-                question=questions_text,
-                response=response,
-                key_quotes=key_quotes[:5]
-            )
-            
-        except Exception as e:
-            logger.error(f"采访 {agent_name} 失败: {e}")
-            return AgentInterview(
-                agent_name=agent_name,
-                agent_role=agent_role,
-                agent_bio=agent_bio[:150],
-                question=questions_text,
-                response=f"[采访失败: {str(e)}]",
-                key_quotes=[]
-            )
-    
     def _generate_interview_summary(
         self,
         interviews: List[AgentInterview],
@@ -1602,7 +1628,7 @@ class ZepToolsService:
 2. 指出观点的共识和分歧
 3. 突出有价值的引言
 4. 客观中立，不偏袒任何一方
-5. 控制在300-500字"""
+5. 控制在1000字内"""
 
         user_prompt = f"""采访主题：{interview_requirement}
 

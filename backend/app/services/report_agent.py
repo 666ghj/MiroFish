@@ -248,28 +248,31 @@ class ReportAgent:
             },
             "interview_agents": {
                 "name": "interview_agents",
-                "description": """【深度采访 - 多视角观点采集】
-采访模拟中的Agent角色，获取来自不同视角的深度观点。这是获取模拟结果中各方声音的最佳方式！
+                "description": """【深度采访 - 真实Agent采访（双平台）】
+调用OASIS模拟环境的采访API，对正在运行的模拟Agent进行真实采访！
+这不是LLM模拟，而是调用真实的采访接口获取模拟Agent的原始回答。
+默认在Twitter和Reddit两个平台同时采访，获取更全面的观点。
 
 功能流程：
 1. 自动读取人设文件，了解所有模拟Agent
 2. 智能选择与采访主题最相关的Agent（如学生、媒体、官方等）
-3. 模拟采访每个选中的Agent，获取符合其人设的回答
-4. 整合所有采访结果，提供多视角分析
+3. 自动生成采访问题
+4. 调用 /api/simulation/interview/batch 接口在双平台进行真实采访
+5. 整合所有采访结果，提供多视角分析
 
 【使用场景】
 - 需要从不同角色视角了解事件看法（学生怎么看？媒体怎么看？官方怎么说？）
 - 需要收集多方意见和立场
-- 需要获取模拟Agent的直接引言和观点
+- 需要获取模拟Agent的真实回答（来自OASIS模拟环境）
 - 想让报告更生动，包含"采访实录"
 
 【返回内容】
 - 被采访Agent的身份信息
-- 各Agent的采访回答（符合其人设的原创内容）
+- 各Agent在Twitter和Reddit两个平台的采访回答
 - 关键引言（可直接引用）
 - 采访摘要和观点对比
 
-【重要】这是获取模拟Agent"真实声音"的唯一方式！""",
+【重要】需要OASIS模拟环境正在运行才能使用此功能！""",
                 "parameters": {
                     "interview_topic": "采访主题或需求描述（如：'了解学生对宿舍甲醛事件的看法'）",
                     "max_agents": "最多采访的Agent数量（可选，默认5）"
@@ -334,7 +337,7 @@ class ReportAgent:
                 return result.to_text()
             
             elif tool_name == "interview_agents":
-                # 深度采访 - 采访模拟Agent获取多视角观点
+                # 深度采访 - 调用真实的OASIS采访API获取模拟Agent的回答（双平台）
                 interview_topic = parameters.get("interview_topic", parameters.get("query", ""))
                 max_agents = parameters.get("max_agents", 5)
                 if isinstance(max_agents, str):
