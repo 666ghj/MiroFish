@@ -30,8 +30,18 @@
         </div>
         
         <div class="graph-container" ref="graphContainer">
+          <!-- 图谱可视化（只要有数据就显示） -->
+          <div v-if="graphData" class="graph-view">
+            <svg ref="graphSvg" class="graph-svg"></svg>
+            <!-- 构建中提示 -->
+            <div v-if="currentPhase === 1" class="graph-building-hint">
+              <span class="building-dot"></span>
+              实时更新中...
+            </div>
+          </div>
+          
           <!-- 加载状态 -->
-          <div v-if="graphLoading" class="graph-loading">
+          <div v-else-if="graphLoading" class="graph-loading">
             <div class="loading-animation">
               <div class="loading-ring"></div>
               <div class="loading-ring"></div>
@@ -41,7 +51,7 @@
           </div>
           
           <!-- 等待构建 -->
-          <div v-else-if="!graphData && currentPhase < 2" class="graph-waiting">
+          <div v-else-if="currentPhase < 1" class="graph-waiting">
             <div class="waiting-icon">
               <svg viewBox="0 0 100 100" class="network-icon">
                 <circle cx="50" cy="20" r="8" fill="none" stroke="#000" stroke-width="1.5"/>
@@ -55,13 +65,19 @@
                 <line x1="50" y1="72" x2="74" y2="66" stroke="#000" stroke-width="1"/>
               </svg>
             </div>
-            <p class="waiting-text">等待图谱构建完成</p>
-            <p class="waiting-hint">完成本体生成后将自动开始构建</p>
+            <p class="waiting-text">等待本体生成</p>
+            <p class="waiting-hint">生成完成后将自动开始构建图谱</p>
           </div>
           
-          <!-- 图谱可视化 -->
-          <div v-else-if="graphData" class="graph-view">
-            <svg ref="graphSvg" class="graph-svg"></svg>
+          <!-- 构建中但还没有数据 -->
+          <div v-else-if="currentPhase === 1 && !graphData" class="graph-waiting">
+            <div class="loading-animation">
+              <div class="loading-ring"></div>
+              <div class="loading-ring"></div>
+              <div class="loading-ring"></div>
+            </div>
+            <p class="waiting-text">图谱构建中</p>
+            <p class="waiting-hint">数据即将显示...</p>
           </div>
           
           <!-- 错误状态 -->
@@ -497,7 +513,15 @@ const startBuildGraph = async () => {
     
     if (response.success) {
       buildProgress.value.message = '图谱构建任务已启动...'
-      startPollingTask(response.data.task_id)
+      
+      // 保存 task_id 用于轮询
+      const taskId = response.data.task_id
+      
+      // 启动图谱数据轮询（独立于任务状态轮询）
+      startGraphPolling()
+      
+      // 启动任务状态轮询
+      startPollingTask(taskId)
     } else {
       error.value = response.error || '启动图谱构建失败'
       buildProgress.value = null
@@ -506,6 +530,58 @@ const startBuildGraph = async () => {
     console.error('Build graph error:', err)
     error.value = '启动图谱构建失败: ' + (err.message || '未知错误')
     buildProgress.value = null
+  }
+}
+
+// 图谱数据轮询定时器
+let graphPollTimer = null
+
+// 启动图谱数据轮询
+const startGraphPolling = () => {
+  // 每 3 秒获取一次图谱数据
+  graphPollTimer = setInterval(async () => {
+    await fetchGraphData()
+  }, 3000)
+}
+
+// 停止图谱数据轮询
+const stopGraphPolling = () => {
+  if (graphPollTimer) {
+    clearInterval(graphPollTimer)
+    graphPollTimer = null
+  }
+}
+
+// 获取图谱数据
+const fetchGraphData = async () => {
+  try {
+    // 先获取项目信息以获取 graph_id
+    const projectResponse = await getProject(currentProjectId.value)
+    
+    if (projectResponse.success && projectResponse.data.graph_id) {
+      const graphId = projectResponse.data.graph_id
+      projectData.value = projectResponse.data
+      
+      // 获取图谱数据
+      const graphResponse = await getGraphData(graphId)
+      
+      if (graphResponse.success && graphResponse.data) {
+        const newData = graphResponse.data
+        const newNodeCount = newData.node_count || newData.nodes?.length || 0
+        const oldNodeCount = graphData.value?.node_count || graphData.value?.nodes?.length || 0
+        
+        console.log('Fetching graph data, nodes:', newNodeCount, 'edges:', newData.edge_count || newData.edges?.length || 0)
+        
+        // 数据有变化时更新渲染
+        if (newNodeCount !== oldNodeCount || !graphData.value) {
+          graphData.value = newData
+          await nextTick()
+          renderGraph()
+        }
+      }
+    }
+  } catch (err) {
+    console.log('Graph data fetch:', err.message || 'not ready')
   }
 }
 
@@ -538,6 +614,7 @@ const pollTaskStatus = async (taskId) => {
       
       if (task.status === 'completed') {
         stopPolling()
+        stopGraphPolling()
         currentPhase.value = 2
         
         // 重新加载项目数据获取 graph_id
@@ -545,13 +622,14 @@ const pollTaskStatus = async (taskId) => {
         if (projectResponse.success) {
           projectData.value = projectResponse.data
           
-          // 加载图谱数据
+          // 最终加载完整图谱数据
           if (projectResponse.data.graph_id) {
             await loadGraph(projectResponse.data.graph_id)
           }
         }
       } else if (task.status === 'failed') {
         stopPolling()
+        stopGraphPolling()
         error.value = '图谱构建失败: ' + (task.error || '未知错误')
         buildProgress.value = null
       }
@@ -588,76 +666,137 @@ const loadGraph = async (graphId) => {
 
 // 渲染图谱 (D3.js)
 const renderGraph = () => {
-  if (!graphSvg.value || !graphData.value) return
+  if (!graphSvg.value || !graphData.value) {
+    console.log('Cannot render: svg or data missing')
+    return
+  }
   
   const container = graphContainer.value
-  const width = container.clientWidth
-  const height = container.clientHeight - 60
+  if (!container) {
+    console.log('Cannot render: container missing')
+    return
+  }
+  
+  // 获取容器尺寸
+  const rect = container.getBoundingClientRect()
+  const width = rect.width || 800
+  const height = (rect.height || 600) - 60
+  
+  if (width <= 0 || height <= 0) {
+    console.log('Cannot render: invalid dimensions', width, height)
+    return
+  }
+  
+  console.log('Rendering graph:', width, 'x', height)
   
   const svg = d3.select(graphSvg.value)
     .attr('width', width)
     .attr('height', height)
+    .attr('viewBox', `0 0 ${width} ${height}`)
   
   svg.selectAll('*').remove()
   
-  const nodes = graphData.value.nodes.map(n => ({
+  // 处理节点数据
+  const nodesData = graphData.value.nodes || []
+  const edgesData = graphData.value.edges || []
+  
+  if (nodesData.length === 0) {
+    console.log('No nodes to render')
+    // 显示空状态
+    svg.append('text')
+      .attr('x', width / 2)
+      .attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#999')
+      .text('等待图谱数据...')
+    return
+  }
+  
+  const nodes = nodesData.map(n => ({
     id: n.uuid,
-    name: n.name,
-    type: n.labels?.find(l => l !== 'Entity') || 'Entity'
+    name: n.name || '未命名',
+    type: n.labels?.find(l => l !== 'Entity' && l !== 'Node') || 'Entity'
   }))
   
-  const edges = graphData.value.edges.map(e => ({
-    source: e.source_node_uuid,
-    target: e.target_node_uuid,
-    type: e.fact_type || 'RELATED_TO'
-  }))
+  // 创建节点ID集合用于过滤有效边
+  const nodeIds = new Set(nodes.map(n => n.id))
+  
+  const edges = edgesData
+    .filter(e => nodeIds.has(e.source_node_uuid) && nodeIds.has(e.target_node_uuid))
+    .map(e => ({
+      source: e.source_node_uuid,
+      target: e.target_node_uuid,
+      type: e.fact_type || e.name || 'RELATED_TO'
+    }))
+  
+  console.log('Nodes:', nodes.length, 'Edges:', edges.length)
   
   // 颜色映射
+  const types = [...new Set(nodes.map(n => n.type))]
   const colorScale = d3.scaleOrdinal()
-    .domain([...new Set(nodes.map(n => n.type))])
-    .range(['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C'])
+    .domain(types)
+    .range(['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C', '#2D3436', '#6C5CE7'])
   
   // 力导向布局
   const simulation = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(edges).id(d => d.id).distance(80))
-    .force('charge', d3.forceManyBody().strength(-200))
+    .force('link', d3.forceLink(edges).id(d => d.id).distance(100).strength(0.5))
+    .force('charge', d3.forceManyBody().strength(-300))
     .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('collision', d3.forceCollide().radius(30))
+    .force('collision', d3.forceCollide().radius(40))
+    .force('x', d3.forceX(width / 2).strength(0.05))
+    .force('y', d3.forceY(height / 2).strength(0.05))
+  
+  // 添加缩放功能
+  const g = svg.append('g')
+  
+  svg.call(d3.zoom()
+    .extent([[0, 0], [width, height]])
+    .scaleExtent([0.2, 4])
+    .on('zoom', (event) => {
+      g.attr('transform', event.transform)
+    }))
   
   // 绘制边
-  const link = svg.append('g')
+  const link = g.append('g')
     .attr('class', 'links')
     .selectAll('line')
     .data(edges)
     .enter()
     .append('line')
-    .attr('stroke', '#ddd')
-    .attr('stroke-width', 1)
+    .attr('stroke', '#ccc')
+    .attr('stroke-width', 1.5)
+    .attr('stroke-opacity', 0.6)
   
   // 绘制节点
-  const node = svg.append('g')
+  const node = g.append('g')
     .attr('class', 'nodes')
     .selectAll('g')
     .data(nodes)
     .enter()
     .append('g')
+    .style('cursor', 'pointer')
     .call(d3.drag()
       .on('start', dragstarted)
       .on('drag', dragged)
       .on('end', dragended))
   
   node.append('circle')
-    .attr('r', 8)
+    .attr('r', 10)
     .attr('fill', d => colorScale(d.type))
     .attr('stroke', '#fff')
     .attr('stroke-width', 2)
   
   node.append('text')
-    .attr('dx', 12)
+    .attr('dx', 14)
     .attr('dy', 4)
-    .text(d => d.name?.substring(0, 10) || '')
-    .attr('font-size', '10px')
+    .text(d => d.name?.substring(0, 12) || '')
+    .attr('font-size', '11px')
     .attr('fill', '#333')
+    .attr('font-family', 'JetBrains Mono, monospace')
+  
+  // 添加 tooltip
+  node.append('title')
+    .text(d => `${d.name}\n类型: ${d.type}`)
   
   simulation.on('tick', () => {
     link
@@ -701,6 +840,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPolling()
+  stopGraphPolling()
 })
 </script>
 
@@ -937,11 +1077,35 @@ onUnmounted(() => {
 .graph-view {
   width: 100%;
   height: 100%;
+  position: relative;
 }
 
 .graph-svg {
   width: 100%;
   height: 100%;
+  display: block;
+}
+
+.graph-building-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 107, 53, 0.1);
+  border: 1px solid #FF6B35;
+  font-size: 0.8rem;
+  color: #FF6B35;
+}
+
+.building-dot {
+  width: 8px;
+  height: 8px;
+  background: #FF6B35;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
 }
 
 .error-icon {
