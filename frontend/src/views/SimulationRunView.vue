@@ -41,6 +41,7 @@
           :graphData="graphData"
           :loading="graphLoading"
           :currentPhase="3"
+          :isSimulating="isSimulating"
           @refresh="refreshGraph"
           @toggle-maximize="toggleMaximize('graph')"
         />
@@ -65,7 +66,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step3Simulation from '../components/Step3Simulation.vue'
@@ -116,6 +117,8 @@ const statusText = computed(() => {
   if (currentStatus.value === 'completed') return 'Completed'
   return 'Running'
 })
+
+const isSimulating = computed(() => currentStatus.value === 'processing')
 
 // --- Helpers ---
 const addLog = (msg) => {
@@ -182,12 +185,19 @@ const loadSimulationData = async () => {
 }
 
 const loadGraph = async (graphId) => {
-  graphLoading.value = true
+  // 当正在模拟时，自动刷新不显示全屏 loading，以免闪烁
+  // 手动刷新或初始加载时显示 loading
+  if (!isSimulating.value) {
+    graphLoading.value = true
+  }
+  
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('图谱数据加载成功')
+      if (!isSimulating.value) {
+        addLog('图谱数据加载成功')
+      }
     }
   } catch (err) {
     addLog(`图谱加载失败: ${err.message}`)
@@ -202,6 +212,32 @@ const refreshGraph = () => {
   }
 }
 
+// --- Auto Refresh Logic ---
+let graphRefreshTimer = null
+
+const startGraphRefresh = () => {
+  if (graphRefreshTimer) return
+  addLog('开启图谱实时刷新 (30s)')
+  // 立即刷新一次，然后每30秒刷新
+  graphRefreshTimer = setInterval(refreshGraph, 30000)
+}
+
+const stopGraphRefresh = () => {
+  if (graphRefreshTimer) {
+    clearInterval(graphRefreshTimer)
+    graphRefreshTimer = null
+    addLog('停止图谱实时刷新')
+  }
+}
+
+watch(isSimulating, (newValue) => {
+  if (newValue) {
+    startGraphRefresh()
+  } else {
+    stopGraphRefresh()
+  }
+}, { immediate: true })
+
 onMounted(() => {
   addLog('SimulationRunView 初始化')
   
@@ -211,6 +247,10 @@ onMounted(() => {
   }
   
   loadSimulationData()
+})
+
+onUnmounted(() => {
+  stopGraphRefresh()
 })
 </script>
 

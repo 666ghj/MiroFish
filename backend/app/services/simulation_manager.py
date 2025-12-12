@@ -28,7 +28,8 @@ class SimulationStatus(str, Enum):
     READY = "ready"
     RUNNING = "running"
     PAUSED = "paused"
-    COMPLETED = "completed"
+    STOPPED = "stopped"      # 模拟被手动停止
+    COMPLETED = "completed"  # 模拟自然完成
     FAILED = "failed"
 
 

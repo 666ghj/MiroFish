@@ -19,10 +19,15 @@
       <div v-if="graphData" class="graph-view">
         <svg ref="graphSvg" class="graph-svg"></svg>
         
-        <!-- 构建中提示 -->
-        <div v-if="currentPhase === 1" class="graph-building-hint">
-          <span class="building-dot"></span>
-          实时更新中...
+        <!-- 构建中/模拟中提示 -->
+        <div v-if="currentPhase === 1 || isSimulating" class="graph-building-hint">
+          <div class="memory-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="memory-icon">
+              <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-4.04z" />
+              <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-4.04z" />
+            </svg>
+          </div>
+          {{ isSimulating ? 'GraphRAG长短期记忆实时更新中' : '实时更新中...' }}
         </div>
         
         <!-- 节点/边详情面板 -->
@@ -219,7 +224,8 @@ import * as d3 from 'd3'
 const props = defineProps({
   graphData: Object,
   loading: Boolean,
-  currentPhase: Number
+  currentPhase: Number,
+  isSimulating: Boolean
 })
 
 const emit = defineEmits(['refresh', 'toggle-maximize'])
@@ -1153,30 +1159,41 @@ input:checked + .slider:before {
 /* Building hint */
 .graph-building-hint {
   position: absolute;
-  bottom: 80px;
+  bottom: 160px; /* Moved up from 80px */
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0,0,0,0.75);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
   color: #fff;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 12px;
+  padding: 10px 20px;
+  border-radius: 30px;
+  font-size: 13px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  z-index: 100;
 }
 
-.building-dot {
-  width: 8px;
-  height: 8px;
-  background: #4CAF50;
-  border-radius: 50%;
-  animation: pulse 1.5s ease-in-out infinite;
+.memory-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: breathe 2s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.8); }
+.memory-icon {
+  width: 18px;
+  height: 18px;
+  color: #4CAF50;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.7; transform: scale(1); filter: drop-shadow(0 0 2px rgba(76, 175, 80, 0.3)); }
+  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.6)); }
 }
 
 /* Loading spinner */

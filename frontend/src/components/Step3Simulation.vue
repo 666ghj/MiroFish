@@ -1,292 +1,184 @@
 <template>
   <div class="simulation-panel">
-    <div class="scroll-container">
-      <!-- Step 01: 启动模拟 -->
-      <div class="step-card" :class="{ 'active': phase === 0, 'completed': phase > 0 }">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">01</span>
-            <span class="step-title">启动模拟引擎</span>
+    <!-- Top Control Bar -->
+    <div class="control-bar">
+      <div class="status-group" v-if="phase >= 1">
+        <!-- Twitter 平台进度 -->
+        <div class="platform-status twitter" :class="{ active: runStatus.twitter_running, completed: runStatus.twitter_completed }">
+          <div class="platform-header">
+            <span class="platform-icon">𝕏</span>
+            <span class="platform-name">Twitter</span>
+            <span v-if="runStatus.twitter_completed" class="status-badge">✓</span>
           </div>
-          <div class="step-status">
-            <span v-if="phase > 0" class="badge success">已启动</span>
-            <span v-else-if="isStarting" class="badge processing">启动中</span>
-            <span v-else class="badge pending">等待</span>
+          <div class="platform-stats">
+            <span class="stat">
+              <span class="stat-label">R</span>
+              <span class="stat-value mono">{{ runStatus.twitter_current_round || 0 }}<span class="stat-total">/{{ runStatus.total_rounds || maxRounds || '-' }}</span></span>
+            </span>
+            <span class="stat">
+              <span class="stat-label">T</span>
+              <span class="stat-value mono">{{ runStatus.twitter_simulated_hours || 0 }}<span class="stat-unit">h</span></span>
+            </span>
+            <span class="stat">
+              <span class="stat-label">A</span>
+              <span class="stat-value mono">{{ runStatus.twitter_actions_count || 0 }}</span>
+            </span>
           </div>
         </div>
         
-        <div class="card-content">
-          <p class="api-note">POST /api/simulation/start</p>
-          <p class="description">
-            启动双平台并行模拟引擎，Twitter与Reddit世界同步推演
-          </p>
-
-          <div v-if="phase === 0 && !isStarting" class="start-config">
-            <div class="config-row">
-              <span class="config-label">模拟ID</span>
-              <span class="config-value mono">{{ simulationId }}</span>
-            </div>
-            <div class="config-row">
-              <span class="config-label">模拟轮数</span>
-              <span class="config-value">{{ maxRounds || '自动配置' }} 轮</span>
-            </div>
-            <div class="config-row">
-              <span class="config-label">运行平台</span>
-              <span class="config-value">Twitter + Reddit (并行)</span>
-            </div>
+        <!-- Reddit 平台进度 -->
+        <div class="platform-status reddit" :class="{ active: runStatus.reddit_running, completed: runStatus.reddit_completed }">
+          <div class="platform-header">
+            <span class="platform-icon">📮</span>
+            <span class="platform-name">Reddit</span>
+            <span v-if="runStatus.reddit_completed" class="status-badge">✓</span>
           </div>
-
-          <div v-if="isStarting" class="starting-indicator">
-            <div class="spinner-sm"></div>
-            <span>正在初始化模拟引擎...</span>
-          </div>
-
-          <div v-if="startError" class="error-box">
-            <span class="error-icon">✗</span>
-            <span class="error-text">{{ startError }}</span>
-            <button class="retry-btn" @click="doStartSimulation">重试</button>
+          <div class="platform-stats">
+            <span class="stat">
+              <span class="stat-label">R</span>
+              <span class="stat-value mono">{{ runStatus.reddit_current_round || 0 }}<span class="stat-total">/{{ runStatus.total_rounds || maxRounds || '-' }}</span></span>
+            </span>
+            <span class="stat">
+              <span class="stat-label">T</span>
+              <span class="stat-value mono">{{ runStatus.reddit_simulated_hours || 0 }}<span class="stat-unit">h</span></span>
+            </span>
+            <span class="stat">
+              <span class="stat-label">A</span>
+              <span class="stat-value mono">{{ runStatus.reddit_actions_count || 0 }}</span>
+            </span>
           </div>
         </div>
       </div>
-
-      <!-- Step 02: 模拟进度 -->
-      <div class="step-card" :class="{ 'active': phase === 1, 'completed': phase > 1 }">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">02</span>
-            <span class="step-title">双世界并行推演</span>
-          </div>
-          <div class="step-status">
-            <span v-if="phase > 1" class="badge success">已完成</span>
-            <span v-else-if="phase === 1" class="badge processing">{{ progressPercent }}%</span>
-            <span v-else class="badge pending">等待</span>
-          </div>
+      
+      <!-- Phase 0 时显示简单状态 -->
+      <div class="status-group" v-else>
+        <div class="status-item">
+          <span class="label">ROUND</span>
+          <span class="value mono">0<span class="total">/{{ maxRounds || '-' }}</span></span>
         </div>
-
-        <div class="card-content">
-          <p class="api-note">GET /api/simulation/{{ simulationId }}/run-status</p>
-          <p class="description">
-            实时监控模拟进度，观察Agent在双平台的社交行为
-          </p>
-
-          <!-- 进度条 -->
-          <div v-if="phase >= 1" class="progress-section">
-            <div class="progress-bar-container">
-              <div class="progress-bar" :style="{ width: progressPercent + '%' }"></div>
-            </div>
-            <div class="progress-stats">
-              <div class="stat-item">
-                <span class="stat-label">当前轮次</span>
-                <span class="stat-value">{{ runStatus.current_round || 0 }} / {{ runStatus.total_rounds || maxRounds || '-' }}</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">模拟时间</span>
-                <span class="stat-value">{{ runStatus.simulated_hours || 0 }}h / {{ runStatus.total_simulation_hours || '-' }}h</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 平台状态 -->
-          <div v-if="phase >= 1" class="platforms-status">
-            <div class="platform-item" :class="{ 'running': runStatus.twitter_running }">
-              <div class="platform-header">
-                <span class="platform-icon">𝕏</span>
-                <span class="platform-name">Twitter / 广场</span>
-                <span class="platform-badge" :class="runStatus.twitter_running ? 'active' : 'idle'">
-                  {{ runStatus.twitter_running ? '运行中' : '等待' }}
-                </span>
-              </div>
-              <div class="platform-stats">
-                <span class="action-count">
-                  <span class="count-num">{{ runStatus.twitter_actions_count || 0 }}</span> 动作
-                </span>
-              </div>
-            </div>
-            <div class="platform-item" :class="{ 'running': runStatus.reddit_running }">
-              <div class="platform-header">
-                <span class="platform-icon">📮</span>
-                <span class="platform-name">Reddit / 社区</span>
-                <span class="platform-badge" :class="runStatus.reddit_running ? 'active' : 'idle'">
-                  {{ runStatus.reddit_running ? '运行中' : '等待' }}
-                </span>
-              </div>
-              <div class="platform-stats">
-                <span class="action-count">
-                  <span class="count-num">{{ runStatus.reddit_actions_count || 0 }}</span> 动作
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 统计卡片 -->
-          <div v-if="phase >= 1" class="stats-grid">
-            <div class="stat-card">
-              <span class="stat-value">{{ runStatus.total_actions_count || 0 }}</span>
-              <span class="stat-label">总动作数</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value">{{ actionStats.posts }}</span>
-              <span class="stat-label">帖子数</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value">{{ actionStats.comments }}</span>
-              <span class="stat-label">评论数</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value">{{ actionStats.likes }}</span>
-              <span class="stat-label">点赞数</span>
-            </div>
-          </div>
+        <div class="status-item">
+          <span class="label">TIME</span>
+          <span class="value mono">0<span class="unit">h</span></span>
         </div>
       </div>
 
-      <!-- Step 03: 实时动态 -->
-      <div class="step-card" :class="{ 'active': phase >= 1 }">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">03</span>
-            <span class="step-title">实时动态流</span>
+      <div class="action-controls">
+        <button 
+          v-if="phase === 0"
+          class="ctrl-btn start"
+          :disabled="isStarting"
+          @click="doStartSimulation"
+        >
+          <span v-if="isStarting" class="spinner-sm"></span>
+          {{ isStarting ? 'INITIALIZING...' : 'START ENGINE' }}
+        </button>
+        
+        <button 
+          v-if="phase === 1"
+          class="ctrl-btn stop"
+          :disabled="isStopping"
+          @click="handleStopSimulation"
+        >
+          {{ isStopping ? 'STOPPING...' : 'STOP SIMULATION' }}
+        </button>
+
+        <button 
+          v-if="phase === 2"
+          class="ctrl-btn next"
+          @click="handleNextStep"
+        >
+          GENERATE REPORT ➝
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content: Dual Timeline or Start Screen -->
+    <div class="main-content-area" ref="scrollContainer">
+      <!-- Start Screen (Phase 0) -->
+      <div v-if="phase === 0" class="start-screen">
+        <div class="engine-status">
+          <div class="engine-icon">⚡️</div>
+          <h2>Simulation Engine Ready</h2>
+          <p>Initialize the dual-platform parallel simulation environment.</p>
+        </div>
+        
+        <div class="config-grid">
+          <div class="config-card">
+            <span class="label">SIMULATION ID</span>
+            <span class="val mono">{{ simulationId }}</span>
           </div>
-          <div class="step-status">
-            <span v-if="recentActions.length > 0" class="badge accent">{{ recentActions.length }} 条</span>
-            <span v-else class="badge pending">等待</span>
+          <div class="config-card">
+            <span class="label">TARGET ROUNDS</span>
+            <span class="val">{{ maxRounds || 'AUTO' }}</span>
+          </div>
+          <div class="config-card">
+            <span class="label">PLATFORMS</span>
+            <span class="val">Twitter + Reddit</span>
           </div>
         </div>
 
-        <div class="card-content">
-          <p class="api-note">GET /api/simulation/{{ simulationId }}/run-status/detail</p>
-          <p class="description">
-            观察Agent们在模拟世界中的实时行为：发帖、评论、点赞、转发...
-          </p>
-
-          <!-- 平台筛选 -->
-          <div v-if="recentActions.length > 0" class="filter-bar">
-            <button 
-              class="filter-btn" 
-              :class="{ active: actionFilter === 'all' }"
-              @click="actionFilter = 'all'"
-            >
-              全部
-            </button>
-            <button 
-              class="filter-btn" 
-              :class="{ active: actionFilter === 'twitter' }"
-              @click="actionFilter = 'twitter'"
-            >
-              𝕏 Twitter
-            </button>
-            <button 
-              class="filter-btn" 
-              :class="{ active: actionFilter === 'reddit' }"
-              @click="actionFilter = 'reddit'"
-            >
-              📮 Reddit
-            </button>
-          </div>
-
-          <!-- 动作流 -->
-          <div v-if="filteredActions.length > 0" class="actions-stream">
-            <TransitionGroup name="action-list" tag="div" class="actions-list">
-              <div 
-                v-for="action in filteredActions" 
-                :key="action.id || `${action.timestamp}-${action.agent_id}-${Math.random()}`" 
-                class="action-item"
-                :class="'action-' + (action.action_type || 'unknown').toLowerCase()"
-              >
-                <div class="action-header">
-                  <span class="action-platform" :class="action.platform">
-                    {{ action.platform === 'twitter' ? '𝕏' : '📮' }}
-                  </span>
-                  <span class="action-agent">
-                    <span class="agent-name">{{ action.agent_name || `Agent ${action.agent_id}` }}</span>
-                  </span>
-                  <span class="action-type-badge" :class="getActionTypeClass(action.action_type)">
-                    {{ getActionTypeLabel(action.action_type) }}
-                  </span>
-                  <span class="action-round">R{{ action.round_num }}</span>
-                </div>
-                <div v-if="action.action_args?.content" class="action-content">
-                  {{ truncateContent(action.action_args.content) }}
-                </div>
-                <div class="action-footer">
-                  <span class="action-time">{{ formatActionTime(action.timestamp) }}</span>
-                  <span v-if="action.action_args?.target_post_id" class="action-target">
-                    回复 #{{ action.action_args.target_post_id }}
-                  </span>
-                </div>
-              </div>
-            </TransitionGroup>
-          </div>
-
-          <div v-else-if="phase >= 1" class="empty-actions">
-            <div class="spinner-sm"></div>
-            <span>等待Agent行动...</span>
-          </div>
+        <div v-if="startError" class="error-banner">
+          {{ startError }}
         </div>
       </div>
 
-      <!-- Step 04: 模拟完成 -->
-      <div class="step-card" :class="{ 'active': phase === 2 }">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">04</span>
-            <span class="step-title">模拟完成</span>
-          </div>
-          <div class="step-status">
-            <span v-if="phase >= 2" class="badge success">完成</span>
-            <span v-else class="badge pending">等待</span>
-          </div>
-        </div>
+      <!-- Timeline Feed (Phase >= 1) -->
+      <div v-else class="timeline-feed">
+        <div class="timeline-axis"></div>
+        
+        <TransitionGroup name="timeline-item">
+          <div 
+            v-for="action in reversedActions" 
+            :key="action.id || `${action.timestamp}-${action.agent_id}`" 
+            class="timeline-item"
+            :class="action.platform"
+          >
+            <div class="timeline-marker"></div>
+            <div class="timeline-card">
+              <div class="card-header">
+                <div class="agent-info">
+                  <div class="avatar-placeholder">{{ (action.agent_name || 'A')[0] }}</div>
+                  <span class="agent-name">{{ action.agent_name }}</span>
+                </div>
+                <div class="action-badge" :class="getActionTypeClass(action.action_type)">
+                  {{ getActionTypeLabel(action.action_type) }}
+                </div>
+              </div>
+              
+              <div class="card-body">
+                <!-- Main Content -->
+                <div v-if="action.action_args?.content" class="content-text">
+                  {{ action.action_args.content }}
+                </div>
 
-        <div class="card-content">
-          <p class="api-note">POST /api/simulation/stop</p>
-          <p class="description">
-            模拟结束后，可进入报告生成阶段，深度分析模拟结果
-          </p>
+                <!-- Quote / Repost Content -->
+                <div v-if="action.action_args?.quote_content" class="quoted-block">
+                  <div class="quote-author">
+                    Replying to @{{ action.action_args.original_author_name || 'User' }}
+                  </div>
+                  <div class="quote-text">
+                    {{ action.action_args.quote_content }}
+                  </div>
+                </div>
 
-          <!-- 完成统计 -->
-          <div v-if="phase >= 2" class="completion-stats">
-            <div class="completion-summary">
-              <div class="summary-icon">✓</div>
-              <div class="summary-content">
-                <span class="summary-title">模拟已完成</span>
-                <span class="summary-desc">双平台并行推演结束，所有Agent动作已记录</span>
+                <!-- Target Context (e.g. for Likes) -->
+                <div v-if="action.action_type?.includes('LIKE') && action.action_args?.post_content" class="target-context">
+                  <span class="context-label">Liked Post:</span>
+                  "{{ truncateContent(action.action_args.post_content) }}"
+                </div>
+              </div>
+
+              <div class="card-footer">
+                <span class="time-tag">R{{ action.round_num }} • {{ formatActionTime(action.timestamp) }}</span>
+                <span class="platform-tag">{{ action.platform === 'twitter' ? 'Twitter' : 'Reddit' }}</span>
               </div>
             </div>
-            <div class="completion-grid">
-              <div class="completion-item">
-                <span class="completion-value">{{ runStatus.current_round || 0 }}</span>
-                <span class="completion-label">完成轮次</span>
-              </div>
-              <div class="completion-item">
-                <span class="completion-value">{{ runStatus.simulated_hours || 0 }}h</span>
-                <span class="completion-label">模拟时长</span>
-              </div>
-              <div class="completion-item">
-                <span class="completion-value">{{ runStatus.total_actions_count || 0 }}</span>
-                <span class="completion-label">总动作数</span>
-              </div>
-            </div>
           </div>
+        </TransitionGroup>
 
-          <div class="action-group" :class="{ 'dual': phase === 1 }">
-            <button 
-              v-if="phase === 1"
-              class="action-btn secondary"
-              @click="handleStopSimulation"
-              :disabled="isStopping"
-            >
-              <span v-if="isStopping" class="spinner-sm"></span>
-              {{ isStopping ? '停止中...' : '⏹ 停止模拟' }}
-            </button>
-            <button 
-              class="action-btn primary"
-              :disabled="phase < 2"
-              @click="handleNextStep"
-            >
-              进入报告生成 ➝
-            </button>
-          </div>
+        <div v-if="recentActions.length === 0" class="waiting-state">
+          <div class="pulse-ring"></div>
+          <span>Waiting for agent actions...</span>
         </div>
       </div>
     </div>
@@ -333,31 +225,12 @@ const isStopping = ref(false)
 const startError = ref(null)
 const runStatus = ref({})
 const recentActions = ref([])
-const actionFilter = ref('all')
-
-// 动作统计
-const actionStats = ref({
-  posts: 0,
-  comments: 0,
-  likes: 0,
-  reposts: 0
-})
-
-// Polling timers
-let statusTimer = null
-let detailTimer = null
+const scrollContainer = ref(null)
 
 // Computed
-const progressPercent = computed(() => {
-  if (!runStatus.value.total_rounds) return 0
-  return Math.round((runStatus.value.current_round / runStatus.value.total_rounds) * 100)
-})
-
-const filteredActions = computed(() => {
-  if (actionFilter.value === 'all') {
-    return recentActions.value
-  }
-  return recentActions.value.filter(a => a.platform === actionFilter.value)
+// Reverse actions to show newest at top
+const reversedActions = computed(() => {
+  return [...recentActions.value]
 })
 
 // Methods
@@ -381,10 +254,9 @@ const doStartSimulation = async () => {
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: true  // 强制重新开始，如果已有模拟会自动停止并清理日志
+      force: true  // 强制重新开始
     }
     
-    // 如果有自定义轮数
     if (props.maxRounds) {
       params.max_rounds = props.maxRounds
       addLog(`设置最大模拟轮数: ${props.maxRounds}`)
@@ -398,13 +270,10 @@ const doStartSimulation = async () => {
       }
       addLog('✓ 模拟引擎启动成功')
       addLog(`  ├─ PID: ${res.data.process_pid || '-'}`)
-      addLog(`  ├─ Twitter: ${res.data.twitter_running ? '运行中' : '等待'}`)
-      addLog(`  └─ Reddit: ${res.data.reddit_running ? '运行中' : '等待'}`)
       
       phase.value = 1
       runStatus.value = res.data
       
-      // 开始轮询状态
       startStatusPolling()
       startDetailPolling()
     } else {
@@ -447,6 +316,9 @@ const handleStopSimulation = async () => {
 }
 
 // 轮询状态
+let statusTimer = null
+let detailTimer = null
+
 const startStatusPolling = () => {
   statusTimer = setInterval(fetchRunStatus, 2000)
 }
@@ -466,6 +338,10 @@ const stopPolling = () => {
   }
 }
 
+// 追踪各平台的上一次轮次，用于检测变化并输出日志
+const prevTwitterRound = ref(0)
+const prevRedditRound = ref(0)
+
 const fetchRunStatus = async () => {
   if (!props.simulationId) return
   
@@ -474,17 +350,31 @@ const fetchRunStatus = async () => {
     
     if (res.success && res.data) {
       const data = res.data
-      const prevRound = runStatus.value.current_round || 0
       
       runStatus.value = data
       
-      // 检查是否有新轮次
-      if (data.current_round > prevRound) {
-        addLog(`轮次 ${data.current_round}/${data.total_rounds} - 动作数: ${data.total_actions_count}`)
+      // 分别检测各平台的轮次变化并输出日志
+      if (data.twitter_current_round > prevTwitterRound.value) {
+        addLog(`[Twitter] R${data.twitter_current_round}/${data.total_rounds} | T:${data.twitter_simulated_hours || 0}h | A:${data.twitter_actions_count}`)
+        prevTwitterRound.value = data.twitter_current_round
       }
       
-      // 检查是否完成
-      if (data.runner_status === 'completed' || data.runner_status === 'stopped') {
+      if (data.reddit_current_round > prevRedditRound.value) {
+        addLog(`[Reddit] R${data.reddit_current_round}/${data.total_rounds} | T:${data.reddit_simulated_hours || 0}h | A:${data.reddit_actions_count}`)
+        prevRedditRound.value = data.reddit_current_round
+      }
+      
+      // 检测模拟是否已完成（通过 runner_status 或平台完成状态判断）
+      const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
+      
+      // 额外检查：如果后端还没来得及更新 runner_status，但平台已经报告完成
+      // 通过检测 twitter_completed 和 reddit_completed 状态判断
+      const platformsCompleted = checkPlatformsCompleted(data)
+      
+      if (isCompleted || platformsCompleted) {
+        if (platformsCompleted && !isCompleted) {
+          addLog('✓ 检测到所有平台模拟已结束')
+        }
         addLog('✓ 模拟已完成')
         phase.value = 2
         stopPolling()
@@ -496,6 +386,30 @@ const fetchRunStatus = async () => {
   }
 }
 
+// 检查所有启用的平台是否已完成
+const checkPlatformsCompleted = (data) => {
+  // 如果没有任何平台数据，返回 false
+  if (!data) return false
+  
+  // 检查各平台的完成状态
+  const twitterCompleted = data.twitter_completed === true
+  const redditCompleted = data.reddit_completed === true
+  
+  // 如果至少有一个平台完成了，检查是否所有启用的平台都完成了
+  // 通过 actions_count 判断平台是否被启用（如果 count > 0 或 running 曾为 true）
+  const twitterEnabled = (data.twitter_actions_count > 0) || data.twitter_running || twitterCompleted
+  const redditEnabled = (data.reddit_actions_count > 0) || data.reddit_running || redditCompleted
+  
+  // 如果没有任何平台被启用，返回 false
+  if (!twitterEnabled && !redditEnabled) return false
+  
+  // 检查所有启用的平台是否都已完成
+  if (twitterEnabled && !twitterCompleted) return false
+  if (redditEnabled && !redditCompleted) return false
+  
+  return true
+}
+
 const fetchRunStatusDetail = async () => {
   if (!props.simulationId) return
   
@@ -503,82 +417,58 @@ const fetchRunStatusDetail = async () => {
     const res = await getRunStatusDetail(props.simulationId)
     
     if (res.success && res.data?.recent_actions) {
-      // 更新最近动作，保留最新30条
-      const newActions = res.data.recent_actions.slice(0, 30)
-      recentActions.value = newActions
-      
-      // 统计动作类型
-      updateActionStats(newActions)
+      // Keep only last 50 actions for performance
+      recentActions.value = res.data.recent_actions.slice(0, 50)
     }
   } catch (err) {
     console.warn('获取详细状态失败:', err)
   }
 }
 
-// 统计动作类型
-const updateActionStats = (actions) => {
-  const stats = { posts: 0, comments: 0, likes: 0, reposts: 0 }
-  actions.forEach(a => {
-    const type = a.action_type?.toUpperCase()
-    if (type === 'CREATE_POST') stats.posts++
-    else if (type === 'CREATE_COMMENT') stats.comments++
-    else if (type === 'LIKE_POST' || type === 'LIKE_COMMENT') stats.likes++
-    else if (type === 'REPOST') stats.reposts++
-  })
-  actionStats.value = stats
-}
-
-// 工具函数
+// Helpers
 const getActionTypeLabel = (type) => {
   const labels = {
-    'CREATE_POST': '发帖',
-    'REPOST': '转发',
-    'LIKE_POST': '点赞',
-    'CREATE_COMMENT': '评论',
-    'LIKE_COMMENT': '赞评',
-    'DO_NOTHING': '观望',
-    'FOLLOW': '关注',
-    'SEARCH_POSTS': '搜索',
-    'SEARCH_USER': '找人'
+    'CREATE_POST': 'POST',
+    'REPOST': 'REPOST',
+    'LIKE_POST': 'LIKE',
+    'CREATE_COMMENT': 'COMMENT',
+    'LIKE_COMMENT': 'LIKE',
+    'DO_NOTHING': 'IDLE',
+    'FOLLOW': 'FOLLOW',
+    'SEARCH_POSTS': 'SEARCH',
+    'QUOTE_POST': 'QUOTE'
   }
-  return labels[type] || type || '未知'
+  return labels[type] || type || 'UNKNOWN'
 }
 
 const getActionTypeClass = (type) => {
   const classes = {
-    'CREATE_POST': 'post',
-    'REPOST': 'repost',
-    'LIKE_POST': 'like',
-    'CREATE_COMMENT': 'comment',
-    'LIKE_COMMENT': 'like',
-    'DO_NOTHING': 'nothing',
-    'FOLLOW': 'follow',
-    'SEARCH_POSTS': 'search',
-    'SEARCH_USER': 'search'
+    'CREATE_POST': 'badge-post',
+    'REPOST': 'badge-repost',
+    'LIKE_POST': 'badge-like',
+    'CREATE_COMMENT': 'badge-comment',
+    'LIKE_COMMENT': 'badge-like',
+    'QUOTE_POST': 'badge-quote'
   }
-  return classes[type] || 'default'
+  return classes[type] || 'badge-default'
 }
 
 const truncateContent = (content) => {
   if (!content) return ''
-  if (content.length > 120) {
-    return content.substring(0, 120) + '...'
-  }
+  if (content.length > 100) return content.substring(0, 100) + '...'
   return content
 }
 
 const formatActionTime = (timestamp) => {
-  if (!timestamp) return '--:--'
+  if (!timestamp) return ''
   try {
-    const d = new Date(timestamp)
-    return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return new Date(timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
   } catch {
-    return timestamp
+    return ''
   }
 }
 
 const handleNextStep = () => {
-  addLog('进入 Step 4: 报告生成')
   emit('next-step')
 }
 
@@ -594,7 +484,6 @@ watch(() => props.systemLogs?.length, () => {
 
 onMounted(() => {
   addLog('Step3 模拟运行初始化')
-  // 自动启动模拟
   if (props.simulationId) {
     doStartSimulation()
   }
@@ -610,638 +499,461 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #FAFAFA;
+  background: #F0F2F5;
   font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
 }
 
-.scroll-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* Step Card */
-.step-card {
+/* --- Control Bar --- */
+.control-bar {
   background: #FFF;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.step-card.active {
-  border-color: #FF5722;
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
-}
-
-.step-card.completed {
-  border-color: #4CAF50;
-}
-
-.card-header {
+  padding: 12px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  border-bottom: 1px solid #EAEAEA;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  z-index: 10;
+  height: 64px;
 }
 
-.step-info {
+.status-group {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
-.step-num {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 20px;
-  font-weight: 700;
-  color: #E0E0E0;
+.status-item {
+  display: flex;
+  flex-direction: column;
 }
 
-.step-card.active .step-num,
-.step-card.completed .step-num {
-  color: #000;
-}
-
-.step-title {
+.status-item .label {
+  font-size: 10px;
+  color: #999;
   font-weight: 600;
-  font-size: 14px;
   letter-spacing: 0.5px;
 }
 
-.badge {
-  font-size: 10px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
-.badge.pending { background: #F5F5F5; color: #999; }
-.badge.accent { background: #E3F2FD; color: #1565C0; }
-
-.api-note {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: #999;
-  margin-bottom: 8px;
-}
-
-.description {
-  font-size: 12px;
-  color: #666;
-  line-height: 1.5;
-  margin-bottom: 16px;
-}
-
-/* Start Config */
-.start-config {
-  background: #F9F9F9;
-  border-radius: 6px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.config-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px dashed #E5E5E5;
-}
-
-.config-row:last-child {
-  border-bottom: none;
-}
-
-.config-label {
-  font-size: 12px;
-  color: #666;
-}
-
-.config-value {
-  font-size: 12px;
-  font-weight: 600;
+.status-item .value {
+  font-size: 16px;
+  font-weight: 700;
   color: #333;
 }
 
-.config-value.mono {
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.starting-indicator {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.status-item .total, .status-item .unit {
   font-size: 12px;
-  color: #FF5722;
-  margin-bottom: 12px;
+  color: #999;
+  font-weight: 500;
 }
 
-.error-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #FFEBEE;
-  padding: 12px;
-  border-radius: 6px;
-  margin-top: 12px;
-}
-
-.error-icon {
-  color: #E53935;
-  font-weight: 700;
-}
-
-.error-text {
-  font-size: 12px;
-  color: #C62828;
-  flex: 1;
-}
-
-.retry-btn {
-  background: #E53935;
-  color: #FFF;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.retry-btn:hover {
-  opacity: 0.8;
-}
-
-/* Progress Section */
-.progress-section {
-  margin-bottom: 16px;
-}
-
-.progress-bar-container {
-  height: 8px;
-  background: #E5E5E5;
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 12px;
-}
-
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #FF5722, #FF9800);
-  border-radius: 4px;
-  transition: width 0.5s ease;
-}
-
-.progress-stats {
-  display: flex;
-  justify-content: space-between;
-}
-
-.stat-item {
+/* 双平台进度卡片 */
+.platform-status {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.stat-item .stat-label {
-  font-size: 10px;
-  color: #999;
-  text-transform: uppercase;
-}
-
-.stat-item .stat-value {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
-}
-
-/* Platforms Status */
-.platforms-status {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.platform-item {
-  background: #F9F9F9;
-  border: 1px solid #E5E5E5;
+  gap: 4px;
+  padding: 8px 14px;
   border-radius: 8px;
-  padding: 14px;
-  transition: all 0.3s ease;
+  background: #F5F5F5;
+  opacity: 0.6;
+  transition: all 0.3s;
+  border-left: 3px solid transparent;
 }
 
-.platform-item.running {
-  border-color: #FF5722;
+.platform-status.active {
+  opacity: 1;
   background: #FFF;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.platform-status.twitter.active {
+  border-left-color: #1DA1F2;
+}
+
+.platform-status.reddit.active {
+  border-left-color: #FF5722;
+}
+
+.platform-status.completed {
+  opacity: 1;
+  background: #F1F8E9;
+  border-left-color: #4CAF50;
 }
 
 .platform-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
 }
 
 .platform-icon {
-  font-size: 16px;
-}
-
-.platform-name {
-  font-size: 13px;
-  font-weight: 600;
-  flex: 1;
-}
-
-.platform-badge {
-  font-size: 9px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.platform-badge.active {
-  background: #FF5722;
-  color: #FFF;
-}
-
-.platform-badge.idle {
-  background: #E5E5E5;
-  color: #666;
-}
-
-.platform-stats {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: #666;
-}
-
-.count-num {
-  font-size: 16px;
-  font-weight: 700;
-  color: #333;
-}
-
-/* Stats Grid */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  background: #F9F9F9;
-  padding: 16px;
-  border-radius: 6px;
-}
-
-.stat-card {
-  text-align: center;
-}
-
-.stat-card .stat-value {
-  display: block;
-  font-size: 20px;
-  font-weight: 700;
-  color: #000;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.stat-card .stat-label {
-  font-size: 9px;
-  color: #999;
-  text-transform: uppercase;
-  margin-top: 4px;
-  display: block;
-}
-
-/* Filter Bar */
-.filter-bar {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.filter-btn {
-  border: 1px solid #E5E5E5;
-  background: #FFF;
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-btn:hover {
-  border-color: #999;
-}
-
-.filter-btn.active {
-  background: #000;
-  border-color: #000;
-  color: #FFF;
-}
-
-/* Actions Stream */
-.actions-stream {
-  max-height: 400px;
-  overflow-y: auto;
-  border: 1px solid #E5E5E5;
-  border-radius: 8px;
-  background: #FAFAFA;
-}
-
-.actions-stream::-webkit-scrollbar {
-  width: 6px;
-}
-
-.actions-stream::-webkit-scrollbar-thumb {
-  background: #DDD;
-  border-radius: 3px;
-}
-
-.actions-list {
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.action-item {
-  background: #FFF;
-  border: 1px solid #E5E5E5;
-  border-radius: 6px;
-  padding: 12px;
-  transition: all 0.3s ease;
-}
-
-.action-item:hover {
-  border-color: #CCC;
-}
-
-.action-item.action-create_post {
-  border-left: 3px solid #1DA1F2;
-}
-
-.action-item.action-repost {
-  border-left: 3px solid #17BF63;
-}
-
-.action-item.action-like_post,
-.action-item.action-like_comment {
-  border-left: 3px solid #E0245E;
-}
-
-.action-item.action-create_comment {
-  border-left: 3px solid #794BC4;
-}
-
-.action-item.action-do_nothing {
-  border-left: 3px solid #AAB8C2;
-  opacity: 0.7;
-}
-
-.action-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.action-platform {
   font-size: 14px;
 }
 
-.action-platform.twitter {
-  color: #1DA1F2;
+.platform-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.action-platform.reddit {
-  color: #FF4500;
+.platform-status.twitter.active .platform-name { color: #1DA1F2; }
+.platform-status.reddit.active .platform-name { color: #FF5722; }
+.platform-status.completed .platform-name { color: #2E7D32; }
+
+.platform-stats {
+  display: flex;
+  gap: 12px;
 }
 
-.action-agent {
-  flex: 1;
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
 }
 
-.agent-name {
+.stat-label {
+  font-size: 9px;
+  color: #999;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #333;
+}
+
+.stat-total, .stat-unit {
+  font-size: 10px;
+  color: #999;
+  font-weight: 500;
+}
+
+.status-badge {
+  font-size: 10px;
+  color: #2E7D32;
+  margin-left: 4px;
+}
+
+.ctrl-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
   font-size: 12px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.ctrl-btn.start {
+  background: #000;
+  color: #FFF;
+}
+
+.ctrl-btn.stop {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.ctrl-btn.next {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.ctrl-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.ctrl-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Main Content Area --- */
+.main-content-area {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  background: #FAFAFA;
+}
+
+/* Start Screen */
+.start-screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+.engine-status {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.engine-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.engine-status h2 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.engine-status p {
+  color: #666;
+  font-size: 14px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.config-card {
+  background: #FFF;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #EAEAEA;
+  text-align: center;
+}
+
+.config-card .label {
+  display: block;
+  font-size: 10px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.config-card .val {
+  display: block;
+  font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 
-.action-type-badge {
-  font-size: 9px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  text-transform: uppercase;
+/* --- Timeline Feed --- */
+.timeline-feed {
+  padding: 24px;
+  position: relative;
+  min-height: 100%;
 }
 
-.action-type-badge.post { background: #E3F2FD; color: #1565C0; }
-.action-type-badge.repost { background: #E8F5E9; color: #2E7D32; }
-.action-type-badge.like { background: #FCE4EC; color: #C2185B; }
-.action-type-badge.comment { background: #F3E5F5; color: #7B1FA2; }
-.action-type-badge.nothing { background: #F5F5F5; color: #757575; }
-.action-type-badge.follow { background: #E0F7FA; color: #00838F; }
-.action-type-badge.search { background: #FFF3E0; color: #EF6C00; }
-.action-type-badge.default { background: #ECEFF1; color: #546E7A; }
-
-.action-round {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: #999;
+.timeline-axis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #E0E0E0;
+  transform: translateX(-50%);
 }
 
-.action-content {
-  font-size: 12px;
-  color: #555;
-  line-height: 1.5;
-  padding: 8px;
-  background: #F9F9F9;
-  border-radius: 4px;
-  margin-bottom: 6px;
+.timeline-item {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+  position: relative;
+  width: 100%;
 }
 
-.action-footer {
+.timeline-marker {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #FFF;
+  border: 2px solid #999;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
+.timeline-item.twitter .timeline-marker { border-color: #1DA1F2; }
+.timeline-item.reddit .timeline-marker { border-color: #FF5722; }
+
+.timeline-card {
+  width: 45%;
+  background: #FFF;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  position: relative;
+  border: 1px solid transparent;
+  transition: all 0.3s;
+}
+
+/* Left side (Twitter) */
+.timeline-item.twitter .timeline-card {
+  margin-right: auto;
+  margin-left: 20px; /* Gap from center */
+  border-left: 4px solid #1DA1F2;
+}
+
+/* Right side (Reddit) */
+.timeline-item.reddit .timeline-card {
+  margin-left: auto;
+  margin-right: 20px; /* Gap from center */
+  border-left: 4px solid #FF5722;
+}
+
+.timeline-item.twitter {
+  justify-content: flex-start;
+  padding-right: 50%;
+}
+
+.timeline-item.reddit {
+  justify-content: flex-end;
+  padding-left: 50%;
+}
+
+/* Card Styles */
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 12px;
 }
 
-.action-time {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: #AAA;
-}
-
-.action-target {
-  font-size: 10px;
-  color: #999;
-}
-
-.empty-actions {
+.agent-info {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 40px;
-  color: #999;
-  font-size: 12px;
+  gap: 8px;
 }
 
-/* Action List Animation */
-.action-list-enter-active {
-  transition: all 0.4s ease;
-}
-
-.action-list-leave-active {
-  transition: all 0.3s ease;
-}
-
-.action-list-enter-from {
-  opacity: 0;
-  transform: translateY(-20px);
-}
-
-.action-list-leave-to {
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-/* Completion Stats */
-.completion-stats {
-  margin-bottom: 16px;
-}
-
-.completion-summary {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
-  border-radius: 8px;
-  margin-bottom: 16px;
-}
-
-.summary-icon {
-  width: 48px;
-  height: 48px;
-  background: #4CAF50;
-  color: #FFF;
+.avatar-placeholder {
+  width: 24px;
+  height: 24px;
+  background: #EEE;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 12px;
   font-weight: 700;
+  color: #666;
 }
 
-.summary-content {
-  flex: 1;
+.agent-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #333;
 }
 
-.summary-title {
-  display: block;
-  font-size: 16px;
-  font-weight: 700;
-  color: #2E7D32;
+.action-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-post { background: #E3F2FD; color: #1565C0; }
+.badge-quote { background: #F3E5F5; color: #7B1FA2; }
+.badge-like { background: #FFEBEE; color: #C62828; }
+.badge-repost { background: #E8F5E9; color: #2E7D32; }
+.badge-comment { background: #FFF3E0; color: #E65100; }
+.badge-default { background: #F5F5F5; color: #757575; }
+
+.content-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.quoted-block {
+  background: #F9F9F9;
+  border-left: 3px solid #DDD;
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  margin-top: 8px;
+}
+
+.quote-author {
+  font-size: 11px;
+  color: #666;
   margin-bottom: 4px;
 }
 
-.summary-desc {
+.quote-text {
   font-size: 12px;
-  color: #388E3C;
+  color: #555;
+  font-style: italic;
 }
 
-.completion-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.completion-item {
-  text-align: center;
-  padding: 16px;
-  background: #F9F9F9;
-  border-radius: 8px;
-}
-
-.completion-value {
-  display: block;
-  font-size: 24px;
-  font-weight: 700;
-  color: #333;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.completion-label {
+.target-context {
   font-size: 11px;
   color: #666;
-  text-transform: uppercase;
-  margin-top: 4px;
-}
-
-/* Action Buttons */
-.action-group {
-  display: flex;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.action-group.dual {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 24px;
-  font-size: 13px;
-  font-weight: 600;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.action-btn.primary {
-  background: #000;
-  color: #FFF;
-}
-
-.action-btn.primary:hover:not(:disabled) {
-  opacity: 0.8;
-}
-
-.action-btn.secondary {
   background: #F5F5F5;
-  color: #333;
+  padding: 6px;
+  border-radius: 4px;
 }
 
-.action-btn.secondary:hover:not(:disabled) {
-  background: #E5E5E5;
+.card-footer {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: #999;
 }
 
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.time-tag { font-family: 'JetBrains Mono'; }
+
+.waiting-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #999;
 }
 
-/* System Logs */
+.pulse-ring {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #DDD;
+  animation: ripple 1.5s infinite;
+}
+
+@keyframes ripple {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+/* Transition Group */
+.timeline-item-enter-active,
+.timeline-item-leave-active {
+  transition: all 0.5s ease;
+}
+
+.timeline-item-enter-from {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.timeline-item-leave-to {
+  opacity: 0;
+}
+
+/* --- System Logs (unchanged) --- */
 .system-logs {
   background: #000;
   color: #DDD;
@@ -1265,7 +977,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  height: 80px;
+  height: 120px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1296,12 +1008,12 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-/* Spinner */
+.mono { font-family: 'JetBrains Mono', monospace; }
 .spinner-sm {
   width: 14px;
   height: 14px;
-  border: 2px solid #FFCCBC;
-  border-top-color: #FF5722;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #FFF;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

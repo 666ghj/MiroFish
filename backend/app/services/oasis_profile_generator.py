@@ -1142,27 +1142,31 @@ class OasisProfileGenerator:
         """
         保存Reddit Profile为JSON格式
         
-        OASIS Reddit支持两种JSON格式：
-        1. 基础格式: user_id, user_name, name, bio, karma, created_at
-        2. 详细格式: realname, username, bio, persona, age, gender, mbti, country, profession, interested_topics
+        使用与 to_reddit_format() 一致的格式，确保 OASIS 能正确读取。
+        必须包含 user_id 字段，这是 OASIS agent_graph.get_agent() 匹配的关键！
         
-        我们使用详细格式，与用户示例数据(36个简单人设.json)保持一致
-        
-        OASIS要求所有字段都必须存在：
-        - age: 整数
+        必需字段：
+        - user_id: 用户ID（整数，用于匹配 initial_posts 中的 poster_agent_id）
+        - username: 用户名
+        - name: 显示名称
+        - bio: 简介
+        - persona: 详细人设
+        - age: 年龄（整数）
         - gender: "male", "female", 或 "other"
-        - mbti: MBTI类型字符串
-        - country: 国家字符串
+        - mbti: MBTI类型
+        - country: 国家
         """
         data = []
-        for profile in profiles:
-            # 使用详细格式（与用户示例兼容）
-            # 确保所有必需字段都有有效值
+        for idx, profile in enumerate(profiles):
+            # 使用与 to_reddit_format() 一致的格式
             item = {
-                "realname": profile.name,
+                "user_id": profile.user_id if profile.user_id is not None else idx,  # 关键：必须包含 user_id
                 "username": profile.user_name,
+                "name": profile.name,
                 "bio": profile.bio[:150] if profile.bio else f"{profile.name}",
                 "persona": profile.persona or f"{profile.name} is a participant in social discussions.",
+                "karma": profile.karma if profile.karma else 1000,
+                "created_at": profile.created_at,
                 # OASIS必需字段 - 确保都有默认值
                 "age": profile.age if profile.age else 30,
                 "gender": self._normalize_gender(profile.gender),
@@ -1181,7 +1185,7 @@ class OasisProfileGenerator:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        logger.info(f"已保存 {len(profiles)} 个Reddit Profile到 {file_path} (JSON详细格式，已标准化gender字段)")
+        logger.info(f"已保存 {len(profiles)} 个Reddit Profile到 {file_path} (JSON格式，包含user_id字段)")
     
     # 保留旧方法名作为别名，保持向后兼容
     def save_profiles_to_json(

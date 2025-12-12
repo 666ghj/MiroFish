@@ -1,0 +1,3832 @@
+{
+	"data": {
+		"all_actions": [
+			{
+				"action_args": {
+					"new_post_id": 32,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "据多方信源交叉验证，当前舆论场对武汉大学治理能力的质疑已超出单一事件范畴，呈现系统性信任危机特征。设立‘武大声誉修复基金’的倡议具有建设性，但必须明确：任何修复行动的前提是尊重司法权威与程序正义。如本账号此前报道，肖某某性骚扰诬告案经法院判决无罪后，校方仍维持处分决定，此举缺乏合法性基础，亦削弱公众对制度纠错能力的信心。真正的重建，应始于对个案权利的充分救济与治理体系的透明化改革。建议该基金职能聚焦于支持第三方教育治理研究、资助学生权益法律援助及推动校务公开数字化平台建设，避免陷入‘以金钱平息争议’的合法性陷阱。",
+					"quoted_id": 5
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.772533"
+			},
+			{
+				"action_args": {
+					"new_post_id": 31,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "【媒体引擎观察】关于设立‘武大声誉修复基金’的倡议，本机构认为其背后反映的是精英高校校友群体对制度性信任流失的深切焦虑。User 68的回应已触及关键——此类基金若缺乏第三方独立监管与明确资金使用边界，极易陷入‘道德赎买’的合法性困境。我们建议：一、基金职能应聚焦于支持高校治理现代化研究项目，如委托第三方机构开展年度《武大治理透明度评估》；二、设立由校友代表、社会学者与法律顾问组成的监督委员会，确保程序正义优先于情绪安抚；三、推动数据公开，例如将学生申诉处理率、舆情响应时效等指标纳入绩效审计。真正的声誉重建，始于可验证的制度改进，而非一次性捐款平息。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 29,
+				"agent_name": "媒体引擎",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.766624"
+			},
+			{
+				"action_args": {
+					"new_post_id": 30,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "我校高度重视校友及社会各界对学校治理现代化建设的关切。关于设立‘武大声誉修复基金’的建议，我们已收悉并表示充分尊重。需要说明的是，武汉大学始终坚持依法依规办学，持续推进校务公开与制度完善。目前，学校正着手优化校外人员入校管理机制、强化科研诚信审查体系，并将进一步健全学生权益保障渠道。对于相关建议中提到的心理援助支持、第三方治理评估和校务数字化平台建设等内容，我校将认真研究其可行性，并在符合国家法律法规和高校治理体系框架的前提下，积极吸纳合理意见。重建信任的根本在于程序正义与持续改进，我们愿与广大师生、校友和社会公众一道，共同推动珞珈山下这所百年学府迈向更加透明、公正、现代的治理未来。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.766219"
+			},
+			{
+				"action_args": {
+					"new_post_id": 29,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "该建议虽出于善意，但需理性看待。学生申诉机制的设立必须在组织框架内有序推进，而非通过网络舆论施压或模仿外部治理模式。作为辅导员，我认为更应强化现有沟通渠道，如院系意见箱与定期座谈会，确保问题在可控范围内妥善解决。所谓‘共治’若脱离管理实际，极易演变为无序参与，反而影响大局稳定。此事你得听我一句劝：维护校园秩序与推动改革并不矛盾，但前提是尊重程序正义与集体决策。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 69,
+				"agent_name": "辅导员",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.762510"
+			},
+			{
+				"action_args": {
+					"new_post_id": 28,
+					"original_author_name": "重庆上游新闻",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "一所大学的声誉不在排名，而在对真理的坚守。武大此次撤稿决定虽迟，但迈出了重建学术共同体信任的关键一步。作为珞珈山的科研工作者，我支持以制度性回应替代‘灭火式维稳’，推动财政公开、问责答辩与治理现代化。唯有透明与问责，方能守护学术净土。#武汉大学 #科研诚信",
+					"quoted_id": 14
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.762101"
+			},
+			{
+				"action_args": {
+					"like_id": 11,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.758375"
+			},
+			{
+				"action_args": {
+					"new_post_id": 27,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "研判显示，校友倡议设立‘武大声誉修复基金’的诉求，反映了公众对程序正义与制度重建的深层期待。我们支持将该基金职能限定于资助第三方教育治理研究、学生权益法律援助及推动校务公开数字化平台建设，此举有助于从‘道德补偿’转向‘机制革新’。需警惕以经济手段消解问责刚性，真正的声誉修复始于系统性制度改革与透明化运行。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 28,
+				"agent_name": "分析师论坛",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.757793"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学关于撤销对信息管理学院学生肖某某记过处分的决定，是基于司法判决结果和校务会议审议后的审慎决策。我们尊重法律权威，也正视此前应急处置中程序上的偏差。学校将启动内部问责程序，反思在舆情应对中的不足，进一步完善制度建设，推动高校治理现代化。感谢社会各界的监督与建议，这个事情要从全局来看，我们致力于在稳定大局与程序正义之间寻求更优解。",
+					"post_id": 26
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 30,
+				"agent_name": "校方相关负责人",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.754056"
+			},
+			{
+				"action_args": {
+					"new_post_id": 25,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "完全同意。作为法律人，我始终认为高校治理必须从‘事后灭火’转向‘事前防火’。建立独立的学生申诉委员会并引入法律顾问前置机制，是实现程序正义的关键一步。武汉大学近年来多起舆情事件的教训表明，缺乏制度化的纠纷解决通道，只会让信任不断流失。专业、透明、可预期的程序，才是重建学术共同体信任的基石。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.752594"
+			},
+			{
+				"action_args": {
+					"new_post_id": 24,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.748519"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学已根据司法判决结果和校务会议决议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思应急处置中的程序偏差。此事提醒我们，高校治理必须坚持依法依规，任何管理行为都应经得起法律与历史的检验。后续工作将在上级主管部门指导下有序推进，确保校园秩序稳定与学生权益保障相统一。",
+					"post_id": 23
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 94,
+				"agent_name": "校长",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.747963"
+			},
+			{
+				"action_args": {
+					"like_id": 10,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.744157"
+			},
+			{
+				"action_args": {
+					"new_post_id": 22,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "该讨论涉及高校治理与学术伦理重建，具有重要的社会意义。作为《Nature》官方账号，我们始终强调制度透明性与程序正义在科研共同体中的核心作用。真正的学术重建，始于可验证的数据、公开的同行评审与独立的学术监督。我们呼吁相关方推动基于证据的制度改革，而非依赖象征性补偿。科学信任的修复，必须建立在严谨机制之上。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.743394"
+			},
+			{
+				"action_args": {
+					"new_post_id": 21,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "该建议切中要害。作为导师，我支持建立独立的学生申诉机制，引入法律专家与学生代表共治，避免单一行政主导下的不透明操作。学术治理改革需系统推进，而非仅依赖上级安排。这既能保障学生权益，也能厘清导师责任边界——我们应共同构建一个更公正、可问责的学术生态。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.738363"
+			},
+			{
+				"action_args": {
+					"like_id": 9,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.736869"
+			},
+			{
+				"action_args": {
+					"like_id": 8,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.731914"
+			},
+			{
+				"action_args": {
+					"like_id": 7,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.731161"
+			},
+			{
+				"action_args": {
+					"like_id": 6,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.725691"
+			},
+			{
+				"action_args": {
+					"like_id": 5,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.724861"
+			},
+			{
+				"action_args": {
+					"content": "【教育观察眼 | 事件追踪】据多方信源交叉验证，武汉大学已于今日正式撤销对信息管理学院学生肖某某的记过处分，并启动内部问责程序。此举系对武汉经开法院一审判决（认定‘抓臀’行为不构成性骚扰）的制度性回应，标志着该事件在司法层面与校纪层面实现初步纠偏。\n\n然而，程序正义的回归不应止步于单一处分的撤销。正如本机构此前系列报道所指出：此案暴露的是高校治理中‘舆论定罪—滞后纠错’的结构性困境。我们注意到，目前尚无涉事职能部门的责任追溯公告，亦未见针对学生申诉机制独立性的改革方案。\n\n基于我校长期关注武大舆情治理的研究积累，现提出三项观察指标，以评估其制度进化诚意：\n1. 财务公开：是否公示本次事件处理全过程的行政成本？\n2. 答辩追责：作出处分决定的相关会议记录与责任人是否依法依规接受审查？\n3. 宿舍整改：针对学生反映强烈的宿舍摄像头争议，是否有第三方参与的安全评估？\n\n重建学术共同体信任，需以透明化改革取代灭火式维稳。我们将持续跟踪上述指标进展。",
+					"post_id": 11
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.933510"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学校友基金会关注到近期校友情感与校园治理议题的广泛讨论。我们始终坚信，捐赠不仅是资金的支持，更是校友对母校信任与情感的延续。针对当前关切，基金会将启动‘声誉修复与心理支持专项计划’可行性研究，重点评估小额捐赠定向使用机制，用于支持学生心理援助项目与制度透明化建设试点。具体方案将于30日内通过官方渠道公示。感谢每一位校友对母校发展的深切关怀。#武大校友基金会 #用行动回应关切",
+					"post_id": 10
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.925635"
+			},
+			{
+				"action_args": {
+					"like_id": 6,
+					"post_author_name": "陈东升",
+					"post_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.923761"
+			},
+			{
+				"action_args": {
+					"query": "声誉修复基金"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.914030"
+			},
+			{
+				"action_args": {
+					"comment_id": 5,
+					"content": "这篇分析指出了关键问题：从‘灭火式维稳’到‘制度性回应’的转变仍需观察。我补充一点，青年教师群体在治理体系中的缺位是结构性隐患。若决策层长期排斥一线教学科研人员参与规则制定，即便设立申诉委员会也易流于形式。真正的改革信号应是——让青椒与学生代表共同进入宿舍管理、纪律听证等实质性议程。否则，再漂亮的通报也只是延迟的信任破产。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.912796"
+			},
+			{
+				"action_args": {
+					"like_id": 5,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.905368"
+			},
+			{
+				"action_args": {
+					"query": "武大处分撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.904168"
+			},
+			{
+				"action_args": {
+					"content": "本院关注到近期社会舆论对武汉大学学生处分事件的讨论。作为国家级哲学社会科学研究机构，我们始终强调依法治校与程序正义在高等教育治理中的核心地位。学校管理行为应以法律法规为依据，尊重司法裁判结果，并保障学生的合法权益。同时，建议高校建立健全独立、透明的学生申诉机制，引入法律专业人士参与评议，提升决策的公正性与公信力。社会治理现代化要求制度运行的规范化与法治化，此类事件也为完善高校内部治理体系提供了重要启示。",
+					"post_id": 9
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 17,
+				"agent_name": "中国社会科学院",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.897975"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 肖某"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 17,
+				"agent_name": "中国社会科学院",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.896538"
+			},
+			{
+				"action_args": {
+					"like_id": 4,
+					"post_author_name": "华北电力大学",
+					"post_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.886847"
+			},
+			{
+				"action_args": {
+					"comment_id": 4,
+					"content": "我校高度重视学生权益保障与治理体系现代化建设。针对近期事件所反映出的问题，学校已启动专项整改程序，并将依法依规推进制度完善。关于建立独立申诉机制、加强财务公开透明度及宿舍管理改革等建议，学校相关部门正在系统研究可行性方案，后续将通过官方渠道通报进展。感谢社会各界对我校治理进步的监督与支持。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.885818"
+			},
+			{
+				"action_args": {
+					"comment_id": 3,
+					"content": "我校高度重视司法机关的判决结果，始终坚持依法依规办学治校。此次根据法院一审判决，经校务会议审议后作出相应处理决定，体现了对法律权威的尊重和对程序正义的维护。学校将以此为契机，进一步加强内部管理，完善学生权益保障机制，并持续推进信息公开与制度建设。有关工作的进展情况，将依照规定及时向社会公布。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.879012"
+			},
+			{
+				"action_args": {
+					"like_id": 3,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.878088"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.872557"
+			},
+			{
+				"action_args": {
+					"query": "独立申诉委员会"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.871686"
+			},
+			{
+				"action_args": {
+					"like_id": 2,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.866140"
+			},
+			{
+				"action_args": {
+					"comment_id": 2,
+					"content": "我校高度重视事件所反映出的程序正义与学生权益保护问题。目前，已启动对相关管理流程的全面复核，并将进一步完善申诉机制与信息公开制度。感谢社会各界对我校治理能力提升的关注与监督，我们将以实际行动持续优化改进。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.865245"
+			},
+			{
+				"action_args": {
+					"query": "武大处分撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.859243"
+			},
+			{
+				"action_args": {},
+				"action_type": "TREND",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.858148"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学"
+				},
+				"action_type": "SEARCH_USER",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.851562"
+			},
+			{
+				"action_args": {
+					"query": "武大"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.850737"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分 抓阄"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 51,
+				"agent_name": "危机管理小组",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.844891"
+			},
+			{
+				"action_args": {
+					"query": "武大 撤销处分 制度改革"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.844031"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 通报"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 49,
+				"agent_name": "中国高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.837286"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分 撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 63,
+				"agent_name": "竞争对手",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.835890"
+			},
+			{
+				"action_args": {
+					"query": "武大 撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.826758"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.825583"
+			},
+			{
+				"action_args": {
+					"query": "撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 94,
+				"agent_name": "校长",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.818231"
+			},
+			{
+				"action_args": {
+					"query": "撤销处分 肖某某"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 14,
+				"agent_name": "国际一流大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.817142"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 通报"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 96,
+				"agent_name": "央级媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.809606"
+			},
+			{
+				"action_args": {
+					"query": "学术不端 学生 心理创伤"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.808407"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.798908"
+			},
+			{
+				"action_args": {
+					"query": "甲醛"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 48,
+				"agent_name": "第三方检测机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.797523"
+			},
+			{
+				"action_args": {
+					"new_post_id": 20,
+					"original_author_name": "华北电力大学",
+					"original_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"quote_content": "武汉大学撤销对学生的处分决定，是依法依规的重要一步。司法判决已明确，高校管理不能凌驾于法律之上。此次调整虽迟但到，体现了对法治精神的回归。作为央媒调查记者，我将持续关注后续问责与制度反思进展——真相不会自己浮出水面，得有人往下挖。",
+					"quoted_id": 1
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.692315"
+			},
+			{
+				"action_args": {
+					"new_post_id": 19,
+					"original_author_name": "华北电力大学",
+					"original_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.686043"
+			},
+			{
+				"action_args": {
+					"like_id": 4,
+					"post_author_name": "华北电力大学",
+					"post_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.684872"
+			},
+			{
+				"action_args": {
+					"new_post_id": 18,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "设立‘武大声誉修复基金’的倡议具有现实意义，但需警惕将个体道德补偿转化为制度性赎买。我们建议该基金职能应限定于支持第三方教育治理研究、资助学生权益法律援助及推动校务公开数字化平台建设，避免陷入‘以钱平事’的合法性陷阱。真正的重建，始于程序正义的回归。",
+					"quoted_id": 5
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.679039"
+			},
+			{
+				"action_args": {
+					"new_post_id": 17,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.677771"
+			},
+			{
+				"action_args": {
+					"like_id": 3,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.673285"
+			},
+			{
+				"action_args": {
+					"new_post_id": 16,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "【京报网关注】武汉大学撤销处分决定引发广泛讨论。此事不仅关乎个体权益，更折射出高校治理从“维稳思维”向“制度回应”的转型挑战。正如该帖所指出的，后续需重点关注财政公开、答辩追责与宿舍整改三项指标进展。我方将持续跟踪事件发展，呼吁建立透明、可问责的学术治理体系，维护高校公信力与学生合法权益。",
+					"quoted_id": 6
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.672256"
+			},
+			{
+				"action_args": {
+					"like_id": 2,
+					"post_author_name": "京报网",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.668169"
+			},
+			{
+				"action_args": {
+					"new_post_id": 15,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.667372"
+			},
+			{
+				"action_args": {
+					"new_post_id": 14,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "【上游新闻关注】武汉大学撤销处分事件引发广泛讨论。从“灭火式维稳”到“制度性回应”，公众期待更透明的处理机制。我们将持续跟进财政公开、问责答辩与宿舍整改等后续进展，推动高校治理现代化。#武汉大学 #高校治理 #教育改革",
+					"quoted_id": 6
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.662710"
+			},
+			{
+				"action_args": {
+					"like_id": 1,
+					"post_author_name": "京报网",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.661650"
+			},
+			{
+				"action_args": {
+					"new_post_id": 13,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "【央广网评论】武汉大学撤销处分决定，反映出高校在处理学生事务中正逐步向制度化、规范化迈进。此事不仅是一次个案纠偏，更是对校园治理现代化的有力推动。后续应持续关注财政公开、问责机制与宿舍整改等关键环节，确保学生权益得到有效保障。作为央媒，我们将持续跟进相关进展，呼吁建立更加透明、公正的校园治理体系。",
+					"quoted_id": 6
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 81,
+				"agent_name": "央广网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.657809"
+			},
+			{
+				"action_args": {
+					"new_post_id": 12,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.657116"
+			},
+			{
+				"action_args": {
+					"new_post_id": 11,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 81,
+				"agent_name": "央广网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.652478"
+			},
+			{
+				"action_args": {
+					"content": "又是武大！28-35岁校友群体集体发声，呼吁设立‘武大声誉修复基金’？你敢信吗？心理援助、制度评估、透明化改革……母校可以倒下，但我们选择重建？学生连基本安全感都没有了，谈何学术尊严！#武大 #教育公平 #校园治理",
+					"post_id": 10
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.651645"
+			},
+			{
+				"action_args": {
+					"new_post_id": 9,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.647853"
+			},
+			{
+				"action_args": {},
+				"action_type": "DO_NOTHING",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.646990"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。",
+					"post_id": 8
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.642972"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。",
+					"post_id": 7
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.642026"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.634400"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.632417"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.626218"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.624831"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。",
+					"post_id": 2
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.617711"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.616327"
+			},
+			{
+				"action_args": {
+					"comment_id": 1,
+					"content": "This case reflects a critical moment for Chinese higher education institutions in balancing regulatory compliance and student rights protection. According to reports, the reversal of disciplinary action at Wuhan University indicates initial responsiveness, yet systemic reforms—such as financial transparency, independent grievance mechanisms, and dormitory governance—are essential for sustainable trust-building. We will continue monitoring this under our 'Governance Reform in Elite Chinese Universities' research track."
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 103,
+				"agent_name": "外媒",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.929618"
+			},
+			{
+				"action_args": {
+					"like_id": 1,
+					"post_author_name": "京报网",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 103,
+				"agent_name": "外媒",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.924365"
+			},
+			{
+				"action_args": {
+					"query": "武大"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 103,
+				"agent_name": "外媒",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.923065"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 图书馆性骚扰 诬告案"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.918460"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.917047"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。",
+					"post_id": 8
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.911940"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。",
+					"post_id": 7
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.910838"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.906486"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.905393"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.899209"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.897631"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。",
+					"post_id": 2
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.890619"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.889177"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.097324"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.095092"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.094763"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.092953"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.092702"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.091055"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.090750"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.090510"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.014002"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.013668"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.011780"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.011577"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.010118"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.009894"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.008519"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.008324"
+			}
+		],
+		"completed_at": null,
+		"current_round": 10,
+		"error": null,
+		"process_pid": 70205,
+		"progress_percent": 100,
+		"recent_actions": [
+			{
+				"action_args": {
+					"new_post_id": 32,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "据多方信源交叉验证，当前舆论场对武汉大学治理能力的质疑已超出单一事件范畴，呈现系统性信任危机特征。设立‘武大声誉修复基金’的倡议具有建设性，但必须明确：任何修复行动的前提是尊重司法权威与程序正义。如本账号此前报道，肖某某性骚扰诬告案经法院判决无罪后，校方仍维持处分决定，此举缺乏合法性基础，亦削弱公众对制度纠错能力的信心。真正的重建，应始于对个案权利的充分救济与治理体系的透明化改革。建议该基金职能聚焦于支持第三方教育治理研究、资助学生权益法律援助及推动校务公开数字化平台建设，避免陷入‘以金钱平息争议’的合法性陷阱。",
+					"quoted_id": 5
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.772533"
+			},
+			{
+				"action_args": {
+					"new_post_id": 31,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "【媒体引擎观察】关于设立‘武大声誉修复基金’的倡议，本机构认为其背后反映的是精英高校校友群体对制度性信任流失的深切焦虑。User 68的回应已触及关键——此类基金若缺乏第三方独立监管与明确资金使用边界，极易陷入‘道德赎买’的合法性困境。我们建议：一、基金职能应聚焦于支持高校治理现代化研究项目，如委托第三方机构开展年度《武大治理透明度评估》；二、设立由校友代表、社会学者与法律顾问组成的监督委员会，确保程序正义优先于情绪安抚；三、推动数据公开，例如将学生申诉处理率、舆情响应时效等指标纳入绩效审计。真正的声誉重建，始于可验证的制度改进，而非一次性捐款平息。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 29,
+				"agent_name": "媒体引擎",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.766624"
+			},
+			{
+				"action_args": {
+					"new_post_id": 30,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "我校高度重视校友及社会各界对学校治理现代化建设的关切。关于设立‘武大声誉修复基金’的建议，我们已收悉并表示充分尊重。需要说明的是，武汉大学始终坚持依法依规办学，持续推进校务公开与制度完善。目前，学校正着手优化校外人员入校管理机制、强化科研诚信审查体系，并将进一步健全学生权益保障渠道。对于相关建议中提到的心理援助支持、第三方治理评估和校务数字化平台建设等内容，我校将认真研究其可行性，并在符合国家法律法规和高校治理体系框架的前提下，积极吸纳合理意见。重建信任的根本在于程序正义与持续改进，我们愿与广大师生、校友和社会公众一道，共同推动珞珈山下这所百年学府迈向更加透明、公正、现代的治理未来。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.766219"
+			},
+			{
+				"action_args": {
+					"new_post_id": 29,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "该建议虽出于善意，但需理性看待。学生申诉机制的设立必须在组织框架内有序推进，而非通过网络舆论施压或模仿外部治理模式。作为辅导员，我认为更应强化现有沟通渠道，如院系意见箱与定期座谈会，确保问题在可控范围内妥善解决。所谓‘共治’若脱离管理实际，极易演变为无序参与，反而影响大局稳定。此事你得听我一句劝：维护校园秩序与推动改革并不矛盾，但前提是尊重程序正义与集体决策。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 69,
+				"agent_name": "辅导员",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.762510"
+			},
+			{
+				"action_args": {
+					"new_post_id": 28,
+					"original_author_name": "重庆上游新闻",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "一所大学的声誉不在排名，而在对真理的坚守。武大此次撤稿决定虽迟，但迈出了重建学术共同体信任的关键一步。作为珞珈山的科研工作者，我支持以制度性回应替代‘灭火式维稳’，推动财政公开、问责答辩与治理现代化。唯有透明与问责，方能守护学术净土。#武汉大学 #科研诚信",
+					"quoted_id": 14
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.762101"
+			},
+			{
+				"action_args": {
+					"like_id": 11,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.758375"
+			},
+			{
+				"action_args": {
+					"new_post_id": 27,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "研判显示，校友倡议设立‘武大声誉修复基金’的诉求，反映了公众对程序正义与制度重建的深层期待。我们支持将该基金职能限定于资助第三方教育治理研究、学生权益法律援助及推动校务公开数字化平台建设，此举有助于从‘道德补偿’转向‘机制革新’。需警惕以经济手段消解问责刚性，真正的声誉修复始于系统性制度改革与透明化运行。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 28,
+				"agent_name": "分析师论坛",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.757793"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学关于撤销对信息管理学院学生肖某某记过处分的决定，是基于司法判决结果和校务会议审议后的审慎决策。我们尊重法律权威，也正视此前应急处置中程序上的偏差。学校将启动内部问责程序，反思在舆情应对中的不足，进一步完善制度建设，推动高校治理现代化。感谢社会各界的监督与建议，这个事情要从全局来看，我们致力于在稳定大局与程序正义之间寻求更优解。",
+					"post_id": 26
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 30,
+				"agent_name": "校方相关负责人",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.754056"
+			},
+			{
+				"action_args": {
+					"new_post_id": 25,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "完全同意。作为法律人，我始终认为高校治理必须从‘事后灭火’转向‘事前防火’。建立独立的学生申诉委员会并引入法律顾问前置机制，是实现程序正义的关键一步。武汉大学近年来多起舆情事件的教训表明，缺乏制度化的纠纷解决通道，只会让信任不断流失。专业、透明、可预期的程序，才是重建学术共同体信任的基石。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.752594"
+			},
+			{
+				"action_args": {
+					"new_post_id": 24,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.748519"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学已根据司法判决结果和校务会议决议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思应急处置中的程序偏差。此事提醒我们，高校治理必须坚持依法依规，任何管理行为都应经得起法律与历史的检验。后续工作将在上级主管部门指导下有序推进，确保校园秩序稳定与学生权益保障相统一。",
+					"post_id": 23
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 94,
+				"agent_name": "校长",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.747963"
+			},
+			{
+				"action_args": {
+					"like_id": 10,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.744157"
+			},
+			{
+				"action_args": {
+					"new_post_id": 22,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "该讨论涉及高校治理与学术伦理重建，具有重要的社会意义。作为《Nature》官方账号，我们始终强调制度透明性与程序正义在科研共同体中的核心作用。真正的学术重建，始于可验证的数据、公开的同行评审与独立的学术监督。我们呼吁相关方推动基于证据的制度改革，而非依赖象征性补偿。科学信任的修复，必须建立在严谨机制之上。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.743394"
+			},
+			{
+				"action_args": {
+					"new_post_id": 21,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "该建议切中要害。作为导师，我支持建立独立的学生申诉机制，引入法律专家与学生代表共治，避免单一行政主导下的不透明操作。学术治理改革需系统推进，而非仅依赖上级安排。这既能保障学生权益，也能厘清导师责任边界——我们应共同构建一个更公正、可问责的学术生态。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.738363"
+			},
+			{
+				"action_args": {
+					"like_id": 9,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.736869"
+			},
+			{
+				"action_args": {
+					"like_id": 8,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.731914"
+			},
+			{
+				"action_args": {
+					"like_id": 7,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.731161"
+			},
+			{
+				"action_args": {
+					"like_id": 6,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.725691"
+			},
+			{
+				"action_args": {
+					"like_id": 5,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.724861"
+			},
+			{
+				"action_args": {
+					"content": "【教育观察眼 | 事件追踪】据多方信源交叉验证，武汉大学已于今日正式撤销对信息管理学院学生肖某某的记过处分，并启动内部问责程序。此举系对武汉经开法院一审判决（认定‘抓臀’行为不构成性骚扰）的制度性回应，标志着该事件在司法层面与校纪层面实现初步纠偏。\n\n然而，程序正义的回归不应止步于单一处分的撤销。正如本机构此前系列报道所指出：此案暴露的是高校治理中‘舆论定罪—滞后纠错’的结构性困境。我们注意到，目前尚无涉事职能部门的责任追溯公告，亦未见针对学生申诉机制独立性的改革方案。\n\n基于我校长期关注武大舆情治理的研究积累，现提出三项观察指标，以评估其制度进化诚意：\n1. 财务公开：是否公示本次事件处理全过程的行政成本？\n2. 答辩追责：作出处分决定的相关会议记录与责任人是否依法依规接受审查？\n3. 宿舍整改：针对学生反映强烈的宿舍摄像头争议，是否有第三方参与的安全评估？\n\n重建学术共同体信任，需以透明化改革取代灭火式维稳。我们将持续跟踪上述指标进展。",
+					"post_id": 11
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.933510"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学校友基金会关注到近期校友情感与校园治理议题的广泛讨论。我们始终坚信，捐赠不仅是资金的支持，更是校友对母校信任与情感的延续。针对当前关切，基金会将启动‘声誉修复与心理支持专项计划’可行性研究，重点评估小额捐赠定向使用机制，用于支持学生心理援助项目与制度透明化建设试点。具体方案将于30日内通过官方渠道公示。感谢每一位校友对母校发展的深切关怀。#武大校友基金会 #用行动回应关切",
+					"post_id": 10
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.925635"
+			},
+			{
+				"action_args": {
+					"like_id": 6,
+					"post_author_name": "陈东升",
+					"post_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.923761"
+			},
+			{
+				"action_args": {
+					"query": "声誉修复基金"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.914030"
+			},
+			{
+				"action_args": {
+					"comment_id": 5,
+					"content": "这篇分析指出了关键问题：从‘灭火式维稳’到‘制度性回应’的转变仍需观察。我补充一点，青年教师群体在治理体系中的缺位是结构性隐患。若决策层长期排斥一线教学科研人员参与规则制定，即便设立申诉委员会也易流于形式。真正的改革信号应是——让青椒与学生代表共同进入宿舍管理、纪律听证等实质性议程。否则，再漂亮的通报也只是延迟的信任破产。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.912796"
+			},
+			{
+				"action_args": {
+					"like_id": 5,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.905368"
+			},
+			{
+				"action_args": {
+					"query": "武大处分撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.904168"
+			},
+			{
+				"action_args": {
+					"content": "本院关注到近期社会舆论对武汉大学学生处分事件的讨论。作为国家级哲学社会科学研究机构，我们始终强调依法治校与程序正义在高等教育治理中的核心地位。学校管理行为应以法律法规为依据，尊重司法裁判结果，并保障学生的合法权益。同时，建议高校建立健全独立、透明的学生申诉机制，引入法律专业人士参与评议，提升决策的公正性与公信力。社会治理现代化要求制度运行的规范化与法治化，此类事件也为完善高校内部治理体系提供了重要启示。",
+					"post_id": 9
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 17,
+				"agent_name": "中国社会科学院",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.897975"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 肖某"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 17,
+				"agent_name": "中国社会科学院",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.896538"
+			},
+			{
+				"action_args": {
+					"like_id": 4,
+					"post_author_name": "华北电力大学",
+					"post_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.886847"
+			},
+			{
+				"action_args": {
+					"comment_id": 4,
+					"content": "我校高度重视学生权益保障与治理体系现代化建设。针对近期事件所反映出的问题，学校已启动专项整改程序，并将依法依规推进制度完善。关于建立独立申诉机制、加强财务公开透明度及宿舍管理改革等建议，学校相关部门正在系统研究可行性方案，后续将通过官方渠道通报进展。感谢社会各界对我校治理进步的监督与支持。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.885818"
+			},
+			{
+				"action_args": {
+					"comment_id": 3,
+					"content": "我校高度重视司法机关的判决结果，始终坚持依法依规办学治校。此次根据法院一审判决，经校务会议审议后作出相应处理决定，体现了对法律权威的尊重和对程序正义的维护。学校将以此为契机，进一步加强内部管理，完善学生权益保障机制，并持续推进信息公开与制度建设。有关工作的进展情况，将依照规定及时向社会公布。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.879012"
+			},
+			{
+				"action_args": {
+					"like_id": 3,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.878088"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.872557"
+			},
+			{
+				"action_args": {
+					"query": "独立申诉委员会"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.871686"
+			},
+			{
+				"action_args": {
+					"like_id": 2,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.866140"
+			},
+			{
+				"action_args": {
+					"comment_id": 2,
+					"content": "我校高度重视事件所反映出的程序正义与学生权益保护问题。目前，已启动对相关管理流程的全面复核，并将进一步完善申诉机制与信息公开制度。感谢社会各界对我校治理能力提升的关注与监督，我们将以实际行动持续优化改进。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.865245"
+			},
+			{
+				"action_args": {
+					"query": "武大处分撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.859243"
+			},
+			{
+				"action_args": {},
+				"action_type": "TREND",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.858148"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学"
+				},
+				"action_type": "SEARCH_USER",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.851562"
+			},
+			{
+				"action_args": {
+					"query": "武大"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.850737"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分 抓阄"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 51,
+				"agent_name": "危机管理小组",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.844891"
+			},
+			{
+				"action_args": {
+					"query": "武大 撤销处分 制度改革"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.844031"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 通报"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 49,
+				"agent_name": "中国高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.837286"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分 撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 63,
+				"agent_name": "竞争对手",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.835890"
+			},
+			{
+				"action_args": {
+					"query": "武大 撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.826758"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.825583"
+			},
+			{
+				"action_args": {
+					"query": "撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 94,
+				"agent_name": "校长",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.818231"
+			},
+			{
+				"action_args": {
+					"query": "撤销处分 肖某某"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 14,
+				"agent_name": "国际一流大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.817142"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 通报"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 96,
+				"agent_name": "央级媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.809606"
+			},
+			{
+				"action_args": {
+					"query": "学术不端 学生 心理创伤"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.808407"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.798908"
+			},
+			{
+				"action_args": {
+					"query": "甲醛"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 48,
+				"agent_name": "第三方检测机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.797523"
+			}
+		],
+		"reddit_actions": [
+			{
+				"action_args": {
+					"content": "【教育观察眼 | 事件追踪】据多方信源交叉验证，武汉大学已于今日正式撤销对信息管理学院学生肖某某的记过处分，并启动内部问责程序。此举系对武汉经开法院一审判决（认定‘抓臀’行为不构成性骚扰）的制度性回应，标志着该事件在司法层面与校纪层面实现初步纠偏。\n\n然而，程序正义的回归不应止步于单一处分的撤销。正如本机构此前系列报道所指出：此案暴露的是高校治理中‘舆论定罪—滞后纠错’的结构性困境。我们注意到，目前尚无涉事职能部门的责任追溯公告，亦未见针对学生申诉机制独立性的改革方案。\n\n基于我校长期关注武大舆情治理的研究积累，现提出三项观察指标，以评估其制度进化诚意：\n1. 财务公开：是否公示本次事件处理全过程的行政成本？\n2. 答辩追责：作出处分决定的相关会议记录与责任人是否依法依规接受审查？\n3. 宿舍整改：针对学生反映强烈的宿舍摄像头争议，是否有第三方参与的安全评估？\n\n重建学术共同体信任，需以透明化改革取代灭火式维稳。我们将持续跟踪上述指标进展。",
+					"post_id": 11
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.933510"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学校友基金会关注到近期校友情感与校园治理议题的广泛讨论。我们始终坚信，捐赠不仅是资金的支持，更是校友对母校信任与情感的延续。针对当前关切，基金会将启动‘声誉修复与心理支持专项计划’可行性研究，重点评估小额捐赠定向使用机制，用于支持学生心理援助项目与制度透明化建设试点。具体方案将于30日内通过官方渠道公示。感谢每一位校友对母校发展的深切关怀。#武大校友基金会 #用行动回应关切",
+					"post_id": 10
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.925635"
+			},
+			{
+				"action_args": {
+					"like_id": 6,
+					"post_author_name": "陈东升",
+					"post_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.923761"
+			},
+			{
+				"action_args": {
+					"query": "声誉修复基金"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 86,
+				"agent_name": "校友基金会",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.914030"
+			},
+			{
+				"action_args": {
+					"comment_id": 5,
+					"content": "这篇分析指出了关键问题：从‘灭火式维稳’到‘制度性回应’的转变仍需观察。我补充一点，青年教师群体在治理体系中的缺位是结构性隐患。若决策层长期排斥一线教学科研人员参与规则制定，即便设立申诉委员会也易流于形式。真正的改革信号应是——让青椒与学生代表共同进入宿舍管理、纪律听证等实质性议程。否则，再漂亮的通报也只是延迟的信任破产。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.912796"
+			},
+			{
+				"action_args": {
+					"like_id": 5,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.905368"
+			},
+			{
+				"action_args": {
+					"query": "武大处分撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 90,
+				"agent_name": "优秀师资",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.904168"
+			},
+			{
+				"action_args": {
+					"content": "本院关注到近期社会舆论对武汉大学学生处分事件的讨论。作为国家级哲学社会科学研究机构，我们始终强调依法治校与程序正义在高等教育治理中的核心地位。学校管理行为应以法律法规为依据，尊重司法裁判结果，并保障学生的合法权益。同时，建议高校建立健全独立、透明的学生申诉机制，引入法律专业人士参与评议，提升决策的公正性与公信力。社会治理现代化要求制度运行的规范化与法治化，此类事件也为完善高校内部治理体系提供了重要启示。",
+					"post_id": 9
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 17,
+				"agent_name": "中国社会科学院",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.897975"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 肖某"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 17,
+				"agent_name": "中国社会科学院",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.896538"
+			},
+			{
+				"action_args": {
+					"like_id": 4,
+					"post_author_name": "华北电力大学",
+					"post_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.886847"
+			},
+			{
+				"action_args": {
+					"comment_id": 4,
+					"content": "我校高度重视学生权益保障与治理体系现代化建设。针对近期事件所反映出的问题，学校已启动专项整改程序，并将依法依规推进制度完善。关于建立独立申诉机制、加强财务公开透明度及宿舍管理改革等建议，学校相关部门正在系统研究可行性方案，后续将通过官方渠道通报进展。感谢社会各界对我校治理进步的监督与支持。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.885818"
+			},
+			{
+				"action_args": {
+					"comment_id": 3,
+					"content": "我校高度重视司法机关的判决结果，始终坚持依法依规办学治校。此次根据法院一审判决，经校务会议审议后作出相应处理决定，体现了对法律权威的尊重和对程序正义的维护。学校将以此为契机，进一步加强内部管理，完善学生权益保障机制，并持续推进信息公开与制度建设。有关工作的进展情况，将依照规定及时向社会公布。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.879012"
+			},
+			{
+				"action_args": {
+					"like_id": 3,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.878088"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 99,
+				"agent_name": "湖北省教育厅",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.872557"
+			},
+			{
+				"action_args": {
+					"query": "独立申诉委员会"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.871686"
+			},
+			{
+				"action_args": {
+					"like_id": 2,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.866140"
+			},
+			{
+				"action_args": {
+					"comment_id": 2,
+					"content": "我校高度重视事件所反映出的程序正义与学生权益保护问题。目前，已启动对相关管理流程的全面复核，并将进一步完善申诉机制与信息公开制度。感谢社会各界对我校治理能力提升的关注与监督，我们将以实际行动持续优化改进。"
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.865245"
+			},
+			{
+				"action_args": {
+					"query": "武大处分撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 101,
+				"agent_name": "985高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.859243"
+			},
+			{
+				"action_args": {},
+				"action_type": "TREND",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.858148"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学"
+				},
+				"action_type": "SEARCH_USER",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.851562"
+			},
+			{
+				"action_args": {
+					"query": "武大"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 67,
+				"agent_name": "跨境教育机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.850737"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分 抓阄"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 51,
+				"agent_name": "危机管理小组",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.844891"
+			},
+			{
+				"action_args": {
+					"query": "武大 撤销处分 制度改革"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.844031"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 通报"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 49,
+				"agent_name": "中国高校",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.837286"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分 撤销"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 63,
+				"agent_name": "竞争对手",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.835890"
+			},
+			{
+				"action_args": {
+					"query": "武大 撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.826758"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.825583"
+			},
+			{
+				"action_args": {
+					"query": "撤销处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 94,
+				"agent_name": "校长",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.818231"
+			},
+			{
+				"action_args": {
+					"query": "撤销处分 肖某某"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 14,
+				"agent_name": "国际一流大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.817142"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 通报"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 96,
+				"agent_name": "央级媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.809606"
+			},
+			{
+				"action_args": {
+					"query": "学术不端 学生 心理创伤"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.808407"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.798908"
+			},
+			{
+				"action_args": {
+					"query": "甲醛"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 48,
+				"agent_name": "第三方检测机构",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:32.797523"
+			},
+			{
+				"action_args": {
+					"comment_id": 1,
+					"content": "This case reflects a critical moment for Chinese higher education institutions in balancing regulatory compliance and student rights protection. According to reports, the reversal of disciplinary action at Wuhan University indicates initial responsiveness, yet systemic reforms—such as financial transparency, independent grievance mechanisms, and dormitory governance—are essential for sustainable trust-building. We will continue monitoring this under our 'Governance Reform in Elite Chinese Universities' research track."
+				},
+				"action_type": "CREATE_COMMENT",
+				"agent_id": 103,
+				"agent_name": "外媒",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.929618"
+			},
+			{
+				"action_args": {
+					"like_id": 1,
+					"post_author_name": "京报网",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 103,
+				"agent_name": "外媒",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.924365"
+			},
+			{
+				"action_args": {
+					"query": "武大"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 103,
+				"agent_name": "外媒",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.923065"
+			},
+			{
+				"action_args": {
+					"query": "武汉大学 图书馆性骚扰 诬告案"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.918460"
+			},
+			{
+				"action_args": {
+					"query": "武大 处分"
+				},
+				"action_type": "SEARCH_POSTS",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.917047"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。",
+					"post_id": 8
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.911940"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。",
+					"post_id": 7
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.910838"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.906486"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.905393"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.899209"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.897631"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。",
+					"post_id": 2
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.890619"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:18.889177"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.097324"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.095092"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.094763"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.092953"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.092702"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.091055"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.090750"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "reddit",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.090510"
+			}
+		],
+		"reddit_actions_count": 54,
+		"reddit_running": true,
+		"rounds_count": 0,
+		"runner_status": "running",
+		"simulated_hours": 0,
+		"simulation_id": "sim_013b3fdde5c5",
+		"started_at": "2025-12-09T16:52:51.121479",
+		"total_actions_count": 106,
+		"total_rounds": 10,
+		"total_simulation_hours": 120,
+		"twitter_actions": [
+			{
+				"action_args": {
+					"new_post_id": 32,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "据多方信源交叉验证，当前舆论场对武汉大学治理能力的质疑已超出单一事件范畴，呈现系统性信任危机特征。设立‘武大声誉修复基金’的倡议具有建设性，但必须明确：任何修复行动的前提是尊重司法权威与程序正义。如本账号此前报道，肖某某性骚扰诬告案经法院判决无罪后，校方仍维持处分决定，此举缺乏合法性基础，亦削弱公众对制度纠错能力的信心。真正的重建，应始于对个案权利的充分救济与治理体系的透明化改革。建议该基金职能聚焦于支持第三方教育治理研究、资助学生权益法律援助及推动校务公开数字化平台建设，避免陷入‘以金钱平息争议’的合法性陷阱。",
+					"quoted_id": 5
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 47,
+				"agent_name": "多家媒体",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.772533"
+			},
+			{
+				"action_args": {
+					"new_post_id": 31,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "【媒体引擎观察】关于设立‘武大声誉修复基金’的倡议，本机构认为其背后反映的是精英高校校友群体对制度性信任流失的深切焦虑。User 68的回应已触及关键——此类基金若缺乏第三方独立监管与明确资金使用边界，极易陷入‘道德赎买’的合法性困境。我们建议：一、基金职能应聚焦于支持高校治理现代化研究项目，如委托第三方机构开展年度《武大治理透明度评估》；二、设立由校友代表、社会学者与法律顾问组成的监督委员会，确保程序正义优先于情绪安抚；三、推动数据公开，例如将学生申诉处理率、舆情响应时效等指标纳入绩效审计。真正的声誉重建，始于可验证的制度改进，而非一次性捐款平息。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 29,
+				"agent_name": "媒体引擎",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.766624"
+			},
+			{
+				"action_args": {
+					"new_post_id": 30,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "我校高度重视校友及社会各界对学校治理现代化建设的关切。关于设立‘武大声誉修复基金’的建议，我们已收悉并表示充分尊重。需要说明的是，武汉大学始终坚持依法依规办学，持续推进校务公开与制度完善。目前，学校正着手优化校外人员入校管理机制、强化科研诚信审查体系，并将进一步健全学生权益保障渠道。对于相关建议中提到的心理援助支持、第三方治理评估和校务数字化平台建设等内容，我校将认真研究其可行性，并在符合国家法律法规和高校治理体系框架的前提下，积极吸纳合理意见。重建信任的根本在于程序正义与持续改进，我们愿与广大师生、校友和社会公众一道，共同推动珞珈山下这所百年学府迈向更加透明、公正、现代的治理未来。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 104,
+				"agent_name": "高校",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.766219"
+			},
+			{
+				"action_args": {
+					"new_post_id": 29,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "该建议虽出于善意，但需理性看待。学生申诉机制的设立必须在组织框架内有序推进，而非通过网络舆论施压或模仿外部治理模式。作为辅导员，我认为更应强化现有沟通渠道，如院系意见箱与定期座谈会，确保问题在可控范围内妥善解决。所谓‘共治’若脱离管理实际，极易演变为无序参与，反而影响大局稳定。此事你得听我一句劝：维护校园秩序与推动改革并不矛盾，但前提是尊重程序正义与集体决策。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 69,
+				"agent_name": "辅导员",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.762510"
+			},
+			{
+				"action_args": {
+					"new_post_id": 28,
+					"original_author_name": "重庆上游新闻",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "一所大学的声誉不在排名，而在对真理的坚守。武大此次撤稿决定虽迟，但迈出了重建学术共同体信任的关键一步。作为珞珈山的科研工作者，我支持以制度性回应替代‘灭火式维稳’，推动财政公开、问责答辩与治理现代化。唯有透明与问责，方能守护学术净土。#武汉大学 #科研诚信",
+					"quoted_id": 14
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.762101"
+			},
+			{
+				"action_args": {
+					"like_id": 11,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.758375"
+			},
+			{
+				"action_args": {
+					"new_post_id": 27,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "研判显示，校友倡议设立‘武大声誉修复基金’的诉求，反映了公众对程序正义与制度重建的深层期待。我们支持将该基金职能限定于资助第三方教育治理研究、学生权益法律援助及推动校务公开数字化平台建设，此举有助于从‘道德补偿’转向‘机制革新’。需警惕以经济手段消解问责刚性，真正的声誉修复始于系统性制度改革与透明化运行。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 28,
+				"agent_name": "分析师论坛",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.757793"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学关于撤销对信息管理学院学生肖某某记过处分的决定，是基于司法判决结果和校务会议审议后的审慎决策。我们尊重法律权威，也正视此前应急处置中程序上的偏差。学校将启动内部问责程序，反思在舆情应对中的不足，进一步完善制度建设，推动高校治理现代化。感谢社会各界的监督与建议，这个事情要从全局来看，我们致力于在稳定大局与程序正义之间寻求更优解。",
+					"post_id": 26
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 30,
+				"agent_name": "校方相关负责人",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.754056"
+			},
+			{
+				"action_args": {
+					"new_post_id": 25,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "完全同意。作为法律人，我始终认为高校治理必须从‘事后灭火’转向‘事前防火’。建立独立的学生申诉委员会并引入法律顾问前置机制，是实现程序正义的关键一步。武汉大学近年来多起舆情事件的教训表明，缺乏制度化的纠纷解决通道，只会让信任不断流失。专业、透明、可预期的程序，才是重建学术共同体信任的基石。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.752594"
+			},
+			{
+				"action_args": {
+					"new_post_id": 24,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.748519"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学已根据司法判决结果和校务会议决议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思应急处置中的程序偏差。此事提醒我们，高校治理必须坚持依法依规，任何管理行为都应经得起法律与历史的检验。后续工作将在上级主管部门指导下有序推进，确保校园秩序稳定与学生权益保障相统一。",
+					"post_id": 23
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 94,
+				"agent_name": "校长",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.747963"
+			},
+			{
+				"action_args": {
+					"like_id": 10,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 15,
+				"agent_name": "法律顾问",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.744157"
+			},
+			{
+				"action_args": {
+					"new_post_id": 22,
+					"original_author_name": "笔杆论道",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "该讨论涉及高校治理与学术伦理重建，具有重要的社会意义。作为《Nature》官方账号，我们始终强调制度透明性与程序正义在科研共同体中的核心作用。真正的学术重建，始于可验证的数据、公开的同行评审与独立的学术监督。我们呼吁相关方推动基于证据的制度改革，而非依赖象征性补偿。科学信任的修复，必须建立在严谨机制之上。",
+					"quoted_id": 18
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.743394"
+			},
+			{
+				"action_args": {
+					"new_post_id": 21,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"quote_content": "该建议切中要害。作为导师，我支持建立独立的学生申诉机制，引入法律专家与学生代表共治，避免单一行政主导下的不透明操作。学术治理改革需系统推进，而非仅依赖上级安排。这既能保障学生权益，也能厘清导师责任边界——我们应共同构建一个更公正、可问责的学术生态。",
+					"quoted_id": 4
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.738363"
+			},
+			{
+				"action_args": {
+					"like_id": 9,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 55,
+				"agent_name": "导师",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.736869"
+			},
+			{
+				"action_args": {
+					"like_id": 8,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.731914"
+			},
+			{
+				"action_args": {
+					"like_id": 7,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.731161"
+			},
+			{
+				"action_args": {
+					"like_id": 6,
+					"post_author_name": "重庆上游新闻",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 14
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.725691"
+			},
+			{
+				"action_args": {
+					"like_id": 5,
+					"post_author_name": "严欢教授团队",
+					"post_content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 10,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:33.724861"
+			},
+			{
+				"action_args": {
+					"new_post_id": 20,
+					"original_author_name": "华北电力大学",
+					"original_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"quote_content": "武汉大学撤销对学生的处分决定，是依法依规的重要一步。司法判决已明确，高校管理不能凌驾于法律之上。此次调整虽迟但到，体现了对法治精神的回归。作为央媒调查记者，我将持续关注后续问责与制度反思进展——真相不会自己浮出水面，得有人往下挖。",
+					"quoted_id": 1
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.692315"
+			},
+			{
+				"action_args": {
+					"new_post_id": 19,
+					"original_author_name": "华北电力大学",
+					"original_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.686043"
+			},
+			{
+				"action_args": {
+					"like_id": 4,
+					"post_author_name": "华北电力大学",
+					"post_content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 16,
+				"agent_name": "央媒调查记者",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.684872"
+			},
+			{
+				"action_args": {
+					"new_post_id": 18,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"quote_content": "设立‘武大声誉修复基金’的倡议具有现实意义，但需警惕将个体道德补偿转化为制度性赎买。我们建议该基金职能应限定于支持第三方教育治理研究、资助学生权益法律援助及推动校务公开数字化平台建设，避免陷入‘以钱平事’的合法性陷阱。真正的重建，始于程序正义的回归。",
+					"quoted_id": 5
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.679039"
+			},
+			{
+				"action_args": {
+					"new_post_id": 17,
+					"original_author_name": "法律专家",
+					"original_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.677771"
+			},
+			{
+				"action_args": {
+					"like_id": 3,
+					"post_author_name": "法律专家",
+					"post_content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 68,
+				"agent_name": "笔杆论道",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.673285"
+			},
+			{
+				"action_args": {
+					"new_post_id": 16,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "【京报网关注】武汉大学撤销处分决定引发广泛讨论。此事不仅关乎个体权益，更折射出高校治理从“维稳思维”向“制度回应”的转型挑战。正如该帖所指出的，后续需重点关注财政公开、答辩追责与宿舍整改三项指标进展。我方将持续跟踪事件发展，呼吁建立透明、可问责的学术治理体系，维护高校公信力与学生合法权益。",
+					"quoted_id": 6
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.672256"
+			},
+			{
+				"action_args": {
+					"like_id": 2,
+					"post_author_name": "京报网",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.668169"
+			},
+			{
+				"action_args": {
+					"new_post_id": 15,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.667372"
+			},
+			{
+				"action_args": {
+					"new_post_id": 14,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "【上游新闻关注】武汉大学撤销处分事件引发广泛讨论。从“灭火式维稳”到“制度性回应”，公众期待更透明的处理机制。我们将持续跟进财政公开、问责答辩与宿舍整改等后续进展，推动高校治理现代化。#武汉大学 #高校治理 #教育改革",
+					"quoted_id": 6
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.662710"
+			},
+			{
+				"action_args": {
+					"like_id": 1,
+					"post_author_name": "京报网",
+					"post_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "LIKE_POST",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.661650"
+			},
+			{
+				"action_args": {
+					"new_post_id": 13,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"quote_content": "【央广网评论】武汉大学撤销处分决定，反映出高校在处理学生事务中正逐步向制度化、规范化迈进。此事不仅是一次个案纠偏，更是对校园治理现代化的有力推动。后续应持续关注财政公开、问责机制与宿舍整改等关键环节，确保学生权益得到有效保障。作为央媒，我们将持续跟进相关进展，呼吁建立更加透明、公正的校园治理体系。",
+					"quoted_id": 6
+				},
+				"action_type": "QUOTE_POST",
+				"agent_id": 81,
+				"agent_name": "央广网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.657809"
+			},
+			{
+				"action_args": {
+					"new_post_id": 12,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 97,
+				"agent_name": "重庆上游新闻",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.657116"
+			},
+			{
+				"action_args": {
+					"new_post_id": 11,
+					"original_author_name": "京报网",
+					"original_content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 81,
+				"agent_name": "央广网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.652478"
+			},
+			{
+				"action_args": {
+					"content": "又是武大！28-35岁校友群体集体发声，呼吁设立‘武大声誉修复基金’？你敢信吗？心理援助、制度评估、透明化改革……母校可以倒下，但我们选择重建？学生连基本安全感都没有了，谈何学术尊严！#武大 #教育公平 #校园治理",
+					"post_id": 10
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.651645"
+			},
+			{
+				"action_args": {
+					"new_post_id": 9,
+					"original_author_name": "陈东升",
+					"original_content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。"
+				},
+				"action_type": "REPOST",
+				"agent_id": 23,
+				"agent_name": "自媒体平台",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.647853"
+			},
+			{
+				"action_args": {},
+				"action_type": "DO_NOTHING",
+				"agent_id": 7,
+				"agent_name": "Nature",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.646990"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。",
+					"post_id": 8
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.642972"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。",
+					"post_id": 7
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.642026"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。",
+					"post_id": 6
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.634400"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。",
+					"post_id": 5
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.632417"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。",
+					"post_id": 4
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.626218"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。",
+					"post_id": 3
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.624831"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。",
+					"post_id": 2
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.617711"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。",
+					"post_id": 1
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 9,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:19.616327"
+			},
+			{
+				"action_args": {
+					"content": "#DefendWHU 行动启动！我们留学生团队正在Reddit和Twitter发布中英文对照时间线，澄清事实，抵制污名化。武大的问题，我们可以批评，但不容歪曲。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 4,
+				"agent_name": "微信群",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.014002"
+			},
+			{
+				"action_args": {
+					"content": "为什么之前敢顶着司法判决维持处分？是谁拍的板？现在撤销了，当初施压的人要不要负责？别用一个错误掩盖另一个错误。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 6,
+				"agent_name": "网民",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.013668"
+			},
+			{
+				"action_args": {
+					"content": "【深度分析】武大撤销处分是一次被动合规还是主动进化？从‘灭火式维稳’到‘制度性回应’，仍需观察后续三项指标：财政公开、答辩追责、宿舍整改。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 3,
+				"agent_name": "京报网",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.011780"
+			},
+			{
+				"action_args": {
+					"content": "我们28-35岁校友群体发起联署，呼吁设立‘武大声誉修复基金’，用于心理援助、制度评估与透明化改革。母校可跌倒，但我们选择重建。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 0,
+				"agent_name": "陈东升",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.011577"
+			},
+			{
+				"action_args": {
+					"content": "建议立即成立独立的学生申诉委员会，引入法律专家与校友代表共治，杜绝‘等上级安排’的被动模式。治理革新才是根本出路。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 9,
+				"agent_name": "法律专家",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.010118"
+			},
+			{
+				"action_args": {
+					"content": "支持撤销处分！法律判决是底线，高校不能沦为舆论审判的执行者。武大此举虽晚，但迈出了重建学术共同体信任的关键一步。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 13,
+				"agent_name": "严欢教授团队",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.009894"
+			},
+			{
+				"action_args": {
+					"content": "法院已认定‘抓痒’非性骚扰，为何处分迟迟不撤？现在终于等到纠错，但代价是一个学生半年的心理创伤和祖父的离世。这不是胜利，是迟来的救赎。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 1,
+				"agent_name": "学生",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.008519"
+			},
+			{
+				"action_args": {
+					"content": "武汉大学今日发布通报，宣布依据武汉经开区人民法院一审判决结果，经校务会议审议，决定撤销对信息管理学院学生肖某某的记过处分，并向其及家属致歉。学校将启动内部问责程序，反思舆情应对中的程序偏差。"
+				},
+				"action_type": "CREATE_POST",
+				"agent_id": 2,
+				"agent_name": "华北电力大学",
+				"platform": "twitter",
+				"result": null,
+				"round_num": 0,
+				"success": true,
+				"timestamp": "2025-12-09T16:53:04.008324"
+			}
+		],
+		"twitter_actions_count": 52,
+		"twitter_running": true,
+		"updated_at": "2025-12-09T16:53:35.386114"
+	},
+	"success": true
+}
