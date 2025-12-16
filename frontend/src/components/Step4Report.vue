@@ -727,8 +727,16 @@ const parseInterview = (text) => {
           interview.redditAnswer = redditMatch[1].trim()
         }
         
-        // 如果没有明确分平台，整体作为回答
-        if (!twitterMatch && !redditMatch) {
+        // 如果只有一个平台的回答，将其作为主回答
+        // 这样无论显示哪个平台都能有内容
+        if (!twitterMatch && redditMatch) {
+          // 只有 Reddit 回答，将其也设为 twitterAnswer 作为默认显示
+          interview.twitterAnswer = interview.redditAnswer
+        } else if (twitterMatch && !redditMatch) {
+          // 只有 Twitter 回答，将其也设为 redditAnswer
+          interview.redditAnswer = interview.twitterAnswer
+        } else if (!twitterMatch && !redditMatch) {
+          // 如果没有明确分平台，整体作为回答
           interview.twitterAnswer = answerText
         }
       }
@@ -954,37 +962,51 @@ const InterviewDisplay = {
     const splitAnswerByQuestions = (answerText, questionCount) => {
       if (!answerText || questionCount <= 0) return [answerText]
       
-      // 尝试按编号分割 (如 "1." "2." 等)
+      // 更健壮的分割逻辑：查找所有 "数字." 格式的编号位置
+      // 支持格式：
+      // - "1.  \n内容" （数字+点+空格+换行+内容）
+      // - "\n\n2.  \n内容" （换行+数字+点+空格+换行+内容）
+      // 使用更宽松的匹配：开头或换行后的数字+点+空白
+      const numberPattern = /(?:^|[\r\n]+)(\d+)\.\s+/g
+      const matches = []
+      let match
+      
+      while ((match = numberPattern.exec(answerText)) !== null) {
+        matches.push({
+          num: parseInt(match[1]),
+          index: match.index,
+          fullMatch: match[0]
+        })
+      }
+      
+      // 如果没有找到编号或只找到一个，返回整体
+      if (matches.length <= 1) {
+        // 尝试移除开头的编号（格式：1.  \n 或 1. ）
+        const cleaned = answerText.replace(/^\d+\.\s+/, '').trim()
+        return [cleaned || answerText]
+      }
+      
+      // 按编号提取各部分
       const parts = []
-      let remaining = answerText
-      
-      for (let i = 1; i <= questionCount; i++) {
-        const nextNum = i + 1
-        // 查找下一个编号的位置
-        const nextPattern = new RegExp(`\\n\\s*${nextNum}\\.\\s+|\\n\\s*${nextNum}、|\\n\\s*（${nextNum}）|\\n\\s*\\(${nextNum}\\)`)
-        const match = remaining.match(nextPattern)
+      for (let i = 0; i < matches.length; i++) {
+        const current = matches[i]
+        const next = matches[i + 1]
         
-        if (match) {
-          // 找到下一个编号，截取当前部分
-          const splitIdx = match.index
-          let currentPart = remaining.substring(0, splitIdx).trim()
-          // 移除当前编号前缀
-          currentPart = currentPart.replace(new RegExp(`^\\s*${i}\\.\\s*|^\\s*${i}、|^\\s*（${i}）|^\\s*\\(${i}\\)`), '').trim()
-          parts.push(currentPart)
-          remaining = remaining.substring(splitIdx).trim()
-        } else if (i === questionCount) {
-          // 最后一个问题，取剩余所有内容
-          let currentPart = remaining.replace(new RegExp(`^\\s*${i}\\.\\s*|^\\s*${i}、|^\\s*（${i}）|^\\s*\\(${i}\\)`), '').trim()
-          parts.push(currentPart)
-        }
+        const startIdx = current.index + current.fullMatch.length
+        const endIdx = next ? next.index : answerText.length
+        
+        let part = answerText.substring(startIdx, endIdx).trim()
+        // 移除末尾可能的多余换行
+        part = part.replace(/[\r\n]+$/, '').trim()
+        parts.push(part)
       }
       
-      // 如果分割失败，返回整体答案
-      if (parts.length === 0 || parts.every(p => !p)) {
-        return [answerText]
+      // 如果分割成功且数量合理，返回分割结果
+      if (parts.length > 0 && parts.some(p => p)) {
+        return parts
       }
       
-      return parts
+      return [answerText]
     }
     
     // 获取某个问题对应的回答
