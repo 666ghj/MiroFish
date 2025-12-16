@@ -156,16 +156,10 @@
                 </svg>
               </button>
             </div>
-            <div v-if="showFullProfile" class="profile-card-body">
-              <div v-if="selectedAgent.bio" class="profile-card-bio">
+            <div v-if="showFullProfile && selectedAgent.bio" class="profile-card-body">
+              <div class="profile-card-bio">
                 <div class="profile-card-label">简介</div>
                 <p>{{ selectedAgent.bio }}</p>
-              </div>
-              <div v-if="selectedAgent.interested_topics?.length" class="profile-card-topics">
-                <div class="profile-card-label">兴趣领域</div>
-                <div class="profile-topics-list">
-                  <span v-for="topic in selectedAgent.interested_topics" :key="topic" class="profile-topic-tag">{{ topic }}</span>
-                </div>
               </div>
             </div>
           </div>
@@ -1333,28 +1327,6 @@ watch(() => props.simulationId, (newId) => {
   font-size: 13px;
   line-height: 1.6;
   color: #4B5563;
-}
-
-.profile-card-topics {
-  background: #FFFFFF;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
-}
-
-.profile-topics-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.profile-topic-tag {
-  padding: 4px 10px;
-  background: #F3F4F6;
-  color: #374151;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
 }
 
 /* Target Selector */
