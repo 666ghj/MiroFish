@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="100%"/>
+  <img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="70%"/>
 </p>
 
 <p align="center">
