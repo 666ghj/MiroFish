@@ -718,27 +718,34 @@ class SimulationRunner:
         process = cls._processes.get(simulation_id)
         if process and process.poll() is None:
             try:
-                # 使用进程组 ID 终止整个进程组（包括所有子进程）
-                # 由于使用了 start_new_session=True，进程组 ID 等于主进程 PID
-                pgid = os.getpgid(process.pid)
-                logger.info(f"终止进程组: simulation={simulation_id}, pgid={pgid}")
-                
-                # 先发送 SIGTERM 给整个进程组
-                os.killpg(pgid, signal.SIGTERM)
-                
-                try:
+                # Windows 兼容性：检查是否支持进程组操作
+                if hasattr(os, 'getpgid'):
+                    # Unix/Linux 系统：使用进程组 ID 终止整个进程组（包括所有子进程）
+                    # 由于使用了 start_new_session=True，进程组 ID 等于主进程 PID
+                    pgid = os.getpgid(process.pid)
+                    logger.info(f"终止进程组: simulation={simulation_id}, pgid={pgid}")
+                    
+                    # 先发送 SIGTERM 给整个进程组
+                    os.killpg(pgid, signal.SIGTERM)
+                    
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        # 如果 10 秒后还没结束，强制发送 SIGKILL
+                        logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
+                        os.killpg(pgid, signal.SIGKILL)
+                        process.wait(timeout=5)
+                else:
+                    # Windows 系统：直接终止进程
+                    logger.info(f"终止进程: simulation={simulation_id}, pid={process.pid}")
+                    process.terminate()
                     process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    # 如果 10 秒后还没结束，强制发送 SIGKILL
-                    logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
-                    os.killpg(pgid, signal.SIGKILL)
-                    process.wait(timeout=5)
                     
             except ProcessLookupError:
                 # 进程已经不存在
                 pass
             except Exception as e:
-                logger.error(f"终止进程组失败: {simulation_id}, error={e}")
+                logger.error(f"终止进程失败: {simulation_id}, error={e}")
                 # 回退到直接终止进程
                 try:
                     process.terminate()
@@ -1163,15 +1170,21 @@ class SimulationRunner:
                     logger.info(f"终止模拟进程: {simulation_id}, pid={process.pid}")
                     
                     try:
-                        # 使用进程组终止（包括所有子进程）
-                        pgid = os.getpgid(process.pid)
-                        os.killpg(pgid, signal.SIGTERM)
-                        
-                        try:
-                            process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
-                            os.killpg(pgid, signal.SIGKILL)
+                        # Windows 兼容性：检查是否支持进程组操作
+                        if hasattr(os, 'getpgid'):
+                            # Unix/Linux 系统：使用进程组终止（包括所有子进程）
+                            pgid = os.getpgid(process.pid)
+                            os.killpg(pgid, signal.SIGTERM)
+                            
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
+                                os.killpg(pgid, signal.SIGKILL)
+                                process.wait(timeout=5)
+                        else:
+                            # Windows 系统：直接终止进程
+                            process.terminate()
                             process.wait(timeout=5)
                             
                     except (ProcessLookupError, OSError):
