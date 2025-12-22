@@ -6,8 +6,8 @@
     "setup": "npm install && cd frontend && npm install",
     "setup:backend": "cd backend && uv sync",
     "setup:all": "npm run setup && npm run setup:backend",
-    "dev": "concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"npm run backend\" \"npm run frontend\"",
-    "backend": "cd backend && uv run python run.py",
+    "dev": "chcp 65001 >nul && concurrently -n \"backend,frontend\" -c \"yellow,cyan\" \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && chcp 65001 >nul && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build"
   },

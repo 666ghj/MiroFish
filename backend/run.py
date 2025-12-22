@@ -5,10 +5,19 @@ MiroFish Backend 启动入口
 import os
 import sys
 
-# Windows 终端 UTF-8 编码设置
+# Windows 终端 UTF-8 编码设置（必须在最开始执行）
 if sys.platform == "win32":
+    # 设置 Windows 控制台代码页为 UTF-8
+    try:
+        import subprocess
+        subprocess.run(["chcp", "65001"], shell=True, capture_output=True)
+    except Exception:
+        pass
+
     # 设置 Python UTF-8 模式
-    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+
     # 尝试设置控制台编码为 UTF-8
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
