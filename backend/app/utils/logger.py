@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 import logging
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -61,7 +62,14 @@ def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.
     file_handler.setFormatter(detailed_formatter)
     
     # 2. 控制台处理器 - 简洁日志（INFO及以上）
-    console_handler = logging.StreamHandler()
+    # Windows 终端默认编码可能是 GBK，需要强制使用 UTF-8
+    if sys.platform == "win32":
+        # 使用 UTF-8 编码的流包装器
+        import io
+        console_stream = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        console_handler = logging.StreamHandler(console_stream)
+    else:
+        console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(simple_formatter)
     

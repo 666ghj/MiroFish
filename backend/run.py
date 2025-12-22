@@ -5,6 +5,17 @@ MiroFish Backend 启动入口
 import os
 import sys
 
+# Windows 终端 UTF-8 编码设置
+if sys.platform == "win32":
+    # 设置 Python UTF-8 模式
+    os.environ.setdefault("PYTHONUTF8", "1")
+    # 尝试设置控制台编码为 UTF-8
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        pass
+
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
