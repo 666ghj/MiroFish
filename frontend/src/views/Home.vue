@@ -4,6 +4,9 @@
     <nav class="navbar">
       <div class="nav-brand">MIROFISH</div>
       <div class="nav-links">
+        <a href="#" class="nav-link" @click.prevent="router.push({ name: 'Projects' })">
+          历史项目
+        </a>
         <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
           访问我们的Github主页 <span class="arrow">↗</span>
         </a>
@@ -347,6 +350,20 @@ const startSimulation = () => {
 .nav-links {
   display: flex;
   align-items: center;
+  gap: 18px;
+}
+
+.nav-link {
+  color: var(--white);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.nav-link:hover {
+  opacity: 0.8;
 }
 
 .github-link {
