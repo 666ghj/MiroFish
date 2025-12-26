@@ -424,15 +424,31 @@ class SimulationRunner:
             main_log_file = open(main_log_path, 'w', encoding='utf-8')
             
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
-            # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
+            # 准备 subprocess 参数
+            popen_kwargs = {
+                "cwd": sim_dir,
+                "stdout": main_log_file,
+                "stderr": subprocess.STDOUT,  # stderr 也写入同一个文件
+                "text": True,
+                "bufsize": 1,
+            }
+            
+            # 跨平台处理：创建新进程组
+            if sys.platform == "win32":
+                # Windows: 使用 CREATE_NEW_PROCESS_GROUP
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                # Unix/Linux/macOS: 使用 start_new_session
+                popen_kwargs["start_new_session"] = True
+                
+            # 设置环境变量：强制 Python 使用 UTF-8 编码，解决 Windows 下第三方库打开文件时的编码问题
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
+            
             process = subprocess.Popen(
                 cmd,
-                cwd=sim_dir,
-                stdout=main_log_file,
-                stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
-                text=True,
-                bufsize=1,
-                start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
+                env=env,
+                **popen_kwargs
             )
             
             # 保存文件句柄以便后续关闭
@@ -718,21 +734,28 @@ class SimulationRunner:
         process = cls._processes.get(simulation_id)
         if process and process.poll() is None:
             try:
-                # 使用进程组 ID 终止整个进程组（包括所有子进程）
-                # 由于使用了 start_new_session=True，进程组 ID 等于主进程 PID
-                pgid = os.getpgid(process.pid)
-                logger.info(f"终止进程组: simulation={simulation_id}, pgid={pgid}")
-                
-                # 先发送 SIGTERM 给整个进程组
-                os.killpg(pgid, signal.SIGTERM)
-                
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    # 如果 10 秒后还没结束，强制发送 SIGKILL
-                    logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
-                    os.killpg(pgid, signal.SIGKILL)
-                    process.wait(timeout=5)
+                # 跨平台终止进程
+                if sys.platform == "win32":
+                    # Windows: 使用 taskkill 强制终止进程树
+                    logger.info(f"终止Windows进程树: simulation={simulation_id}, pid={process.pid}")
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], 
+                                   check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    # Unix/Linux: 使用进程组 ID 终止整个进程组
+                    # 由于使用了 start_new_session=True，进程组 ID 等于主进程 PID
+                    pgid = os.getpgid(process.pid)
+                    logger.info(f"终止进程组: simulation={simulation_id}, pgid={pgid}")
+                    
+                    # 先发送 SIGTERM 给整个进程组
+                    os.killpg(pgid, signal.SIGTERM)
+                    
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        # 如果 10 秒后还没结束，强制发送 SIGKILL
+                        logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
+                        os.killpg(pgid, signal.SIGKILL)
+                        process.wait(timeout=5)
                     
             except ProcessLookupError:
                 # 进程已经不存在
@@ -1163,16 +1186,20 @@ class SimulationRunner:
                     logger.info(f"终止模拟进程: {simulation_id}, pid={process.pid}")
                     
                     try:
-                        # 使用进程组终止（包括所有子进程）
-                        pgid = os.getpgid(process.pid)
-                        os.killpg(pgid, signal.SIGTERM)
-                        
-                        try:
-                            process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
-                            os.killpg(pgid, signal.SIGKILL)
-                            process.wait(timeout=5)
+                        if sys.platform == "win32":
+                            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], 
+                                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            # 使用进程组终止（包括所有子进程）
+                            pgid = os.getpgid(process.pid)
+                            os.killpg(pgid, signal.SIGTERM)
+                            
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
+                                os.killpg(pgid, signal.SIGKILL)
+                                process.wait(timeout=5)
                             
                     except (ProcessLookupError, OSError):
                         # 进程可能已经不存在，尝试直接终止
