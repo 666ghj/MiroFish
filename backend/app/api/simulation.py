@@ -4,6 +4,7 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 """
 
 import os
+import re
 import traceback
 from flask import request, jsonify, send_file
 
@@ -17,6 +18,59 @@ from ..utils.logger import get_logger
 from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
+
+
+def _validate_simulation_id(simulation_id: str) -> bool:
+    """
+    验证 simulation_id 是否安全，防止路径遍历攻击
+    
+    Args:
+        simulation_id: 要验证的模拟ID
+        
+    Returns:
+        如果ID安全返回 True，否则返回 False
+    """
+    if not simulation_id:
+        return False
+    
+    # 检查是否包含路径分隔符或路径遍历序列
+    dangerous_patterns = ['..', '/', '\\', '\x00']
+    for pattern in dangerous_patterns:
+        if pattern in simulation_id:
+            return False
+    
+    # 只允许字母、数字、下划线和连字符
+    if not re.match(r'^[a-zA-Z0-9_-]+$', simulation_id):
+        return False
+    
+    return True
+
+
+def _get_safe_simulation_dir(simulation_id: str) -> str:
+    """
+    安全地获取模拟目录路径，包含路径遍历检查
+    
+    Args:
+        simulation_id: 模拟ID
+        
+    Returns:
+        安全的模拟目录路径
+        
+    Raises:
+        ValueError: 如果 simulation_id 不安全
+    """
+    if not _validate_simulation_id(simulation_id):
+        raise ValueError(f"无效的 simulation_id: {simulation_id}")
+    
+    sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+    
+    # 额外安全检查：确保结果路径在预期目录内
+    real_sim_dir = os.path.realpath(sim_dir)
+    real_base_dir = os.path.realpath(Config.OASIS_SIMULATION_DATA_DIR)
+    if not real_sim_dir.startswith(real_base_dir + os.sep):
+        raise ValueError(f"无效的 simulation_id: {simulation_id}")
+    
+    return sim_dir
 
 
 # Interview prompt 优化前缀
@@ -255,7 +309,11 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     import os
     from ..config import Config
     
-    simulation_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+    # 安全检查：验证 simulation_id
+    try:
+        simulation_dir = _get_safe_simulation_dir(simulation_id)
+    except ValueError as e:
+        return False, {"reason": str(e)}
     
     # 检查目录是否存在
     if not os.path.exists(simulation_dir):
@@ -882,8 +940,14 @@ def get_simulation_profiles_realtime(simulation_id: str):
     try:
         platform = request.args.get('platform', 'reddit')
         
-        # 获取模拟目录
-        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+        # 安全地获取模拟目录
+        try:
+            sim_dir = _get_safe_simulation_dir(simulation_id)
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 400
         
         if not os.path.exists(sim_dir):
             return jsonify({
@@ -985,8 +1049,14 @@ def get_simulation_config_realtime(simulation_id: str):
     from datetime import datetime
     
     try:
-        # 获取模拟目录
-        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+        # 安全地获取模拟目录
+        try:
+            sim_dir = _get_safe_simulation_dir(simulation_id)
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 400
         
         if not os.path.exists(sim_dir):
             return jsonify({

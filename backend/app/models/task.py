@@ -5,7 +5,7 @@
 
 import uuid
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -55,10 +55,20 @@ class TaskManager:
     """
     任务管理器
     线程安全的任务状态管理
+    
+    内置自动清理机制：
+    - 每次创建新任务时触发清理检查
+    - 默认清理24小时前已完成/失败的任务
+    - 最大任务数量限制为1000个
     """
     
     _instance = None
     _lock = threading.Lock()
+    
+    # 配置常量
+    MAX_TASKS = 1000  # 最大任务数量
+    CLEANUP_INTERVAL_TASKS = 50  # 每创建50个任务检查一次清理
+    DEFAULT_MAX_AGE_HOURS = 24  # 默认任务保留时间（小时）
     
     def __new__(cls):
         """单例模式"""
@@ -68,7 +78,38 @@ class TaskManager:
                     cls._instance = super().__new__(cls)
                     cls._instance._tasks: Dict[str, Task] = {}
                     cls._instance._task_lock = threading.Lock()
+                    cls._instance._tasks_created_count = 0  # 用于触发定期清理
+                    cls._instance._last_cleanup_time = datetime.now()
         return cls._instance
+    
+    def _maybe_cleanup(self):
+        """
+        检查是否需要清理旧任务
+        
+        触发条件：
+        1. 任务数量超过最大限制
+        2. 每创建 CLEANUP_INTERVAL_TASKS 个任务检查一次
+        3. 距离上次清理超过1小时
+        """
+        current_time = datetime.now()
+        should_cleanup = False
+        
+        # 条件1：任务数量超过最大限制
+        if len(self._tasks) >= self.MAX_TASKS:
+            should_cleanup = True
+        
+        # 条件2：定期检查
+        if self._tasks_created_count >= self.CLEANUP_INTERVAL_TASKS:
+            self._tasks_created_count = 0
+            should_cleanup = True
+        
+        # 条件3：距离上次清理超过1小时
+        if (current_time - self._last_cleanup_time).total_seconds() > 3600:
+            should_cleanup = True
+        
+        if should_cleanup:
+            self._last_cleanup_time = current_time
+            self.cleanup_old_tasks(max_age_hours=self.DEFAULT_MAX_AGE_HOURS)
     
     def create_task(self, task_type: str, metadata: Optional[Dict] = None) -> str:
         """
@@ -95,6 +136,10 @@ class TaskManager:
         
         with self._task_lock:
             self._tasks[task_id] = task
+            self._tasks_created_count += 1
+        
+        # 检查是否需要自动清理旧任务（防止内存泄漏）
+        self._maybe_cleanup()
         
         return task_id
     
@@ -170,15 +215,38 @@ class TaskManager:
             return [t.to_dict() for t in sorted(tasks, key=lambda x: x.created_at, reverse=True)]
     
     def cleanup_old_tasks(self, max_age_hours: int = 24):
-        """清理旧任务"""
-        from datetime import timedelta
+        """
+        清理旧任务
+        
+        清理策略：
+        1. 删除超过 max_age_hours 的已完成/失败任务
+        2. 如果任务数量仍超过 MAX_TASKS，删除最旧的已完成/失败任务
+        
+        Args:
+            max_age_hours: 任务保留的最大小时数
+        """
         cutoff = datetime.now() - timedelta(hours=max_age_hours)
         
         with self._task_lock:
+            # 第一轮：删除超时的已完成/失败任务
             old_ids = [
                 tid for tid, task in self._tasks.items()
                 if task.created_at < cutoff and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]
             ]
             for tid in old_ids:
                 del self._tasks[tid]
+            
+            # 第二轮：如果任务数量仍超过限制，删除最旧的已完成/失败任务
+            if len(self._tasks) >= self.MAX_TASKS:
+                finished_tasks = [
+                    (tid, task) for tid, task in self._tasks.items()
+                    if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]
+                ]
+                # 按创建时间排序，最旧的在前
+                finished_tasks.sort(key=lambda x: x[1].created_at)
+                
+                # 删除一半的已完成任务，保留较新的
+                tasks_to_remove = len(finished_tasks) // 2
+                for tid, _ in finished_tasks[:tasks_to_remove]:
+                    del self._tasks[tid]
 

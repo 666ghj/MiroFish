@@ -135,9 +135,47 @@ class SimulationManager:
         # 内存中的模拟状态缓存
         self._simulations: Dict[str, SimulationState] = {}
     
+    @staticmethod
+    def _validate_simulation_id(simulation_id: str) -> bool:
+        """
+        验证 simulation_id 是否安全，防止路径遍历攻击
+        
+        Args:
+            simulation_id: 要验证的模拟ID
+            
+        Returns:
+            如果ID安全返回 True，否则返回 False
+        """
+        if not simulation_id:
+            return False
+        
+        # 检查是否包含路径分隔符或路径遍历序列
+        dangerous_patterns = ['..', '/', '\\', '\x00']
+        for pattern in dangerous_patterns:
+            if pattern in simulation_id:
+                return False
+        
+        # 只允许字母、数字、下划线和连字符
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+$', simulation_id):
+            return False
+        
+        return True
+    
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
+        # 安全检查：防止路径遍历攻击
+        if not self._validate_simulation_id(simulation_id):
+            raise ValueError(f"无效的 simulation_id: {simulation_id}")
+        
         sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        
+        # 额外安全检查：确保结果路径在预期目录内
+        real_sim_dir = os.path.realpath(sim_dir)
+        real_base_dir = os.path.realpath(self.SIMULATION_DATA_DIR)
+        if not real_sim_dir.startswith(real_base_dir + os.sep):
+            raise ValueError(f"无效的 simulation_id: {simulation_id}")
+        
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     

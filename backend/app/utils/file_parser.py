@@ -111,7 +111,21 @@ def split_text_into_chunks(
         
     Returns:
         文本块列表
+        
+    Raises:
+        ValueError: 如果参数无效（overlap >= chunk_size）
     """
+    # 参数验证：防止无限循环
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size 必须大于 0，当前值: {chunk_size}")
+    if overlap < 0:
+        raise ValueError(f"overlap 不能为负数，当前值: {overlap}")
+    if overlap >= chunk_size:
+        raise ValueError(f"overlap ({overlap}) 必须小于 chunk_size ({chunk_size})，否则会导致无限循环")
+    
+    if not text or not text.strip():
+        return []
+    
     if len(text) <= chunk_size:
         return [text] if text.strip() else []
     
@@ -135,7 +149,17 @@ def split_text_into_chunks(
             chunks.append(chunk)
         
         # 下一个块从重叠位置开始
-        start = end - overlap if end < len(text) else len(text)
+        if end >= len(text):
+            # 已经处理到文本末尾，退出循环
+            break
+        
+        # 计算新的起始位置，确保至少前进1个字符以防止无限循环
+        new_start = end - overlap
+        if new_start <= start:
+            # 如果新起始位置没有前进（可能因为end被调整到接近start的位置），
+            # 强制前进至少1个字符
+            new_start = start + 1
+        start = new_start
     
     return chunks
 
