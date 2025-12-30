@@ -68,3 +68,17 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 列出历史项目
+ * @param {number} limit
+ */
+export function listProjects(limit = 50) {
+  return requestWithRetry(() =>
+    service({
+      url: '/api/graph/project/list',
+      method: 'get',
+      params: { limit }
+    })
+  )
+}
