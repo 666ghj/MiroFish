@@ -355,11 +355,11 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  /* 60px x 60px 的正方形网格 */
+  /* 40px x 40px 的正方形网格 */
   background-image: 
-    linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
-  background-size: 60px 60px;
+    linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 50px 50px;
   background-position: center center;
 }
 
