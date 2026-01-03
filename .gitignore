@@ -9,6 +9,9 @@ Thumbs.db
 .env.development
 .env.test
 .env.production
+MiroFish-config/
+openspec/
+AGENTS.md
 
 # Python
 __pycache__/

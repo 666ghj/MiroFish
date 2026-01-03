@@ -471,6 +471,69 @@ class SimulationManager:
                         simulations.append(state)
         
         return simulations
+
+    def branch_simulation(self, source_simulation_id: str) -> SimulationState:
+        """
+        基于已有模拟创建“安全分支”（新 simulation_id + 新目录）
+
+        目标：
+        - 不修改/不删除源模拟目录中的任何文件（避免污染其他分支）
+        - 仅复制“准备阶段产物”（profiles + simulation_config.json）
+        - 新分支处于 READY 状态，可继续 start 运行并进入 interview 等待模式
+        """
+        source_state = self.get_simulation(source_simulation_id)
+        if not source_state:
+            raise ValueError(f"模拟不存在: {source_simulation_id}")
+
+        src_dir = self._get_simulation_dir(source_simulation_id)
+        src_config = os.path.join(src_dir, "simulation_config.json")
+        if not os.path.exists(src_config):
+            raise ValueError("源模拟未准备完成：缺少 simulation_config.json（请先调用 /prepare）")
+
+        src_twitter_profiles = os.path.join(src_dir, "twitter_profiles.csv")
+        src_reddit_profiles = os.path.join(src_dir, "reddit_profiles.json")
+
+        if source_state.enable_twitter and not os.path.exists(src_twitter_profiles):
+            raise ValueError("源模拟未准备完成：缺少 twitter_profiles.csv")
+        if source_state.enable_reddit and not os.path.exists(src_reddit_profiles):
+            raise ValueError("源模拟未准备完成：缺少 reddit_profiles.json")
+
+        # 创建新 simulation（新目录）
+        new_state = self.create_simulation(
+            project_id=source_state.project_id,
+            graph_id=source_state.graph_id,
+            enable_twitter=source_state.enable_twitter,
+            enable_reddit=source_state.enable_reddit,
+        )
+        dst_dir = self._get_simulation_dir(new_state.simulation_id)
+
+        # 复制 profiles（不复制 DB/logs/run_state 等）
+        if source_state.enable_twitter and os.path.exists(src_twitter_profiles):
+            shutil.copy2(src_twitter_profiles, os.path.join(dst_dir, "twitter_profiles.csv"))
+        if source_state.enable_reddit and os.path.exists(src_reddit_profiles):
+            shutil.copy2(src_reddit_profiles, os.path.join(dst_dir, "reddit_profiles.json"))
+
+        # 复制并修正 config（确保 simulation_id 不复用）
+        with open(src_config, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+        config_data["simulation_id"] = new_state.simulation_id
+        config_data["project_id"] = new_state.project_id
+        config_data["graph_id"] = new_state.graph_id
+
+        with open(os.path.join(dst_dir, "simulation_config.json"), "w", encoding="utf-8") as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+        # 继承部分元数据，方便 History/展示
+        new_state.status = SimulationStatus.READY
+        new_state.config_generated = True
+        new_state.config_reasoning = source_state.config_reasoning
+        new_state.entities_count = source_state.entities_count
+        new_state.profiles_count = source_state.profiles_count
+        new_state.entity_types = list(source_state.entity_types)
+        self._save_simulation_state(new_state)
+
+        logger.info(f"创建模拟分支: {source_simulation_id} -> {new_state.simulation_id}")
+        return new_state
     
     def get_profiles(self, simulation_id: str, platform: str = "reddit") -> List[Dict[str, Any]]:
         """获取模拟的Agent Profile"""

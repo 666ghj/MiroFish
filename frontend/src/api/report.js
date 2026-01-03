@@ -43,6 +43,17 @@ export const getReport = (reportId) => {
 }
 
 /**
+ * 列出所有报告
+ * @param {string|null} simulationId - 可选，按模拟ID过滤
+ * @param {number} limit
+ */
+export const listReports = (simulationId = null, limit = 50) => {
+  const params = { limit }
+  if (simulationId) params.simulation_id = simulationId
+  return service.get('/api/report/list', { params })
+}
+
+/**
  * 与 Report Agent 对话
  * @param {Object} data - { simulation_id, message, chat_history? }
  */

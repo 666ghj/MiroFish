@@ -1,20 +1,50 @@
 """
 配置管理
-统一从项目根目录的 .env 文件加载配置
+本地优先从可预测位置加载配置（支持 MiroFish-config/.env）
 """
 
 import os
 from dotenv import load_dotenv
 
-# 加载项目根目录的 .env 文件
-# 路径: MiroFish/.env (相对于 backend/app/config.py)
-project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
+def _normalize_openai_base_url(url: str) -> str:
+    s = (url or "").strip()
+    if not s:
+        return s
+    s = s.rstrip("/")
+    # OpenAI SDK expects base_url to include the API prefix (typically /v1).
+    if s.endswith("/v1") or "/v1/" in s:
+        return s
+    return f"{s}/v1"
 
-if os.path.exists(project_root_env):
-    load_dotenv(project_root_env)
-else:
-    # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
+def _load_env():
+    """
+    加载运行时环境变量（按优先级）
+    1) 显式指定: MIROFISH_ENV_FILE
+    2) 仓库根目录: .env
+    3) 本地配置目录: MiroFish-config/.env
+    4) 兜底: 使用当前进程环境变量
+    """
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+
+    explicit_env = os.environ.get('MIROFISH_ENV_FILE')
+    if explicit_env and os.path.exists(explicit_env):
+        load_dotenv(explicit_env)
+        return
+
+    repo_env = os.path.join(repo_root, '.env')
+    if os.path.exists(repo_env):
+        load_dotenv(repo_env)
+        return
+
+    local_env = os.path.join(repo_root, 'MiroFish-config', '.env')
+    if os.path.exists(local_env):
+        load_dotenv(local_env)
+        return
+
     load_dotenv()
+
+
+_load_env()
 
 
 class Config:
@@ -29,7 +59,7 @@ class Config:
     
     # LLM配置（统一使用OpenAI格式）
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
-    LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
+    LLM_BASE_URL = _normalize_openai_base_url(os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1'))
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
     # Zep配置
@@ -47,6 +77,11 @@ class Config:
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
     OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+
+    # Simulation lifecycle (local)
+    # When enabled, backend shutdown will NOT terminate running simulation processes.
+    # This is required to keep the interview environment alive across backend restarts.
+    SIMULATION_DETACH_ON_BACKEND_EXIT = os.environ.get('SIMULATION_DETACH_ON_BACKEND_EXIT', 'False').lower() == 'true'
     
     # OASIS平台可用动作配置
     OASIS_TWITTER_ACTIONS = [
@@ -72,4 +107,3 @@ class Config:
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
         return errors
-

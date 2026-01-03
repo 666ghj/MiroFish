@@ -362,7 +362,15 @@ def build_graph():
         
         # 创建异步任务
         task_manager = TaskManager()
-        task_id = task_manager.create_task(f"构建图谱: {graph_name}")
+        task_id = task_manager.create_task(
+            f"构建图谱: {graph_name}",
+            metadata={
+                "project_id": project_id,
+                "graph_name": graph_name,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+            }
+        )
         logger.info(f"创建图谱构建任务: task_id={task_id}, project_id={project_id}")
         
         # 更新项目状态
@@ -388,7 +396,8 @@ def build_graph():
                 task_manager.update_task(
                     task_id,
                     message="文本分块中...",
-                    progress=5
+                    progress=5,
+                    metadata={"stage": "chunking_text"}
                 )
                 chunks = TextProcessor.split_text(
                     text, 
@@ -396,18 +405,35 @@ def build_graph():
                     overlap=chunk_overlap
                 )
                 total_chunks = len(chunks)
+                task_manager.update_task(
+                    task_id,
+                    metadata={
+                        "total_chunks": total_chunks,
+                        "stage": "chunks_ready",
+                    }
+                )
                 
                 # 创建图谱
                 task_manager.update_task(
                     task_id,
                     message="创建Zep图谱...",
-                    progress=10
+                    progress=10,
+                    metadata={"stage": "creating_graph"}
                 )
                 graph_id = builder.create_graph(name=graph_name)
                 
                 # 更新项目的graph_id
                 project.graph_id = graph_id
                 ProjectManager.save_project(project)
+                
+                # 记录关键断点信息（用于断点续跑/恢复）
+                task_manager.update_task(
+                    task_id,
+                    metadata={
+                        "graph_id": graph_id,
+                        "stage": "graph_created",
+                    }
+                )
                 
                 # 设置本体
                 task_manager.update_task(
@@ -416,6 +442,10 @@ def build_graph():
                     progress=15
                 )
                 builder.set_ontology(graph_id, ontology)
+                task_manager.update_task(
+                    task_id,
+                    metadata={"stage": "ontology_set"}
+                )
                 
                 # 添加文本（progress_callback 签名是 (msg, progress_ratio)）
                 def add_progress_callback(msg, progress_ratio):
@@ -432,11 +462,37 @@ def build_graph():
                     progress=15
                 )
                 
+                # 批次回调：增量持久化 episode_uuids / sent_chunks，支持重启后继续发送剩余 chunks
+                def add_batch_callback(sent_chunks, new_episode_uuids, all_episode_uuids):
+                    task_manager.update_task(
+                        task_id,
+                        metadata={
+                            "episode_uuids": all_episode_uuids,
+                            "sent_chunks": sent_chunks,
+                            "total_chunks": total_chunks,
+                            "batch_size": 3,
+                            "stage": "episodes_sending",
+                        }
+                    )
+
                 episode_uuids = builder.add_text_batches(
                     graph_id, 
                     chunks,
                     batch_size=3,
-                    progress_callback=add_progress_callback
+                    progress_callback=add_progress_callback,
+                    batch_callback=add_batch_callback,
+                )
+                
+                # 保存 episode_uuids 以便重启后继续等待处理（断点续跑）
+                task_manager.update_task(
+                    task_id,
+                    metadata={
+                        "episode_uuids": episode_uuids,
+                        "total_chunks": total_chunks,
+                        "batch_size": 3,
+                        "sent_chunks": total_chunks,
+                        "stage": "episodes_sent",
+                    }
                 )
                 
                 # 等待Zep处理完成（查询每个episode的processed状态）
@@ -455,6 +511,10 @@ def build_graph():
                     )
                 
                 builder._wait_for_episodes(episode_uuids, wait_progress_callback)
+                task_manager.update_task(
+                    task_id,
+                    metadata={"stage": "episodes_processed"}
+                )
                 
                 # 获取图谱数据
                 task_manager.update_task(
@@ -557,6 +617,282 @@ def list_tasks():
         "data": [t.to_dict() for t in tasks],
         "count": len(tasks)
     })
+
+
+@graph_bp.route('/build/resume', methods=['POST'])
+def resume_graph_build():
+    """
+    恢复图谱构建（断点续跑）
+
+    适用场景：后端重启/中断后，前端仍持有 task_id 或 project_id，
+    希望继续等待 Zep 处理并完成收尾步骤（获取图谱数据、更新项目状态）。
+
+    请求（JSON）：
+        {
+            "project_id": "proj_xxxx",   // 可选（建议提供）
+            "task_id": "uuid"            // 可选（建议提供）
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        project_id = data.get("project_id")
+        task_id = data.get("task_id")
+
+        project = None
+        if project_id:
+            project = ProjectManager.get_project(project_id)
+            if not project:
+                return jsonify({"success": False, "error": f"项目不存在: {project_id}"}), 404
+            if not task_id:
+                task_id = project.graph_build_task_id
+
+        if not task_id:
+            return jsonify({"success": False, "error": "请提供 task_id 或 project_id"}), 400
+
+        task_manager = TaskManager()
+        task = task_manager.get_task(task_id)
+        if not task:
+            return jsonify({"success": False, "error": f"任务不存在: {task_id}"}), 404
+
+        # 尝试从任务元数据补齐 project
+        if not project and task.metadata.get("project_id"):
+            project = ProjectManager.get_project(task.metadata.get("project_id"))
+
+        graph_id = task.metadata.get("graph_id") or (project.graph_id if project else None)
+        if not graph_id:
+            return jsonify({"success": False, "error": "缺少 graph_id，无法恢复"}), 400
+
+        episode_uuids = task.metadata.get("episode_uuids") or []
+
+        # 已完成则直接返回
+        if task.status == TaskStatus.COMPLETED:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "project_id": project.project_id if project else project_id,
+                    "task_id": task_id,
+                    "graph_id": graph_id,
+                    "status": "completed",
+                    "message": "图谱构建已完成"
+                }
+            })
+
+        def resume_task():
+            build_logger = get_logger("mirofish.build.resume")
+            try:
+                # 尝试补齐 project / text / ontology（恢复发送剩余 chunks 时需要）
+                effective_project = project
+                if not effective_project and task.metadata.get("project_id"):
+                    effective_project = ProjectManager.get_project(task.metadata.get("project_id"))
+
+                if not effective_project:
+                    raise ValueError("缺少项目上下文，无法恢复图谱构建")
+
+                text = ProjectManager.get_extracted_text(effective_project.project_id)
+                if not text:
+                    raise ValueError("未找到提取的文本内容，无法恢复图谱构建")
+
+                ontology = effective_project.ontology
+                if not ontology:
+                    raise ValueError("未找到本体定义，无法恢复图谱构建")
+
+                chunk_size = int(
+                    task.metadata.get("chunk_size")
+                    or effective_project.chunk_size
+                    or Config.DEFAULT_CHUNK_SIZE
+                )
+                chunk_overlap = int(
+                    task.metadata.get("chunk_overlap")
+                    or effective_project.chunk_overlap
+                    or Config.DEFAULT_CHUNK_OVERLAP
+                )
+                batch_size = int(task.metadata.get("batch_size") or 3)
+
+                chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=chunk_overlap)
+                total_chunks = len(chunks)
+
+                # 允许任务中途崩溃：episode_uuids / sent_chunks 持久化后可继续发送剩余 chunks
+                episode_uuids = list(task.metadata.get("episode_uuids") or [])
+                sent_chunks = int(task.metadata.get("sent_chunks") or len(episode_uuids) or 0)
+                sent_chunks = max(0, min(sent_chunks, total_chunks))
+
+                task_manager.update_task(
+                    task_id,
+                    status=TaskStatus.PROCESSING,
+                    message="恢复构建：加载断点信息...",
+                    progress=15,
+                    metadata={
+                        "stage": "resuming",
+                        "graph_id": graph_id,
+                        "total_chunks": total_chunks,
+                        "sent_chunks": sent_chunks,
+                        "batch_size": batch_size,
+                    }
+                )
+
+                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+
+                # 保险起见：重新设置本体（幂等），避免中断发生在 set_ontology 之前
+                try:
+                    builder.set_ontology(graph_id, ontology)
+                    task_manager.update_task(task_id, metadata={"stage": "ontology_set"})
+                except Exception as e:
+                    build_logger.warning(f"[{task_id}] 恢复时设置本体失败（将继续尝试后续步骤）: {e}")
+
+                # 1) 如果还有未发送的 chunks，则继续发送
+                if total_chunks > 0 and sent_chunks < total_chunks:
+                    remaining_chunks = chunks[sent_chunks:]
+
+                    def add_progress_callback(msg, progress_ratio):
+                        # progress_ratio 基于 remaining_chunks；映射到 전체 15% - 55%
+                        overall_ratio = (sent_chunks + (progress_ratio * len(remaining_chunks))) / total_chunks
+                        progress = 15 + int(overall_ratio * 40)
+                        task_manager.update_task(
+                            task_id,
+                            message=f"[恢复] {msg}",
+                            progress=progress
+                        )
+
+                    base_episode_uuids = list(episode_uuids)
+
+                    def add_batch_callback(sent_in_remaining, new_episode_uuids, all_new_episode_uuids):
+                        total_sent = sent_chunks + sent_in_remaining
+                        combined = base_episode_uuids + list(all_new_episode_uuids)
+                        task_manager.update_task(
+                            task_id,
+                            metadata={
+                                "episode_uuids": combined,
+                                "sent_chunks": total_sent,
+                                "total_chunks": total_chunks,
+                                "batch_size": batch_size,
+                                "stage": "episodes_sending",
+                            }
+                        )
+
+                    task_manager.update_task(
+                        task_id,
+                        message=f"恢复构建：继续发送文本块 ({sent_chunks}/{total_chunks})...",
+                        progress=15 + int((sent_chunks / total_chunks) * 40),
+                        metadata={"stage": "episodes_sending"}
+                    )
+
+                    new_episode_uuids_final = builder.add_text_batches(
+                        graph_id,
+                        remaining_chunks,
+                        batch_size=batch_size,
+                        progress_callback=add_progress_callback,
+                        batch_callback=add_batch_callback,
+                    )
+
+                    episode_uuids = base_episode_uuids + list(new_episode_uuids_final or [])
+                    sent_chunks = total_chunks
+                    task_manager.update_task(
+                        task_id,
+                        metadata={
+                            "episode_uuids": episode_uuids,
+                            "sent_chunks": sent_chunks,
+                            "total_chunks": total_chunks,
+                            "batch_size": batch_size,
+                            "stage": "episodes_sent",
+                        }
+                    )
+
+                # 2) 如果保存了 episode_uuids，则继续等待处理；否则直接尝试获取图谱数据
+                if episode_uuids:
+                    task_manager.update_task(
+                        task_id,
+                        message="恢复构建：等待Zep处理数据...",
+                        progress=55,
+                        metadata={"stage": "waiting_episodes"}
+                    )
+
+                    def wait_progress_callback(msg, progress_ratio):
+                        progress = 55 + int(progress_ratio * 35)  # 55% - 90%
+                        task_manager.update_task(
+                            task_id,
+                            message=f"[恢复] {msg}",
+                            progress=progress
+                        )
+
+                    builder._wait_for_episodes(episode_uuids, wait_progress_callback)
+                    task_manager.update_task(task_id, metadata={"stage": "episodes_processed"})
+
+                task_manager.update_task(
+                    task_id,
+                    message="恢复构建：获取图谱数据...",
+                    progress=95,
+                    metadata={"stage": "fetching_graph"}
+                )
+
+                graph_data = builder.get_graph_data(graph_id)
+                node_count = graph_data.get("node_count", 0)
+                edge_count = graph_data.get("edge_count", 0)
+
+                effective_project.graph_id = graph_id
+                effective_project.status = ProjectStatus.GRAPH_COMPLETED
+                effective_project.error = None
+                ProjectManager.save_project(effective_project)
+
+                task_manager.update_task(
+                    task_id,
+                    status=TaskStatus.COMPLETED,
+                    message="图谱构建完成（已恢复）",
+                    progress=100,
+                    result={
+                        "project_id": effective_project.project_id,
+                        "graph_id": graph_id,
+                        "node_count": node_count,
+                        "edge_count": edge_count,
+                        "chunk_count": total_chunks,
+                    },
+                    metadata={"stage": "completed"}
+                )
+
+                build_logger.info(
+                    f"[{task_id}] 图谱恢复完成: graph_id={graph_id}, 节点={node_count}, 边={edge_count}"
+                )
+
+            except Exception as e:
+                build_logger.error(f"[{task_id}] 图谱恢复失败: {str(e)}")
+                build_logger.debug(traceback.format_exc())
+
+                try:
+                    if effective_project:
+                        effective_project.status = ProjectStatus.FAILED
+                        effective_project.error = f"恢复失败: {str(e)}"
+                        ProjectManager.save_project(effective_project)
+                except Exception:
+                    pass
+
+                task_manager.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED,
+                    message=f"恢复失败: {str(e)}",
+                    error=traceback.format_exc(),
+                    metadata={"stage": "resume_failed"}
+                )
+
+        thread = threading.Thread(target=resume_task, daemon=True)
+        thread.start()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "project_id": project.project_id if project else project_id,
+                "task_id": task_id,
+                "graph_id": graph_id,
+                "status": "processing",
+                "message": "图谱构建恢复任务已启动"
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"恢复图谱构建失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 # ============== 图谱数据接口 ==============

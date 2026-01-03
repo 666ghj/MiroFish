@@ -9,6 +9,9 @@
     "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:full": "node scripts/smoke.mjs --mode full --yes",
+    "smoke:full:cleanup": "node scripts/smoke.mjs --mode full --yes --cleanup",
     "build": "cd frontend && npm run build"
   },
   "devDependencies": {

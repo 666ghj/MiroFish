@@ -59,6 +59,8 @@ MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 
 ## 🚀 快速开始
 
+> 本次 PR 新增：History 页面、报告断点续跑、Interview 环境保活/安全激活、以及一键烟测脚本。简要说明见 `docs/UPDATES.md`。
+
 ### 前置要求
 
 > 注：MiroFish在Mac环境下完成开发与测试，Windows兼容性未知，测试中

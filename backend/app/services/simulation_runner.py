@@ -333,7 +333,14 @@ class SimulationRunner:
         # 检查是否已在运行
         existing = cls.get_run_state(simulation_id)
         if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
-            raise ValueError(f"模拟已在运行中: {simulation_id}")
+            # 后端重启或异常时可能丢失 Popen 句柄：用 pid 做一次保守校验
+            pid = existing.process_pid
+            if pid and not cls._is_pid_alive(pid):
+                existing.runner_status = RunnerStatus.STOPPED
+                existing.error = "检测到模拟进程已退出（可能是后端重启/异常），允许重新启动"
+                cls._save_run_state(existing)
+            else:
+                raise ValueError(f"模拟已在运行中: {simulation_id}")
         
         # 加载模拟配置
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
@@ -767,6 +774,90 @@ class SimulationRunner:
                 logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
                 os.killpg(pgid, signal.SIGKILL)
                 process.wait(timeout=5)
+
+    @classmethod
+    def _is_pid_alive(cls, pid: Optional[int]) -> bool:
+        """
+        检查 PID 是否仍存活
+
+        Note:
+        - 在 Unix 上使用 `os.kill(pid, 0)` 探测
+        - 在 Windows 上使用 `taskkill`/`tasklist` 的可用性不一致，这里做保守判断
+        """
+        if not pid or pid <= 0:
+            return False
+
+        if IS_WINDOWS:
+            # 最小实现：尝试发送 0 信号不可用；改用 tasklist 探测
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                return str(pid) in (result.stdout or "")
+            except Exception:
+                return False
+
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # 进程存在但无权限（一般不会发生在本地同用户）
+            return True
+
+    @classmethod
+    def _terminate_pid(cls, pid: int, simulation_id: str, timeout: int = 10):
+        """
+        跨平台终止 PID（尽量终止进程树/进程组）
+
+        用于后端重启后已丢失 Popen 句柄的场景。
+        """
+        if not pid or pid <= 0:
+            return
+
+        if IS_WINDOWS:
+            logger.info(f"终止进程树 (Windows): simulation={simulation_id}, pid={pid}")
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                # 强制兜底
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid), "/T"],
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception as e:
+                logger.warning(f"taskkill 失败: {simulation_id}, pid={pid}, error={e}")
+            return
+
+        # Unix: 优先按进程组终止（start_new_session=True 时 pgid==pid）
+        try:
+            logger.info(f"终止进程组 (Unix): simulation={simulation_id}, pgid={pid}")
+            os.killpg(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception as e:
+            logger.warning(f"发送 SIGTERM 失败: {simulation_id}, pid={pid}, error={e}")
+
+        # 等待进程退出（最多 timeout 秒），否则强制 SIGKILL
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if not cls._is_pid_alive(pid):
+                return
+            time.sleep(0.2)
+
+        try:
+            logger.warning(f"进程组未响应 SIGTERM，强制终止: {simulation_id}")
+            os.killpg(pid, signal.SIGKILL)
+        except Exception:
+            pass
     
     @classmethod
     def stop_simulation(cls, simulation_id: str) -> SimulationRunState:
@@ -797,6 +888,11 @@ class SimulationRunner:
                     process.wait(timeout=5)
                 except Exception:
                     process.kill()
+        else:
+            # 后端重启后可能丢失 Popen 句柄，但 run_state.json 仍包含 pid
+            pid = state.process_pid
+            if pid and cls._is_pid_alive(pid):
+                cls._terminate_pid(pid, simulation_id)
         
         state.runner_status = RunnerStatus.STOPPED
         state.twitter_running = False
@@ -1197,6 +1293,33 @@ class SimulationRunner:
         if not has_processes and not has_updaters:
             return  # 没有需要清理的内容，静默返回
         
+        # 本地“detach”模式：后端退出不终止模拟进程（用于保持 interview env 存活）
+        if Config.SIMULATION_DETACH_ON_BACKEND_EXIT:
+            logger.info("SIMULATION_DETACH_ON_BACKEND_EXIT=true，跳过终止模拟进程（仅停止本地更新器）")
+
+            # 停止所有图谱记忆更新器（后端内资源）
+            try:
+                ZepGraphMemoryManager.stop_all()
+            except Exception as e:
+                logger.error(f"停止图谱记忆更新器失败: {e}")
+            cls._graph_memory_enabled.clear()
+
+            # 清理文件句柄（Popen 子进程仍持有自己的 fd，不影响继续写入）
+            for _, file_handle in list(cls._stdout_files.items()):
+                try:
+                    if file_handle:
+                        file_handle.close()
+                except Exception:
+                    pass
+            cls._stdout_files.clear()
+            cls._stderr_files.clear()
+
+            # 清空内存映射，避免后续误用旧句柄
+            cls._processes.clear()
+            cls._action_queues.clear()
+            cls._monitor_threads.clear()
+            return
+
         logger.info("正在清理所有模拟进程...")
         
         # 首先停止所有图谱记忆更新器（stop_all 内部会打印日志）
@@ -1362,6 +1485,18 @@ class SimulationRunner:
             if process.poll() is None:
                 running.append(sim_id)
         return running
+
+    @classmethod
+    def get_process_info(cls, simulation_id: str) -> Dict[str, Any]:
+        """
+        获取模拟子进程信息（用于后端重启后的 reattach/diagnostics）
+        """
+        state = cls.get_run_state(simulation_id)
+        pid = state.process_pid if state else None
+        return {
+            "process_pid": pid,
+            "process_alive": cls._is_pid_alive(pid),
+        }
     
     # ============== Interview 功能 ==============
     
@@ -1760,4 +1895,3 @@ class SimulationRunner:
             results = results[:limit]
         
         return results
-

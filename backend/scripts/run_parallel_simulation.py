@@ -333,12 +333,49 @@ class ParallelIPCHandler:
                 action_args={"prompt": prompt}
             )
             actions = {agent: interview_action}
-            await env.step(actions)
-            
+            max_retries = int(os.environ.get("OASIS_INTERVIEW_MAX_RETRIES", "2"))
+            backoff_base = float(os.environ.get("OASIS_INTERVIEW_RETRY_BACKOFF_SECONDS", "1.0"))
+
+            def _is_retryable(err: Exception) -> bool:
+                msg = str(err).lower()
+                return any(
+                    needle in msg
+                    for needle in (
+                        "eof",
+                        "timeout",
+                        "timed out",
+                        "rate limit",
+                        "429",
+                        "internalservererror",
+                        "internal server error",
+                        "server error",
+                        "temporarily unavailable",
+                        "connection reset",
+                        "connection aborted",
+                        "connection error",
+                    )
+                )
+
+            for attempt in range(max_retries + 1):
+                try:
+                    await env.step(actions)
+                    break
+                except Exception as e:
+                    # 有些情况下 env.step 抛错，但 DB 已写入结果；优先读取最新结果避免重复消耗
+                    maybe = self._get_interview_result(agent_id, actual_platform)
+                    if maybe.get("response"):
+                        maybe["platform"] = actual_platform
+                        return maybe
+                    if attempt >= max_retries or not _is_retryable(e):
+                        raise
+                    # 轻量退避，降低对上游的瞬时压力
+                    jitter = random.uniform(0, 0.5)
+                    await asyncio.sleep(backoff_base * (2**attempt) + jitter)
+
             result = self._get_interview_result(agent_id, actual_platform)
             result["platform"] = actual_platform
             return result
-            
+
         except Exception as e:
             return {"platform": platform, "error": str(e)}
     
@@ -426,10 +463,10 @@ class ParallelIPCHandler:
                 - None/不指定: 每个Agent同时采访两个平台
         """
         # 按平台分组
-        twitter_interviews = []
-        reddit_interviews = []
-        both_platforms_interviews = []  # 需要同时采访两个平台的
-        
+        twitter_interviews: List[Dict[str, Any]] = []
+        reddit_interviews: List[Dict[str, Any]] = []
+        both_platforms_interviews: List[Dict[str, Any]] = []  # 需要同时采访两个平台的
+
         for interview in interviews:
             item_platform = interview.get("platform", platform)
             if item_platform == "twitter":
@@ -437,82 +474,63 @@ class ParallelIPCHandler:
             elif item_platform == "reddit":
                 reddit_interviews.append(interview)
             else:
-                # 未指定平台：两个平台都采访
                 both_platforms_interviews.append(interview)
-        
+
         # 把 both_platforms_interviews 拆分到两个平台
         if both_platforms_interviews:
             if self.twitter_env:
                 twitter_interviews.extend(both_platforms_interviews)
             if self.reddit_env:
                 reddit_interviews.extend(both_platforms_interviews)
-        
-        results = {}
-        
-        # 处理Twitter平台的采访
-        if twitter_interviews and self.twitter_env:
-            try:
-                twitter_actions = {}
+
+        # 稳定性优先：逐个执行 interview（避免一次 env.step 批量触发并发 LLM 调用导致整体失败）
+        results: Dict[str, Any] = {}
+        errors: List[str] = []
+
+        if twitter_interviews:
+            if not self.twitter_env or not self.twitter_agent_graph:
+                errors.append("twitter: 平台不可用")
+            else:
                 for interview in twitter_interviews:
                     agent_id = interview.get("agent_id")
                     prompt = interview.get("prompt", "")
-                    try:
-                        agent = self.twitter_agent_graph.get_agent(agent_id)
-                        twitter_actions[agent] = ManualAction(
-                            action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
-                        )
-                    except Exception as e:
-                        print(f"  警告: 无法获取Twitter Agent {agent_id}: {e}")
-                
-                if twitter_actions:
-                    await self.twitter_env.step(twitter_actions)
-                    
-                    for interview in twitter_interviews:
-                        agent_id = interview.get("agent_id")
-                        result = self._get_interview_result(agent_id, "twitter")
-                        result["platform"] = "twitter"
-                        results[f"twitter_{agent_id}"] = result
-            except Exception as e:
-                print(f"  Twitter批量Interview失败: {e}")
-        
-        # 处理Reddit平台的采访
-        if reddit_interviews and self.reddit_env:
-            try:
-                reddit_actions = {}
+                    r = await self._interview_single_platform(agent_id, prompt, "twitter")
+                    if isinstance(r, dict) and "error" in r:
+                        errors.append(f"twitter_{agent_id}: {r.get('error')}")
+                    else:
+                        results[f"twitter_{agent_id}"] = r
+
+        if reddit_interviews:
+            if not self.reddit_env or not self.reddit_agent_graph:
+                errors.append("reddit: 平台不可用")
+            else:
                 for interview in reddit_interviews:
                     agent_id = interview.get("agent_id")
                     prompt = interview.get("prompt", "")
-                    try:
-                        agent = self.reddit_agent_graph.get_agent(agent_id)
-                        reddit_actions[agent] = ManualAction(
-                            action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
-                        )
-                    except Exception as e:
-                        print(f"  警告: 无法获取Reddit Agent {agent_id}: {e}")
-                
-                if reddit_actions:
-                    await self.reddit_env.step(reddit_actions)
-                    
-                    for interview in reddit_interviews:
-                        agent_id = interview.get("agent_id")
-                        result = self._get_interview_result(agent_id, "reddit")
-                        result["platform"] = "reddit"
-                        results[f"reddit_{agent_id}"] = result
-            except Exception as e:
-                print(f"  Reddit批量Interview失败: {e}")
-        
+                    r = await self._interview_single_platform(agent_id, prompt, "reddit")
+                    if isinstance(r, dict) and "error" in r:
+                        errors.append(f"reddit_{agent_id}: {r.get('error')}")
+                    else:
+                        results[f"reddit_{agent_id}"] = r
+
         if results:
-            self.send_response(command_id, "completed", result={
-                "interviews_count": len(results),
-                "results": results
-            })
-            print(f"  批量Interview完成: {len(results)} 个Agent")
+            self.send_response(
+                command_id,
+                "completed",
+                result={
+                    "interviews_count": len(results),
+                    "results": results,
+                    "errors": errors[:50],
+                },
+            )
+            print(f"  批量Interview完成: {len(results)} 个结果, errors={len(errors)}")
             return True
-        else:
-            self.send_response(command_id, "failed", error="没有成功的采访")
-            return False
+
+        error_msg = "没有成功的采访"
+        if errors:
+            error_msg = "没有成功的采访; " + "; ".join(errors[:10])
+        self.send_response(command_id, "failed", error=error_msg)
+        return False
     
     def _get_interview_result(self, agent_id: int, platform: str) -> Dict[str, Any]:
         """从数据库获取最新的Interview结果"""
@@ -1019,6 +1037,12 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     if not llm_model:
         llm_model = config.get("llm_model", "gpt-4o-mini")
     
+    # 兼容：用户可能只配置到 host（不含 /v1），这里做一次保守归一化
+    if llm_base_url:
+        llm_base_url = llm_base_url.strip().rstrip("/")
+        if not (llm_base_url.endswith("/v1") or "/v1/" in llm_base_url):
+            llm_base_url = f"{llm_base_url}/v1"
+
     # 设置 camel-ai 所需的环境变量
     if llm_api_key:
         os.environ["OPENAI_API_KEY"] = llm_api_key
@@ -1026,7 +1050,12 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
     
+    # 同时兼容 openai>=1.x 与 camel-ai 可能使用的不同环境变量名
+    # - openai>=1.x: OPENAI_BASE_URL
+    # - 部分兼容层/旧版: OPENAI_API_BASE / OPENAI_API_BASE_URL
     if llm_base_url:
+        os.environ["OPENAI_BASE_URL"] = llm_base_url
+        os.environ["OPENAI_API_BASE"] = llm_base_url
         os.environ["OPENAI_API_BASE_URL"] = llm_base_url
     
     print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
