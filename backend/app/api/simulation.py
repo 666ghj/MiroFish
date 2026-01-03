@@ -236,6 +236,61 @@ def create_simulation():
         }), 500
 
 
+@simulation_bp.route('/branch', methods=['POST'])
+def branch_simulation():
+    """
+    创建模拟“安全分支”（新 simulation_id）
+
+    用于在原模拟 interview 环境不可恢复时继续工作：
+    - 不会修改/删除源模拟目录中的任何文件
+    - 仅复制准备阶段产物（profiles + simulation_config.json）
+    - 新分支处于 READY 状态，可继续 /start 运行
+
+    请求（JSON）：
+        {
+            "source_simulation_id": "sim_xxxx"  // 必填
+        }
+
+    返回：
+        {
+            "success": true,
+            "data": {
+                "source_simulation_id": "sim_xxxx",
+                "simulation_id": "sim_new",
+                "status": "ready"
+            }
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        source_simulation_id = data.get("source_simulation_id")
+        if not source_simulation_id:
+            return jsonify({"success": False, "error": "请提供 source_simulation_id"}), 400
+
+        manager = SimulationManager()
+        new_state = manager.branch_simulation(source_simulation_id)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "source_simulation_id": source_simulation_id,
+                "simulation_id": new_state.simulation_id,
+                "status": new_state.status.value,
+            },
+        })
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    except Exception as e:
+        logger.error(f"创建模拟分支失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }), 500
+
+
 def _check_simulation_prepared(simulation_id: str) -> tuple:
     """
     检查模拟是否已经准备完成
@@ -262,12 +317,27 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         return False, {"reason": "模拟目录不存在"}
     
     # 必要文件列表（不包括脚本，脚本位于 backend/scripts/）
-    required_files = [
-        "state.json",
-        "simulation_config.json",
-        "reddit_profiles.json",
-        "twitter_profiles.csv"
-    ]
+    # 平台文件按 enable_* 动态决定，避免单平台时误判未准备完成
+    required_files = ["state.json", "simulation_config.json"]
+    
+    # 读取 state.json 获取平台启用状态（默认双平台）
+    enable_reddit = True
+    enable_twitter = True
+    state_file = os.path.join(simulation_dir, "state.json")
+    if os.path.exists(state_file):
+        try:
+            import json
+            with open(state_file, 'r', encoding='utf-8') as f:
+                state_data_preview = json.load(f)
+            enable_reddit = bool(state_data_preview.get("enable_reddit", True))
+            enable_twitter = bool(state_data_preview.get("enable_twitter", True))
+        except Exception:
+            pass
+    
+    if enable_reddit:
+        required_files.append("reddit_profiles.json")
+    if enable_twitter:
+        required_files.append("twitter_profiles.csv")
     
     # 检查文件是否存在
     existing_files = []
@@ -287,7 +357,6 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         }
     
     # 检查state.json中的状态
-    state_file = os.path.join(simulation_dir, "state.json")
     try:
         import json
         with open(state_file, 'r', encoding='utf-8') as f:
@@ -309,15 +378,14 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - failed: 运行失败（但准备是完成的）
         prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
         if status in prepared_statuses and config_generated:
-            # 获取文件统计信息
-            profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
-            config_file = os.path.join(simulation_dir, "simulation_config.json")
-            
+            # 获取文件统计信息（优先统计 Reddit JSON）
             profiles_count = 0
-            if os.path.exists(profiles_file):
-                with open(profiles_file, 'r', encoding='utf-8') as f:
-                    profiles_data = json.load(f)
-                    profiles_count = len(profiles_data) if isinstance(profiles_data, list) else 0
+            if enable_reddit:
+                profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
+                if os.path.exists(profiles_file):
+                    with open(profiles_file, 'r', encoding='utf-8') as f:
+                        profiles_data = json.load(f)
+                        profiles_count = len(profiles_data) if isinstance(profiles_data, list) else 0
             
             # 如果状态是preparing但文件已完成，自动更新状态为ready
             if status == "preparing":
@@ -2439,12 +2507,20 @@ def get_env_status():
             }), 400
 
         env_alive = SimulationRunner.check_env_alive(simulation_id)
-        
+
         # 获取更详细的状态信息
         env_status = SimulationRunner.get_env_status_detail(simulation_id)
+        process_info = SimulationRunner.get_process_info(simulation_id)
+
+        status = env_status.get("status", "stopped")
+        process_alive = process_info.get("process_alive", False)
 
         if env_alive:
             message = "环境正在运行，可以接收Interview命令"
+        elif status == "running":
+            message = "模拟仍在运行中，尚未进入等待命令模式（alive）。请等待模拟完成后再进行Interview/继续生成报告。"
+        elif process_alive and status != "alive":
+            message = f"检测到模拟进程仍存活(pid={process_info.get('process_pid')})，但环境未处于 alive 状态。请检查模拟日志或稍后重试。"
         else:
             message = "环境未运行或已关闭"
 
@@ -2453,6 +2529,9 @@ def get_env_status():
             "data": {
                 "simulation_id": simulation_id,
                 "env_alive": env_alive,
+                "env_status": status,
+                "process_pid": process_info.get("process_pid"),
+                "process_alive": process_alive,
                 "twitter_available": env_status.get("twitter_available", False),
                 "reddit_available": env_status.get("reddit_available", False),
                 "message": message

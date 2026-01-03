@@ -68,7 +68,8 @@ def generate_report():
                 "error": f"模拟不存在: {simulation_id}"
             }), 404
         
-        # 检查是否已有报告
+        # 检查是否已有报告（completed 直接复用；未完成则断点续跑复用同一个 report_id）
+        existing_report = None
         if not force_regenerate:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
@@ -82,6 +83,27 @@ def generate_report():
                         "already_generated": True
                     }
                 })
+            
+            # 若已有未完成的报告，且最近仍在更新进度，则认为仍在生成中，避免重复启动
+            if existing_report and existing_report.status != ReportStatus.COMPLETED:
+                try:
+                    progress = ReportManager.get_progress(existing_report.report_id)
+                    if progress and progress.get("updated_at"):
+                        from datetime import datetime, timedelta
+                        updated_at = datetime.fromisoformat(progress["updated_at"])
+                        if datetime.now() - updated_at < timedelta(seconds=30) and progress.get("status") in ("pending", "planning", "generating"):
+                            return jsonify({
+                                "success": True,
+                                "data": {
+                                    "simulation_id": simulation_id,
+                                    "report_id": existing_report.report_id,
+                                    "status": progress.get("status", "generating"),
+                                    "message": "报告正在生成中",
+                                    "already_running": True
+                                }
+                            })
+                except Exception:
+                    pass
         
         # 获取项目信息
         project = ProjectManager.get_project(state.project_id)
@@ -90,6 +112,41 @@ def generate_report():
                 "success": False,
                 "error": f"项目不存在: {state.project_id}"
             }), 404
+
+        # 采访环境预检：报告生成依赖 interview 工具，需要模拟处于等待命令模式（env_status=alive）
+        from ..services.simulation_runner import SimulationRunner
+        env_status = SimulationRunner.get_env_status_detail(simulation_id)
+        process_info = SimulationRunner.get_process_info(simulation_id)
+
+        env_alive = SimulationRunner.check_env_alive(simulation_id)
+        status = env_status.get("status", "stopped")
+        process_alive = process_info.get("process_alive", False)
+
+        # 防止 env_status.json 假阳性（文件为 alive 但进程已退出）
+        if status == "alive" and process_info.get("process_pid") and not process_alive:
+            env_alive = False
+            status = "stopped"
+
+        if not env_alive:
+            if status == "running":
+                msg = "模拟仍在运行中，尚未进入等待命令模式（alive）。请等待模拟完成后再继续生成报告。"
+            else:
+                msg = (
+                    "模拟环境未运行或已关闭，无法执行 Interview。"
+                    "请保持模拟进程存活（本地建议设置 SIMULATION_DETACH_ON_BACKEND_EXIT=true），"
+                    "或创建新的模拟分支并重新运行模拟。"
+                )
+
+            return jsonify({
+                "success": False,
+                "error": msg,
+                "data": {
+                    "simulation_id": simulation_id,
+                    "env_status": status,
+                    "process_pid": process_info.get("process_pid"),
+                    "process_alive": process_alive,
+                },
+            }), 400
         
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
@@ -105,9 +162,12 @@ def generate_report():
                 "error": "缺少模拟需求描述"
             }), 400
         
-        # 提前生成 report_id，以便立即返回给前端
-        import uuid
-        report_id = f"report_{uuid.uuid4().hex[:12]}"
+        # report_id：优先复用未完成报告，实现断点续跑
+        if existing_report and existing_report.status != ReportStatus.COMPLETED and not force_regenerate:
+            report_id = existing_report.report_id
+        else:
+            import uuid
+            report_id = f"report_{uuid.uuid4().hex[:12]}"
         
         # 创建异步任务
         task_manager = TaskManager()
@@ -841,6 +901,40 @@ def stream_agent_log(report_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+# ============== Agent 日志审计接口 ==============
+
+@report_bp.route('/<report_id>/audit', methods=['GET'])
+def audit_agent_log(report_id: str):
+    """
+    审计 agent_log.jsonl，自动定位失败位置（section_index + tool_call_id）
+
+    Query参数：
+      - min_tool_calls: 章节最小工具调用次数（默认 2）
+      - max_items: 返回列表的最大条数（默认 50）
+    """
+    try:
+        min_tool_calls = request.args.get("min_tool_calls", 2, type=int)
+        max_items = request.args.get("max_items", 50, type=int)
+
+        data = ReportManager.audit_agent_log(
+            report_id,
+            min_tool_calls_per_section=min_tool_calls,
+            max_items=max_items,
+        )
+
+        return jsonify({"success": True, "data": data})
+
+    except Exception as e:
+        logger.error(f"审计Agent日志失败: {str(e)}")
+        return jsonify(
+            {
+                "success": False,
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            }
+        ), 500
 
 
 # ============== 控制台日志接口 ==============

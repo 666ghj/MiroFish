@@ -169,10 +169,17 @@ export const getEnvStatus = (data) => {
 }
 
 /**
+ * 创建模拟安全分支（新 simulation_id）
+ * @param {Object} data - { source_simulation_id }
+ */
+export const branchSimulation = (data) => {
+  return requestWithRetry(() => service.post('/api/simulation/branch', data), 3, 1000)
+}
+
+/**
  * 批量采访 Agent
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */
 export const interviewAgents = (data) => {
   return requestWithRetry(() => service.post('/api/simulation/interview/batch', data), 3, 1000)
 }
-
