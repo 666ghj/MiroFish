@@ -169,7 +169,8 @@ class ReportLogger:
         section_index: int,
         tool_name: str, 
         parameters: Dict[str, Any],
-        iteration: int
+        iteration: int,
+        tool_call_id: Optional[str] = None,
     ):
         """记录工具调用"""
         self.log(
@@ -180,6 +181,7 @@ class ReportLogger:
             details={
                 "iteration": iteration,
                 "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
                 "parameters": parameters,
                 "message": f"调用工具: {tool_name}"
             }
@@ -191,7 +193,8 @@ class ReportLogger:
         section_index: int,
         tool_name: str,
         result: str,
-        iteration: int
+        iteration: int,
+        tool_call_id: Optional[str] = None,
     ):
         """记录工具调用结果（完整内容，不截断）"""
         self.log(
@@ -202,6 +205,7 @@ class ReportLogger:
             details={
                 "iteration": iteration,
                 "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
                 "result": result,  # 完整结果，不截断
                 "result_length": len(result),
                 "message": f"工具 {tool_name} 返回结果"
@@ -215,7 +219,8 @@ class ReportLogger:
         response: str,
         iteration: int,
         has_tool_calls: bool,
-        has_final_answer: bool
+        has_final_answer: bool,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
     ):
         """记录 LLM 响应（完整内容，不截断）"""
         self.log(
@@ -229,6 +234,7 @@ class ReportLogger:
                 "response_length": len(response),
                 "has_tool_calls": has_tool_calls,
                 "has_final_answer": has_final_answer,
+                "tool_calls": tool_calls,
                 "message": f"LLM 响应 (工具调用: {has_tool_calls}, 最终答案: {has_final_answer})"
             }
         )
@@ -643,6 +649,145 @@ class ReportAgent:
                 "priority": "high"
             }
         }
+
+    def _get_openai_tools(self) -> List[Dict[str, Any]]:
+        """
+        获取 OpenAI-compatible tools 定义（用于 native tool_calls）。
+
+        仅暴露核心检索工具，避免模型请求执行未授权操作。
+        """
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "insight_forge",
+                    "description": "深度洞察检索：自动分解问题，多维度检索并返回可引用原文、实体洞察与关系链。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "需要深入分析的问题或话题"},
+                            "report_context": {
+                                "type": "string",
+                                "description": "当前报告章节上下文（可选，用于更精准的子问题生成）",
+                            },
+                        },
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "panorama_search",
+                    "description": "广度搜索：获取事件全貌与演变脉络，可包含历史/过期事实。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "搜索查询，用于相关性排序"},
+                            "include_expired": {
+                                "type": "boolean",
+                                "description": "是否包含历史/过期内容（默认 true）",
+                                "default": True,
+                            },
+                        },
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "quick_search",
+                    "description": "快速检索：用于验证或定位具体事实片段。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "搜索查询字符串"},
+                            "limit": {
+                                "type": "integer",
+                                "description": "返回结果数量（默认 10）",
+                                "default": 10,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                        },
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "interview_agents",
+                    "description": "采访模拟 Agent：获取不同角色的真实观点与原话（双平台）。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "interview_topic": {"type": "string", "description": "采访主题/问题"},
+                            "max_agents": {
+                                "type": "integer",
+                                "description": "最多采访人数（默认 20）",
+                                "default": 20,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                        },
+                        "required": ["interview_topic"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        ]
+
+    def _parse_tool_arguments_json(self, arguments_json: str) -> Dict[str, Any]:
+        """解析 tool_call.function.arguments（JSON 字符串）为 dict。"""
+        if not arguments_json:
+            return {}
+        try:
+            parsed = json.loads(arguments_json)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _coerce_tool_parameters(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        *,
+        section_title: str,
+        report_context: str,
+    ) -> Dict[str, Any]:
+        """为缺失/不完整参数提供保底值，避免空参数导致无意义检索。"""
+        params = parameters if isinstance(parameters, dict) else {}
+
+        if tool_name == "insight_forge":
+            if not params.get("query"):
+                params["query"] = f"{section_title}相关的模拟结果和分析"
+            params.setdefault("report_context", report_context)
+            return params
+
+        if tool_name == "panorama_search":
+            if not params.get("query"):
+                params["query"] = section_title
+            params.setdefault("include_expired", True)
+            return params
+
+        if tool_name == "quick_search":
+            if not params.get("query"):
+                params["query"] = section_title
+            params.setdefault("limit", 10)
+            return params
+
+        if tool_name == "interview_agents":
+            if not params.get("interview_topic"):
+                params["interview_topic"] = section_title
+            params.setdefault("max_agents", 20)
+            return params
+
+        return params
     
     def _execute_tool(self, tool_name: str, parameters: Dict[str, Any], report_context: str = "") -> str:
         """
@@ -709,7 +854,8 @@ class ReportAgent:
                     simulation_id=self.simulation_id,
                     interview_requirement=interview_topic,
                     simulation_requirement=self.simulation_requirement,
-                    max_agents=max_agents
+                    max_agents=max_agents,
+                    raise_on_failure=True,
                 )
                 return result.to_text()
             
@@ -752,6 +898,9 @@ class ReportAgent:
                 
         except Exception as e:
             logger.error(f"工具执行失败: {tool_name}, 错误: {str(e)}")
+            # Interview 工具失败会导致报告证据不足，应阻塞并允许后续继续生成
+            if tool_name == "interview_agents":
+                raise
             return f"工具执行失败: {str(e)}"
     
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
@@ -903,9 +1052,10 @@ class ReportAgent:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                stage="json_structure",
             )
-            
+
             if progress_callback:
                 progress_callback("planning", 80, "正在解析大纲结构...")
             
@@ -1085,17 +1235,12 @@ class ReportAgent:
 - interview_agents: 用于采访模拟Agent，获取不同角色的真实观点和看法
 
 ═══════════════════════════════════════════════════════════════
-【ReACT工作流程】
+【工作流程】
 ═══════════════════════════════════════════════════════════════
 
-1. Thought: [分析需要什么信息，规划检索策略]
-2. Action: [调用工具获取信息]
-   <tool_call>
-   {{"name": "工具名称", "parameters": {{"参数名": "参数值"}}}}
-   </tool_call>
-3. Observation: [分析工具返回的结果]
-4. 重复步骤1-3，直到收集到足够信息（最多5轮）
-5. Final Answer: [基于检索结果撰写章节内容]
+1. 通过工具调用获取模拟数据（至少2次，最多4次）
+2. 阅读工具返回的原文与结构化信息，必要时继续调用工具
+3. 基于已获取的模拟证据，输出章节正文（不要任何标题）
 
 ═══════════════════════════════════════════════════════════════
 【章节内容要求】
@@ -1159,19 +1304,22 @@ class ReportAgent:
 - ✅ 直接写正文，用**粗体**代替小节标题
 
 请开始：
-1. 首先思考（Thought）这个章节需要什么信息
-2. 然后调用工具（Action）获取模拟数据
-3. 收集足够信息后输出 Final Answer（纯正文，无任何标题）"""
+1. 先调用工具获取模拟数据（至少2次）
+2. 基于工具返回结果撰写章节正文（纯正文，无任何标题）
+3. 只通过工具调用触发检索，不要输出任何 `<tool_call>` 文本"""
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
         
-        # ReACT循环
+        # ReACT循环（OpenAI native tool_calls）
+        tools = self._get_openai_tools()
+        allowed_tools = {t["function"]["name"] for t in tools}
         tool_calls_count = 0
-        max_iterations = 5  # 最大迭代轮数
+        max_iterations = 8  # 最大迭代轮数（包含工具调用与成稿）
         min_tool_calls = 2  # 最少工具调用次数
+        required_tools = ["insight_forge", "panorama_search"]
         
         # 报告上下文，用于InsightForge的子问题生成
         report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement}"
@@ -1184,178 +1332,140 @@ class ReportAgent:
                     f"深度检索与撰写中 ({tool_calls_count}/{self.MAX_TOOL_CALLS_PER_SECTION})"
                 )
             
-            # 调用LLM
-            response = self.llm.chat(
+            # 前两次工具调用采用强制工具选择，确保最小证据链（避免模型输出 `<tool_call>` 文本但不触发工具）
+            if tool_calls_count < min_tool_calls:
+                forced_tool = required_tools[min(tool_calls_count, len(required_tools) - 1)]
+                tool_choice: Any = {"type": "function", "function": {"name": forced_tool}}
+            else:
+                tool_choice = "none"
+
+            completion = self.llm.chat_completion(
                 messages=messages,
                 temperature=0.5,
-                max_tokens=4096
+                max_tokens=4096,
+                tools=tools,
+                tool_choice=tool_choice,
+                stage="content_generation",
             )
             
-            logger.debug(f"LLM响应: {response[:200]}...")
-            
-            # 检查是否有工具调用和最终答案
-            has_tool_calls = bool(self._parse_tool_calls(response))
-            has_final_answer = "Final Answer:" in response
+            content = completion.content or ""
+            tool_calls = completion.tool_calls
+
+            logger.debug(f"LLM响应: {(content[:200] + '...') if len(content) > 200 else content}")
+
+            tool_calls_for_log = [
+                {"id": tc.id, "name": tc.name, "arguments_json": tc.arguments_json} for tc in tool_calls
+            ]
+            has_tool_calls = bool(tool_calls)
+            has_final_answer = bool(content.strip()) and (not has_tool_calls) and tool_choice == "none"
             
             # 记录 LLM 响应日志
             if self.report_logger:
                 self.report_logger.log_llm_response(
                     section_title=section.title,
                     section_index=section_index,
-                    response=response,
+                    response=content,
                     iteration=iteration + 1,
                     has_tool_calls=has_tool_calls,
-                    has_final_answer=has_final_answer
+                    has_final_answer=has_final_answer,
+                    tool_calls=tool_calls_for_log,
                 )
             
-            # 检查是否有最终答案
-            if has_final_answer:
-                # 如果工具调用次数不足，提醒需要更多检索
-                if tool_calls_count < min_tool_calls:
-                    messages.append({"role": "assistant", "content": response})
-                    messages.append({
-                        "role": "user", 
-                        "content": f"""【注意】你只调用了{tool_calls_count}次工具，信息可能不够充分。
-
-请再调用1-2次工具来获取更多模拟数据，然后再输出 Final Answer。
-建议：
-- 使用 insight_forge 深度检索更多细节
-- 使用 panorama_search 了解事件全貌
-
-记住：报告内容必须来自模拟结果，而不是你的知识！"""
-                    })
-                    continue
-                
-                # 提取最终答案
-                final_answer = response.split("Final Answer:")[-1].strip()
-                logger.info(f"章节 {section.title} 生成完成（工具调用: {tool_calls_count}次）")
-                
-                # 记录章节内容生成完成日志（注意：这只是内容完成，不代表整个章节完成）
-                # 如果是子章节，section_index >= 100
-                is_subsection = section_index >= 100
-                if self.report_logger:
-                    self.report_logger.log_section_content(
-                        section_title=section.title,
-                        section_index=section_index,
-                        content=final_answer,
-                        tool_calls_count=tool_calls_count,
-                        is_subsection=is_subsection
+            if has_tool_calls:
+                assistant_msg: Dict[str, Any] = {"role": "assistant", "content": completion.content, "tool_calls": []}
+                for tc in tool_calls:
+                    assistant_msg["tool_calls"].append(
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.name, "arguments": tc.arguments_json},
+                        }
                     )
-                
-                return final_answer
-            
-            # 解析工具调用
-            tool_calls = self._parse_tool_calls(response)
-            
-            if not tool_calls:
-                # 没有工具调用也没有最终答案
-                messages.append({"role": "assistant", "content": response})
-                
-                if tool_calls_count < min_tool_calls:
-                    # 还没有足够的工具调用，强烈提示需要调用工具
-                    messages.append({
-                        "role": "user", 
-                        "content": f"""【重要】你还没有调用足够的工具来获取模拟数据！
+                messages.append(assistant_msg)
 
-当前只调用了 {tool_calls_count} 次工具，至少需要 {min_tool_calls} 次。
+                for tc in tool_calls:
+                    tool_name = tc.name
+                    raw_parameters = self._parse_tool_arguments_json(tc.arguments_json)
+                    parameters = self._coerce_tool_parameters(
+                        tool_name,
+                        raw_parameters,
+                        section_title=section.title,
+                        report_context=report_context,
+                    )
 
-请立即调用工具获取信息：
-<tool_call>
-{{"name": "insight_forge", "parameters": {{"query": "{section.title}相关的模拟结果和分析"}}}}
-</tool_call>
+                    if self.report_logger:
+                        self.report_logger.log_tool_call(
+                            section_title=section.title,
+                            section_index=section_index,
+                            tool_name=tool_name,
+                            parameters=parameters,
+                            iteration=iteration + 1,
+                            tool_call_id=tc.id,
+                        )
 
-【记住】报告内容必须100%来自模拟结果，不能使用你自己的知识！"""
-                    })
-                else:
-                    # 已有足够调用，可以生成最终答案
-                    messages.append({
-                        "role": "user", 
-                        "content": "你已经获取了足够的模拟数据。请基于检索到的信息，输出 Final Answer: 并撰写章节内容。\n\n【重要】内容必须大量引用检索到的原文，使用 > 格式引用。"
-                    })
+                    if tool_calls_count >= self.MAX_TOOL_CALLS_PER_SECTION:
+                        result = "已达到工具调用上限，无法继续检索。请基于已有工具结果输出章节正文。"
+                    elif tool_name not in allowed_tools:
+                        result = f"未授权工具: {tool_name}。允许工具: {', '.join(sorted(allowed_tools))}"
+                    else:
+                        result = self._execute_tool(tool_name, parameters, report_context=report_context)
+                        tool_calls_count += 1
+
+                    if self.report_logger:
+                        self.report_logger.log_tool_result(
+                            section_title=section.title,
+                            section_index=section_index,
+                            tool_name=tool_name,
+                            result=result,
+                            iteration=iteration + 1,
+                            tool_call_id=tc.id,
+                        )
+
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+
                 continue
-            
-            # 执行工具调用
-            tool_results = []
-            for call in tool_calls:
-                if tool_calls_count >= self.MAX_TOOL_CALLS_PER_SECTION:
-                    break
-                
-                # 记录工具调用日志
-                if self.report_logger:
-                    self.report_logger.log_tool_call(
-                        section_title=section.title,
-                        section_index=section_index,
-                        tool_name=call["name"],
-                        parameters=call.get("parameters", {}),
-                        iteration=iteration + 1
-                    )
-                
-                result = self._execute_tool(
-                    call["name"], 
-                    call.get("parameters", {}),
-                    report_context=report_context
+
+            # 无工具调用：在满足最小证据链之前，拒绝成稿
+            if tool_calls_count < min_tool_calls:
+                messages.append({"role": "assistant", "content": content})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "你必须通过工具调用获取模拟数据（至少2次），再撰写正文。请调用检索工具后继续。",
+                    }
                 )
-                
-                # 记录工具结果日志
-                if self.report_logger:
-                    self.report_logger.log_tool_result(
-                        section_title=section.title,
-                        section_index=section_index,
-                        tool_name=call["name"],
-                        result=result,
-                        iteration=iteration + 1
-                    )
-                
-                tool_results.append(f"═══ 工具 {call['name']} 返回 ═══\n{result}")
-                tool_calls_count += 1
-            
-            # 将结果添加到消息
-            messages.append({"role": "assistant", "content": response})
-            messages.append({
-                "role": "user",
-                "content": f"""Observation（检索结果）:
+                continue
 
-{"".join(tool_results)}
+            if not content.strip():
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "请输出本章节正文（纯正文、无标题），并大量引用工具返回的原文（> 引用需单独成段）。",
+                    }
+                )
+                continue
 
-═══════════════════════════════════════════════════════════════
-【下一步行动】
-- 如果信息充分：输出 Final Answer 并撰写章节内容（必须引用上述原文）
-- 如果需要更多信息：继续调用工具检索
+            final_answer = content.strip()
+            if "Final Answer:" in final_answer:
+                final_answer = final_answer.split("Final Answer:")[-1].strip()
 
-已调用工具 {tool_calls_count}/{self.MAX_TOOL_CALLS_PER_SECTION} 次
-═══════════════════════════════════════════════════════════════"""
-            })
+            logger.info(f"章节 {section.title} 生成完成（工具调用: {tool_calls_count}次）")
+
+            is_subsection = section_index >= 100
+            if self.report_logger:
+                self.report_logger.log_section_content(
+                    section_title=section.title,
+                    section_index=section_index,
+                    content=final_answer,
+                    tool_calls_count=tool_calls_count,
+                    is_subsection=is_subsection,
+                )
+
+            return final_answer
         
-        # 达到最大迭代次数，强制生成内容
-        logger.warning(f"章节 {section.title} 达到最大迭代次数，强制生成")
-        messages.append({
-            "role": "user",
-            "content": "已达到工具调用限制，请直接输出 Final Answer: 并生成章节内容。"
-        })
-        
-        response = self.llm.chat(
-            messages=messages,
-            temperature=0.5,
-            max_tokens=4096
+        raise RuntimeError(
+            f"章节 {section.title} 生成失败：未能在 {max_iterations} 轮内完成至少 {min_tool_calls} 次工具调用并成稿"
         )
-        
-        if "Final Answer:" in response:
-            final_answer = response.split("Final Answer:")[-1].strip()
-        else:
-            final_answer = response
-        
-        # 记录章节内容生成完成日志（注意：这只是内容完成，不代表整个章节完成）
-        is_subsection = section_index >= 100
-        if self.report_logger:
-            self.report_logger.log_section_content(
-                section_title=section.title,
-                section_index=section_index,
-                content=final_answer,
-                tool_calls_count=tool_calls_count,
-                is_subsection=is_subsection
-            )
-        
-        return final_answer
     
     def generate_report(
         self, 
@@ -1389,22 +1499,46 @@ class ReportAgent:
         if not report_id:
             report_id = f"report_{uuid.uuid4().hex[:12]}"
         start_time = datetime.now()
-        
-        report = Report(
-            report_id=report_id,
-            simulation_id=self.simulation_id,
-            graph_id=self.graph_id,
-            simulation_requirement=self.simulation_requirement,
-            status=ReportStatus.PENDING,
-            created_at=datetime.now().isoformat()
-        )
+        now_iso = datetime.now().isoformat()
+
+        # 尝试加载已存在的报告（用于断点续跑）
+        try:
+            report = ReportManager.get_report(report_id)
+        except Exception:
+            report = None
+
+        if report:
+            # 兜底：用当前上下文覆盖关键字段（避免跨模拟误用）
+            report.simulation_id = self.simulation_id
+            report.graph_id = self.graph_id
+            report.simulation_requirement = self.simulation_requirement
+        else:
+            report = Report(
+                report_id=report_id,
+                simulation_id=self.simulation_id,
+                graph_id=self.graph_id,
+                simulation_requirement=self.simulation_requirement,
+                status=ReportStatus.PENDING,
+                created_at=now_iso
+            )
         
         # 已完成的章节标题列表（用于进度追踪）
         completed_section_titles = []
         
         try:
             # 初始化：创建报告文件夹并保存初始状态
-            ReportManager._ensure_report_folder(report_id)
+            report_folder = ReportManager._ensure_report_folder(report_id)
+
+            # LLM 用量落盘：写入 reports/{report_id}/llm_usage.jsonl
+            try:
+                if isinstance(self.llm, LLMClient):
+                    usage_log_path = os.path.join(report_folder, "llm_usage.jsonl")
+                    if not getattr(self.llm, "_usage_log_path", None):
+                        setattr(self.llm, "_usage_log_path", usage_log_path)
+                    if getattr(self.llm, "default_stage", "llm") == "llm":
+                        setattr(self.llm, "default_stage", "report")
+            except Exception:
+                pass
             
             # 初始化日志记录器（结构化日志 agent_log.jsonl）
             self.report_logger = ReportLogger(report_id)
@@ -1416,54 +1550,99 @@ class ReportAgent:
             
             # 初始化控制台日志记录器（console_log.txt）
             self.console_logger = ReportConsoleLogger(report_id)
-            
-            ReportManager.update_progress(
-                report_id, "pending", 0, "初始化报告...",
-                completed_sections=[]
-            )
-            ReportManager.save_report(report)
-            
-            # 阶段1: 规划大纲
-            report.status = ReportStatus.PLANNING
-            ReportManager.update_progress(
-                report_id, "planning", 5, "开始规划报告大纲...",
-                completed_sections=[]
-            )
-            
-            # 记录规划开始日志
-            self.report_logger.log_planning_start()
-            
-            if progress_callback:
-                progress_callback("planning", 0, "开始规划报告大纲...")
-            
-            outline = self.plan_outline(
-                progress_callback=lambda stage, prog, msg: 
-                    progress_callback(stage, prog // 5, msg) if progress_callback else None
-            )
-            report.outline = outline
-            
-            # 记录规划完成日志
-            self.report_logger.log_planning_complete(outline.to_dict())
-            
-            # 保存大纲到文件
-            ReportManager.save_outline(report_id, outline)
-            ReportManager.update_progress(
-                report_id, "planning", 15, f"大纲规划完成，共{len(outline.sections)}个章节",
-                completed_sections=[]
-            )
-            ReportManager.save_report(report)
-            
-            logger.info(f"大纲已保存到文件: {report_id}/outline.json")
-            
-            # 阶段2: 逐章节生成（分章节保存）
-            report.status = ReportStatus.GENERATING
-            
-            total_sections = len(outline.sections)
+
+            # ========== 断点续跑：优先复用已生成的大纲与章节 ==========
+            outline = ReportManager.load_outline(report_id)
             generated_sections = []  # 保存内容用于上下文
+            completed_main_indices = set()
+
+            if outline:
+                report.outline = outline
+
+                # 预加载已生成的主章节文件（section_XX.md）
+                existing = ReportManager.get_generated_sections(report_id)
+                existing_main = {
+                    s["section_index"]: s["content"]
+                    for s in existing
+                    if not s.get("is_subsection", False) and s.get("section_index") is not None
+                }
+
+                total_sections = len(outline.sections)
+                for idx in sorted(existing_main.keys()):
+                    if 1 <= idx <= total_sections:
+                        generated_sections.append(existing_main[idx])
+                        completed_section_titles.append(outline.sections[idx - 1].title)
+                        completed_main_indices.add(idx)
+
+                # 进入生成阶段（从未完成章节继续）
+                report.status = ReportStatus.GENERATING
+                resume_progress = 20 + int((len(completed_main_indices) / max(total_sections, 1)) * 70)
+                ReportManager.update_progress(
+                    report_id,
+                    "generating",
+                    resume_progress,
+                    "检测到已存在内容，继续生成剩余章节...",
+                    completed_sections=completed_section_titles
+                )
+                ReportManager.save_report(report)
+                logger.info(
+                    f"报告断点续跑: {report_id}, 已完成章节 {len(completed_main_indices)}/{max(total_sections, 1)}"
+                )
+
+            else:
+                # 初始化：保存初始状态
+                ReportManager.update_progress(
+                    report_id, "pending", 0, "初始化报告...",
+                    completed_sections=[]
+                )
+                ReportManager.save_report(report)
+
+                # 阶段1: 规划大纲
+                report.status = ReportStatus.PLANNING
+                ReportManager.update_progress(
+                    report_id, "planning", 5, "开始规划报告大纲...",
+                    completed_sections=[]
+                )
+
+                # 记录规划开始日志
+                self.report_logger.log_planning_start()
+
+                if progress_callback:
+                    progress_callback("planning", 0, "开始规划报告大纲...")
+
+                outline = self.plan_outline(
+                    progress_callback=lambda stage, prog, msg:
+                        progress_callback(stage, prog // 5, msg) if progress_callback else None
+                )
+                report.outline = outline
+
+                # 记录规划完成日志
+                self.report_logger.log_planning_complete(outline.to_dict())
+
+                # 保存大纲到文件
+                ReportManager.save_outline(report_id, outline)
+                ReportManager.update_progress(
+                    report_id, "planning", 15, f"大纲规划完成，共{len(outline.sections)}个章节",
+                    completed_sections=[]
+                )
+                ReportManager.save_report(report)
+
+                logger.info(f"大纲已保存到文件: {report_id}/outline.json")
+
+                # 阶段2: 逐章节生成（分章节保存）
+                report.status = ReportStatus.GENERATING
+
+                total_sections = len(outline.sections)
             
             for i, section in enumerate(outline.sections):
                 section_num = i + 1
-                base_progress = 20 + int((i / total_sections) * 70)
+                
+                # 断点续跑：已生成的章节直接跳过
+                if section_num in completed_main_indices:
+                    continue
+                
+                # 进度基于已完成章节数量计算，避免断点恢复时进度倒退
+                base_progress = 20 + int((len(completed_main_indices) / max(total_sections, 1)) * 70)
                 
                 # 更新进度
                 ReportManager.update_progress(
@@ -1554,9 +1733,11 @@ class ReportAgent:
                 logger.info(f"章节已保存（包含{len(subsection_contents)}个子章节）: {report_id}/section_{section_num:02d}.md")
                 
                 # 更新进度
+                completed_main_indices.add(section_num)
+                completed_progress = 20 + int((len(completed_main_indices) / max(total_sections, 1)) * 70)
                 ReportManager.update_progress(
                     report_id, "generating", 
-                    base_progress + int(70 / total_sections),
+                    completed_progress,
                     f"章节 {section.title} 已完成",
                     current_section=None,
                     completed_sections=completed_section_titles
@@ -1686,10 +1867,8 @@ class ReportAgent:
 【可用工具】（仅在需要时使用，最多调用1-2次）
 {self._get_tools_description()}
 
-【工具调用格式】
-<tool_call>
-{{"name": "工具名称", "parameters": {{"参数名": "参数值"}}}}
-</tool_call>
+【工具调用】
+- 当且仅当需要更多模拟证据时，使用系统提供的工具调用（无需输出任何 `<tool_call>` 文本）
 
 【回答风格】
 - 简洁直接，不要长篇大论
@@ -1709,64 +1888,74 @@ class ReportAgent:
             "content": message
         })
         
-        # ReACT循环（简化版）
-        tool_calls_made = []
-        max_iterations = 2  # 减少迭代轮数
-        
-        for iteration in range(max_iterations):
-            response = self.llm.chat(
-                messages=messages,
-                temperature=0.5
-            )
-            
-            # 解析工具调用
-            tool_calls = self._parse_tool_calls(response)
-            
-            if not tool_calls:
-                # 没有工具调用，直接返回响应
-                clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL)
-                clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
-                
-                return {
-                    "response": clean_response.strip(),
-                    "tool_calls": tool_calls_made,
-                    "sources": [tc.get("parameters", {}).get("query", "") for tc in tool_calls_made]
-                }
-            
-            # 执行工具调用（限制数量）
-            tool_results = []
-            for call in tool_calls[:1]:  # 每轮最多执行1次工具调用
+        tools = self._get_openai_tools()
+        allowed_tools = {t["function"]["name"] for t in tools}
+        tool_calls_made: List[Dict[str, Any]] = []
+
+        completion = self.llm.chat_completion(
+            messages=messages,
+            temperature=0.5,
+            max_tokens=2048,
+            tools=tools,
+            tool_choice="auto",
+            stage="content_generation",
+        )
+
+        if completion.tool_calls:
+            assistant_msg: Dict[str, Any] = {"role": "assistant", "content": completion.content, "tool_calls": []}
+            for tc in completion.tool_calls:
+                assistant_msg["tool_calls"].append(
+                    {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.arguments_json}}
+                )
+            messages.append(assistant_msg)
+
+            for tc in completion.tool_calls:
                 if len(tool_calls_made) >= self.MAX_TOOL_CALLS_PER_CHAT:
                     break
-                result = self._execute_tool(call["name"], call.get("parameters", {}))
-                tool_results.append({
-                    "tool": call["name"],
-                    "result": result[:1500]  # 限制结果长度
-                })
-                tool_calls_made.append(call)
-            
-            # 将结果添加到消息
-            messages.append({"role": "assistant", "content": response})
-            observation = "\n".join([f"[{r['tool']}结果]\n{r['result']}" for r in tool_results])
-            messages.append({
-                "role": "user", 
-                "content": observation + "\n\n请简洁回答问题。"
-            })
-        
-        # 达到最大迭代，获取最终响应
-        final_response = self.llm.chat(
-            messages=messages,
-            temperature=0.5
-        )
-        
-        # 清理响应
-        clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', final_response, flags=re.DOTALL)
-        clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
-        
+
+                tool_name = tc.name
+                raw_parameters = self._parse_tool_arguments_json(tc.arguments_json)
+                parameters = self._coerce_tool_parameters(
+                    tool_name,
+                    raw_parameters,
+                    section_title=message,
+                    report_context=self.simulation_requirement,
+                )
+
+                if tool_name not in allowed_tools:
+                    result = f"未授权工具: {tool_name}。允许工具: {', '.join(sorted(allowed_tools))}"
+                else:
+                    result = self._execute_tool(tool_name, parameters)
+
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result[:3000]})
+                tool_calls_made.append({"tool_call_id": tc.id, "name": tool_name, "parameters": parameters})
+
+            messages.append({"role": "user", "content": "请基于上述工具结果，简洁回答问题。"})
+
+            final_completion = self.llm.chat_completion(
+                messages=messages,
+                temperature=0.5,
+                max_tokens=2048,
+                tools=tools,
+                tool_choice="none",
+                stage="content_generation",
+            )
+            final_response = final_completion.content or ""
+        else:
+            final_response = completion.content or ""
+
+        clean_response = re.sub(r"<tool_call>.*?</tool_call>", "", final_response, flags=re.DOTALL)
+        clean_response = re.sub(r"\\[TOOL_CALL\\].*?\\)", "", clean_response)
+
+        sources = []
+        for tc in tool_calls_made:
+            params = tc.get("parameters", {}) or {}
+            sources.append(params.get("query") or params.get("interview_topic") or "")
+
         return {
             "response": clean_response.strip(),
             "tool_calls": tool_calls_made,
-            "sources": [tc.get("parameters", {}).get("query", "") for tc in tool_calls_made]
+            "sources": [s for s in sources if s],
         }
 
 
@@ -1965,6 +2154,171 @@ class ReportManager:
         """
         result = cls.get_agent_log(report_id, from_line=0)
         return result["logs"]
+
+    @classmethod
+    def audit_agent_log(
+        cls,
+        report_id: str,
+        *,
+        min_tool_calls_per_section: int = 2,
+        max_items: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        审计 agent_log.jsonl，辅助定位“继续生成失败”的具体位置（section + tool_call_id）。
+
+        返回内容尽量稳定、可用于前端展示或排障。
+        """
+        log_path = cls._get_agent_log_path(report_id)
+        progress = cls.get_progress(report_id)
+
+        if not os.path.exists(log_path):
+            return {
+                "report_id": report_id,
+                "progress": progress,
+                "error": f"agent_log.jsonl not found: {log_path}",
+            }
+
+        tool_calls_by_id: Dict[str, Dict[str, Any]] = {}
+        tool_results_by_id: Dict[str, Dict[str, Any]] = {}
+        tool_calls_order: List[str] = []
+        tool_results_order: List[str] = []
+
+        finalized_sections_below_min: List[Dict[str, Any]] = []
+        last_error_entry: Optional[Dict[str, Any]] = None
+        last_tool_call_entry: Optional[Dict[str, Any]] = None
+        last_llm_with_tool_calls: Optional[Dict[str, Any]] = None
+
+        # 子章节/主章节内容生成完成日志中会写入 tool_calls_count
+        finalized_counts: Dict[int, int] = {}
+
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line_no, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                action = entry.get("action")
+                details = entry.get("details") or {}
+
+                if action == "tool_call":
+                    last_tool_call_entry = {"line_no": line_no, **entry}
+                    tc_id = details.get("tool_call_id")
+                    if tc_id:
+                        tc_id_str = str(tc_id)
+                        tool_calls_by_id[tc_id_str] = {"line_no": line_no, **entry}
+                        tool_calls_order.append(tc_id_str)
+
+                elif action == "tool_result":
+                    tc_id = details.get("tool_call_id")
+                    if tc_id:
+                        tc_id_str = str(tc_id)
+                        tool_results_by_id[tc_id_str] = {"line_no": line_no, **entry}
+                        tool_results_order.append(tc_id_str)
+
+                elif action == "llm_response":
+                    # log_llm_response.details.tool_calls 是列表（如果有）
+                    if details.get("tool_calls"):
+                        last_llm_with_tool_calls = {"line_no": line_no, **entry}
+
+                elif action == "error":
+                    last_error_entry = {"line_no": line_no, **entry}
+
+                elif action in ("section_content", "subsection_content"):
+                    section_index = entry.get("section_index")
+                    tool_calls_count = details.get("tool_calls_count")
+                    if isinstance(section_index, int) and isinstance(tool_calls_count, int):
+                        finalized_counts[section_index] = tool_calls_count
+
+        missing_tool_results: List[Dict[str, Any]] = []
+        for tc_id in tool_calls_order:
+            if tc_id not in tool_results_by_id:
+                call_entry = tool_calls_by_id.get(tc_id, {})
+                c_details = call_entry.get("details") or {}
+                missing_tool_results.append(
+                    {
+                        "tool_call_id": tc_id,
+                        "section_index": call_entry.get("section_index"),
+                        "section_title": call_entry.get("section_title"),
+                        "tool_name": c_details.get("tool_name"),
+                        "iteration": c_details.get("iteration"),
+                        "parameters": c_details.get("parameters"),
+                        "line_no": call_entry.get("line_no"),
+                    }
+                )
+
+        orphan_tool_results: List[Dict[str, Any]] = []
+        for tr_id in tool_results_order:
+            if tr_id not in tool_calls_by_id:
+                result_entry = tool_results_by_id.get(tr_id, {})
+                r_details = result_entry.get("details") or {}
+                orphan_tool_results.append(
+                    {
+                        "tool_call_id": tr_id,
+                        "section_index": result_entry.get("section_index"),
+                        "section_title": result_entry.get("section_title"),
+                        "tool_name": r_details.get("tool_name"),
+                        "iteration": r_details.get("iteration"),
+                        "line_no": result_entry.get("line_no"),
+                    }
+                )
+
+        for section_index, count in sorted(finalized_counts.items(), key=lambda kv: kv[0]):
+            if count < min_tool_calls_per_section:
+                finalized_sections_below_min.append(
+                    {
+                        "section_index": section_index,
+                        "tool_calls_count": count,
+                    }
+                )
+
+        # 选择一个“最可能的失败定位点”
+        failed_at: Optional[Dict[str, Any]] = None
+        if missing_tool_results:
+            failed_at = {
+                "reason": "missing_tool_result",
+                **missing_tool_results[-1],
+            }
+        elif last_error_entry:
+            failed_at = {
+                "reason": "error_log",
+                "section_index": last_error_entry.get("section_index"),
+                "section_title": last_error_entry.get("section_title"),
+                "tool_call_id": None,
+                "line_no": last_error_entry.get("line_no"),
+                "error": (last_error_entry.get("details") or {}).get("error"),
+            }
+        elif last_tool_call_entry:
+            d = last_tool_call_entry.get("details") or {}
+            failed_at = {
+                "reason": "last_tool_call",
+                "section_index": last_tool_call_entry.get("section_index"),
+                "section_title": last_tool_call_entry.get("section_title"),
+                "tool_call_id": d.get("tool_call_id"),
+                "tool_name": d.get("tool_name"),
+                "iteration": d.get("iteration"),
+                "line_no": last_tool_call_entry.get("line_no"),
+            }
+
+        return {
+            "report_id": report_id,
+            "progress": progress,
+            "failed_at": failed_at,
+            "last_error": last_error_entry,
+            "last_llm_with_tool_calls": last_llm_with_tool_calls,
+            "missing_tool_results": missing_tool_results[-max_items:],
+            "orphan_tool_results": orphan_tool_results[-max_items:],
+            "finalized_sections_below_min_tool_calls": finalized_sections_below_min[-max_items:],
+            "counts": {
+                "tool_calls_with_id": len(tool_calls_by_id),
+                "tool_results_with_id": len(tool_results_by_id),
+                "missing_tool_results": len(missing_tool_results),
+                "orphan_tool_results": len(orphan_tool_results),
+            },
+        }
     
     @classmethod
     def save_outline(cls, report_id: str, outline: ReportOutline) -> None:
@@ -1979,6 +2333,45 @@ class ReportManager:
             json.dump(outline.to_dict(), f, ensure_ascii=False, indent=2)
         
         logger.info(f"大纲已保存: {report_id}")
+    
+    @classmethod
+    def load_outline(cls, report_id: str) -> Optional[ReportOutline]:
+        """
+        加载已保存的报告大纲（用于断点续跑）
+        
+        优先读取 outline.json；若不存在则尝试从 meta.json 里读取（兼容）。
+        """
+        outline_path = cls._get_outline_path(report_id)
+        if os.path.exists(outline_path):
+            try:
+                with open(outline_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                sections = []
+                for s in data.get("sections", []):
+                    subsections = [
+                        ReportSection(title=sub["title"], content=sub.get("content", ""))
+                        for sub in s.get("subsections", [])
+                    ]
+                    sections.append(
+                        ReportSection(
+                            title=s["title"],
+                            content=s.get("content", ""),
+                            subsections=subsections,
+                        )
+                    )
+                return ReportOutline(
+                    title=data.get("title", ""),
+                    summary=data.get("summary", ""),
+                    sections=sections,
+                )
+            except Exception:
+                return None
+        
+        try:
+            report = cls.get_report(report_id)
+            return report.outline if report else None
+        except Exception:
+            return None
     
     @classmethod
     def save_section(
@@ -2455,24 +2848,9 @@ class ReportManager:
     
     @classmethod
     def get_report_by_simulation(cls, simulation_id: str) -> Optional[Report]:
-        """根据模拟ID获取报告"""
-        cls._ensure_reports_dir()
-        
-        for item in os.listdir(cls.REPORTS_DIR):
-            item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 新格式：文件夹
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report and report.simulation_id == simulation_id:
-                    return report
-            # 兼容旧格式：JSON文件
-            elif item.endswith('.json'):
-                report_id = item[:-5]
-                report = cls.get_report(report_id)
-                if report and report.simulation_id == simulation_id:
-                    return report
-        
-        return None
+        """根据模拟ID获取报告（默认返回最新的一份）"""
+        reports = cls.list_reports(simulation_id=simulation_id, limit=1)
+        return reports[0] if reports else None
     
     @classmethod
     def list_reports(cls, simulation_id: Optional[str] = None, limit: int = 50) -> List[Report]:

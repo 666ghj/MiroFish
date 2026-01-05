@@ -16,11 +16,49 @@
 
 [![GitHub License](https://img.shields.io/github/license/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/blob/main/LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/666ghj/MiroFish)
-[![Version](https://img.shields.io/badge/version-v0.1.0-green.svg?style=flat-square)](https://github.com/666ghj/MiroFish)
+[![Version](https://img.shields.io/badge/version-v0.2.0--beta-orange.svg?style=flat-square)](https://github.com/666ghj/MiroFish)
 
 [English](./README-EN.md) | [中文文档](./README.md)
 
 </div>
+
+---
+
+## 🆕 v0.2.0-beta 新特性（开发预览版）
+
+> ⚠️ **注意**: 这是开发预览版本，功能可能不稳定，仅供测试和反馈使用。
+>
+> 本版本新增：历史记录页面、报告断点续跑、Interview 环境保活/安全激活、OpenAI 原生工具调用、LLM 模型设置、一键烟测脚本。详细说明见 [`docs/UPDATES.md`](./docs/UPDATES.md)。
+
+### 主要更新
+
+| 特性 | 说明 |
+|------|------|
+| **History 页面** | 新增 `/history` 路由，按 Project → Simulation → Report 嵌套关系浏览历史记录，支持一键跳转 |
+| **报告断点续跑** | `Continue` 从未完成章节继续生成；`Regenerate` 创建新报告（旧报告保留在历史中） |
+| **Interview 环境保活** | 模拟完成后自动进入 waiting 模式，支持后续报告生成时的 Agent 采访 |
+| **安全激活** | 当旧环境不可恢复时，`Activate (safe)` 自动创建新分支，不破坏原始数据 |
+| **代码版本检测** | 自动检测脚本代码更新，必要时重启模拟进程以使用新代码 |
+| **OpenAI 原生工具调用** | ReportAgent 使用 OpenAI `tool_calls` 替代文本解析，提高稳定性 |
+| **LLM 模型设置** | 新增 Settings 页面，支持模型列表查看、切换和配置 |
+| **一键烟测** | `npm run smoke` 快速验证端到端流程（project → graph → simulation → report） |
+
+### 使用说明
+
+```bash
+# 启动服务
+npm run dev
+
+# 烟测（Quick，非破坏性）
+npm run smoke
+
+# 烟测（Full，会创建新 project/simulation/report）
+npm run smoke:full
+```
+
+更多详情请参阅 [`docs/UPDATES.md`](./docs/UPDATES.md)。
+
+---
 
 ## ⚡ 项目概述
 

@@ -91,6 +91,36 @@
       </div>
 
       <div class="action-controls">
+        <button
+          v-if="phase === 0"
+          class="action-btn secondary"
+          :disabled="!props.simulationId || isStarting || isStopping || isGeneratingReport"
+          @click="handleStartSimulation(false)"
+        >
+          <span v-if="isStarting" class="loading-spinner-small"></span>
+          {{ isStarting ? '启动中...' : '启动模拟' }}
+        </button>
+
+        <button
+          v-if="phase === 0"
+          class="action-btn danger"
+          :disabled="!props.simulationId || isStarting || isStopping || isGeneratingReport"
+          @click="handleStartSimulation(true)"
+        >
+          <span v-if="isStarting" class="loading-spinner-small"></span>
+          {{ isStarting ? '重启中...' : '强制重启' }}
+        </button>
+
+        <button
+          v-if="phase === 1"
+          class="action-btn danger"
+          :disabled="!props.simulationId || isStopping || isStarting"
+          @click="handleStopSimulation"
+        >
+          <span v-if="isStopping" class="loading-spinner-small"></span>
+          {{ isStopping ? '停止中...' : '停止模拟' }}
+        </button>
+
         <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
@@ -298,6 +328,14 @@ import { generateReport } from '../api/report'
 
 const props = defineProps({
   simulationId: String,
+  autoStart: {
+    type: Boolean,
+    default: false
+  },
+  autoForceRestart: {
+    type: Boolean,
+    default: false
+  },
   maxRounds: Number, // 从Step2传入的最大轮数
   minutesPerRound: {
     type: Number,
@@ -377,7 +415,7 @@ const resetAllState = () => {
 }
 
 // 启动模拟
-const doStartSimulation = async () => {
+const doStartSimulation = async ({ force = false } = {}) => {
   if (!props.simulationId) {
     addLog('错误：缺少 simulationId')
     return
@@ -395,7 +433,7 @@ const doStartSimulation = async () => {
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: true,  // 强制重新开始
+      force,  // 是否强制重新开始（会清理日志）
       enable_graph_memory_update: true  // 开启动态图谱更新
     }
     
@@ -404,16 +442,24 @@ const doStartSimulation = async () => {
       addLog(`设置最大模拟轮数: ${props.maxRounds}`)
     }
     
-    addLog('已开启动态图谱更新模式')
+    addLog('已开启动态图谱更新（后端将自动克隆 Project 图谱到 Simulation 图谱，避免污染 Project）')
     
     const res = await startSimulation(params)
     
     if (res.success && res.data) {
-      if (res.data.force_restarted) {
+      if (force && res.data.force_restarted) {
         addLog('✓ 已清理旧的模拟日志，重新开始模拟')
       }
       addLog('✓ 模拟引擎启动成功')
       addLog(`  ├─ PID: ${res.data.process_pid || '-'}`)
+      if (res.data.project_graph_id) {
+        if (res.data.graph_id && res.data.graph_id !== res.data.project_graph_id) {
+          addLog(`  ├─ Graph (simulation): ${res.data.graph_id}`)
+          addLog(`  └─ Graph (project): ${res.data.project_graph_id}`)
+        } else {
+          addLog(`  └─ Graph: ${res.data.graph_id || res.data.project_graph_id}`)
+        }
+      }
       
       phase.value = 1
       runStatus.value = res.data
@@ -426,12 +472,47 @@ const doStartSimulation = async () => {
       emit('update-status', 'error')
     }
   } catch (err) {
-    startError.value = err.message
-    addLog(`✗ 启动异常: ${err.message}`)
+    const msg = err?.message || '启动异常'
+    // 兼容：后端重启后，模拟仍在跑（detach），此时 /start 会报“正在运行”
+    if (String(msg).includes('正在运行')) {
+      addLog(`提示: ${msg}，将尝试接管现有模拟...`)
+      const attached = await tryAttachIfRunning()
+      if (attached) {
+        startError.value = null
+        return
+      }
+    }
+    startError.value = msg
+    addLog(`✗ 启动异常: ${msg}`)
     emit('update-status', 'error')
   } finally {
     isStarting.value = false
   }
+}
+
+const handleStartSimulation = async (force = false) => {
+  if (!props.simulationId || isStarting.value) return
+  if (force) {
+    const confirmed = window.confirm(
+      '将强制停止并清理该 Simulation 的运行日志后重新开始（可能影响历史回放/断点恢复）。建议优先使用 Branch 创建安全分支。继续？'
+    )
+    if (!confirmed) return
+  }
+  await doStartSimulation({ force })
+}
+
+const tryAttachIfRunning = async () => {
+  await fetchRunStatus()
+  const status = runStatus.value?.runner_status
+  if (status === 'running' || status === 'starting') {
+    addLog('检测到模拟已在运行，已自动接管（不会重复启动/重复消耗 token）。')
+    phase.value = 1
+    emit('update-status', 'processing')
+    startStatusPolling()
+    startDetailPolling()
+    return true
+  }
+  return false
 }
 
 // 停止模拟
@@ -464,10 +545,12 @@ let statusTimer = null
 let detailTimer = null
 
 const startStatusPolling = () => {
+  if (statusTimer) return
   statusTimer = setInterval(fetchRunStatus, 2000)
 }
 
 const startDetailPolling = () => {
+  if (detailTimer) return
   detailTimer = setInterval(fetchRunStatusDetail, 3000)
 }
 
@@ -496,6 +579,14 @@ const fetchRunStatus = async () => {
       const data = res.data
       
       runStatus.value = data
+
+      // 运行中：确保 UI 处于运行态（inspect 模式下也适用）
+      if (data.runner_status === 'running') {
+        if (phase.value !== 1) {
+          phase.value = 1
+          emit('update-status', 'processing')
+        }
+      }
       
       // 分别检测各平台的轮次变化并输出日志
       if (data.twitter_current_round > prevTwitterRound.value) {
@@ -655,7 +746,7 @@ const handleNextStep = async () => {
   try {
     const res = await generateReport({
       simulation_id: props.simulationId,
-      force_regenerate: true
+      force_regenerate: false
     })
     
     if (res.success && res.data) {
@@ -686,9 +777,26 @@ watch(() => props.systemLogs?.length, () => {
 
 onMounted(() => {
   addLog('Step3 模拟运行初始化')
-  if (props.simulationId) {
-    doStartSimulation()
+  if (!props.simulationId) return
+
+  if (props.autoStart) {
+    // AutoStart：优先接管已运行的模拟，避免“刷新/重启后端”导致重复启动与重复消耗 token
+    if (!props.autoForceRestart) {
+      tryAttachIfRunning().then(attached => {
+        if (!attached) doStartSimulation({ force: false })
+      })
+      return
+    }
+
+    doStartSimulation({ force: true })
+    return
   }
+
+  addLog('Inspect 模式：不会自动启动/重启模拟（避免污染历史）。')
+  fetchRunStatus()
+  fetchRunStatusDetail()
+  startStatusPolling()
+  startDetailPolling()
 })
 
 onUnmounted(() => {
@@ -868,6 +976,13 @@ onUnmounted(() => {
   align-items: center;
 }
 
+/* Action Controls */
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 /* Action Button */
 .action-btn {
   display: inline-flex;
@@ -891,6 +1006,25 @@ onUnmounted(() => {
 
 .action-btn.primary:hover:not(:disabled) {
   background: #333;
+}
+
+.action-btn.secondary {
+  background: #fff;
+  color: #111;
+  border: 1px solid #e5e7eb;
+}
+
+.action-btn.secondary:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.action-btn.danger {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.action-btn.danger:hover:not(:disabled) {
+  background: #991b1b;
 }
 
 .action-btn:disabled {

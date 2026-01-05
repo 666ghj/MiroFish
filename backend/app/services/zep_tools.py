@@ -8,6 +8,7 @@ Zep检索工具服务
 3. QuickSearch（简单搜索）- 快速检索
 """
 
+import os
 import time
 import json
 from typing import Dict, Any, List, Optional
@@ -438,36 +439,42 @@ class ZepToolsService:
         
         raise last_exception
     
+    # Zep API query 长度限制
+    ZEP_QUERY_MAX_LENGTH = 400
+
     def search_graph(
-        self, 
-        graph_id: str, 
-        query: str, 
+        self,
+        graph_id: str,
+        query: str,
         limit: int = 10,
         scope: str = "edges"
     ) -> SearchResult:
         """
         图谱语义搜索
-        
+
         使用混合搜索（语义+BM25）在图谱中搜索相关信息。
         如果Zep Cloud的search API不可用，则降级为本地关键词匹配。
-        
+
         Args:
             graph_id: 图谱ID (Standalone Graph)
-            query: 搜索查询
+            query: 搜索查询（超过400字符会被截断）
             limit: 返回结果数量
             scope: 搜索范围，"edges" 或 "nodes"
-            
+
         Returns:
             SearchResult: 搜索结果
         """
         logger.info(f"图谱搜索: graph_id={graph_id}, query={query[:50]}...")
-        
+
+        # Zep API 限制 query 不能超过 400 字符，截断处理
+        truncated_query = query[:self.ZEP_QUERY_MAX_LENGTH] if len(query) > self.ZEP_QUERY_MAX_LENGTH else query
+
         # 尝试使用Zep Cloud Search API
         try:
             search_results = self._call_with_retry(
                 func=lambda: self.client.graph.search(
                     graph_id=graph_id,
-                    query=query,
+                    query=truncated_query,
                     limit=limit,
                     scope=scope,
                     reranker="cross_encoder"
@@ -1106,9 +1113,10 @@ class ZepToolsService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                stage="json_structure",
             )
-            
+
             sub_queries = response.get("sub_queries", [])
             # 确保是字符串列表
             return [str(sq) for sq in sub_queries[:max_queries]]
@@ -1256,7 +1264,8 @@ class ZepToolsService:
         interview_requirement: str,
         simulation_requirement: str = "",
         max_agents: int = 5,
-        custom_questions: List[str] = None
+        custom_questions: List[str] = None,
+        raise_on_failure: bool = False,
     ) -> InterviewResult:
         """
         【InterviewAgents - 深度采访】
@@ -1288,6 +1297,19 @@ class ZepToolsService:
         from .simulation_runner import SimulationRunner
         
         logger.info(f"InterviewAgents 深度采访（真实API）: {interview_requirement[:50]}...")
+
+        # 早期预检：环境不在 waiting/alive 时，不应继续消耗 LLM 选择/生成问题
+        env_status = SimulationRunner.get_env_status_detail(simulation_id)
+        if not SimulationRunner.check_env_alive(simulation_id):
+            status = env_status.get("status", "stopped")
+            if raise_on_failure:
+                if status == "running":
+                    raise RuntimeError(
+                        "模拟仍在运行中，尚未进入等待命令模式（alive），无法执行 Interview。"
+                    )
+                raise RuntimeError(
+                    f"模拟环境未运行或已关闭，无法执行 Interview: {simulation_id}"
+                )
         
         result = InterviewResult(
             interview_topic=interview_requirement,
@@ -1346,12 +1368,49 @@ class ZepToolsService:
             
             logger.info(f"调用批量采访API（双平台）: {len(interviews_request)} 个Agent")
             
+            # 动态超时：双平台 + 多 Agent 会显著拉长耗时（尤其在更慢/更稳定优先的模型上）
+            platform_count = 0
+            try:
+                if env_status.get("twitter_available"):
+                    platform_count += 1
+                if env_status.get("reddit_available"):
+                    platform_count += 1
+            except Exception:
+                platform_count = 0
+            if platform_count <= 0:
+                # 兼容旧 env_status.json（没有平台字段）或无法判断时，按双平台保守估计
+                platform_count = 2
+
+            # 超时参数：利用 OASIS 原生 env.step 并行执行所有采访
+            # 单平台内所有 agent 并行执行，两平台也并行执行
+            # 时间取决于单次 LLM 调用时间（约 30-60 秒）+ 网络延迟 + 重试
+            base_seconds = float(os.environ.get("INTERVIEW_BATCH_TIMEOUT_BASE_SECONDS", "60"))
+            # 因为并行执行，不再需要乘以 agent 数量，但保留一些缓冲
+            buffer_per_agent_seconds = float(
+                os.environ.get("INTERVIEW_BATCH_TIMEOUT_BUFFER_PER_AGENT_SECONDS", "15")
+            )
+            # 最大超时 10 分钟（并行执行后应该很快）
+            max_seconds = float(os.environ.get("INTERVIEW_BATCH_TIMEOUT_MAX_SECONDS", "600"))
+            # 并行执行：基础时间 + 少量缓冲
+            timeout_seconds = base_seconds + buffer_per_agent_seconds * max(1, len(selected_indices))
+            timeout_seconds = min(max_seconds, max(120.0, timeout_seconds))
+
+            logger.info(
+                "批量采访超时估算: agents=%s platforms=%s(并行) timeout=%.1fs (base=%.0f buffer=%.0f max=%.0f)",
+                len(selected_indices),
+                platform_count,
+                timeout_seconds,
+                base_seconds,
+                buffer_per_agent_seconds,
+                max_seconds,
+            )
+
             # 调用 SimulationRunner 的批量采访方法（不传platform，双平台采访）
             api_result = SimulationRunner.interview_agents_batch(
                 simulation_id=simulation_id,
                 interviews=interviews_request,
                 platform=None,  # 不指定platform，双平台采访
-                timeout=180.0   # 双平台需要更长超时
+                timeout=timeout_seconds,
             )
             
             logger.info(f"采访API返回: {api_result.get('interviews_count', 0)} 个结果, success={api_result.get('success')}")
@@ -1360,6 +1419,8 @@ class ZepToolsService:
             if not api_result.get("success", False):
                 error_msg = api_result.get("error", "未知错误")
                 logger.warning(f"采访API返回失败: {error_msg}")
+                if raise_on_failure:
+                    raise RuntimeError(f"采访API调用失败：{error_msg}")
                 result.summary = f"采访API调用失败：{error_msg}。请检查OASIS模拟环境状态。"
                 return result
             
@@ -1416,12 +1477,16 @@ class ZepToolsService:
         except ValueError as e:
             # 模拟环境未运行
             logger.warning(f"采访API调用失败（环境未运行？）: {e}")
+            if raise_on_failure:
+                raise
             result.summary = f"采访失败：{str(e)}。模拟环境可能已关闭，请确保OASIS环境正在运行。"
             return result
         except Exception as e:
             logger.error(f"采访API调用异常: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            if raise_on_failure:
+                raise
             result.summary = f"采访过程发生错误：{str(e)}"
             return result
         
@@ -1541,9 +1606,10 @@ class ZepToolsService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                stage="json_structure",
             )
-            
+
             selected_indices = response.get("selected_indices", [])[:max_agents]
             reasoning = response.get("reasoning", "基于相关性自动选择")
             
@@ -1598,9 +1664,10 @@ class ZepToolsService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.5
+                temperature=0.5,
+                stage="json_structure",
             )
-            
+
             return response.get("questions", [f"关于{interview_requirement}，您有什么看法？"])
             
         except Exception as e:

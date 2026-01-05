@@ -9,16 +9,20 @@ OASIS Agent Profile生成器
 """
 
 import json
+import os
 import random
 import time
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from threading import Lock
 
 from openai import OpenAI
 from zep_cloud.client import Zep
 
 from ..config import Config
+from ..utils.llm_settings import load_llm_settings
+from ..utils.openai_rotation import extract_error_info, should_rotate_model
 from ..utils.logger import get_logger
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
@@ -185,9 +189,26 @@ class OasisProfileGenerator:
         zep_api_key: Optional[str] = None,
         graph_id: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
+        settings = load_llm_settings()
+
+        self.api_key = (api_key or settings.api_key or Config.LLM_API_KEY or "").strip()
+        self.base_url = (base_url or settings.base_url or Config.LLM_BASE_URL or "").strip()
+
+        # 优先使用 stage-based routing 配置的模型
+        stage_model = settings.get_model_for_stage("profile_generation")
+
+        if model_name:
+            self.model_names = [model_name.strip()]
+        elif stage_model:
+            # 如果配置了 profile_generation stage 模型，优先使用
+            other_models = [m for m in (settings.models or []) if m != stage_model]
+            self.model_names = [stage_model] + other_models
+        else:
+            self.model_names = list(settings.models) if settings.models else []
+            if not self.model_names:
+                self.model_names = [(Config.LLM_MODEL_NAME or "gpt-4o-mini").strip()]
+        self.model_names = [m for m in self.model_names if m][:10]
+        self.model_name = self.model_names[0] if self.model_names else (model_name or Config.LLM_MODEL_NAME)
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -207,12 +228,15 @@ class OasisProfileGenerator:
                 self.zep_client = Zep(api_key=self.zep_api_key)
             except Exception as e:
                 logger.warning(f"Zep客户端初始化失败: {e}")
+
+        self._usage_log_lock = Lock()
     
     def generate_profile_from_entity(
         self, 
         entity: EntityNode, 
         user_id: int,
-        use_llm: bool = True
+        use_llm: bool = True,
+        usage_log_path: Optional[str] = None,
     ) -> OasisAgentProfile:
         """
         从Zep实体生成OASIS Agent Profile
@@ -241,7 +265,8 @@ class OasisProfileGenerator:
                 entity_type=entity_type,
                 entity_summary=entity.summary,
                 entity_attributes=entity.attributes,
-                context=context
+                context=context,
+                usage_log_path=usage_log_path,
             )
         else:
             # 使用规则生成基础人设
@@ -312,8 +337,12 @@ class OasisProfileGenerator:
         if not self.graph_id:
             logger.debug(f"跳过Zep检索：未设置graph_id")
             return results
-        
+
+        # Zep API 限制 query 不能超过 400 字符
+        ZEP_QUERY_MAX_LENGTH = 400
         comprehensive_query = f"关于{entity_name}的所有信息、活动、事件、关系和背景"
+        if len(comprehensive_query) > ZEP_QUERY_MAX_LENGTH:
+            comprehensive_query = comprehensive_query[:ZEP_QUERY_MAX_LENGTH]
         
         def search_edges():
             """搜索边（事实/关系）- 带重试机制"""
@@ -499,7 +528,8 @@ class OasisProfileGenerator:
         entity_type: str,
         entity_summary: str,
         entity_attributes: Dict[str, Any],
-        context: str
+        context: str,
+        usage_log_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         使用LLM生成非常详细的人设
@@ -525,59 +555,113 @@ class OasisProfileGenerator:
         last_error = None
         
         for attempt in range(max_attempts):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": self._get_system_prompt(is_individual)},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
-                
-                content = response.choices[0].message.content
-                
-                # 检查是否被截断（finish_reason不是'stop'）
-                finish_reason = response.choices[0].finish_reason
-                if finish_reason == 'length':
-                    logger.warning(f"LLM输出被截断 (attempt {attempt+1}), 尝试修复...")
-                    content = self._fix_truncated_json(content)
-                
-                # 尝试解析JSON
+            temperature = 0.7 - (attempt * 0.1)  # 每次重试降低温度
+            model_pool = self.model_names or [self.model_name]
+
+            for model_idx, model_name in enumerate(model_pool):
                 try:
-                    result = json.loads(content)
-                    
-                    # 验证必需字段
-                    if "bio" not in result or not result["bio"]:
-                        result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
-                    if "persona" not in result or not result["persona"]:
-                        result["persona"] = entity_summary or f"{entity_name}是一个{entity_type}。"
-                    
-                    return result
-                    
-                except json.JSONDecodeError as je:
-                    logger.warning(f"JSON解析失败 (attempt {attempt+1}): {str(je)[:80]}")
-                    
-                    # 尝试修复JSON
-                    result = self._try_fix_json(content, entity_name, entity_type, entity_summary)
-                    if result.get("_fixed"):
-                        del result["_fixed"]
+                    response = self.client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": self._get_system_prompt(is_individual)},
+                            {"role": "user", "content": prompt},
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=temperature,
+                        # 不设置max_tokens，让LLM自由发挥
+                    )
+
+                    content = response.choices[0].message.content
+                    self._append_llm_usage(
+                        usage_log_path,
+                        {
+                            "ts": datetime.now().isoformat(),
+                            "event": "success",
+                            "stage": "profile",
+                            "entity_name": entity_name,
+                            "entity_type": entity_type,
+                            "attempt": attempt + 1,
+                            "model": model_name,
+                            "prompt_chars": len(prompt),
+                            "finish_reason": response.choices[0].finish_reason,
+                            "usage": getattr(response, "usage", None).model_dump()
+                            if getattr(response, "usage", None)
+                            else None,
+                        },
+                    )
+
+                    # 检查是否被截断（finish_reason不是'stop'）
+                    finish_reason = response.choices[0].finish_reason
+                    if finish_reason == 'length':
+                        logger.warning(f"LLM输出被截断 (attempt {attempt+1}), 尝试修复...")
+                        content = self._fix_truncated_json(content)
+
+                    # 尝试解析JSON
+                    try:
+                        result = json.loads(content)
+
+                        # 验证必需字段
+                        if "bio" not in result or not result["bio"]:
+                            result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
+                        if "persona" not in result or not result["persona"]:
+                            result["persona"] = entity_summary or f"{entity_name}是一个{entity_type}。"
+
                         return result
-                    
-                    last_error = je
-                    
-            except Exception as e:
-                logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
-                last_error = e
-                import time
-                time.sleep(1 * (attempt + 1))  # 指数退避
+
+                    except json.JSONDecodeError as je:
+                        logger.warning(f"JSON解析失败 (attempt {attempt+1}): {str(je)[:80]}")
+
+                        # 尝试修复JSON
+                        result = self._try_fix_json(content, entity_name, entity_type, entity_summary)
+                        if result.get("_fixed"):
+                            del result["_fixed"]
+                            return result
+
+                        last_error = je
+                        break
+
+                except Exception as e:
+                    rotate, reason = should_rotate_model(e)
+                    self._append_llm_usage(
+                        usage_log_path,
+                        {
+                            "ts": datetime.now().isoformat(),
+                            "event": "error",
+                            "stage": "profile",
+                            "entity_name": entity_name,
+                            "entity_type": entity_type,
+                            "attempt": attempt + 1,
+                            "model": model_name,
+                            "rotate": bool(rotate),
+                            "reason": reason,
+                            "error": extract_error_info(e),
+                        },
+                    )
+                    logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
+                    last_error = e
+                    if rotate and model_idx < len(model_pool) - 1:
+                        continue
+                    break
+
+            import time
+            time.sleep(1 * (attempt + 1))  # 指数退避
         
         logger.warning(f"LLM生成人设失败（{max_attempts}次尝试）: {last_error}, 使用规则生成")
         return self._generate_profile_rule_based(
             entity_name, entity_type, entity_summary, entity_attributes
         )
+
+    def _append_llm_usage(self, usage_log_path: Optional[str], record: Dict[str, Any]):
+        if not usage_log_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(usage_log_path), exist_ok=True)
+            line = json.dumps(record, ensure_ascii=False)
+            with self._usage_log_lock:
+                with open(usage_log_path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception:
+            pass
     
     def _fix_truncated_json(self, content: str) -> str:
         """修复被截断的JSON（输出被max_tokens限制截断）"""
@@ -878,12 +962,39 @@ class OasisProfileGenerator:
         # 设置graph_id用于Zep检索
         if graph_id:
             self.graph_id = graph_id
+
+        usage_log_path = None
+        if realtime_output_path:
+            usage_log_path = os.path.join(os.path.dirname(realtime_output_path), "llm_usage.jsonl")
         
         total = len(entities)
-        profiles = [None] * total  # 预分配列表保持顺序
+        profiles: List[Optional[OasisAgentProfile]] = [None] * total  # 预分配列表保持顺序
         completed_count = [0]  # 使用列表以便在闭包中修改
         lock = Lock()
-        
+
+        # 断点续跑：如果存在实时写入文件，则先加载已生成的 profiles，跳过重复生成
+        resumed_count = 0
+        if realtime_output_path and os.path.exists(realtime_output_path):
+            try:
+                existing = self._load_profiles_from_file(realtime_output_path, output_platform)
+                for p in existing:
+                    if p.user_id is None:
+                        continue
+                    if isinstance(p.user_id, int) and 0 <= p.user_id < total and profiles[p.user_id] is None:
+                        profiles[p.user_id] = p
+                resumed_count = len([p for p in profiles if p is not None])
+                completed_count[0] = resumed_count
+                if resumed_count:
+                    logger.info(f"检测到已有 {resumed_count}/{total} 个Profile，将从断点继续生成剩余部分")
+                    if progress_callback:
+                        progress_callback(
+                            resumed_count,
+                            total,
+                            f"检测到已有 {resumed_count}/{total} 个Profile，继续生成剩余部分",
+                        )
+            except Exception as e:
+                logger.warning(f"断点续跑：加载已有 profiles 失败，将从头生成: {e}")
+
         # 实时写入文件的辅助函数
         def save_profiles_realtime():
             """实时保存已生成的 profiles 到文件"""
@@ -923,7 +1034,8 @@ class OasisProfileGenerator:
                 profile = self.generate_profile_from_entity(
                     entity=entity,
                     user_id=idx,
-                    use_llm=use_llm
+                    use_llm=use_llm,
+                    usage_log_path=usage_log_path,
                 )
                 
                 # 实时输出生成的人设到控制台和日志
@@ -945,18 +1057,28 @@ class OasisProfileGenerator:
                 )
                 return idx, fallback_profile, str(e)
         
-        logger.info(f"开始并行生成 {total} 个Agent人设（并行数: {parallel_count}）...")
+        if resumed_count >= total and total > 0:
+            logger.info(f"人设已全部生成（{resumed_count}/{total}），无需重复生成")
+            print(f"\n{'='*60}")
+            print(f"人设已全部生成（{resumed_count}/{total}），跳过生成步骤")
+            print(f"{'='*60}\n")
+            return [p for p in profiles if p is not None]  # 这里应当等于 total
+
+        logger.info(
+            f"开始并行生成 {total} 个Agent人设（并行数: {parallel_count}，已存在: {resumed_count}）..."
+        )
         print(f"\n{'='*60}")
-        print(f"开始生成Agent人设 - 共 {total} 个实体，并行数: {parallel_count}")
+        print(f"开始生成Agent人设 - 共 {total} 个实体，并行数: {parallel_count}（已存在 {resumed_count}）")
         print(f"{'='*60}\n")
-        
+
         # 使用线程池并行执行
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel_count) as executor:
             # 提交所有任务
-            future_to_entity = {
-                executor.submit(generate_single_profile, idx, entity): (idx, entity)
-                for idx, entity in enumerate(entities)
-            }
+            future_to_entity = {}
+            for idx, entity in enumerate(entities):
+                if profiles[idx] is not None:
+                    continue
+                future_to_entity[executor.submit(generate_single_profile, idx, entity)] = (idx, entity)
             
             # 收集结果
             for future in concurrent.futures.as_completed(future_to_entity):
@@ -1005,7 +1127,82 @@ class OasisProfileGenerator:
         print(f"\n{'='*60}")
         print(f"人设生成完成！共生成 {len([p for p in profiles if p])} 个Agent")
         print(f"{'='*60}\n")
-        
+
+        # 兜底：确保不会留下 None，避免后续 user_id 映射错位
+        final_profiles: List[OasisAgentProfile] = []
+        for idx, entity in enumerate(entities):
+            if profiles[idx] is None:
+                entity_type = entity.get_entity_type() or "Entity"
+                profiles[idx] = OasisAgentProfile(
+                    user_id=idx,
+                    user_name=self._generate_username(entity.name),
+                    name=entity.name,
+                    bio=f"{entity_type}: {entity.name}",
+                    persona=entity.summary or "A participant in social discussions.",
+                    source_entity_uuid=entity.uuid,
+                    source_entity_type=entity_type,
+                )
+            final_profiles.append(profiles[idx])  # type: ignore[arg-type]
+
+        return final_profiles
+
+    def _load_profiles_from_file(self, file_path: str, platform: str) -> List[OasisAgentProfile]:
+        """从已存在的 profiles 文件中加载（用于断点续跑）"""
+        platform = (platform or "reddit").lower().strip()
+
+        if platform == "twitter":
+            import csv
+
+            profiles: List[OasisAgentProfile] = []
+            with open(file_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        user_id = int(row.get("user_id", ""))
+                    except Exception:
+                        continue
+                    profiles.append(
+                        OasisAgentProfile(
+                            user_id=user_id,
+                            user_name=row.get("username") or row.get("user_name") or f"agent_{user_id}",
+                            name=row.get("name") or "",
+                            bio=row.get("description") or row.get("bio") or "",
+                            persona=row.get("user_char") or row.get("persona") or "",
+                        )
+                    )
+            return profiles
+
+        # default: reddit json
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            return []
+
+        profiles = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                user_id = int(item.get("user_id"))
+            except Exception:
+                continue
+            profiles.append(
+                OasisAgentProfile(
+                    user_id=user_id,
+                    user_name=item.get("username") or item.get("user_name") or f"agent_{user_id}",
+                    name=item.get("name") or "",
+                    bio=item.get("bio") or "",
+                    persona=item.get("persona") or "",
+                    karma=int(item.get("karma", 1000) or 1000),
+                    age=item.get("age"),
+                    gender=item.get("gender"),
+                    mbti=item.get("mbti"),
+                    country=item.get("country"),
+                    profession=item.get("profession"),
+                    interested_topics=item.get("interested_topics") or [],
+                    created_at=item.get("created_at") or datetime.now().strftime("%Y-%m-%d"),
+                )
+            )
         return profiles
     
     def _print_generated_profile(self, entity_name: str, entity_type: str, profile: OasisAgentProfile):
@@ -1197,4 +1394,3 @@ class OasisProfileGenerator:
         """[已废弃] 请使用 save_profiles() 方法"""
         logger.warning("save_profiles_to_json已废弃，请使用save_profiles方法")
         self.save_profiles(profiles, file_path, platform)
-

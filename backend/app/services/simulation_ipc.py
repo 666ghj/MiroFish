@@ -27,6 +27,7 @@ class CommandType(str, Enum):
     INTERVIEW = "interview"           # 单个Agent采访
     BATCH_INTERVIEW = "batch_interview"  # 批量采访
     CLOSE_ENV = "close_env"           # 关闭环境
+    PING = "ping"                     # 心跳检测
 
 
 class CommandStatus(str, Enum):

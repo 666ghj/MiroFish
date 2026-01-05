@@ -34,6 +34,21 @@ export function buildGraph(data) {
 }
 
 /**
+ * 恢复图谱构建（断点续跑）
+ * @param {Object} data - 包含 project_id 或 task_id
+ * @returns {Promise}
+ */
+export function resumeBuildGraph(data) {
+  return requestWithRetry(() =>
+    service({
+      url: '/api/graph/build/resume',
+      method: 'post',
+      data
+    })
+  )
+}
+
+/**
  * 查询任务状态
  * @param {String} taskId - 任务ID
  * @returns {Promise}
@@ -66,5 +81,30 @@ export function getProject(projectId) {
   return service({
     url: `/api/graph/project/${projectId}`,
     method: 'get'
+  })
+}
+
+/**
+ * 列出所有项目
+ * @param {number} limit
+ * @returns {Promise}
+ */
+export function listProjects(limit = 50) {
+  return service({
+    url: '/api/graph/project/list',
+    method: 'get',
+    params: { limit }
+  })
+}
+
+/**
+ * 删除项目
+ * @param {string} projectId - 项目ID
+ * @returns {Promise}
+ */
+export function deleteProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'delete'
   })
 }

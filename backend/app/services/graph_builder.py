@@ -289,7 +289,8 @@ class GraphBuilderService:
         graph_id: str,
         chunks: List[str],
         batch_size: int = 3,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        batch_callback: Optional[Callable[[int, List[str], List[str]], None]] = None,
     ) -> List[str]:
         """分批添加文本到图谱，返回所有 episode 的 uuid 列表"""
         episode_uuids = []
@@ -321,11 +322,20 @@ class GraphBuilderService:
                 )
                 
                 # 收集返回的 episode uuid
+                new_episode_uuids: List[str] = []
                 if batch_result and isinstance(batch_result, list):
                     for ep in batch_result:
                         ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
                         if ep_uuid:
                             episode_uuids.append(ep_uuid)
+                            new_episode_uuids.append(ep_uuid)
+
+                # 批次完成回调（用于断点续跑：持久化 episode_uuids / 已发送 chunk 数）
+                if batch_callback:
+                    try:
+                        batch_callback(i + len(batch_chunks), new_episode_uuids, episode_uuids)
+                    except Exception:
+                        pass
                 
                 # 避免请求过快
                 time.sleep(1)
@@ -496,4 +506,3 @@ class GraphBuilderService:
     def delete_graph(self, graph_id: str):
         """删除图谱"""
         self.client.graph.delete(graph_id=graph_id)
-

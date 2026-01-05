@@ -85,6 +85,81 @@
           <span class="header-meta mono" v-if="activeStep.meta">{{ activeStep.meta }}</span>
         </div>
 
+        <!-- Interview Env Status / Activation -->
+        <div v-if="props.simulationId" class="env-card">
+          <div class="env-card-header">
+            <div class="env-card-title">Interview Env</div>
+            <span class="env-pill" :class="`env-pill--${envPillClass}`">{{ envPillText }}</span>
+          </div>
+
+          <div class="env-card-meta">
+            <div class="env-kv">
+              <span class="env-k">simulation</span>
+              <span class="env-v mono">{{ props.simulationId }}</span>
+            </div>
+            <div class="env-kv">
+              <span class="env-k">status</span>
+              <span class="env-v mono">{{ envInfo?.env_status || '-' }}</span>
+            </div>
+            <div class="env-kv">
+              <span class="env-k">pid</span>
+              <span class="env-v mono">{{ envInfo?.process_pid || '-' }}</span>
+            </div>
+            <div class="env-kv">
+              <span class="env-k">alive</span>
+              <span class="env-v mono">{{ envInfo?.env_alive ? 'yes' : 'no' }}</span>
+            </div>
+          </div>
+
+          <div class="env-card-message">
+            {{ envLoading ? 'Checking environment…' : (envError || envInfo?.message || '未检测') }}
+          </div>
+
+          <div class="env-card-actions">
+            <button class="env-btn" @click="refreshEnvStatus" :disabled="envLoading || isActivatingEnv">
+              {{ envLoading ? 'Refreshing…' : 'Refresh' }}
+            </button>
+            <button class="env-btn" @click="openSimulationInspect" :disabled="!props.simulationId">
+              Inspect Step 3
+            </button>
+            <button
+              class="env-btn env-btn--primary"
+              @click="activateEnvSafe()"
+              :disabled="!props.simulationId || envLoading || isActivatingEnv || envInfo?.env_alive"
+            >
+              {{ isActivatingEnv ? 'Activating…' : 'Activate (safe)' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Actions (Always visible) -->
+        <div class="action-row">
+          <button
+            v-if="!isComplete"
+            class="next-step-btn resume-btn"
+            @click="resumeReportGeneration"
+            :disabled="!props.simulationId || isResuming || isRegenerating"
+          >
+            <span>{{ isResuming ? '恢复中...' : '继续生成' }}</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+          </button>
+
+          <button
+            class="next-step-btn regen-btn"
+            @click="regenerateReport"
+            :disabled="!props.simulationId || isRegenerating || isResuming"
+          >
+            <span>{{ isRegenerating ? '重新生成中...' : '重新生成' }}</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M20.49 15a9 9 0 1 1 2.13-9.36L17 10"></path>
+            </svg>
+          </button>
+        </div>
+
         <!-- Workflow Overview (flat, status-based palette) -->
         <div class="workflow-overview" v-if="agentLogs.length > 0 || reportOutline">
           <div class="workflow-metrics">
@@ -127,14 +202,24 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>进入深度互动</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <!-- Next Step Buttons - 在完成后显示 -->
+          <div v-if="isComplete" class="complete-actions">
+            <button class="next-step-btn download-btn" @click="handleDownloadReport" :disabled="isDownloading">
+              <span>{{ isDownloading ? '下载中...' : '下载报告' }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+            </button>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>进入深度互动</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -394,7 +479,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { generateReport, getAgentLog, getConsoleLog, downloadReport } from '../api/report'
+import { getEnvStatus, branchSimulation } from '../api/simulation'
 
 const router = useRouter()
 
@@ -413,6 +499,179 @@ const goToInteraction = () => {
   }
 }
 
+// Download report
+const handleDownloadReport = async () => {
+  if (!props.reportId || isDownloading.value) return
+
+  isDownloading.value = true
+  try {
+    const response = await downloadReport(props.reportId)
+
+    // 创建下载链接
+    const blob = new Blob([response.data], { type: 'text/markdown' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `report_${props.reportId}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    emit('add-log', {
+      time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      type: 'success',
+      message: '报告下载成功'
+    })
+  } catch (err) {
+    console.error('Download failed:', err)
+    emit('add-log', {
+      time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      type: 'error',
+      message: `报告下载失败: ${err.message || '未知错误'}`
+    })
+  } finally {
+    isDownloading.value = false
+  }
+}
+
+// Interview Env status / activation
+const envLoading = ref(false)
+const envError = ref('')
+const envInfo = ref(null)
+const isActivatingEnv = ref(false)
+
+const envPillClass = computed(() => {
+  if (envLoading.value) return 'loading'
+  if (envInfo.value?.env_alive) return 'alive'
+  if (envInfo.value?.env_status === 'running') return 'running'
+  if (envInfo.value?.env_status) return 'stopped'
+  return 'unknown'
+})
+
+const envPillText = computed(() => {
+  if (envLoading.value) return 'CHECKING'
+  if (envInfo.value?.env_alive) return 'ALIVE'
+  if (envInfo.value?.env_status === 'running') return 'RUNNING'
+  if (envInfo.value?.env_status) return 'STOPPED'
+  return 'UNKNOWN'
+})
+
+const refreshEnvStatus = async () => {
+  if (!props.simulationId || envLoading.value) return false
+  envLoading.value = true
+  envError.value = ''
+  try {
+    const res = await getEnvStatus({ simulation_id: props.simulationId })
+    envInfo.value = res?.data || null
+    return !!res?.data?.env_alive
+  } catch (err) {
+    envInfo.value = null
+    envError.value = err.message || String(err)
+    return false
+  } finally {
+    envLoading.value = false
+  }
+}
+
+const openSimulationInspect = () => {
+  if (!props.simulationId) return
+  router.push({ name: 'SimulationRun', params: { simulationId: props.simulationId }, query: { autoStart: '0' } })
+}
+
+const activateEnvSafe = async (options = {}) => {
+  if (!props.simulationId || isActivatingEnv.value) return
+
+  const skipConfirm = Boolean(options && typeof options === 'object' && options.skipConfirm)
+  if (!skipConfirm) {
+    const confirmed = window.confirm(
+      '将基于该 Simulation 创建一个新的“安全分支”（新 Simulation ID，不会修改原目录）并自动进入 Step 3 运行模拟以恢复 Interview 环境。继续？'
+    )
+    if (!confirmed) return
+  }
+
+  isActivatingEnv.value = true
+  try {
+    const res = await branchSimulation({ source_simulation_id: props.simulationId })
+    const newSimulationId = res?.data?.simulation_id
+    if (!newSimulationId) throw new Error('创建分支失败：未返回 simulation_id')
+    emit('add-log', `已创建安全分支: ${newSimulationId}，进入 Step 3 运行模拟以恢复环境...`)
+    router.push({ name: 'SimulationRun', params: { simulationId: newSimulationId }, query: { autoStart: '1' } })
+  } catch (err) {
+    emit('add-log', `激活失败: ${err.message || String(err)}`)
+  } finally {
+    isActivatingEnv.value = false
+  }
+}
+
+const ensureEnvAliveOrActivate = async (reason) => {
+  const alive = await refreshEnvStatus()
+  if (alive) return true
+
+  const status = envInfo.value?.env_status
+  if (status === 'running') {
+    emit('add-log', '模拟仍在运行中，尚未进入 alive（等待命令）模式，请稍后再试。')
+    return false
+  }
+
+  emit('add-log', `采访环境不可用，无法${reason}。`)
+  await activateEnvSafe()
+  return false
+}
+
+const resumeReportGeneration = async () => {
+  if (!props.simulationId || isResuming.value) {
+    emit('add-log', 'simulation_id 未就绪，无法继续生成（请等待页面加载完成后重试）')
+    return
+  }
+  isResuming.value = true
+  emit('add-log', '尝试继续/恢复报告生成...')
+  try {
+    const ok = await ensureEnvAliveOrActivate('继续生成报告')
+    if (!ok) return
+    const res = await generateReport({ simulation_id: props.simulationId, force_regenerate: false })
+    const newReportId = res?.data?.report_id
+    if (newReportId && props.reportId && newReportId !== props.reportId) {
+      emit('add-log', `检测到新报告ID，跳转: ${newReportId}`)
+      router.push({ name: 'Report', params: { reportId: newReportId } })
+    } else {
+      emit('add-log', res?.data?.already_running ? '报告正在生成中...' : '✓ 已发起报告生成/恢复任务')
+    }
+  } catch (err) {
+    emit('add-log', `恢复失败: ${err.message}`)
+  } finally {
+    isResuming.value = false
+  }
+}
+
+const regenerateReport = async () => {
+  if (!props.simulationId || isRegenerating.value) {
+    emit('add-log', 'simulation_id 未就绪，无法重新生成（请等待页面加载完成后重试）')
+    return
+  }
+  const confirmed = window.confirm('将基于当前模拟重新生成一份全新报告（会生成新的 Report ID，旧报告会保留在历史记录中）。继续？')
+  if (!confirmed) return
+
+  isRegenerating.value = true
+  emit('add-log', '开始重新生成报告（force_regenerate=true）...')
+  try {
+    const ok = await ensureEnvAliveOrActivate('重新生成报告')
+    if (!ok) return
+    const res = await generateReport({ simulation_id: props.simulationId, force_regenerate: true })
+    const newReportId = res?.data?.report_id
+    if (newReportId) {
+      emit('add-log', `✓ 已创建新报告: ${newReportId}，跳转中...`)
+      router.push({ name: 'Report', params: { reportId: newReportId } })
+    } else {
+      emit('add-log', '重新生成失败：未返回 report_id')
+    }
+  } catch (err) {
+    emit('add-log', `重新生成失败: ${err.message}`)
+  } finally {
+    isRegenerating.value = false
+  }
+}
+
 // State
 const agentLogs = ref([])
 const consoleLogs = ref([])
@@ -425,6 +684,9 @@ const expandedContent = ref(new Set())
 const expandedLogs = ref(new Set())
 const collapsedSections = ref(new Set())
 const isComplete = ref(false)
+const isResuming = ref(false)
+const isRegenerating = ref(false)
+const isDownloading = ref(false)
 const startTime = ref(null)
 const leftPanel = ref(null)
 const rightPanel = ref(null)
@@ -2149,6 +2411,14 @@ watch(() => props.reportId, (newId) => {
     startPolling()
   }
 }, { immediate: true })
+
+watch(
+  () => props.simulationId,
+  (newId) => {
+    if (newId) refreshEnvStatus()
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -3355,6 +3625,150 @@ watch(() => props.reportId, (newId) => {
   font-size: 14px;
 }
 
+.env-card {
+  margin: 12px 20px 0 20px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.env-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.env-card-title {
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: #111827;
+}
+
+.env-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+}
+
+.env-pill--alive {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.env-pill--running {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.env-pill--stopped {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.env-pill--loading {
+  border-color: #e5e7eb;
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.env-card-meta {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.env-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.env-k {
+  color: #6b7280;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+
+.env-v {
+  color: #111827;
+  font-weight: 700;
+}
+
+.env-card-message {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.env-card-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.env-btn {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #111827;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.env-btn:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.env-btn--primary {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.env-btn--primary:hover:not(:disabled) {
+  background: #374151;
+  border-color: #374151;
+}
+
+.env-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.action-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 20px 0 20px;
+}
+
+.action-row .next-step-btn {
+  width: 100%;
+  margin: 0;
+  flex: 1;
+}
+
 .next-step-btn {
   display: flex;
   align-items: center;
@@ -3375,6 +3789,71 @@ watch(() => props.reportId, (newId) => {
 
 .next-step-btn:hover {
   background: #374151;
+}
+
+.resume-btn {
+  background: #0F766E;
+}
+
+.resume-btn:hover {
+  background: #115E59;
+}
+
+.resume-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.resume-btn:disabled:hover {
+  background: #0F766E;
+}
+
+.regen-btn {
+  background: #111827;
+}
+
+.regen-btn:hover {
+  background: #0B1220;
+}
+
+.regen-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.regen-btn:disabled:hover {
+  background: #111827;
+}
+
+.download-btn {
+  background: #1D4ED8;
+}
+
+.download-btn:hover {
+  background: #1E40AF;
+}
+
+.download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.download-btn:disabled:hover {
+  background: #1D4ED8;
+}
+
+.download-btn:hover svg {
+  transform: translateY(2px);
+}
+
+.complete-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.complete-actions .next-step-btn {
+  flex: 1;
 }
 
 .next-step-btn svg {

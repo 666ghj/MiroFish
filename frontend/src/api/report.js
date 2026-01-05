@@ -43,9 +43,38 @@ export const getReport = (reportId) => {
 }
 
 /**
+ * 列出所有报告
+ * @param {string|null} simulationId - 可选，按模拟ID过滤
+ * @param {number} limit
+ */
+export const listReports = (simulationId = null, limit = 50) => {
+  const params = { limit }
+  if (simulationId) params.simulation_id = simulationId
+  return service.get('/api/report/list', { params })
+}
+
+/**
  * 与 Report Agent 对话
  * @param {Object} data - { simulation_id, message, chat_history? }
  */
 export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
+}
+
+/**
+ * 删除报告
+ * @param {string} reportId - 报告ID
+ */
+export const deleteReport = (reportId) => {
+  return service.delete(`/api/report/${reportId}`)
+}
+
+/**
+ * 下载报告（Markdown格式）
+ * @param {string} reportId - 报告ID
+ */
+export const downloadReport = (reportId) => {
+  return service.get(`/api/report/${reportId}/download`, {
+    responseType: 'blob'
+  })
 }

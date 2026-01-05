@@ -68,7 +68,8 @@ def generate_report():
                 "error": f"模拟不存在: {simulation_id}"
             }), 404
         
-        # 检查是否已有报告
+        # 检查是否已有报告（completed 直接复用；未完成则断点续跑复用同一个 report_id）
+        existing_report = None
         if not force_regenerate:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
@@ -82,6 +83,27 @@ def generate_report():
                         "already_generated": True
                     }
                 })
+            
+            # 若已有未完成的报告，且最近仍在更新进度，则认为仍在生成中，避免重复启动
+            if existing_report and existing_report.status != ReportStatus.COMPLETED:
+                try:
+                    progress = ReportManager.get_progress(existing_report.report_id)
+                    if progress and progress.get("updated_at"):
+                        from datetime import datetime, timedelta
+                        updated_at = datetime.fromisoformat(progress["updated_at"])
+                        if datetime.now() - updated_at < timedelta(seconds=30) and progress.get("status") in ("pending", "planning", "generating"):
+                            return jsonify({
+                                "success": True,
+                                "data": {
+                                    "simulation_id": simulation_id,
+                                    "report_id": existing_report.report_id,
+                                    "status": progress.get("status", "generating"),
+                                    "message": "报告正在生成中",
+                                    "already_running": True
+                                }
+                            })
+                except Exception:
+                    pass
         
         # 获取项目信息
         project = ProjectManager.get_project(state.project_id)
@@ -90,7 +112,118 @@ def generate_report():
                 "success": False,
                 "error": f"项目不存在: {state.project_id}"
             }), 404
-        
+
+        # 采访环境预检：使用智能修复逻辑检测并修复环境状态
+        from ..services.simulation_runner import SimulationRunner
+
+        # 调用 repair_environment 进行完整的环境检测和修复
+        repair_result = SimulationRunner.repair_environment(simulation_id)
+        logger.info(f"环境修复检查结果: {repair_result}")
+
+        # 如果检测到代码版本不匹配，记录详细信息
+        if repair_result.get("code_version_mismatch"):
+            logger.info(f"检测到代码更新，旧进程已被终止，将自动重启模拟进程")
+
+        if repair_result.get("need_restart"):
+            # 环境需要重启 - 自动启动模拟（最小轮次）
+            logger.info(f"检测到环境需要重启，自动启动模拟: simulation_id={simulation_id}")
+
+            try:
+                # 启动模拟，使用最小轮次（1轮）快速进入等待命令模式
+                run_result = SimulationRunner.start_simulation(
+                    simulation_id=simulation_id,
+                    max_rounds=1,
+                    enable_graph_memory_update=False
+                )
+                logger.info(f"模拟已启动: pid={run_result.process_pid}")
+
+                # 等待模拟完成并进入等待命令模式（最多等待 120 秒）
+                import time
+                max_wait = 120
+                wait_interval = 2
+                waited = 0
+                environment_ready = False
+
+                while waited < max_wait and not environment_ready:
+                    time.sleep(wait_interval)
+                    waited += wait_interval
+
+                    # 检查模拟状态
+                    run_state = SimulationRunner.get_run_state(simulation_id)
+                    if run_state and run_state.runner_status.value == "completed":
+                        # 再次检查环境是否就绪
+                        env_status = SimulationRunner.get_env_status_detail(simulation_id)
+                        if env_status.get("status") == "alive":
+                            # 等待额外 2 秒让命令循环启动
+                            time.sleep(2)
+                            logger.info(f"模拟已完成，env_status=alive，开始检查进程响应性: waited={waited}s")
+
+                            # 尝试ping进程，确保真正响应命令
+                            ping_success = False
+                            ping_attempts = 0
+                            max_ping_attempts = 10
+                            ping_interval = 1
+
+                            while ping_attempts < max_ping_attempts and not ping_success:
+                                ping_attempts += 1
+                                try:
+                                    # 直接使用check_process_responsive方法（SimulationRunner已在顶部导入）
+                                    ping_success = SimulationRunner.check_process_responsive(
+                                        simulation_id,
+                                        timeout=3.0,
+                                        retries=1,  # 这里只试1次，因为我们在循环中
+                                        retry_delay=0.5
+                                    )
+                                    if ping_success:
+                                        logger.info(f"进程ping成功 (第{ping_attempts}次尝试)")
+                                        environment_ready = True
+                                        break
+                                    else:
+                                        logger.info(f"进程ping失败，等待重试: attempt={ping_attempts}/{max_ping_attempts}")
+                                        time.sleep(ping_interval)
+                                except Exception as e:
+                                    logger.warning(f"ping检查异常: {e}")
+                                    time.sleep(ping_interval)
+
+                            if ping_success:
+                                break
+                            else:
+                                logger.info(f"进程未响应，继续等待模拟就绪...")
+
+                    logger.info(f"等待模拟完成: waited={waited}s, status={run_state.runner_status.value if run_state else 'unknown'}")
+
+                # 最终检查 - 只有在我们没有确认环境就绪的情况下才调用repair_environment
+                if not environment_ready:
+                    final_repair = SimulationRunner.repair_environment(simulation_id)
+                    if final_repair.get("need_restart"):
+                        return jsonify({
+                            "success": False,
+                            "error": f"自动重启模拟后环境仍不可用: {final_repair.get('message')}",
+                            "data": {
+                                "simulation_id": simulation_id,
+                                "repair_result": final_repair,
+                                "auto_restart_attempted": True,
+                            },
+                        }), 400
+                    logger.info(f"环境自动恢复成功，继续生成报告")
+                else:
+                    logger.info(f"环境已确认就绪（ping成功），跳过最终repair检查")
+
+            except Exception as e:
+                logger.error(f"自动重启模拟失败: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": f"自动重启模拟失败: {str(e)}\n请手动重新启动模拟后再生成报告。",
+                    "data": {
+                        "simulation_id": simulation_id,
+                        "repair_result": repair_result,
+                    },
+                }), 400
+
+        # 环境正常或已自动修复
+        if repair_result.get("repaired"):
+            logger.info(f"环境已自动修复: actions={repair_result.get('actions')}")
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
@@ -105,9 +238,12 @@ def generate_report():
                 "error": "缺少模拟需求描述"
             }), 400
         
-        # 提前生成 report_id，以便立即返回给前端
-        import uuid
-        report_id = f"report_{uuid.uuid4().hex[:12]}"
+        # report_id：优先复用未完成报告，实现断点续跑
+        if existing_report and existing_report.status != ReportStatus.COMPLETED and not force_regenerate:
+            report_id = existing_report.report_id
+        else:
+            import uuid
+            report_id = f"report_{uuid.uuid4().hex[:12]}"
         
         # 创建异步任务
         task_manager = TaskManager()
@@ -841,6 +977,40 @@ def stream_agent_log(report_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+# ============== Agent 日志审计接口 ==============
+
+@report_bp.route('/<report_id>/audit', methods=['GET'])
+def audit_agent_log(report_id: str):
+    """
+    审计 agent_log.jsonl，自动定位失败位置（section_index + tool_call_id）
+
+    Query参数：
+      - min_tool_calls: 章节最小工具调用次数（默认 2）
+      - max_items: 返回列表的最大条数（默认 50）
+    """
+    try:
+        min_tool_calls = request.args.get("min_tool_calls", 2, type=int)
+        max_items = request.args.get("max_items", 50, type=int)
+
+        data = ReportManager.audit_agent_log(
+            report_id,
+            min_tool_calls_per_section=min_tool_calls,
+            max_items=max_items,
+        )
+
+        return jsonify({"success": True, "data": data})
+
+    except Exception as e:
+        logger.error(f"审计Agent日志失败: {str(e)}")
+        return jsonify(
+            {
+                "success": False,
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            }
+        ), 500
 
 
 # ============== 控制台日志接口 ==============

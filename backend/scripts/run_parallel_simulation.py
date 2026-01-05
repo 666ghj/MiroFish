@@ -66,6 +66,7 @@ if sys.platform == 'win32':
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import multiprocessing
@@ -85,6 +86,24 @@ _cleanup_done = False
 # 脚本固定位于 backend/scripts/ 目录
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
 _backend_dir = os.path.abspath(os.path.join(_scripts_dir, '..'))
+
+
+def get_script_code_version() -> str:
+    """
+    计算当前脚本文件的代码版本（MD5 哈希）。
+    用于检测代码是否更新，以便自动重启使用新代码。
+    """
+    script_path = os.path.abspath(__file__)
+    try:
+        with open(script_path, 'rb') as f:
+            content = f.read()
+        return hashlib.md5(content).hexdigest()[:12]
+    except Exception:
+        return "unknown"
+
+
+# 当前脚本的代码版本（进程启动时计算一次）
+SCRIPT_CODE_VERSION = get_script_code_version()
 _project_root = os.path.abspath(os.path.join(_backend_dir, '..'))
 sys.path.insert(0, _scripts_dir)
 sys.path.insert(0, _backend_dir)
@@ -212,6 +231,7 @@ class CommandType:
     INTERVIEW = "interview"
     BATCH_INTERVIEW = "batch_interview"
     CLOSE_ENV = "close_env"
+    PING = "ping"  # 心跳检测命令
 
 
 class ParallelIPCHandler:
@@ -244,12 +264,13 @@ class ParallelIPCHandler:
         os.makedirs(self.responses_dir, exist_ok=True)
     
     def update_status(self, status: str):
-        """更新环境状态"""
+        """更新环境状态，包含代码版本用于热更新检测"""
         with open(self.status_file, 'w', encoding='utf-8') as f:
             json.dump({
                 "status": status,
                 "twitter_available": self.twitter_env is not None,
                 "reddit_available": self.reddit_env is not None,
+                "code_version": SCRIPT_CODE_VERSION,
                 "timestamp": datetime.now().isoformat()
             }, f, ensure_ascii=False, indent=2)
     
@@ -333,12 +354,49 @@ class ParallelIPCHandler:
                 action_args={"prompt": prompt}
             )
             actions = {agent: interview_action}
-            await env.step(actions)
-            
+            max_retries = int(os.environ.get("OASIS_INTERVIEW_MAX_RETRIES", "2"))
+            backoff_base = float(os.environ.get("OASIS_INTERVIEW_RETRY_BACKOFF_SECONDS", "1.0"))
+
+            def _is_retryable(err: Exception) -> bool:
+                msg = str(err).lower()
+                return any(
+                    needle in msg
+                    for needle in (
+                        "eof",
+                        "timeout",
+                        "timed out",
+                        "rate limit",
+                        "429",
+                        "internalservererror",
+                        "internal server error",
+                        "server error",
+                        "temporarily unavailable",
+                        "connection reset",
+                        "connection aborted",
+                        "connection error",
+                    )
+                )
+
+            for attempt in range(max_retries + 1):
+                try:
+                    await env.step(actions)
+                    break
+                except Exception as e:
+                    # 有些情况下 env.step 抛错，但 DB 已写入结果；优先读取最新结果避免重复消耗
+                    maybe = self._get_interview_result(agent_id, actual_platform)
+                    if maybe.get("response"):
+                        maybe["platform"] = actual_platform
+                        return maybe
+                    if attempt >= max_retries or not _is_retryable(e):
+                        raise
+                    # 轻量退避，降低对上游的瞬时压力
+                    jitter = random.uniform(0, 0.5)
+                    await asyncio.sleep(backoff_base * (2**attempt) + jitter)
+
             result = self._get_interview_result(agent_id, actual_platform)
             result["platform"] = actual_platform
             return result
-            
+
         except Exception as e:
             return {"platform": platform, "error": str(e)}
     
@@ -416,7 +474,7 @@ class ParallelIPCHandler:
     async def handle_batch_interview(self, command_id: str, interviews: List[Dict], platform: str = None) -> bool:
         """
         处理批量采访命令
-        
+
         Args:
             command_id: 命令ID
             interviews: [{"agent_id": int, "prompt": str, "platform": str(optional)}, ...]
@@ -426,10 +484,10 @@ class ParallelIPCHandler:
                 - None/不指定: 每个Agent同时采访两个平台
         """
         # 按平台分组
-        twitter_interviews = []
-        reddit_interviews = []
-        both_platforms_interviews = []  # 需要同时采访两个平台的
-        
+        twitter_interviews: List[Dict[str, Any]] = []
+        reddit_interviews: List[Dict[str, Any]] = []
+        both_platforms_interviews: List[Dict[str, Any]] = []  # 需要同时采访两个平台的
+
         for interview in interviews:
             item_platform = interview.get("platform", platform)
             if item_platform == "twitter":
@@ -437,82 +495,121 @@ class ParallelIPCHandler:
             elif item_platform == "reddit":
                 reddit_interviews.append(interview)
             else:
-                # 未指定平台：两个平台都采访
                 both_platforms_interviews.append(interview)
-        
+
         # 把 both_platforms_interviews 拆分到两个平台
         if both_platforms_interviews:
             if self.twitter_env:
                 twitter_interviews.extend(both_platforms_interviews)
             if self.reddit_env:
                 reddit_interviews.extend(both_platforms_interviews)
-        
-        results = {}
-        
-        # 处理Twitter平台的采访
+
+        results: Dict[str, Any] = {}
+        errors: List[str] = []
+
+        async def batch_interview_on_platform(
+            env, agent_graph, platform_name: str, interview_list: List[Dict]
+        ) -> Tuple[Dict[str, Any], List[str]]:
+            """
+            在单个平台上批量执行采访（利用 OASIS 原生 env.step 的并行能力）
+            """
+            platform_results = {}
+            platform_errors = []
+
+            if not env or not agent_graph:
+                platform_errors.append(f"{platform_name}: 平台不可用")
+                return platform_results, platform_errors
+
+            # 构建所有 agent 的 interview 动作，传给 env.step 并行执行
+            actions = {}
+            agent_id_map = {}  # 用于后续结果映射
+
+            for interview in interview_list:
+                agent_id = interview.get("agent_id")
+                prompt = interview.get("prompt", "")
+                try:
+                    agent = agent_graph.get_agent(agent_id)
+                    interview_action = ManualAction(
+                        action_type=ActionType.INTERVIEW,
+                        action_args={"prompt": prompt}
+                    )
+                    actions[agent] = interview_action
+                    agent_id_map[agent] = agent_id
+                except Exception as e:
+                    platform_errors.append(f"{platform_name}_{agent_id}: 获取agent失败: {e}")
+
+            if not actions:
+                return platform_results, platform_errors
+
+            # 使用 OASIS 原生 env.step 并行执行所有采访
+            max_retries = int(os.environ.get("OASIS_INTERVIEW_MAX_RETRIES", "2"))
+            backoff_base = float(os.environ.get("OASIS_INTERVIEW_RETRY_BACKOFF_SECONDS", "1.0"))
+            last_error: Optional[Exception] = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    await env.step(actions)
+                    last_error = None
+                    break
+                except Exception as e:
+                    last_error = e
+                    error_msg = f"{platform_name}: env.step 第{attempt + 1}次尝试失败: {type(e).__name__}: {e}"
+                    if attempt >= max_retries:
+                        # 最后一次重试也失败，记录错误并尝试从数据库读取已有结果
+                        platform_errors.append(error_msg)
+                        print(f"  警告: {error_msg}")
+                    else:
+                        # 退避重试
+                        wait_time = backoff_base * (2**attempt) + random.uniform(0, 0.5)
+                        print(f"  {error_msg}, {wait_time:.1f}秒后重试...")
+                        await asyncio.sleep(wait_time)
+
+            # 从数据库读取所有采访结果
+            for agent, agent_id in agent_id_map.items():
+                result = self._get_interview_result(agent_id, platform_name)
+                if result.get("response"):
+                    result["platform"] = platform_name
+                    platform_results[f"{platform_name}_{agent_id}"] = result
+                else:
+                    platform_errors.append(f"{platform_name}_{agent_id}: 无响应")
+
+            return platform_results, platform_errors
+
+        # 并行处理两个平台（每个平台内部也是并行的）
+        tasks = []
         if twitter_interviews and self.twitter_env:
-            try:
-                twitter_actions = {}
-                for interview in twitter_interviews:
-                    agent_id = interview.get("agent_id")
-                    prompt = interview.get("prompt", "")
-                    try:
-                        agent = self.twitter_agent_graph.get_agent(agent_id)
-                        twitter_actions[agent] = ManualAction(
-                            action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
-                        )
-                    except Exception as e:
-                        print(f"  警告: 无法获取Twitter Agent {agent_id}: {e}")
-                
-                if twitter_actions:
-                    await self.twitter_env.step(twitter_actions)
-                    
-                    for interview in twitter_interviews:
-                        agent_id = interview.get("agent_id")
-                        result = self._get_interview_result(agent_id, "twitter")
-                        result["platform"] = "twitter"
-                        results[f"twitter_{agent_id}"] = result
-            except Exception as e:
-                print(f"  Twitter批量Interview失败: {e}")
-        
-        # 处理Reddit平台的采访
+            tasks.append(batch_interview_on_platform(
+                self.twitter_env, self.twitter_agent_graph, "twitter", twitter_interviews
+            ))
         if reddit_interviews and self.reddit_env:
-            try:
-                reddit_actions = {}
-                for interview in reddit_interviews:
-                    agent_id = interview.get("agent_id")
-                    prompt = interview.get("prompt", "")
-                    try:
-                        agent = self.reddit_agent_graph.get_agent(agent_id)
-                        reddit_actions[agent] = ManualAction(
-                            action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
-                        )
-                    except Exception as e:
-                        print(f"  警告: 无法获取Reddit Agent {agent_id}: {e}")
-                
-                if reddit_actions:
-                    await self.reddit_env.step(reddit_actions)
-                    
-                    for interview in reddit_interviews:
-                        agent_id = interview.get("agent_id")
-                        result = self._get_interview_result(agent_id, "reddit")
-                        result["platform"] = "reddit"
-                        results[f"reddit_{agent_id}"] = result
-            except Exception as e:
-                print(f"  Reddit批量Interview失败: {e}")
-        
+            tasks.append(batch_interview_on_platform(
+                self.reddit_env, self.reddit_agent_graph, "reddit", reddit_interviews
+            ))
+
+        if tasks:
+            all_results = await asyncio.gather(*tasks)
+            for platform_results, platform_errors in all_results:
+                results.update(platform_results)
+                errors.extend(platform_errors)
+
         if results:
-            self.send_response(command_id, "completed", result={
-                "interviews_count": len(results),
-                "results": results
-            })
-            print(f"  批量Interview完成: {len(results)} 个Agent")
+            self.send_response(
+                command_id,
+                "completed",
+                result={
+                    "interviews_count": len(results),
+                    "results": results,
+                    "errors": errors[:50],
+                },
+            )
+            print(f"  批量Interview完成: {len(results)} 个结果, errors={len(errors)}")
             return True
-        else:
-            self.send_response(command_id, "failed", error="没有成功的采访")
-            return False
+
+        error_msg = "没有成功的采访"
+        if errors:
+            error_msg = "没有成功的采访; " + "; ".join(errors[:10])
+        self.send_response(command_id, "failed", error=error_msg)
+        return False
     
     def _get_interview_result(self, agent_id: int, platform: str) -> Dict[str, Any]:
         """从数据库获取最新的Interview结果"""
@@ -595,7 +692,12 @@ class ParallelIPCHandler:
             print("收到关闭环境命令")
             self.send_response(command_id, "completed", result={"message": "环境即将关闭"})
             return False
-        
+
+        elif command_type == CommandType.PING:
+            # 心跳检测：立即响应
+            self.send_response(command_id, "completed", result={"message": "pong", "alive": True})
+            return True
+
         else:
             self.send_response(command_id, "failed", error=f"未知命令类型: {command_type}")
             return True
@@ -981,7 +1083,7 @@ def _get_comment_info(
     return None
 
 
-def create_model(config: Dict[str, Any], use_boost: bool = False):
+def create_model(config: Dict[str, Any], simulation_dir: str, use_boost: bool = False, *, stage: str = "oasis_simulation"):
     """
     创建LLM模型
     
@@ -995,45 +1097,14 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         config: 模拟配置字典
         use_boost: 是否使用加速 LLM 配置（如果可用）
     """
-    # 检查是否有加速配置
-    boost_api_key = os.environ.get("LLM_BOOST_API_KEY", "")
-    boost_base_url = os.environ.get("LLM_BOOST_BASE_URL", "")
-    boost_model = os.environ.get("LLM_BOOST_MODEL_NAME", "")
-    has_boost_config = bool(boost_api_key)
-    
-    # 根据参数和配置情况选择使用哪个 LLM
-    if use_boost and has_boost_config:
-        # 使用加速配置
-        llm_api_key = boost_api_key
-        llm_base_url = boost_base_url
-        llm_model = boost_model or os.environ.get("LLM_MODEL_NAME", "")
-        config_label = "[加速LLM]"
-    else:
-        # 使用通用配置
-        llm_api_key = os.environ.get("LLM_API_KEY", "")
-        llm_base_url = os.environ.get("LLM_BASE_URL", "")
-        llm_model = os.environ.get("LLM_MODEL_NAME", "")
-        config_label = "[通用LLM]"
-    
-    # 如果 .env 中没有模型名，则使用 config 作为备用
-    if not llm_model:
-        llm_model = config.get("llm_model", "gpt-4o-mini")
-    
-    # 设置 camel-ai 所需的环境变量
-    if llm_api_key:
-        os.environ["OPENAI_API_KEY"] = llm_api_key
-    
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
-    
-    if llm_base_url:
-        os.environ["OPENAI_API_BASE_URL"] = llm_base_url
-    
-    print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
-    
-    return ModelFactory.create(
-        model_platform=ModelPlatformType.OPENAI,
-        model_type=llm_model,
+    # Use local UI-configurable settings (supports ordered multi-model failover).
+    from mirofish_llm import create_oasis_model
+
+    return create_oasis_model(
+        config,
+        simulation_dir=simulation_dir,
+        use_boost=use_boost,
+        stage=stage,
     )
 
 
@@ -1127,7 +1198,7 @@ async def run_twitter_simulation(
     log_info("初始化...")
     
     # Twitter 使用通用 LLM 配置
-    model = create_model(config, use_boost=False)
+    model = create_model(config, simulation_dir, use_boost=False, stage="oasis_twitter")
     
     # OASIS Twitter使用CSV格式
     profile_path = os.path.join(simulation_dir, "twitter_profiles.csv")
@@ -1319,7 +1390,7 @@ async def run_reddit_simulation(
     log_info("初始化...")
     
     # Reddit 使用加速 LLM 配置（如果有的话，否则回退到通用配置）
-    model = create_model(config, use_boost=True)
+    model = create_model(config, simulation_dir, use_boost=True, stage="oasis_reddit")
     
     profile_path = os.path.join(simulation_dir, "reddit_profiles.json")
     if not os.path.exists(profile_path):

@@ -11,14 +11,18 @@
 """
 
 import json
+import os
 import math
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from threading import Lock
 
 from openai import OpenAI
 
 from ..config import Config
+from ..utils.llm_settings import load_llm_settings
+from ..utils.openai_rotation import extract_error_info, should_rotate_model
 from ..utils.logger import get_logger
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
@@ -227,9 +231,19 @@ class SimulationConfigGenerator:
         base_url: Optional[str] = None,
         model_name: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
+        settings = load_llm_settings()
+
+        self.api_key = (api_key or settings.api_key or Config.LLM_API_KEY or "").strip()
+        self.base_url = (base_url or settings.base_url or Config.LLM_BASE_URL or "").strip()
+
+        if model_name:
+            self.model_names = [model_name.strip()]
+        else:
+            self.model_names = list(settings.models) if settings.models else []
+            if not self.model_names:
+                self.model_names = [(Config.LLM_MODEL_NAME or "gpt-4o-mini").strip()]
+        self.model_names = [m for m in self.model_names if m][:10]
+        self.model_name = self.model_names[0] if self.model_names else (model_name or Config.LLM_MODEL_NAME)
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -238,6 +252,9 @@ class SimulationConfigGenerator:
             api_key=self.api_key,
             base_url=self.base_url
         )
+
+        self._usage_log_path: Optional[str] = None
+        self._usage_log_lock = Lock()
     
     def generate_config(
         self,
@@ -250,6 +267,7 @@ class SimulationConfigGenerator:
         enable_twitter: bool = True,
         enable_reddit: bool = True,
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        usage_log_path: Optional[str] = None,
     ) -> SimulationParameters:
         """
         智能生成完整的模拟配置（分步生成）
@@ -269,6 +287,7 @@ class SimulationConfigGenerator:
             SimulationParameters: 完整的模拟参数
         """
         logger.info(f"开始智能生成模拟配置: simulation_id={simulation_id}, 实体数={len(entities)}")
+        self._usage_log_path = usage_log_path
         
         # 计算总步骤数
         num_batches = math.ceil(len(entities) / self.AGENTS_PER_BATCH)
@@ -430,7 +449,7 @@ class SimulationConfigGenerator:
         
         return "\n".join(lines)
     
-    def _call_llm_with_retry(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
+    def _call_llm_with_retry(self, prompt: str, system_prompt: str, *, operation: str = "simulation_config") -> Dict[str, Any]:
         """带重试的LLM调用，包含JSON修复逻辑"""
         import re
         
@@ -438,46 +457,97 @@ class SimulationConfigGenerator:
         last_error = None
         
         for attempt in range(max_attempts):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
-                
-                content = response.choices[0].message.content
-                finish_reason = response.choices[0].finish_reason
-                
-                # 检查是否被截断
-                if finish_reason == 'length':
-                    logger.warning(f"LLM输出被截断 (attempt {attempt+1})")
-                    content = self._fix_truncated_json(content)
-                
-                # 尝试解析JSON
+            temperature = 0.7 - (attempt * 0.1)  # 每次重试降低温度
+            model_pool = self.model_names or [self.model_name]
+
+            for model_idx, model_name in enumerate(model_pool):
                 try:
-                    return json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"JSON解析失败 (attempt {attempt+1}): {str(e)[:80]}")
-                    
-                    # 尝试修复JSON
-                    fixed = self._try_fix_config_json(content)
-                    if fixed:
-                        return fixed
-                    
+                    response = self.client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt},
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=temperature,
+                        # 不设置max_tokens，让LLM自由发挥
+                    )
+
+                    self._append_llm_usage(
+                        {
+                            "ts": datetime.now().isoformat(),
+                            "event": "success",
+                            "stage": "simulation_config",
+                            "operation": operation,
+                            "attempt": attempt + 1,
+                            "model": model_name,
+                            "prompt_chars": len(prompt),
+                            "finish_reason": response.choices[0].finish_reason,
+                            "usage": getattr(response, "usage", None).model_dump()
+                            if getattr(response, "usage", None)
+                            else None,
+                        }
+                    )
+
+                    content = response.choices[0].message.content
+                    finish_reason = response.choices[0].finish_reason
+
+                    # 检查是否被截断
+                    if finish_reason == 'length':
+                        logger.warning(f"LLM输出被截断 (attempt {attempt+1})")
+                        content = self._fix_truncated_json(content)
+
+                    # 尝试解析JSON
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"JSON解析失败 (attempt {attempt+1}): {str(e)[:80]}")
+
+                        # 尝试修复JSON
+                        fixed = self._try_fix_config_json(content)
+                        if fixed:
+                            return fixed
+
+                        last_error = e
+                        break
+
+                except Exception as e:
+                    rotate, reason = should_rotate_model(e)
+                    self._append_llm_usage(
+                        {
+                            "ts": datetime.now().isoformat(),
+                            "event": "error",
+                            "stage": "simulation_config",
+                            "operation": operation,
+                            "attempt": attempt + 1,
+                            "model": model_name,
+                            "rotate": bool(rotate),
+                            "reason": reason,
+                            "error": extract_error_info(e),
+                        }
+                    )
+                    logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
                     last_error = e
-                    
-            except Exception as e:
-                logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
-                last_error = e
-                import time
-                time.sleep(2 * (attempt + 1))
+                    if rotate and model_idx < len(model_pool) - 1:
+                        continue
+                    break
+
+            import time
+            time.sleep(2 * (attempt + 1))
         
         raise last_error or Exception("LLM调用失败")
+
+    def _append_llm_usage(self, record: Dict[str, Any]):
+        if not self._usage_log_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self._usage_log_path), exist_ok=True)
+            line = json.dumps(record, ensure_ascii=False)
+            with self._usage_log_lock:
+                with open(self._usage_log_path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception:
+            pass
     
     def _fix_truncated_json(self, content: str) -> str:
         """修复被截断的JSON"""
@@ -587,7 +657,7 @@ class SimulationConfigGenerator:
         system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合中国人作息习惯。"
         
         try:
-            return self._call_llm_with_retry(prompt, system_prompt)
+            return self._call_llm_with_retry(prompt, system_prompt, operation="time_config")
         except Exception as e:
             logger.warning(f"时间配置LLM生成失败: {e}, 使用默认配置")
             return self._get_default_time_config(num_entities)
@@ -703,7 +773,7 @@ class SimulationConfigGenerator:
         system_prompt = "你是舆论分析专家。返回纯JSON格式。注意 poster_type 必须精确匹配可用实体类型。"
         
         try:
-            return self._call_llm_with_retry(prompt, system_prompt)
+            return self._call_llm_with_retry(prompt, system_prompt, operation="event_config")
         except Exception as e:
             logger.warning(f"事件配置LLM生成失败: {e}, 使用默认配置")
             return {
@@ -866,7 +936,11 @@ class SimulationConfigGenerator:
         system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合中国人作息习惯。"
         
         try:
-            result = self._call_llm_with_retry(prompt, system_prompt)
+            result = self._call_llm_with_retry(
+                prompt,
+                system_prompt,
+                operation=f"agent_configs_batch_{start_idx + 1}-{start_idx + len(entities)}",
+            )
             llm_configs = {cfg["agent_id"]: cfg for cfg in result.get("agent_configs", [])}
         except Exception as e:
             logger.warning(f"Agent配置批次LLM生成失败: {e}, 使用规则生成")
@@ -984,4 +1058,3 @@ class SimulationConfigGenerator:
                 "influence_weight": 1.0
             }
     
-

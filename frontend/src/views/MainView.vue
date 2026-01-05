@@ -80,7 +80,7 @@ import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, getProject, buildGraph, resumeBuildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 
 const route = useRoute()
@@ -108,6 +108,7 @@ const systemLogs = ref([])
 // Polling timers
 let pollTimer = null
 let graphPollTimer = null
+const resumeAttempts = new Set()
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -344,6 +345,25 @@ const pollTaskStatus = async (taskId) => {
             await loadGraph(projRes.data.graph_id)
         }
       } else if (task.status === 'failed') {
+        const isStale = task.error === 'stale_after_restart' || (task.message || '').includes('服务重启后中断')
+        
+        // 断点续跑：后端重启导致的中断，尝试自动恢复一次
+        if (isStale && !resumeAttempts.has(taskId)) {
+          resumeAttempts.add(taskId)
+          addLog('检测到任务因服务重启中断，尝试恢复图谱构建...')
+          
+          try {
+            const resumeRes = await resumeBuildGraph({ project_id: currentProjectId.value, task_id: taskId })
+            if (resumeRes.success) {
+              addLog('✓ 已发起图谱构建恢复任务，继续轮询进度...')
+              return
+            }
+            addLog(`恢复任务启动失败: ${resumeRes.error || '未知错误'}`)
+          } catch (resumeErr) {
+            addLog(`恢复任务异常: ${resumeErr.message}`)
+          }
+        }
+        
         stopPolling()
         error.value = task.error
         addLog(`Graph build task failed: ${task.error}`)
