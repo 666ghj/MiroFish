@@ -341,7 +341,13 @@ class SimulationRunner:
                 cls._save_run_state(existing)
             else:
                 raise ValueError(f"模拟已在运行中: {simulation_id}")
-        
+
+        # 【关键修复】无论状态如何，杀死所有可能残留的该模拟的旧进程
+        # 这解决了模拟完成后进程仍在"等待命令模式"的问题
+        if existing and existing.process_pid and cls._is_pid_alive(existing.process_pid):
+            logger.info(f"发现残留进程，正在终止: simulation={simulation_id}, pid={existing.process_pid}")
+            cls._terminate_pid(existing.process_pid, simulation_id, timeout=5)
+
         # 加载模拟配置
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         config_path = os.path.join(sim_dir, "simulation_config.json")
@@ -1474,7 +1480,76 @@ class SimulationRunner:
             logger.warning("无法注册信号处理器（不在主线程），仅使用 atexit")
         
         _cleanup_registered = True
-    
+
+        # 后端启动时处理孤儿进程
+        cls._handle_orphan_processes_on_startup()
+
+    @classmethod
+    def _handle_orphan_processes_on_startup(cls):
+        """
+        后端启动时处理孤儿进程
+
+        扫描所有 run_state.json，检测是否有 PID 仍存活但后端无句柄的进程：
+        - SIMULATION_DETACH_ON_BACKEND_EXIT=true: 记录但不终止（允许继续接收命令）
+        - SIMULATION_DETACH_ON_BACKEND_EXIT=false: 终止孤儿进程
+        """
+        if not os.path.exists(cls.RUN_STATE_DIR):
+            return
+
+        orphan_count = 0
+        handled_count = 0
+
+        try:
+            for sim_id in os.listdir(cls.RUN_STATE_DIR):
+                sim_dir = os.path.join(cls.RUN_STATE_DIR, sim_id)
+                state_file = os.path.join(sim_dir, "run_state.json")
+
+                if not os.path.isfile(state_file):
+                    continue
+
+                try:
+                    with open(state_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+
+                    pid = data.get("process_pid")
+                    if not pid or not cls._is_pid_alive(pid):
+                        continue
+
+                    # 发现孤儿进程（PID 存活但后端无句柄）
+                    if sim_id in cls._processes:
+                        continue  # 后端有句柄，不是孤儿
+
+                    orphan_count += 1
+
+                    if Config.SIMULATION_DETACH_ON_BACKEND_EXIT:
+                        # Detach 模式：记录日志但不终止，允许继续接收 interview 命令
+                        logger.info(f"发现孤儿进程（detach 模式，保持存活）: simulation={sim_id}, pid={pid}")
+                    else:
+                        # 非 detach 模式：终止孤儿进程
+                        logger.info(f"发现孤儿进程，正在终止: simulation={sim_id}, pid={pid}")
+                        cls._terminate_pid(pid, sim_id, timeout=5)
+
+                        # 更新 run_state.json
+                        data["runner_status"] = "stopped"
+                        data["error"] = "后端重启时检测到孤儿进程，已终止"
+                        data["completed_at"] = datetime.now().isoformat()
+                        with open(state_file, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, ensure_ascii=False, indent=2)
+
+                        handled_count += 1
+
+                except Exception as e:
+                    logger.warning(f"处理孤儿进程检测失败: simulation={sim_id}, error={e}")
+
+        except Exception as e:
+            logger.warning(f"扫描孤儿进程失败: {e}")
+
+        if orphan_count > 0:
+            if Config.SIMULATION_DETACH_ON_BACKEND_EXIT:
+                logger.info(f"孤儿进程扫描完成: 发现 {orphan_count} 个，已保持存活（detach 模式）")
+            else:
+                logger.info(f"孤儿进程扫描完成: 发现 {orphan_count} 个，已终止 {handled_count} 个")
+
     @classmethod
     def get_running_simulations(cls) -> List[str]:
         """
@@ -1497,7 +1572,48 @@ class SimulationRunner:
             "process_pid": pid,
             "process_alive": cls._is_pid_alive(pid),
         }
-    
+
+    @classmethod
+    def ensure_single_process(cls, simulation_id: str) -> Dict[str, Any]:
+        """
+        确保指定模拟只有一个进程在运行
+
+        如果发现记录的 PID 仍存活，检查是否与当前后端句柄匹配。
+        用于报告生成前的环境验证。
+
+        Returns:
+            {
+                "ok": bool,          # 是否只有一个进程
+                "pid": int|None,     # 当前进程 PID
+                "message": str       # 状态说明
+            }
+        """
+        state = cls.get_run_state(simulation_id)
+        if not state:
+            return {"ok": False, "pid": None, "message": "模拟状态不存在"}
+
+        pid = state.process_pid
+        if not pid:
+            return {"ok": False, "pid": None, "message": "无进程记录"}
+
+        if not cls._is_pid_alive(pid):
+            return {"ok": False, "pid": pid, "message": "进程已退出"}
+
+        # 检查后端是否有该进程的句柄（如果有，说明是本次启动创建的）
+        if simulation_id in cls._processes:
+            process = cls._processes[simulation_id]
+            if process.poll() is None:
+                return {"ok": True, "pid": pid, "message": "进程正常运行"}
+            else:
+                return {"ok": False, "pid": pid, "message": "进程句柄存在但已退出"}
+
+        # 后端无句柄但进程存活 = 孤儿进程（后端重启后的残留）
+        # 在 DETACH 模式下这是正常的
+        if Config.SIMULATION_DETACH_ON_BACKEND_EXIT:
+            return {"ok": True, "pid": pid, "message": "孤儿进程（detach 模式，允许继续使用）"}
+        else:
+            return {"ok": False, "pid": pid, "message": "孤儿进程（非 detach 模式，建议重新启动模拟）"}
+
     # ============== Interview 功能 ==============
     
     @classmethod
@@ -1527,21 +1643,22 @@ class SimulationRunner:
             simulation_id: 模拟ID
 
         Returns:
-            状态详情字典，包含 status, twitter_available, reddit_available, timestamp
+            状态详情字典，包含 status, twitter_available, reddit_available, code_version, timestamp
         """
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         status_file = os.path.join(sim_dir, "env_status.json")
-        
+
         default_status = {
             "status": "stopped",
             "twitter_available": False,
             "reddit_available": False,
+            "code_version": None,
             "timestamp": None
         }
-        
+
         if not os.path.exists(status_file):
             return default_status
-        
+
         try:
             with open(status_file, 'r', encoding='utf-8') as f:
                 status = json.load(f)
@@ -1549,10 +1666,289 @@ class SimulationRunner:
                 "status": status.get("status", "stopped"),
                 "twitter_available": status.get("twitter_available", False),
                 "reddit_available": status.get("reddit_available", False),
+                "code_version": status.get("code_version"),
                 "timestamp": status.get("timestamp")
             }
         except (json.JSONDecodeError, OSError):
             return default_status
+
+    @classmethod
+    def update_env_status(cls, simulation_id: str, status: str) -> bool:
+        """
+        更新模拟环境状态（用于智能恢复）
+
+        Args:
+            simulation_id: 模拟ID
+            status: 新状态 ("alive", "stopped", "running")
+
+        Returns:
+            是否更新成功
+        """
+        from datetime import datetime
+
+        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        status_file = os.path.join(sim_dir, "env_status.json")
+
+        # 读取现有状态或创建新状态
+        current_status = {
+            "status": status,
+            "twitter_available": True,
+            "reddit_available": True,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        if os.path.exists(status_file):
+            try:
+                with open(status_file, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                # 保留平台可用性信息
+                current_status["twitter_available"] = existing.get("twitter_available", True)
+                current_status["reddit_available"] = existing.get("reddit_available", True)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        try:
+            os.makedirs(sim_dir, exist_ok=True)
+            with open(status_file, 'w', encoding='utf-8') as f:
+                json.dump(current_status, f, ensure_ascii=False, indent=2)
+            logger.info(f"已更新环境状态: simulation={simulation_id}, status={status}")
+            return True
+        except OSError as e:
+            logger.error(f"更新环境状态失败: {e}")
+            return False
+
+    @classmethod
+    def check_process_responsive(cls, simulation_id: str, timeout: float = 5.0, retries: int = 3, retry_delay: float = 1.0) -> bool:
+        """
+        检查模拟进程是否响应 IPC 命令
+
+        发送一个简单的 ping 命令来验证进程是否真正响应。
+        用于检测僵尸进程（进程存活但不再处理命令）。
+
+        Args:
+            simulation_id: 模拟ID
+            timeout: 每次 ping 的超时时间（秒）
+            retries: 最大重试次数（默认 3 次）
+            retry_delay: 重试间隔（秒）
+
+        Returns:
+            进程是否响应
+        """
+        from .simulation_ipc import SimulationIPCClient, CommandType
+        import time
+        import os
+
+        # 构建模拟目录路径
+        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        if not os.path.exists(sim_dir):
+            logger.warning(f"模拟目录不存在: {sim_dir}")
+            return False
+
+        for attempt in range(retries):
+            try:
+                ipc_client = SimulationIPCClient(sim_dir)
+                # 发送 ping 命令（使用 CommandType 枚举）
+                response = ipc_client.send_command(CommandType.PING, {}, timeout=timeout)
+                # response 是 IPCResponse 对象，检查 status 和 result
+                if response.status.value == "completed":
+                    result = response.result.get("alive", False) if response.result else False
+                    if result:
+                        return True
+            except TimeoutError:
+                if attempt < retries - 1:
+                    logger.info(f"进程 ping 超时，重试 ({attempt + 1}/{retries}): simulation={simulation_id}")
+                    time.sleep(retry_delay)
+                    continue
+                logger.warning(f"进程无响应（ping 超时，已重试 {retries} 次）: simulation={simulation_id}")
+                return False
+            except Exception as e:
+                logger.warning(f"进程响应检测失败: {e}")
+                return False
+
+        return False
+
+    @classmethod
+    def repair_environment(cls, simulation_id: str) -> Dict[str, Any]:
+        """
+        智能修复模拟环境
+
+        检测并修复以下问题：
+        1. env_status.json 与进程状态不一致
+        2. 僵尸进程（进程存活但不响应 IPC）
+        3. 待处理的 IPC 命令
+
+        Args:
+            simulation_id: 模拟ID
+
+        Returns:
+            修复结果，包含 success, repaired, need_restart, message
+        """
+        result = {
+            "success": True,
+            "simulation_id": simulation_id,
+            "repaired": False,
+            "need_restart": False,
+            "actions": [],
+            "message": ""
+        }
+
+        # 1. 获取当前状态
+        env_status = cls.get_env_status_detail(simulation_id)
+        process_info = cls.get_process_info(simulation_id)
+        status = env_status.get("status", "stopped")
+        process_pid = process_info.get("process_pid")
+        process_alive = process_info.get("process_alive", False)
+
+        logger.info(f"环境修复检查: simulation={simulation_id}, status={status}, pid={process_pid}, alive={process_alive}")
+
+        # 2. 检查进程是否响应（如果进程存活）
+        process_responsive = False
+        if process_pid and process_alive:
+            process_responsive = cls.check_process_responsive(simulation_id, timeout=5.0)
+            logger.info(f"进程响应性检查: responsive={process_responsive}")
+
+        # 3. 根据状态修复
+
+        # 情况A: 进程不存在
+        if not process_pid or not process_alive:
+            if status in ("alive", "running"):
+                # 状态显示运行中但进程不存在，需要更新状态
+                cls.update_env_status(simulation_id, "stopped")
+                result["repaired"] = True
+                result["actions"].append("更新 env_status 为 stopped（进程不存在）")
+
+            result["need_restart"] = True
+            result["message"] = "模拟进程不存在，需要重新启动模拟"
+            return result
+
+        # 情况B: 进程存在但不响应（僵尸进程）
+        if not process_responsive:
+            # 清理僵尸进程
+            logger.info(f"检测到僵尸进程，正在清理: pid={process_pid}")
+            cls._terminate_pid(process_pid, simulation_id, timeout=5)
+
+            # 清理待处理的 IPC 命令
+            ipc_commands_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id, "ipc_commands")
+            if os.path.exists(ipc_commands_dir):
+                import glob
+                for cmd_file in glob.glob(os.path.join(ipc_commands_dir, "*.json")):
+                    try:
+                        os.remove(cmd_file)
+                    except OSError:
+                        pass
+                result["actions"].append("清理待处理的 IPC 命令")
+
+            # 更新状态
+            cls.update_env_status(simulation_id, "stopped")
+            result["repaired"] = True
+            result["need_restart"] = True
+            result["actions"].append(f"终止僵尸进程 (PID: {process_pid})")
+            result["actions"].append("更新 env_status 为 stopped")
+            result["message"] = "已清理僵尸进程，需要重新启动模拟"
+            return result
+
+        # 情况C: 进程存在且响应
+        # 检查代码版本是否匹配
+        process_code_version = env_status.get("code_version")
+        current_code_version = cls.get_current_script_code_version()
+
+        # 如果进程没有记录版本（旧进程）或版本不匹配，需要重启
+        if current_code_version != "unknown":
+            needs_restart = False
+            restart_reason = ""
+
+            if not process_code_version:
+                needs_restart = True
+                restart_reason = "旧进程没有版本信息，需要升级"
+                logger.info("旧进程没有代码版本信息，需要重启以使用新代码")
+            elif process_code_version != current_code_version:
+                needs_restart = True
+                restart_reason = f"检测到代码更新: {process_code_version} -> {current_code_version}"
+                logger.info(f"代码版本不匹配: process={process_code_version}, current={current_code_version}")
+
+            if needs_restart:
+                return cls._restart_process_for_code_update(
+                    simulation_id, process_pid, result, restart_reason
+                )
+
+        if status not in ("alive",):
+            # 进程正常但状态不对，更新状态
+            cls.update_env_status(simulation_id, "alive")
+            result["repaired"] = True
+            result["actions"].append("更新 env_status 为 alive（进程正常响应）")
+
+        result["message"] = "环境状态正常，可以生成报告"
+        return result
+
+    @classmethod
+    def _restart_process_for_code_update(
+        cls,
+        simulation_id: str,
+        process_pid: int,
+        result: Dict[str, Any],
+        reason: str
+    ) -> Dict[str, Any]:
+        """
+        因代码更新重启模拟进程
+
+        Args:
+            simulation_id: 模拟ID
+            process_pid: 需要终止的进程PID
+            result: 修复结果字典（会被修改）
+            reason: 重启原因
+
+        Returns:
+            更新后的修复结果字典
+        """
+        import glob
+
+        logger.info(f"正在重启模拟进程: {reason}")
+
+        # 终止旧进程
+        cls._terminate_pid(process_pid, simulation_id, timeout=5)
+
+        # 清理待处理的 IPC 命令
+        ipc_commands_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id, "ipc_commands")
+        if os.path.exists(ipc_commands_dir):
+            cleaned_count = 0
+            for cmd_file in glob.glob(os.path.join(ipc_commands_dir, "*.json")):
+                try:
+                    os.remove(cmd_file)
+                    cleaned_count += 1
+                except OSError:
+                    pass
+            if cleaned_count > 0:
+                result["actions"].append(f"清理待处理的 IPC 命令 ({cleaned_count} 个)")
+
+        # 更新状态
+        cls.update_env_status(simulation_id, "stopped")
+
+        result["repaired"] = True
+        result["need_restart"] = True
+        result["code_version_mismatch"] = True
+        result["actions"].append(reason)
+        result["actions"].append(f"终止旧进程 (PID: {process_pid})")
+        result["message"] = "代码已更新，需要重新启动模拟进程"
+
+        return result
+
+    @classmethod
+    def get_current_script_code_version(cls) -> str:
+        """
+        获取当前 run_parallel_simulation.py 脚本的代码版本（MD5 哈希）。
+        用于与正在运行的进程版本比较，检测是否需要重启。
+        """
+        import hashlib
+        script_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "scripts", "run_parallel_simulation.py"
+        )
+        script_path = os.path.abspath(script_path)
+        try:
+            with open(script_path, 'rb') as f:
+                content = f.read()
+            return hashlib.md5(content).hexdigest()[:12]
+        except Exception:
+            return "unknown"
 
     @classmethod
     def interview_agent(

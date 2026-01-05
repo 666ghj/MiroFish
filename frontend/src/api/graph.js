@@ -96,3 +96,15 @@ export function listProjects(limit = 50) {
     params: { limit }
   })
 }
+
+/**
+ * 删除项目
+ * @param {string} projectId - 项目ID
+ * @returns {Promise}
+ */
+export function deleteProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'delete'
+  })
+}

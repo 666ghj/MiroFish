@@ -10,8 +10,21 @@ Thumbs.db
 .env.test
 .env.production
 MiroFish-config/
+
+# OpenSpec（AI 开发规范，不提交到上游）
 openspec/
 AGENTS.md
+
+# Claude Code 配置
+CLAUDE.md
+
+# LLM 配置文件（可能包含 API Key）
+llm_settings.json
+backend/llm_settings.json
+
+# 模拟运行数据（运行时生成）
+backend/sim_*/
+backend/uploads/simulations/sim_*/
 
 # Python
 __pycache__/

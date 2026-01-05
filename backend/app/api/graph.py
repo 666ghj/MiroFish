@@ -330,6 +330,16 @@ def build_graph():
         
         # 如果强制重建，重置状态
         if force and project.status in [ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED, ProjectStatus.GRAPH_COMPLETED]:
+            # 保留旧图谱ID，便于追溯/回滚（不影响旧 simulation/report 继续使用旧 graph_id）
+            if project.graph_id:
+                try:
+                    if not getattr(project, "graph_history", None):
+                        project.graph_history = []
+                    if project.graph_id not in project.graph_history:
+                        project.graph_history.append(project.graph_id)
+                except Exception as e:
+                    logger.warning(f"记录 graph_history 失败（将继续重建）: {e}")
+
             project.status = ProjectStatus.ONTOLOGY_GENERATED
             project.graph_id = None
             project.graph_build_task_id = None

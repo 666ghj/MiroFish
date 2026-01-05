@@ -183,3 +183,19 @@ export const branchSimulation = (data) => {
 export const interviewAgents = (data) => {
   return requestWithRetry(() => service.post('/api/simulation/interview/batch', data), 3, 1000)
 }
+
+/**
+ * 删除模拟
+ * @param {string} simulationId - 模拟ID
+ */
+export const deleteSimulation = (simulationId) => {
+  return service.delete(`/api/simulation/${simulationId}`)
+}
+
+/**
+ * 智能修复模拟环境
+ * @param {string} simulationId - 模拟ID
+ */
+export const repairSimulationEnv = (simulationId) => {
+  return service.post(`/api/simulation/${simulationId}/repair-env`)
+}

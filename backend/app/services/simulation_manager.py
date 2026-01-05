@@ -7,10 +7,13 @@ OASIS模拟管理器
 import os
 import json
 import shutil
+import time
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -45,6 +48,8 @@ class SimulationState:
     simulation_id: str
     project_id: str
     graph_id: str
+    # 项目“源图谱”（只包含文档/本体构建结果，不应被模拟过程污染）
+    project_graph_id: Optional[str] = None
     
     # 平台启用状态
     enable_twitter: bool = True
@@ -80,6 +85,7 @@ class SimulationState:
             "simulation_id": self.simulation_id,
             "project_id": self.project_id,
             "graph_id": self.graph_id,
+            "project_graph_id": self.project_graph_id,
             "enable_twitter": self.enable_twitter,
             "enable_reddit": self.enable_reddit,
             "status": self.status.value,
@@ -102,6 +108,7 @@ class SimulationState:
             "simulation_id": self.simulation_id,
             "project_id": self.project_id,
             "graph_id": self.graph_id,
+            "project_graph_id": self.project_graph_id,
             "status": self.status.value,
             "entities_count": self.entities_count,
             "profiles_count": self.profiles_count,
@@ -166,11 +173,18 @@ class SimulationManager:
         
         with open(state_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
+
+        graph_id = data.get("graph_id", "")
+        project_graph_id = data.get("project_graph_id") or None
+        if not project_graph_id and graph_id:
+            # 兼容旧数据：历史上 graph_id 直接指向项目图谱
+            project_graph_id = graph_id
         
         state = SimulationState(
             simulation_id=simulation_id,
             project_id=data.get("project_id", ""),
-            graph_id=data.get("graph_id", ""),
+            graph_id=graph_id,
+            project_graph_id=project_graph_id,
             enable_twitter=data.get("enable_twitter", True),
             enable_reddit=data.get("enable_reddit", True),
             status=SimulationStatus(data.get("status", "created")),
@@ -216,6 +230,7 @@ class SimulationManager:
             simulation_id=simulation_id,
             project_id=project_id,
             graph_id=graph_id,
+            project_graph_id=graph_id,
             enable_twitter=enable_twitter,
             enable_reddit=enable_reddit,
             status=SimulationStatus.CREATED,
@@ -225,6 +240,67 @@ class SimulationManager:
         logger.info(f"创建模拟: {simulation_id}, project={project_id}, graph={graph_id}")
         
         return state
+
+    def _wait_for_zep_task(self, client: Zep, task_id: str, *, timeout_seconds: int = 300):
+        """等待 Zep 异步任务完成（用于 graph.clone 等）。"""
+        start = time.time()
+        last_status = None
+        while True:
+            if time.time() - start > timeout_seconds:
+                raise TimeoutError(f"等待 Zep 任务超时: task_id={task_id}, last_status={last_status}")
+
+            task = client.task.get(task_id)
+            status = (getattr(task, "status", None) or "").lower().strip() or None
+            last_status = status
+
+            if getattr(task, "completed_at", None):
+                return
+            if status in {"completed", "succeeded", "success", "done"}:
+                return
+            if status in {"failed", "error", "canceled", "cancelled"}:
+                err = getattr(task, "error", None)
+                raise RuntimeError(f"Zep 任务失败: task_id={task_id}, status={status}, error={err}")
+
+            time.sleep(1)
+
+    def ensure_isolated_simulation_graph(self, state: SimulationState, *, timeout_seconds: int = 300) -> str:
+        """
+        确保当前 simulation 拥有“隔离的”图谱副本，用于写入模拟过程（避免污染 project_graph_id）。
+
+        - 若 state.graph_id 已经不同于 project_graph_id，则认为已隔离，直接返回。
+        - 否则，通过 Zep graph.clone 从 project_graph_id 克隆一个新图谱，并将 state.graph_id 指向该副本。
+        """
+        base_graph_id = (state.project_graph_id or state.graph_id or "").strip()
+        if not base_graph_id:
+            raise ValueError("缺少 project_graph_id / graph_id，无法创建模拟图谱副本")
+
+        if not state.project_graph_id:
+            state.project_graph_id = base_graph_id
+
+        # 已隔离
+        if state.graph_id and state.graph_id != state.project_graph_id:
+            return state.graph_id
+
+        if not Config.ZEP_API_KEY:
+            raise ValueError("ZEP_API_KEY 未配置，无法克隆图谱用于隔离写入")
+
+        import uuid
+
+        target_graph_id = f"mirofish_sim_{state.simulation_id}_{uuid.uuid4().hex[:8]}"
+        client = Zep(api_key=Config.ZEP_API_KEY)
+        resp = client.graph.clone(source_graph_id=base_graph_id, target_graph_id=target_graph_id)
+        new_graph_id = (getattr(resp, "graph_id", None) or target_graph_id).strip()
+        task_id = getattr(resp, "task_id", None)
+        if task_id:
+            self._wait_for_zep_task(client, task_id, timeout_seconds=timeout_seconds)
+
+        state.graph_id = new_graph_id
+        self._save_simulation_state(state)
+        logger.info(
+            f"已为模拟创建隔离图谱: simulation_id={state.simulation_id}, "
+            f"project_graph_id={base_graph_id}, graph_id={new_graph_id}"
+        )
+        return new_graph_id
     
     def prepare_simulation(
         self,
@@ -265,8 +341,17 @@ class SimulationManager:
         try:
             state.status = SimulationStatus.PREPARING
             self._save_simulation_state(state)
+
+            # 准备阶段固定使用“源图谱”（只包含文档/本体构建结果）
+            source_graph_id = (state.project_graph_id or state.graph_id or "").strip()
+            if not source_graph_id:
+                raise ValueError("缺少 project_graph_id / graph_id，无法读取实体")
+            if not state.project_graph_id:
+                state.project_graph_id = source_graph_id
+                self._save_simulation_state(state)
             
             sim_dir = self._get_simulation_dir(simulation_id)
+            entity_order_path = os.path.join(sim_dir, "entity_order.json")
             
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
@@ -278,10 +363,44 @@ class SimulationManager:
                 progress_callback("reading", 30, "正在读取节点数据...")
             
             filtered = reader.filter_defined_entities(
-                graph_id=state.graph_id,
+                graph_id=source_graph_id,
                 defined_entity_types=defined_entity_types,
                 enrich_with_edges=True
             )
+
+            # 断点续跑：如果已有实体顺序文件，则用它固定 user_id/实体映射，避免重启后错位
+            try:
+                if os.path.exists(entity_order_path):
+                    with open(entity_order_path, "r", encoding="utf-8") as f:
+                        order_data = json.load(f) or {}
+                    entity_uuids = order_data.get("entity_uuids") or []
+                    if isinstance(entity_uuids, list) and entity_uuids:
+                        by_uuid = {e.uuid: e for e in filtered.entities}
+                        ordered_entities = []
+                        used = set()
+                        for uuid in entity_uuids:
+                            if uuid in by_uuid:
+                                ordered_entities.append(by_uuid[uuid])
+                                used.add(uuid)
+                        for e in filtered.entities:
+                            if e.uuid not in used:
+                                ordered_entities.append(e)
+                        filtered.entities = ordered_entities
+                else:
+                    with open(entity_order_path, "w", encoding="utf-8") as f:
+                        json.dump(
+                            {
+                                "graph_id": source_graph_id,
+                                "defined_entity_types": defined_entity_types,
+                                "entity_uuids": [e.uuid for e in filtered.entities],
+                                "created_at": datetime.now().isoformat(),
+                            },
+                            f,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+            except Exception as e:
+                logger.warning(f"处理 entity_order.json 失败（不影响继续生成）: {e}")
             
             state.entities_count = filtered.filtered_count
             state.entity_types = list(filtered.entity_types)
@@ -312,7 +431,7 @@ class SimulationManager:
                 )
             
             # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
-            generator = OasisProfileGenerator(graph_id=state.graph_id)
+            generator = OasisProfileGenerator(graph_id=source_graph_id)
             
             def profile_progress(current, total, msg):
                 if progress_callback:
@@ -339,7 +458,7 @@ class SimulationManager:
                 entities=filtered.entities,
                 use_llm=use_llm_for_profiles,
                 progress_callback=profile_progress,
-                graph_id=state.graph_id,  # 传入graph_id用于Zep检索
+                graph_id=source_graph_id,  # 传入graph_id用于Zep检索
                 parallel_count=parallel_profile_count,  # 并行生成数量
                 realtime_output_path=realtime_output_path,  # 实时保存路径
                 output_platform=realtime_platform  # 输出格式
@@ -388,43 +507,65 @@ class SimulationManager:
                     current=0,
                     total=3
                 )
-            
-            config_generator = SimulationConfigGenerator()
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 30, 
-                    "正在调用LLM生成配置...",
-                    current=1,
-                    total=3
-                )
-            
-            sim_params = config_generator.generate_config(
-                simulation_id=simulation_id,
-                project_id=state.project_id,
-                graph_id=state.graph_id,
-                simulation_requirement=simulation_requirement,
-                document_text=document_text,
-                entities=filtered.entities,
-                enable_twitter=state.enable_twitter,
-                enable_reddit=state.enable_reddit
-            )
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 70, 
-                    "正在保存配置文件...",
-                    current=2,
-                    total=3
-                )
-            
-            # 保存配置文件
+
+            # 断点续跑：如果配置文件已存在（例如后端重启前已写入但未更新 state），直接复用
             config_path = os.path.join(sim_dir, "simulation_config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(sim_params.to_json())
-            
-            state.config_generated = True
-            state.config_reasoning = sim_params.generation_reasoning
+            existing_config = None
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        existing_config = json.load(f)
+                except Exception:
+                    existing_config = None
+
+            if isinstance(existing_config, dict):
+                state.config_generated = True
+                state.config_reasoning = existing_config.get("generation_reasoning", state.config_reasoning)
+                if progress_callback:
+                    progress_callback(
+                        "generating_config",
+                        100,
+                        "检测到已有配置文件，跳过重复生成",
+                        current=3,
+                        total=3,
+                    )
+            else:
+                config_generator = SimulationConfigGenerator()
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 30,
+                        "正在调用LLM生成配置...",
+                        current=1,
+                        total=3
+                    )
+
+                sim_params = config_generator.generate_config(
+                    simulation_id=simulation_id,
+                    project_id=state.project_id,
+                    graph_id=source_graph_id,
+                    simulation_requirement=simulation_requirement,
+                    document_text=document_text,
+                    entities=filtered.entities,
+                    enable_twitter=state.enable_twitter,
+                    enable_reddit=state.enable_reddit,
+                    usage_log_path=os.path.join(sim_dir, "llm_usage.jsonl"),
+                )
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 70,
+                        "正在保存配置文件...",
+                        current=2,
+                        total=3
+                    )
+
+                # 保存配置文件
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    f.write(sim_params.to_json())
+
+                state.config_generated = True
+                state.config_reasoning = sim_params.generation_reasoning
             
             if progress_callback:
                 progress_callback(
@@ -472,6 +613,47 @@ class SimulationManager:
         
         return simulations
 
+    def delete_simulation(self, simulation_id: str) -> bool:
+        """
+        删除模拟及其所有相关文件
+
+        Args:
+            simulation_id: 模拟ID
+
+        Returns:
+            是否删除成功
+        """
+        from .simulation_runner import SimulationRunner
+
+        state = self._load_simulation_state(simulation_id)
+        if not state:
+            return False
+
+        # 如果模拟进程还在运行，先停止
+        try:
+            run_state = SimulationRunner.get_run_state(simulation_id)
+            if run_state and run_state.runner_status.value == "running":
+                logger.info(f"模拟进程仍在运行，正在停止: {simulation_id}")
+                SimulationRunner.stop_simulation(simulation_id)
+        except Exception as e:
+            logger.warning(f"停止模拟进程时出现警告: {e}")
+
+        # 删除模拟目录
+        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        if os.path.exists(sim_dir):
+            try:
+                shutil.rmtree(sim_dir)
+                logger.info(f"已删除模拟目录: {sim_dir}")
+            except Exception as e:
+                logger.error(f"删除模拟目录失败: {e}")
+                return False
+
+        # 从内存缓存中移除
+        if simulation_id in self._simulations:
+            del self._simulations[simulation_id]
+
+        return True
+
     def branch_simulation(self, source_simulation_id: str) -> SimulationState:
         """
         基于已有模拟创建“安全分支”（新 simulation_id + 新目录）
@@ -499,9 +681,10 @@ class SimulationManager:
             raise ValueError("源模拟未准备完成：缺少 reddit_profiles.json")
 
         # 创建新 simulation（新目录）
+        base_graph_id = source_state.project_graph_id or source_state.graph_id
         new_state = self.create_simulation(
             project_id=source_state.project_id,
-            graph_id=source_state.graph_id,
+            graph_id=base_graph_id,
             enable_twitter=source_state.enable_twitter,
             enable_reddit=source_state.enable_reddit,
         )

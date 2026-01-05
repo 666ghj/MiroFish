@@ -1052,9 +1052,10 @@ class ReportAgent:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                stage="json_structure",
             )
-            
+
             if progress_callback:
                 progress_callback("planning", 80, "正在解析大纲结构...")
             
@@ -1341,10 +1342,10 @@ class ReportAgent:
             completion = self.llm.chat_completion(
                 messages=messages,
                 temperature=0.5,
-                max_tokens=4096
-                ,
+                max_tokens=4096,
                 tools=tools,
                 tool_choice=tool_choice,
+                stage="content_generation",
             )
             
             content = completion.content or ""
@@ -1526,7 +1527,18 @@ class ReportAgent:
         
         try:
             # 初始化：创建报告文件夹并保存初始状态
-            ReportManager._ensure_report_folder(report_id)
+            report_folder = ReportManager._ensure_report_folder(report_id)
+
+            # LLM 用量落盘：写入 reports/{report_id}/llm_usage.jsonl
+            try:
+                if isinstance(self.llm, LLMClient):
+                    usage_log_path = os.path.join(report_folder, "llm_usage.jsonl")
+                    if not getattr(self.llm, "_usage_log_path", None):
+                        setattr(self.llm, "_usage_log_path", usage_log_path)
+                    if getattr(self.llm, "default_stage", "llm") == "llm":
+                        setattr(self.llm, "default_stage", "report")
+            except Exception:
+                pass
             
             # 初始化日志记录器（结构化日志 agent_log.jsonl）
             self.report_logger = ReportLogger(report_id)
@@ -1886,6 +1898,7 @@ class ReportAgent:
             max_tokens=2048,
             tools=tools,
             tool_choice="auto",
+            stage="content_generation",
         )
 
         if completion.tool_calls:
@@ -1925,6 +1938,7 @@ class ReportAgent:
                 max_tokens=2048,
                 tools=tools,
                 tool_choice="none",
+                stage="content_generation",
             )
             final_response = final_completion.content or ""
         else:

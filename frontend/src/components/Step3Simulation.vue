@@ -442,7 +442,7 @@ const doStartSimulation = async ({ force = false } = {}) => {
       addLog(`设置最大模拟轮数: ${props.maxRounds}`)
     }
     
-    addLog('已开启动态图谱更新模式')
+    addLog('已开启动态图谱更新（后端将自动克隆 Project 图谱到 Simulation 图谱，避免污染 Project）')
     
     const res = await startSimulation(params)
     
@@ -452,6 +452,14 @@ const doStartSimulation = async ({ force = false } = {}) => {
       }
       addLog('✓ 模拟引擎启动成功')
       addLog(`  ├─ PID: ${res.data.process_pid || '-'}`)
+      if (res.data.project_graph_id) {
+        if (res.data.graph_id && res.data.graph_id !== res.data.project_graph_id) {
+          addLog(`  ├─ Graph (simulation): ${res.data.graph_id}`)
+          addLog(`  └─ Graph (project): ${res.data.project_graph_id}`)
+        } else {
+          addLog(`  └─ Graph: ${res.data.graph_id || res.data.project_graph_id}`)
+        }
+      }
       
       phase.value = 1
       runStatus.value = res.data
@@ -464,8 +472,18 @@ const doStartSimulation = async ({ force = false } = {}) => {
       emit('update-status', 'error')
     }
   } catch (err) {
-    startError.value = err.message
-    addLog(`✗ 启动异常: ${err.message}`)
+    const msg = err?.message || '启动异常'
+    // 兼容：后端重启后，模拟仍在跑（detach），此时 /start 会报“正在运行”
+    if (String(msg).includes('正在运行')) {
+      addLog(`提示: ${msg}，将尝试接管现有模拟...`)
+      const attached = await tryAttachIfRunning()
+      if (attached) {
+        startError.value = null
+        return
+      }
+    }
+    startError.value = msg
+    addLog(`✗ 启动异常: ${msg}`)
     emit('update-status', 'error')
   } finally {
     isStarting.value = false
@@ -481,6 +499,20 @@ const handleStartSimulation = async (force = false) => {
     if (!confirmed) return
   }
   await doStartSimulation({ force })
+}
+
+const tryAttachIfRunning = async () => {
+  await fetchRunStatus()
+  const status = runStatus.value?.runner_status
+  if (status === 'running' || status === 'starting') {
+    addLog('检测到模拟已在运行，已自动接管（不会重复启动/重复消耗 token）。')
+    phase.value = 1
+    emit('update-status', 'processing')
+    startStatusPolling()
+    startDetailPolling()
+    return true
+  }
+  return false
 }
 
 // 停止模拟
@@ -748,7 +780,15 @@ onMounted(() => {
   if (!props.simulationId) return
 
   if (props.autoStart) {
-    doStartSimulation({ force: props.autoForceRestart })
+    // AutoStart：优先接管已运行的模拟，避免“刷新/重启后端”导致重复启动与重复消耗 token
+    if (!props.autoForceRestart) {
+      tryAttachIfRunning().then(attached => {
+        if (!attached) doStartSimulation({ force: false })
+      })
+      return
+    }
+
+    doStartSimulation({ force: true })
     return
   }
 

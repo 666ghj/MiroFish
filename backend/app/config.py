@@ -103,7 +103,13 @@ class Config:
         """验证必要配置"""
         errors = []
         if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY 未配置")
+            try:
+                from .utils.llm_settings import load_llm_settings
+
+                if not load_llm_settings().api_key:
+                    errors.append("LLM_API_KEY 未配置")
+            except Exception:
+                errors.append("LLM_API_KEY 未配置")
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
         return errors

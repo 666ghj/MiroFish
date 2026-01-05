@@ -4,6 +4,7 @@
       <div class="brand" @click="router.push('/')">MIROFISH</div>
       <div class="actions">
         <button class="btn" @click="refresh" :disabled="loading">{{ loading ? 'Loading…' : 'Refresh' }}</button>
+        <button class="btn" @click="router.push('/settings')">Settings</button>
       </div>
     </header>
 
@@ -18,6 +19,7 @@
           <div class="panel-sub">
             {{ projects.length }} items
             <span v-if="selectedProject" class="selected-pill">Selected: {{ selectedProject.name }}</span>
+            <span v-if="selectedProject?.graph_id" class="selected-pill mono">Graph: {{ shortId(selectedProject.graph_id) }}</span>
           </div>
 
           <div class="table">
@@ -46,6 +48,21 @@
                 >
                   Resume
                 </button>
+                <button
+                  v-if="canRebuildProject(p)"
+                  class="link danger"
+                  @click.stop="rebuildProjectGraph(p.project_id)"
+                  :disabled="loading"
+                >
+                  Rebuild Graph
+                </button>
+                <button
+                  class="link danger"
+                  @click.stop="handleDeleteProject(p.project_id)"
+                  :disabled="loading"
+                >
+                  Delete
+                </button>
               </div>
             </div>
             <div v-if="projects.length === 0 && !loading" class="empty">
@@ -60,6 +77,19 @@
             <span v-if="!selectedProjectId">Select a project to view simulations.</span>
             <span v-else>{{ simulations.length }} items</span>
             <span v-if="selectedSimulation" class="selected-pill">Selected: {{ selectedSimulation.simulation_id }}</span>
+            <span
+              v-if="selectedSimulation?.project_graph_id || selectedSimulation?.graph_id"
+              class="selected-pill mono"
+            >
+              Base: {{ shortId(selectedSimulation.project_graph_id || '-') }} | Sim: {{ shortId(selectedSimulation.graph_id || '-') }}
+            </span>
+            <span
+              v-if="selectedSimulationBaseMismatch"
+              class="selected-pill warn"
+              title="This simulation was created from an older project graph. Create a new simulation/branch if you want to use the current project graph."
+            >
+              Base graph ≠ current project graph
+            </span>
           </div>
 
           <div class="table">
@@ -84,6 +114,13 @@
                 <button class="link" @click.stop="openSimulationRun(s.simulation_id)">Step 3</button>
                 <button class="link" @click.stop="branchFromSimulation(s.simulation_id)" :disabled="loading">
                   Branch
+                </button>
+                <button
+                  class="link danger"
+                  @click.stop="handleDeleteSimulation(s.simulation_id)"
+                  :disabled="loading"
+                >
+                  Delete
                 </button>
               </div>
             </div>
@@ -120,6 +157,13 @@
                 <button class="link" @click="regenerateReportForSimulation(r.simulation_id)" :disabled="loading">
                   Regenerate
                 </button>
+                <button
+                  class="link danger"
+                  @click="handleDeleteReport(r.report_id)"
+                  :disabled="loading"
+                >
+                  Delete
+                </button>
               </div>
             </div>
             <div v-if="selectedSimulationId && reports.length === 0 && !loading" class="empty">
@@ -136,9 +180,9 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { listProjects, resumeBuildGraph } from '../api/graph'
-import { branchSimulation, listSimulations } from '../api/simulation'
-import { generateReport, listReports } from '../api/report'
+import { buildGraph, listProjects, resumeBuildGraph, deleteProject } from '../api/graph'
+import { branchSimulation, listSimulations, deleteSimulation } from '../api/simulation'
+import { generateReport, listReports, deleteReport } from '../api/report'
 
 const router = useRouter()
 const route = useRoute()
@@ -158,6 +202,21 @@ const selectedProject = computed(
 const selectedSimulation = computed(
   () => simulations.value.find((s) => s.simulation_id === selectedSimulationId.value) || null
 )
+
+const shortId = (id) => {
+  const s = String(id || '').trim()
+  if (!s) return '-'
+  if (s.length <= 16) return s
+  return `${s.slice(0, 8)}…${s.slice(-6)}`
+}
+
+const selectedSimulationBaseMismatch = computed(() => {
+  if (!selectedSimulation.value) return false
+  if (!selectedProject.value?.graph_id) return false
+  const base = String(selectedSimulation.value.project_graph_id || '').trim()
+  if (!base) return false
+  return base !== String(selectedProject.value.graph_id || '').trim()
+})
 
 watch(
   [selectedProjectId, selectedSimulationId],
@@ -188,11 +247,38 @@ const canResumeProject = (p) => {
   )
 }
 
+const canRebuildProject = (p) => {
+  if (!p) return false
+  // Only meaningful once a graph exists, and safest when the prior build is finished/failed.
+  return Boolean(p.graph_id) && (p.status === 'graph_completed' || p.status === 'failed')
+}
+
 const resumeProject = async (projectId) => {
   loading.value = true
   error.value = ''
   try {
     await resumeBuildGraph({ project_id: projectId })
+    router.push({ name: 'Process', params: { projectId } })
+  } catch (err) {
+    error.value = err.message || String(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+const rebuildProjectGraph = async (projectId) => {
+  if (!projectId || loading.value) return
+  const confirmed = window.confirm(
+    '将为该 Project 重新构建一个全新的 Zep 图谱，并更新 project.graph_id。\n\n' +
+      '- 旧 graph_id 会被保留在 project.graph_history（后端）\n' +
+      '- 既有 Simulation/Report 不会被修改（仍指向旧图谱/旧模拟数据）\n\n' +
+      '建议在发现 Project 图谱被模拟过程“污染”后使用。继续？'
+  )
+  if (!confirmed) return
+  loading.value = true
+  error.value = ''
+  try {
+    await buildGraph({ project_id: projectId, force: true })
     router.push({ name: 'Process', params: { projectId } })
   } catch (err) {
     error.value = err.message || String(err)
@@ -330,6 +416,69 @@ const openSimulationRun = (simulationId) =>
   router.push({ name: 'SimulationRun', params: { simulationId }, query: { autoStart: '0' } })
 const openReport = (reportId) => router.push({ name: 'Report', params: { reportId } })
 const openInteraction = (reportId) => router.push({ name: 'Interaction', params: { reportId } })
+
+// 删除项目
+const handleDeleteProject = async (projectId) => {
+  const confirmed = window.confirm(
+    '确定要删除此项目吗？\n\n注意：这只会删除项目的本地配置和上传文件，不会删除关联的模拟和报告。'
+  )
+  if (!confirmed) return
+  loading.value = true
+  error.value = ''
+  try {
+    await deleteProject(projectId)
+    // 如果删除的是当前选中的项目，清除选中状态
+    if (selectedProjectId.value === projectId) {
+      selectedProjectId.value = ''
+      simulations.value = []
+      reports.value = []
+    }
+    await refresh()
+  } catch (err) {
+    error.value = err.message || String(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 删除模拟
+const handleDeleteSimulation = async (simulationId) => {
+  const confirmed = window.confirm(
+    '确定要删除此模拟吗？\n\n这将删除模拟的所有数据，包括：\n- Agent Profile\n- 数据库文件\n- 日志文件\n- 配置文件'
+  )
+  if (!confirmed) return
+  loading.value = true
+  error.value = ''
+  try {
+    await deleteSimulation(simulationId)
+    // 如果删除的是当前选中的模拟，清除选中状态
+    if (selectedSimulationId.value === simulationId) {
+      selectedSimulationId.value = ''
+      reports.value = []
+    }
+    await loadSimulations(selectedProjectId.value)
+  } catch (err) {
+    error.value = err.message || String(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 删除报告
+const handleDeleteReport = async (reportId) => {
+  const confirmed = window.confirm('确定要删除此报告吗？')
+  if (!confirmed) return
+  loading.value = true
+  error.value = ''
+  try {
+    await deleteReport(reportId)
+    await loadReports(selectedSimulationId.value)
+  } catch (err) {
+    error.value = err.message || String(err)
+  } finally {
+    loading.value = false
+  }
+}
 
 onMounted(refresh)
 </script>
@@ -505,6 +654,16 @@ onMounted(refresh)
   background: #f9fafb;
   font-size: 11px;
   color: #374151;
+}
+
+.selected-pill.warn {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.link.danger {
+  color: #b91c1c;
 }
 
 .s-completed,

@@ -60,3 +60,11 @@ export const listReports = (simulationId = null, limit = 50) => {
 export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
 }
+
+/**
+ * 删除报告
+ * @param {string} reportId - 报告ID
+ */
+export const deleteReport = (reportId) => {
+  return service.delete(`/api/report/${reportId}`)
+}

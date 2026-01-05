@@ -200,6 +200,19 @@ function pickFirst(list, predicate) {
 async function quickSmoke(args) {
   console.log(`[smoke] mode=quick base=${args.base}`)
 
+  const llmCfgRes = await apiGet(args.base, '/api/llm/config', {
+    timeoutMs: args.requestTimeoutMs,
+  })
+  const llmCfg = llmCfgRes.data || {}
+  console.log(`[smoke] llm base_url=${llmCfg.base_url || '-'} models=${(llmCfg.models || []).length}`)
+
+  const llmUsageRes = await apiGet(args.base, '/api/llm/usage', {
+    query: { limit: 5000 },
+    timeoutMs: args.requestTimeoutMs,
+  })
+  const llmUsage = llmUsageRes.data || {}
+  console.log(`[smoke] llm_usage requests=${llmUsage.total_requests || 0} errors=${llmUsage.total_errors || 0}`)
+
   const projectsRes = await apiGet(args.base, '/api/graph/project/list', {
     query: { limit: 20 },
     timeoutMs: args.requestTimeoutMs,
@@ -236,6 +249,11 @@ async function quickSmoke(args) {
     console.log('[smoke] no simulations found; quick smoke finished')
     return
   }
+
+  const simInfo = sims.find((s) => s.simulation_id === simulationId) || sims[0] || {}
+  console.log(
+    `[smoke] simulation graph_id=${simInfo.graph_id || '-'} project_graph_id=${simInfo.project_graph_id || '-'}`
+  )
 
   const envRes = await apiPost(args.base, '/api/simulation/env-status', {
     json: { simulation_id: simulationId },

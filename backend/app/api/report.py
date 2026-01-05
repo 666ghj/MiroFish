@@ -113,41 +113,117 @@ def generate_report():
                 "error": f"项目不存在: {state.project_id}"
             }), 404
 
-        # 采访环境预检：报告生成依赖 interview 工具，需要模拟处于等待命令模式（env_status=alive）
+        # 采访环境预检：使用智能修复逻辑检测并修复环境状态
         from ..services.simulation_runner import SimulationRunner
-        env_status = SimulationRunner.get_env_status_detail(simulation_id)
-        process_info = SimulationRunner.get_process_info(simulation_id)
 
-        env_alive = SimulationRunner.check_env_alive(simulation_id)
-        status = env_status.get("status", "stopped")
-        process_alive = process_info.get("process_alive", False)
+        # 调用 repair_environment 进行完整的环境检测和修复
+        repair_result = SimulationRunner.repair_environment(simulation_id)
+        logger.info(f"环境修复检查结果: {repair_result}")
 
-        # 防止 env_status.json 假阳性（文件为 alive 但进程已退出）
-        if status == "alive" and process_info.get("process_pid") and not process_alive:
-            env_alive = False
-            status = "stopped"
+        # 如果检测到代码版本不匹配，记录详细信息
+        if repair_result.get("code_version_mismatch"):
+            logger.info(f"检测到代码更新，旧进程已被终止，将自动重启模拟进程")
 
-        if not env_alive:
-            if status == "running":
-                msg = "模拟仍在运行中，尚未进入等待命令模式（alive）。请等待模拟完成后再继续生成报告。"
-            else:
-                msg = (
-                    "模拟环境未运行或已关闭，无法执行 Interview。"
-                    "请保持模拟进程存活（本地建议设置 SIMULATION_DETACH_ON_BACKEND_EXIT=true），"
-                    "或创建新的模拟分支并重新运行模拟。"
+        if repair_result.get("need_restart"):
+            # 环境需要重启 - 自动启动模拟（最小轮次）
+            logger.info(f"检测到环境需要重启，自动启动模拟: simulation_id={simulation_id}")
+
+            try:
+                # 启动模拟，使用最小轮次（1轮）快速进入等待命令模式
+                run_result = SimulationRunner.start_simulation(
+                    simulation_id=simulation_id,
+                    max_rounds=1,
+                    enable_graph_memory_update=False
                 )
+                logger.info(f"模拟已启动: pid={run_result.process_pid}")
 
-            return jsonify({
-                "success": False,
-                "error": msg,
-                "data": {
-                    "simulation_id": simulation_id,
-                    "env_status": status,
-                    "process_pid": process_info.get("process_pid"),
-                    "process_alive": process_alive,
-                },
-            }), 400
-        
+                # 等待模拟完成并进入等待命令模式（最多等待 120 秒）
+                import time
+                max_wait = 120
+                wait_interval = 2
+                waited = 0
+                environment_ready = False
+
+                while waited < max_wait and not environment_ready:
+                    time.sleep(wait_interval)
+                    waited += wait_interval
+
+                    # 检查模拟状态
+                    run_state = SimulationRunner.get_run_state(simulation_id)
+                    if run_state and run_state.runner_status.value == "completed":
+                        # 再次检查环境是否就绪
+                        env_status = SimulationRunner.get_env_status_detail(simulation_id)
+                        if env_status.get("status") == "alive":
+                            # 等待额外 2 秒让命令循环启动
+                            time.sleep(2)
+                            logger.info(f"模拟已完成，env_status=alive，开始检查进程响应性: waited={waited}s")
+
+                            # 尝试ping进程，确保真正响应命令
+                            ping_success = False
+                            ping_attempts = 0
+                            max_ping_attempts = 10
+                            ping_interval = 1
+
+                            while ping_attempts < max_ping_attempts and not ping_success:
+                                ping_attempts += 1
+                                try:
+                                    # 直接使用check_process_responsive方法（SimulationRunner已在顶部导入）
+                                    ping_success = SimulationRunner.check_process_responsive(
+                                        simulation_id,
+                                        timeout=3.0,
+                                        retries=1,  # 这里只试1次，因为我们在循环中
+                                        retry_delay=0.5
+                                    )
+                                    if ping_success:
+                                        logger.info(f"进程ping成功 (第{ping_attempts}次尝试)")
+                                        environment_ready = True
+                                        break
+                                    else:
+                                        logger.info(f"进程ping失败，等待重试: attempt={ping_attempts}/{max_ping_attempts}")
+                                        time.sleep(ping_interval)
+                                except Exception as e:
+                                    logger.warning(f"ping检查异常: {e}")
+                                    time.sleep(ping_interval)
+
+                            if ping_success:
+                                break
+                            else:
+                                logger.info(f"进程未响应，继续等待模拟就绪...")
+
+                    logger.info(f"等待模拟完成: waited={waited}s, status={run_state.runner_status.value if run_state else 'unknown'}")
+
+                # 最终检查 - 只有在我们没有确认环境就绪的情况下才调用repair_environment
+                if not environment_ready:
+                    final_repair = SimulationRunner.repair_environment(simulation_id)
+                    if final_repair.get("need_restart"):
+                        return jsonify({
+                            "success": False,
+                            "error": f"自动重启模拟后环境仍不可用: {final_repair.get('message')}",
+                            "data": {
+                                "simulation_id": simulation_id,
+                                "repair_result": final_repair,
+                                "auto_restart_attempted": True,
+                            },
+                        }), 400
+                    logger.info(f"环境自动恢复成功，继续生成报告")
+                else:
+                    logger.info(f"环境已确认就绪（ping成功），跳过最终repair检查")
+
+            except Exception as e:
+                logger.error(f"自动重启模拟失败: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": f"自动重启模拟失败: {str(e)}\n请手动重新启动模拟后再生成报告。",
+                    "data": {
+                        "simulation_id": simulation_id,
+                        "repair_result": repair_result,
+                    },
+                }), 400
+
+        # 环境正常或已自动修复
+        if repair_result.get("repaired"):
+            logger.info(f"环境已自动修复: actions={repair_result.get('actions')}")
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({

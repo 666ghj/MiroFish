@@ -439,36 +439,42 @@ class ZepToolsService:
         
         raise last_exception
     
+    # Zep API query 长度限制
+    ZEP_QUERY_MAX_LENGTH = 400
+
     def search_graph(
-        self, 
-        graph_id: str, 
-        query: str, 
+        self,
+        graph_id: str,
+        query: str,
         limit: int = 10,
         scope: str = "edges"
     ) -> SearchResult:
         """
         图谱语义搜索
-        
+
         使用混合搜索（语义+BM25）在图谱中搜索相关信息。
         如果Zep Cloud的search API不可用，则降级为本地关键词匹配。
-        
+
         Args:
             graph_id: 图谱ID (Standalone Graph)
-            query: 搜索查询
+            query: 搜索查询（超过400字符会被截断）
             limit: 返回结果数量
             scope: 搜索范围，"edges" 或 "nodes"
-            
+
         Returns:
             SearchResult: 搜索结果
         """
         logger.info(f"图谱搜索: graph_id={graph_id}, query={query[:50]}...")
-        
+
+        # Zep API 限制 query 不能超过 400 字符，截断处理
+        truncated_query = query[:self.ZEP_QUERY_MAX_LENGTH] if len(query) > self.ZEP_QUERY_MAX_LENGTH else query
+
         # 尝试使用Zep Cloud Search API
         try:
             search_results = self._call_with_retry(
                 func=lambda: self.client.graph.search(
                     graph_id=graph_id,
-                    query=query,
+                    query=truncated_query,
                     limit=limit,
                     scope=scope,
                     reranker="cross_encoder"
@@ -1107,9 +1113,10 @@ class ZepToolsService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                stage="json_structure",
             )
-            
+
             sub_queries = response.get("sub_queries", [])
             # 确保是字符串列表
             return [str(sq) for sq in sub_queries[:max_queries]]
@@ -1374,21 +1381,27 @@ class ZepToolsService:
                 # 兼容旧 env_status.json（没有平台字段）或无法判断时，按双平台保守估计
                 platform_count = 2
 
+            # 超时参数：利用 OASIS 原生 env.step 并行执行所有采访
+            # 单平台内所有 agent 并行执行，两平台也并行执行
+            # 时间取决于单次 LLM 调用时间（约 30-60 秒）+ 网络延迟 + 重试
             base_seconds = float(os.environ.get("INTERVIEW_BATCH_TIMEOUT_BASE_SECONDS", "60"))
-            per_agent_per_platform_seconds = float(
-                os.environ.get("INTERVIEW_BATCH_TIMEOUT_PER_AGENT_PLATFORM_SECONDS", "60")
+            # 因为并行执行，不再需要乘以 agent 数量，但保留一些缓冲
+            buffer_per_agent_seconds = float(
+                os.environ.get("INTERVIEW_BATCH_TIMEOUT_BUFFER_PER_AGENT_SECONDS", "15")
             )
-            max_seconds = float(os.environ.get("INTERVIEW_BATCH_TIMEOUT_MAX_SECONDS", "900"))
-            timeout_seconds = base_seconds + per_agent_per_platform_seconds * max(1, len(selected_indices)) * platform_count
-            timeout_seconds = min(max_seconds, max(180.0, timeout_seconds))
+            # 最大超时 10 分钟（并行执行后应该很快）
+            max_seconds = float(os.environ.get("INTERVIEW_BATCH_TIMEOUT_MAX_SECONDS", "600"))
+            # 并行执行：基础时间 + 少量缓冲
+            timeout_seconds = base_seconds + buffer_per_agent_seconds * max(1, len(selected_indices))
+            timeout_seconds = min(max_seconds, max(120.0, timeout_seconds))
 
             logger.info(
-                "批量采访超时估算: agents=%s platforms=%s timeout=%.1fs (base=%.0f per=%.0f max=%.0f)",
+                "批量采访超时估算: agents=%s platforms=%s(并行) timeout=%.1fs (base=%.0f buffer=%.0f max=%.0f)",
                 len(selected_indices),
                 platform_count,
                 timeout_seconds,
                 base_seconds,
-                per_agent_per_platform_seconds,
+                buffer_per_agent_seconds,
                 max_seconds,
             )
 
@@ -1593,9 +1606,10 @@ class ZepToolsService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                stage="json_structure",
             )
-            
+
             selected_indices = response.get("selected_indices", [])[:max_agents]
             reasoning = response.get("reasoning", "基于相关性自动选择")
             
@@ -1650,9 +1664,10 @@ class ZepToolsService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.5
+                temperature=0.5,
+                stage="json_structure",
             )
-            
+
             return response.get("questions", [f"关于{interview_requirement}，您有什么看法？"])
             
         except Exception as e:

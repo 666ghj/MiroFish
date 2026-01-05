@@ -1,4 +1,4 @@
-# 功能更新与使用说明（本次 PR）
+# 功能更新与使用说明（v0.2.0）
 
 ## 你会看到的主要变化
 
@@ -6,9 +6,11 @@
 - **断点续跑（报告）**：
   - `Continue` 会在同一个 `report_id` 上从未完成章节继续生成（不重复生成已完成章节）。
   - `Regenerate` 会为同一个 `simulation_id` 创建新的 `report_id`（旧报告保留在历史中）。
-- **Interview 环境保活（关键）**：报告里的 `interview_agents` 需要模拟进入 **waiting/alive** 模式；后端支持“只重连，不原地重启”，避免破坏历史数据。
+- **Interview 环境保活（关键）**：报告里的 `interview_agents` 需要模拟进入 **waiting/alive** 模式；后端支持"只重连，不原地重启"，避免破坏历史数据。
 - **安全激活（不污染分支）**：当旧模拟环境不可恢复时，前端提供 `Activate (safe)`：自动创建新的 **simulation branch**（新 `simulation_id`），在新分支上运行 Step3 来恢复 Interview 环境，原分支目录不被修改。
-- **ReportAgent 工具调用稳定**：章节生成改为 OpenAI 原生 `tool_calls`（不依赖模型输出 `<tool_call>` 文本），减少“未注册工具”类干扰。
+- **代码版本检测与自动重启**：后端自动检测 `run_parallel_simulation.py` 脚本的代码版本（MD5），当检测到代码更新时，会自动终止旧进程并提示重启，确保使用最新代码。
+- **ReportAgent 工具调用稳定**：章节生成改为 OpenAI 原生 `tool_calls`（不依赖模型输出 `<tool_call>` 文本），减少"未注册工具"类干扰。
+- **LLM 模型设置**：新增 Settings 页面（`/settings`），支持查看可用模型列表、切换默认模型。
 - **一键烟测**：新增 `scripts/smoke.mjs`（quick/full），用于本地端到端验证。
 
 ## 如何正确“继续生成/重新生成”（避免污染）
