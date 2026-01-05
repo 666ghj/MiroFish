@@ -16,7 +16,7 @@
 
 [![GitHub License](https://img.shields.io/github/license/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/blob/main/LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/666ghj/MiroFish)
-[![Version](https://img.shields.io/badge/version-v0.2.0-green.svg?style=flat-square)](https://github.com/666ghj/MiroFish)
+[![Version](https://img.shields.io/badge/version-v0.2.0--beta-orange.svg?style=flat-square)](https://github.com/666ghj/MiroFish)
 
 [English](./README-EN.md) | [中文文档](./README.md)
 
@@ -24,9 +24,11 @@
 
 ---
 
-## 🆕 v0.2.0 新特性
+## 🆕 v0.2.0-beta 新特性（开发预览版）
 
-> 本版本新增：历史记录页面、报告断点续跑、Interview 环境保活/安全激活、OpenAI 原生工具调用、LLM 模型路由配置、一键烟测脚本。详细说明见 [`docs/UPDATES.md`](./docs/UPDATES.md)。
+> ⚠️ **注意**: 这是开发预览版本，功能可能不稳定，仅供测试和反馈使用。
+>
+> 本版本新增：历史记录页面、报告断点续跑、Interview 环境保活/安全激活、OpenAI 原生工具调用、LLM 模型设置、一键烟测脚本。详细说明见 [`docs/UPDATES.md`](./docs/UPDATES.md)。
 
 ### 主要更新
 
