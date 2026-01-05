@@ -202,14 +202,24 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>进入深度互动</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <!-- Next Step Buttons - 在完成后显示 -->
+          <div v-if="isComplete" class="complete-actions">
+            <button class="next-step-btn download-btn" @click="handleDownloadReport" :disabled="isDownloading">
+              <span>{{ isDownloading ? '下载中...' : '下载报告' }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+            </button>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>进入深度互动</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -469,7 +479,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { generateReport, getAgentLog, getConsoleLog } from '../api/report'
+import { generateReport, getAgentLog, getConsoleLog, downloadReport } from '../api/report'
 import { getEnvStatus, branchSimulation } from '../api/simulation'
 
 const router = useRouter()
@@ -486,6 +496,42 @@ const emit = defineEmits(['add-log', 'update-status'])
 const goToInteraction = () => {
   if (props.reportId) {
     router.push({ name: 'Interaction', params: { reportId: props.reportId } })
+  }
+}
+
+// Download report
+const handleDownloadReport = async () => {
+  if (!props.reportId || isDownloading.value) return
+
+  isDownloading.value = true
+  try {
+    const response = await downloadReport(props.reportId)
+
+    // 创建下载链接
+    const blob = new Blob([response.data], { type: 'text/markdown' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `report_${props.reportId}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    emit('add-log', {
+      time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      type: 'success',
+      message: '报告下载成功'
+    })
+  } catch (err) {
+    console.error('Download failed:', err)
+    emit('add-log', {
+      time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      type: 'error',
+      message: `报告下载失败: ${err.message || '未知错误'}`
+    })
+  } finally {
+    isDownloading.value = false
   }
 }
 
@@ -640,6 +686,7 @@ const collapsedSections = ref(new Set())
 const isComplete = ref(false)
 const isResuming = ref(false)
 const isRegenerating = ref(false)
+const isDownloading = ref(false)
 const startTime = ref(null)
 const leftPanel = ref(null)
 const rightPanel = ref(null)
@@ -3776,6 +3823,37 @@ watch(
 
 .regen-btn:disabled:hover {
   background: #111827;
+}
+
+.download-btn {
+  background: #1D4ED8;
+}
+
+.download-btn:hover {
+  background: #1E40AF;
+}
+
+.download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.download-btn:disabled:hover {
+  background: #1D4ED8;
+}
+
+.download-btn:hover svg {
+  transform: translateY(2px);
+}
+
+.complete-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.complete-actions .next-step-btn {
+  flex: 1;
 }
 
 .next-step-btn svg {

@@ -68,3 +68,13 @@ export const chatWithReport = (data) => {
 export const deleteReport = (reportId) => {
   return service.delete(`/api/report/${reportId}`)
 }
+
+/**
+ * 下载报告（Markdown格式）
+ * @param {string} reportId - 报告ID
+ */
+export const downloadReport = (reportId) => {
+  return service.get(`/api/report/${reportId}/download`, {
+    responseType: 'blob'
+  })
+}
