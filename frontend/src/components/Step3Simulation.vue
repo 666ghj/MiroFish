@@ -508,6 +508,15 @@ const fetchRunStatus = async () => {
         prevRedditRound.value = data.reddit_current_round
       }
       
+      // 检测模拟是否失败
+      if (data.runner_status === 'failed') {
+        const errorMsg = data.error || '模拟运行失败'
+        addLog(`✗ 模拟失败: ${errorMsg}`)
+        stopPolling()
+        emit('update-status', 'error')
+        return
+      }
+
       // 检测模拟是否已完成（通过 runner_status 或平台完成状态判断）
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
       
