@@ -29,12 +29,25 @@
         @mouseleave="hoveringCard = null"
         @click="navigateToProject(project)"
       >
-        <!-- 卡片头部：simulation_id和轮数进度 -->
+        <!-- 卡片头部：simulation_id 和 功能可用状态 -->
         <div class="card-header">
           <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
-          <span class="card-progress" :class="getProgressClass(project)">
-            <span class="status-dot">●</span> {{ formatRounds(project) }}
-          </span>
+          <div class="card-status-icons">
+            <span 
+              class="status-icon" 
+              :class="{ available: project.project_id, unavailable: !project.project_id }"
+              title="图谱构建"
+            >◇</span>
+            <span 
+              class="status-icon available" 
+              title="环境配置"
+            >◈</span>
+            <span 
+              class="status-icon" 
+              :class="{ available: project.report_id, unavailable: !project.report_id }"
+              title="分析报告"
+            >◆</span>
+          </div>
         </div>
 
         <!-- 文件列表区域 -->
@@ -52,6 +65,10 @@
               <span class="file-tag" :class="getFileType(file.filename)">{{ getFileTypeLabel(file.filename) }}</span>
               <span class="file-name">{{ truncateFilename(file.filename, 20) }}</span>
             </div>
+            <!-- 如果有更多文件，显示提示 -->
+            <div v-if="project.files.length > 3" class="files-more">
+              +{{ project.files.length - 3 }} 个文件
+            </div>
           </div>
           <!-- 无文件时的占位 -->
           <div class="files-empty" v-else>
@@ -68,8 +85,13 @@
 
         <!-- 卡片底部 -->
         <div class="card-footer">
-          <span class="card-date">{{ formatDate(project.created_at) }}</span>
-          <span class="card-time">{{ formatTime(project.created_at) }}</span>
+          <div class="card-datetime">
+            <span class="card-date">{{ formatDate(project.created_at) }}</span>
+            <span class="card-time">{{ formatTime(project.created_at) }}</span>
+          </div>
+          <span class="card-progress" :class="getProgressClass(project)">
+            <span class="status-dot">●</span> {{ formatRounds(project) }}
+          </span>
         </div>
         
         <!-- 底部装饰线 (hover时展开) -->
@@ -674,6 +696,33 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+/* 功能状态图标组 */
+.card-status-icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-icon {
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.status-icon.available {
+  opacity: 1;
+}
+
+/* 不同功能的颜色 */
+.status-icon:nth-child(1).available { color: #3B82F6; } /* 图谱构建 - 蓝色 */
+.status-icon:nth-child(2).available { color: #F59E0B; } /* 环境配置 - 橙色 */
+.status-icon:nth-child(3).available { color: #10B981; } /* 分析报告 - 绿色 */
+
+.status-icon.unavailable {
+  color: #D1D5DB;
+  opacity: 0.5;
+}
+
 /* 轮数进度显示 */
 .card-progress {
   display: flex;
@@ -698,18 +747,34 @@ onUnmounted(() => {
 .card-files-wrapper {
   position: relative;
   width: 100%;
-  min-height: 64px;
+  min-height: 48px;
+  max-height: 110px;
   margin-bottom: 12px;
   padding: 8px 10px;
   background: linear-gradient(135deg, #f8f9fa 0%, #f1f3f4 100%);
   border-radius: 4px;
   border: 1px solid #e8eaed;
+  overflow: hidden;
 }
 
 .files-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+}
+
+/* 更多文件提示 */
+.files-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: #6B7280;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 3px;
+  letter-spacing: 0.3px;
 }
 
 .file-item {
@@ -852,6 +917,32 @@ onUnmounted(() => {
   color: #9CA3AF;
   font-weight: 500;
 }
+
+/* 日期时间组合 */
+.card-datetime {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 底部轮数进度显示 */
+.card-footer .card-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  font-size: 0.65rem;
+}
+
+.card-footer .status-dot {
+  font-size: 0.5rem;
+}
+
+/* 进度状态颜色 - 底部 */
+.card-footer .card-progress.completed { color: #10B981; }
+.card-footer .card-progress.in-progress { color: #F59E0B; }
+.card-footer .card-progress.not-started { color: #9CA3AF; }
 
 /* 底部装饰线 */
 .card-bottom-line {
@@ -1065,6 +1156,28 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* 自定义滚动条样式 */
+.modal-files::-webkit-scrollbar {
+  width: 4px;
+}
+
+.modal-files::-webkit-scrollbar-track {
+  background: #F3F4F6;
+  border-radius: 2px;
+}
+
+.modal-files::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 2px;
+}
+
+.modal-files::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
 }
 
 .modal-file-item {
