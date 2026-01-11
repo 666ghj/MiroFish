@@ -49,3 +49,22 @@ export const getReport = (reportId) => {
 export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
 }
+
+/**
+ * 列出报告
+ * @param {string|null} simulationId - 可选，按模拟ID过滤
+ * @param {number} limit
+ */
+export const listReports = (simulationId = null, limit = 200) => {
+  const params = { limit }
+  if (simulationId) params.simulation_id = simulationId
+  return service.get('/api/report/list', { params })
+}
+
+/**
+ * 检查某个模拟是否已有可交互的报告（轻量接口）
+ * @param {string} simulationId
+ */
+export const checkReportStatus = (simulationId) => {
+  return service.get(`/api/report/check/${simulationId}`)
+}
