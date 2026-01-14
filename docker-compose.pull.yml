@@ -1,0 +1,68 @@
+# ===========================================
+# MiroFish Docker Compose 配置（云端镜像模式）
+# ===========================================
+# 用于生产环境，从 GitHub Container Registry 拉取镜像
+# 使用方法:
+#   1. 复制 .env.example 到 .env 并配置环境变量
+#   2. （可选）设置 IMAGE_TAG 指定版本，如: IMAGE_TAG=latest-backend-20250114-abc123
+#   3. 运行: docker-compose -f docker-compose.pull.yml up -d
+# ===========================================
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # 后端服务
+  # ===========================================
+  backend:
+    image: ghcr.io/deroino/mirofish:backend${IMAGE_TAG:-}
+    container_name: mirofish-backend
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    environment:
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5001
+      - FLASK_DEBUG=false
+    volumes:
+      # 持久化数据（如果需要）
+      - ./backend/data:/app/data
+    networks:
+      - mirofish-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===========================================
+  # 前端服务
+  # ===========================================
+  frontend:
+    image: ghcr.io/deroino/mirofish:frontend${IMAGE_TAG:-}
+    container_name: mirofish-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - mirofish-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  mirofish-network:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local

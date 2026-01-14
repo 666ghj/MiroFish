@@ -1,0 +1,178 @@
+---
+# MiroFish Docker Build Workflow
+# 使用可复用的 Docker Build Workflow 构建完整应用
+# 基于: Deroino/docker-build-workflow
+
+name: Docker Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'backend-v*.*.*'
+      - 'frontend-v*.*.*'
+      - 'backend-*'
+      - 'frontend-*'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'README-EN.md'
+      - 'DOCKER.md'
+      - '.github/linters/**'
+      - 'docs/**'
+
+# 取消同一分支上之前运行的工作流
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================
+  # 构建后端镜像
+  # ===========================================
+  build-backend:
+
+    name: Build Backend Image
+
+    # 使用您的可复用工作流
+    uses: Deroino/docker-build-workflow/.github/workflows/reusable-docker-build.yaml@main
+
+    # 设置权限（必须等于或大于可复用工作流要求的权限）
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+
+    # 传递 secrets
+    secrets:
+      gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+    # 配置输入参数
+    with:
+      # 启用 GitHub Container Registry
+      ghcr-enable: true
+
+      # 禁用 Docker Hub
+      dockerhub-enable: false
+
+      # 镜像名称
+      image-names: |
+        ghcr.io/${{ github.repository }}
+
+      # 构建目标（Dockerfile 中的 backend 阶段）
+      target: backend
+
+      # 平台
+      platforms: linux/amd64,linux/arm64
+
+      # 标签规则
+      tag-rules: |
+        type=raw,value=backend-stable-{{date 'YYYYMMDD'}}-{{sha}},enable={{is_default_branch}},priority=300
+        type=ref,event=tag,prefix=backend-,priority=200
+        type=raw,value=backend-latest,enable={{is_default_branch}},priority=100
+        type=raw,value=backend-gha-${{ github.run_id }},enable=${{github.event_name == 'pull_request'}},priority=200
+        type=raw,value=backend-pr-{{pr}},enable=${{github.event_name == 'pull_request'}},priority=100
+
+      # Dockerfile 路径
+      file: Dockerfile
+
+      # 构建上下文
+      context: "{{defaultContext}}"
+
+      # 启用 PR 注释
+      comment-enable: true
+
+      # 推送镜像
+      push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+  # ===========================================
+  # 构建前端镜像
+  # ===========================================
+  build-frontend:
+
+    name: Build Frontend Image
+
+    uses: Deroino/docker-build-workflow/.github/workflows/reusable-docker-build.yaml@main
+
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+
+    secrets:
+      gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+    with:
+      # 启用 GitHub Container Registry
+      ghcr-enable: true
+
+      # 禁用 Docker Hub
+      dockerhub-enable: false
+
+      # 镜像名称
+      image-names: |
+        ghcr.io/${{ github.repository }}
+
+      # 构建目标（Dockerfile 中的 frontend 阶段）
+      target: frontend
+
+      # 平台
+      platforms: linux/amd64,linux/arm64
+
+      # 标签规则
+      tag-rules: |
+        type=raw,value=frontend-stable-{{date 'YYYYMMDD'}}-{{sha}},enable={{is_default_branch}},priority=300
+        type=ref,event=tag,prefix=frontend-,priority=200
+        type=raw,value=frontend-latest,enable={{is_default_branch}},priority=100
+        type=raw,value=frontend-gha-${{ github.run_id }},enable=${{github.event_name == 'pull_request'}},priority=200
+        type=raw,value=frontend-pr-{{pr}},enable=${{github.event_name == 'pull_request'}},priority=100
+
+      # Dockerfile 路径
+      file: Dockerfile
+
+      # 构建上下文
+      context: "{{defaultContext}}"
+
+      # 启用 PR 注释
+      comment-enable: true
+
+      # 推送镜像
+      push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+  # ===========================================
+  # 创建摘要（显示所有镜像标签）
+  # ===========================================
+  summary:
+
+    name: Build Summary
+
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+
+    if: always()
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# 🐳 MiroFish Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Built Images" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Image Tag | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | \`ghcr.io/${{ github.repository }}:backend\` | ${{ needs.build-backend.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`ghcr.io/${{ github.repository }}:frontend\` | ${{ needs.build-frontend.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Quick Start" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# Pull images" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository }}:backend" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository }}:frontend" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Or use docker-compose" >> $GITHUB_STEP_SUMMARY
+          echo "docker-compose up -d" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

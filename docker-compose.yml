@@ -1,0 +1,75 @@
+# ===========================================
+# MiroFish Docker Compose 配置（本地构建模式）
+# ===========================================
+# 用于开发和本地构建
+# 使用方法:
+#   1. 复制 .env.example 到 .env 并配置环境变量
+#   2. 运行: docker-compose up -d
+#
+# 如需使用云端镜像模式，请使用 docker-compose.pull.yml
+# ===========================================
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # 后端服务
+  # ===========================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: mirofish-backend
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    environment:
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5001
+      - FLASK_DEBUG=false
+    volumes:
+      # 持久化数据（如果需要）
+      - ./backend/data:/app/data
+    networks:
+      - mirofish-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===========================================
+  # 前端服务
+  # ===========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    container_name: mirofish-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - mirofish-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  mirofish-network:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local
