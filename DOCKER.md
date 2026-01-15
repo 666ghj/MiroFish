@@ -58,7 +58,7 @@ docker-compose logs -f
 #### 模式 B：云端镜像（生产）
 
 ```bash
-# 拉取最新镜像并启动
+# 拉取最新镜像并启动（默认使用 -latest）
 docker-compose -f docker-compose.pull.yml up -d
 
 # 拉取指定版本
@@ -100,6 +100,8 @@ docker-compose -f docker-compose.pull.yml up -d
 |---------|------|------|
 | `latest-backend` | 最新后端（仅主分支） | `ghcr.io/deroino/mirofish:latest-backend` |
 | `latest-frontend` | 最新前端（仅主分支） | `ghcr.io/deroino/mirofish:latest-frontend` |
+| `backend-latest` | 最新后端（仅主分支） | `ghcr.io/deroino/mirofish:backend-latest` |
+| `frontend-latest` | 最新前端（仅主分支） | `ghcr.io/deroino/mirofish:frontend-latest` |
 | `stable-backend-YYYYMMDD-SHA` | 稳定版本 | `ghcr.io/deroino/mirofish:stable-backend-20250114-abc123` |
 | `stable-frontend-YYYYMMDD-SHA` | 稳定版本 | `ghcr.io/deroino/mirofish:stable-frontend-20250114-abc123` |
 | `gha-backend-RUN_ID` | PR 构建标签 | `ghcr.io/deroino/mirofish:gha-backend-123456` |

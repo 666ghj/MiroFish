@@ -5,7 +5,7 @@
 # 使用方法:
 #   1. 复制 .env.example 到 .env 并配置环境变量
 #   2. 设置 GHCR_REGISTRY 为你的 GitHub 用户名，如: GHCR_REGISTRY=yourusername
-#   3. （可选）设置 IMAGE_TAG 指定版本，如: IMAGE_TAG=-v1.0.0
+#   3. （可选）设置 IMAGE_TAG 指定版本，如: IMAGE_TAG=-v1.0.0 (默认为 -latest)
 #   4. 运行: GHCR_REGISTRY=yourusername IMAGE_TAG=-v1.0.0 docker-compose -f docker-compose.pull.yml up -d
 # ===========================================
 
@@ -16,7 +16,7 @@ services:
   # 后端服务
   # ===========================================
   backend:
-    image: ghcr.io/${GHCR_REGISTRY:-666ghj/mirofish}:backend${IMAGE_TAG:-}
+    image: ghcr.io/${GHCR_REGISTRY:-666ghj}/mirofish:backend${IMAGE_TAG:--latest}
     container_name: mirofish-backend
     restart: unless-stopped
     ports:
@@ -43,7 +43,7 @@ services:
   # 前端服务
   # ===========================================
   frontend:
-    image: ghcr.io/${GHCR_REGISTRY:-666ghj/mirofish}:frontend${IMAGE_TAG:-}
+    image: ghcr.io/${GHCR_REGISTRY:-666ghj}/mirofish:frontend${IMAGE_TAG:--latest}
     container_name: mirofish-frontend
     restart: unless-stopped
     ports:
