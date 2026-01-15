@@ -76,6 +76,10 @@ jobs:
       # Dockerfile 路径
       file: Dockerfile
 
+      # 构建参数
+      build-args: |
+        VITE_API_BASE_URL=/api
+
       # 构建上下文
       context: "{{defaultContext}}"
 
@@ -129,6 +133,10 @@ jobs:
 
       # Dockerfile 路径
       file: Dockerfile
+
+      # 构建参数
+      build-args: |
+        VITE_API_BASE_URL=/api
 
       # 构建上下文
       context: "{{defaultContext}}"
