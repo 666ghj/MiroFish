@@ -16,7 +16,7 @@ services:
   # 后端服务
   # ===========================================
   backend:
-    image: ghcr.io/${GHCR_REGISTRY:-ghcr.io/deroino/mirofish}:backend${IMAGE_TAG:-}
+    image: ghcr.io/${GHCR_REGISTRY:-666ghj/mirofish}:backend${IMAGE_TAG:-}
     container_name: mirofish-backend
     restart: unless-stopped
     ports:
@@ -43,7 +43,7 @@ services:
   # 前端服务
   # ===========================================
   frontend:
-    image: ghcr.io/${GHCR_REGISTRY:-ghcr.io/deroino/mirofish}:frontend${IMAGE_TAG:-}
+    image: ghcr.io/${GHCR_REGISTRY:-666ghj/mirofish}:frontend${IMAGE_TAG:-}
     container_name: mirofish-frontend
     restart: unless-stopped
     ports:
