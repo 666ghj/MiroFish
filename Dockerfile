@@ -21,6 +21,10 @@ RUN npm ci
 # 复制前端源代码
 COPY frontend/ ./
 
+# 接收构建参数 API_BASE_URL
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 # 构建前端应用
 RUN npm run build
 

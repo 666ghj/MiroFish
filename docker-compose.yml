@@ -50,6 +50,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: frontend
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
     container_name: mirofish-frontend
     restart: unless-stopped
     ports:
