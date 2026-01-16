@@ -1,7 +1,8 @@
 # ===========================================
-# MiroFish Dockerfile - 多阶段构建
+# MiroFish Dockerfile - 多阶段构建（优化版）
 # ===========================================
 # 构建顺序：前端构建 -> 后端镜像 + 前端镜像
+# 优化目标：减少镜像大小，清理不必要的文件
 # ===========================================
 
 # ===========================================
@@ -29,15 +30,15 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
 # ===========================================
-# 阶段 2: 后端镜像
+# 阶段 2: 后端依赖安装（构建阶段）
 # ===========================================
-FROM python:3.12-slim AS backend
+FROM python:3.12-slim AS backend-builder
 
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
+# 安装构建依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     curl \
@@ -52,6 +53,22 @@ COPY backend/requirements.txt backend/pyproject.toml backend/uv.lock ./
 # 使用 uv 安装依赖（创建虚拟环境）
 RUN uv sync --frozen --no-dev
 
+# ===========================================
+# 阶段 3: 后端运行镜像（精简版）
+# ===========================================
+FROM python:3.12-slim AS backend
+
+# 设置工作目录
+WORKDIR /app
+
+# 只安装运行时需要的依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 从构建阶段复制虚拟环境
+COPY --from=backend-builder /app/.venv /app/.venv
+
 # 复制后端源代码
 COPY backend/ ./
 
@@ -61,17 +78,18 @@ EXPOSE 5001
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
     FLASK_HOST=0.0.0.0 \
-    FLASK_PORT=5001
+    FLASK_PORT=5001 \
+    PATH="/app/.venv/bin:$PATH"
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:5001/health || exit 1
 
-# 启动后端服务
-CMD ["uv", "run", "python", "run.py"]
+# 启动后端服务（直接使用虚拟环境中的 Python）
+CMD ["python", "run.py"]
 
 # ===========================================
-# 阶段 3: 前端镜像（Nginx）
+# 阶段 4: 前端镜像（Nginx）
 # ===========================================
 FROM nginx:alpine AS frontend
 
