@@ -29,6 +29,7 @@
               }"
             >
               <div class="section-header-row" @click="toggleSectionCollapse(idx)" :class="{ 'clickable': isSectionCompleted(idx + 1) }">
+                <span class="section-number">{{ String(idx + 1).padStart(2, '0') }}</span>
                 <h3 class="section-title">{{ section.title }}</h3>
                 <svg 
                   v-if="isSectionCompleted(idx + 1)" 
