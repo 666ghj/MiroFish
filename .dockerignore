@@ -1,0 +1,88 @@
+# ===========================================
+# MiroFish Docker Ignore 配置
+# ===========================================
+# 排除不必要的文件以减小镜像体积和加快构建速度
+# ===========================================
+
+# Git 相关
+.git/
+.gitignore
+.gitattributes
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# Node 相关
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+venv/
+env/
+ENV/
+.venv/
+uv.lock
+
+# IDE 相关
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志
+logs/
+*.log
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 文档
+*.md
+!README.md
+docs/
+
+# 测试
+tests/
+.pytest_cache/
+
+# Docker 相关
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# 其他
+static/
+*.bak
+.cache/
