@@ -144,6 +144,28 @@ npm run backend   # 仅启动后端
 npm run frontend  # 仅启动前端
 ```
 
+### 使用 Docker Compose 启动（可选）
+
+```bash
+# 确保已配置 .env（已存在可跳过）
+cp .env.example .env
+
+# 构建并启动
+docker compose up --build -d
+
+# 查看日志
+docker compose logs -f
+```
+
+**服务地址：**
+- 前端：`http://localhost:3000`
+- 后端 API：`http://localhost:5001`
+
+**停止服务：**
+```bash
+docker compose down
+```
+
 ## 📬 更多交流
 
 <div align="center">
