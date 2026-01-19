@@ -369,16 +369,23 @@ class SimulationRunner:
         cls._save_run_state(state)
         
         # 如果启用图谱记忆更新，创建更新器
+        # 注意：图谱记忆更新仅支持Zep后端
         if enable_graph_memory_update:
             if not graph_id:
                 raise ValueError("启用图谱记忆更新时必须提供 graph_id")
             
-            try:
-                ZepGraphMemoryManager.create_updater(simulation_id, graph_id)
-                cls._graph_memory_enabled[simulation_id] = True
-                logger.info(f"已启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
-            except Exception as e:
-                logger.error(f"创建图谱记忆更新器失败: {e}")
+            # 检查是否使用Zep后端
+            if Config.GRAPH_BACKEND == "zep":
+                try:
+                    ZepGraphMemoryManager.create_updater(simulation_id, graph_id)
+                    cls._graph_memory_enabled[simulation_id] = True
+                    logger.info(f"已启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
+                except Exception as e:
+                    logger.error(f"创建图谱记忆更新器失败: {e}")
+                    cls._graph_memory_enabled[simulation_id] = False
+            else:
+                # 本地后端不支持图谱记忆更新
+                logger.info(f"图谱记忆更新仅支持Zep后端，已跳过 (当前后端: {Config.GRAPH_BACKEND})")
                 cls._graph_memory_enabled[simulation_id] = False
         else:
             cls._graph_memory_enabled[simulation_id] = False
@@ -1200,10 +1207,12 @@ class SimulationRunner:
         logger.info("正在清理所有模拟进程...")
         
         # 首先停止所有图谱记忆更新器（stop_all 内部会打印日志）
-        try:
-            ZepGraphMemoryManager.stop_all()
-        except Exception as e:
-            logger.error(f"停止图谱记忆更新器失败: {e}")
+        # 仅在Zep后端启用时才调用
+        if Config.GRAPH_BACKEND == "zep" and has_updaters:
+            try:
+                ZepGraphMemoryManager.stop_all()
+            except Exception as e:
+                logger.error(f"停止图谱记忆更新器失败: {e}")
         cls._graph_memory_enabled.clear()
         
         # 复制字典以避免在迭代时修改

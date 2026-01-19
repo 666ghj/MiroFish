@@ -202,7 +202,8 @@ class OasisProfileGenerator:
         self.zep_client = None
         self.graph_id = graph_id
         
-        if self.zep_api_key:
+        # 仅在使用 Zep 图谱后端时启用 Zep 检索（本地 Neo4j 图谱不兼容 Zep graph_id）
+        if Config.GRAPH_BACKEND == "zep" and self.zep_api_key:
             try:
                 self.zep_client = Zep(api_key=self.zep_api_key)
             except Exception as e:
@@ -297,6 +298,9 @@ class OasisProfileGenerator:
         """
         import concurrent.futures
         
+        if Config.GRAPH_BACKEND != "zep":
+            return {"facts": [], "node_summaries": [], "context": ""}
+
         if not self.zep_client:
             return {"facts": [], "node_summaries": [], "context": ""}
         

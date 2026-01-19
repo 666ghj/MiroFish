@@ -22,12 +22,12 @@ from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from .zep_tools import (
-    ZepToolsService, 
     SearchResult, 
     InsightForgeResult, 
     PanoramaResult,
     InterviewResult
 )
+from .tools_backend import get_tools_service
 
 logger = get_logger('mirofish.report_agent')
 
@@ -507,7 +507,7 @@ class ReportAgent:
         simulation_id: str,
         simulation_requirement: str,
         llm_client: Optional[LLMClient] = None,
-        zep_tools: Optional[ZepToolsService] = None
+        zep_tools: Optional[object] = None
     ):
         """
         初始化Report Agent
@@ -522,9 +522,17 @@ class ReportAgent:
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
+        self._moderation_safe_mode = False
         
-        self.llm = llm_client or LLMClient()
-        self.zep_tools = zep_tools or ZepToolsService()
+        if llm_client is not None:
+            self.llm = llm_client
+        else:
+            self.llm = LLMClient(
+                api_key=Config.REPORT_API_KEY,
+                base_url=Config.REPORT_BASE_URL,
+                model=Config.REPORT_MODEL_NAME,
+            )
+        self.zep_tools = zep_tools or get_tools_service()
         
         # 工具定义
         self.tools = self._define_tools()
@@ -535,6 +543,135 @@ class ReportAgent:
         self.console_logger: Optional[ReportConsoleLogger] = None
         
         logger.info(f"ReportAgent 初始化完成: graph_id={graph_id}, simulation_id={simulation_id}")
+
+    @staticmethod
+    def _is_data_inspection_failed(err: Exception) -> bool:
+        try:
+            body = getattr(err, "body", None)
+            if isinstance(body, dict):
+                code = ((body.get("error") or {}).get("code") or "").lower()
+                msg = ((body.get("error") or {}).get("message") or "").lower()
+                return ("data_inspection_failed" in code) or ("inappropriate" in msg)
+        except Exception:
+            pass
+        text = (str(err) or "").lower()
+        return ("data_inspection_failed" in text) or ("inappropriate content" in text)
+
+    @staticmethod
+    def _sanitize_text_for_moderation(text: str, max_len: int = 8000) -> str:
+        if not text:
+            return text
+
+        t = text
+        # Remove block quotes (often contain raw simulated UGC)
+        t = re.sub(r"^>.*$", "> [REDACTED]", t, flags=re.MULTILINE)
+
+        # Redact sample facts block in outline planning
+        t = re.sub(
+            r"(【模拟预测到的部分未来事实样本】\s*)([\s\S]*?)(\n\s*请以)",
+            r"\1[REDACTED_FACT_SAMPLES]\3",
+            t,
+        )
+
+        # Redact tool observation payloads in ReACT loop (keep instructions after it)
+        t = re.sub(
+            r"(Observation（检索结果）:\s*)([\s\S]*?)(\n\s*【下一步行动】)",
+            r"\1[REDACTED_TOOL_OUTPUTS]\3",
+            t,
+        )
+
+        # Redact URLs/emails to avoid accidental triggers
+        t = re.sub(r"https?://\S+", "[URL]", t)
+        t = re.sub(r"\b[\w\.-]+@[\w\.-]+\.\w+\b", "[EMAIL]", t)
+
+        if len(t) > max_len:
+            t = t[:max_len] + "\n...[TRUNCATED_FOR_PROVIDER_POLICY]..."
+        return t
+
+    def _sanitize_messages_for_moderation(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        safe_prefix = (
+            "【安全模式】上游模型供应商可能会对\"输入内容\"触发审核。\n"
+            "请遵循：\n"
+            "1) 不要引用/复述任何原始帖子、对话、具体引言；禁止使用 > 逐字引用。\n"
+            "2) 只做概括性、抽象化的总结（趋势/观点/分歧/风险）。\n"
+            "3) 如必须提及例子，用 [REDACTED] 占位符代替具体敏感细节。\n"
+        )
+
+        sanitized: List[Dict[str, str]] = []
+        for m in messages or []:
+            role = (m or {}).get("role")
+            content = (m or {}).get("content")
+            if isinstance(content, str):
+                content = self._sanitize_text_for_moderation(content)
+            sanitized.append({"role": role, "content": content})
+
+        if sanitized and sanitized[0].get("role") == "system":
+            sanitized[0]["content"] = safe_prefix + "\n\n" + (sanitized[0].get("content") or "")
+        else:
+            sanitized.insert(0, {"role": "system", "content": safe_prefix})
+        return sanitized
+
+    def _chat_with_moderation_retry(
+        self,
+        *,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        response_format: Optional[Dict] = None,
+    ) -> str:
+        if self._moderation_safe_mode:
+            return self.llm.chat(
+                messages=self._sanitize_messages_for_moderation(messages),
+                temperature=max(0.0, temperature - 0.1),
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+
+        try:
+            return self.llm.chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+        except Exception as e:
+            if not self._is_data_inspection_failed(e):
+                raise
+            logger.warning("Report LLM blocked by provider moderation; retrying in safe mode.")
+            self._moderation_safe_mode = True
+            return self.llm.chat(
+                messages=self._sanitize_messages_for_moderation(messages),
+                temperature=max(0.0, temperature - 0.1),
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+
+    def _chat_json_with_moderation_retry(
+        self,
+        *,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> Dict[str, Any]:
+        if self._moderation_safe_mode:
+            return self.llm.chat_json(
+                messages=self._sanitize_messages_for_moderation(messages),
+                temperature=max(0.0, temperature - 0.1),
+                max_tokens=max_tokens,
+            )
+
+        try:
+            return self.llm.chat_json(messages=messages, temperature=temperature, max_tokens=max_tokens)
+        except Exception as e:
+            if not self._is_data_inspection_failed(e):
+                raise
+            logger.warning("Report JSON LLM blocked by provider moderation; retrying in safe mode.")
+            self._moderation_safe_mode = True
+            return self.llm.chat_json(
+                messages=self._sanitize_messages_for_moderation(messages),
+                temperature=max(0.0, temperature - 0.1),
+                max_tokens=max_tokens,
+            )
     
     def _define_tools(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -898,7 +1035,7 @@ class ReportAgent:
 【再次提醒】报告章节数量：最少2个，最多5个，内容要精炼聚焦于核心预测发现。"""
 
         try:
-            response = self.llm.chat_json(
+            response = self._chat_json_with_moderation_retry(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1185,7 +1322,7 @@ class ReportAgent:
                 )
             
             # 调用LLM
-            response = self.llm.chat(
+            response = self._chat_with_moderation_retry(
                 messages=messages,
                 temperature=0.5,
                 max_tokens=4096
@@ -1333,7 +1470,7 @@ class ReportAgent:
             "content": "已达到工具调用限制，请直接输出 Final Answer: 并生成章节内容。"
         })
         
-        response = self.llm.chat(
+        response = self._chat_with_moderation_retry(
             messages=messages,
             temperature=0.5,
             max_tokens=4096
@@ -1606,19 +1743,28 @@ class ReportAgent:
             return report
             
         except Exception as e:
-            logger.error(f"报告生成失败: {str(e)}")
+            err_msg = str(e)
+            if self._is_data_inspection_failed(e):
+                err_msg = (
+                    "上游模型触发内容审核（data_inspection_failed）。"
+                    "建议：在 .env 中配置 REPORT_API_KEY/REPORT_BASE_URL/REPORT_MODEL_NAME，"
+                    "将报告生成切换到更合适的 OpenAI 兼容供应商/模型；或减少报告中对原始内容的逐字引用。"
+                    f" 原始错误: {err_msg}"
+                )
+
+            logger.error(f"报告生成失败: {err_msg}")
             report.status = ReportStatus.FAILED
-            report.error = str(e)
+            report.error = err_msg
             
             # 记录错误日志
             if self.report_logger:
-                self.report_logger.log_error(str(e), "failed")
+                self.report_logger.log_error(err_msg, "failed")
             
             # 保存失败状态
             try:
                 ReportManager.save_report(report)
                 ReportManager.update_progress(
-                    report_id, "failed", -1, f"报告生成失败: {str(e)}",
+                    report_id, "failed", -1, f"报告生成失败: {err_msg}",
                     completed_sections=completed_section_titles
                 )
             except Exception:
@@ -1714,7 +1860,7 @@ class ReportAgent:
         max_iterations = 2  # 减少迭代轮数
         
         for iteration in range(max_iterations):
-            response = self.llm.chat(
+            response = self._chat_with_moderation_retry(
                 messages=messages,
                 temperature=0.5
             )
@@ -1754,7 +1900,7 @@ class ReportAgent:
             })
         
         # 达到最大迭代，获取最终响应
-        final_response = self.llm.chat(
+        final_response = self._chat_with_moderation_retry(
             messages=messages,
             temperature=0.5
         )
