@@ -11,7 +11,7 @@ from ..config import Config
 
 def get_graph_builder():
     if Config.GRAPH_BACKEND == "local":
-        from .local_graph_builder import LocalGraphBuilderService
+        from app.services.local.local_graph_builder import LocalGraphBuilderService
 
         return LocalGraphBuilderService()
 

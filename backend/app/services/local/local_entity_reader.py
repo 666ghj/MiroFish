@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set
 
-from ..utils.logger import get_logger
+from app.utils.logger import get_logger
 from .local_graph_store import LocalNeo4jGraphStore
-from .entity_type_normalizer import canonicalize_entity_type
-from .zep_entity_reader import EntityNode, FilteredEntities
+from app.services.entity_type_normalizer import canonicalize_entity_type
+from app.services.zep.zep_entity_reader import EntityNode, FilteredEntities
 
 logger = get_logger("mirofish.local_entity_reader")
 

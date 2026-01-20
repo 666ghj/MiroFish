@@ -13,8 +13,8 @@ from difflib import SequenceMatcher
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
-from ..config import Config
-from ..utils.logger import get_logger
+from app.config import Config
+from app.utils.logger import get_logger
 
 logger = get_logger("mirofish.local_entity_resolver")
 

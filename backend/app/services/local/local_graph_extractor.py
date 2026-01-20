@@ -9,9 +9,9 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from ..config import Config
-from ..utils.llm_client import LLMClient
-from ..utils.logger import get_logger
+from app.config import Config
+from app.utils.llm_client import LLMClient
+from app.utils.logger import get_logger
 
 logger = get_logger("mirofish.local_graph_extractor")
 

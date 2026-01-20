@@ -11,10 +11,10 @@ from ..config import Config
 
 def get_entity_reader():
     if Config.GRAPH_BACKEND == "local":
-        from .local_entity_reader import LocalEntityReader
+        from app.services.local.local_entity_reader import LocalEntityReader
 
         return LocalEntityReader()
 
-    from .zep_entity_reader import ZepEntityReader
+    from app.services.zep.zep_entity_reader import ZepEntityReader
 
     return ZepEntityReader()

@@ -11,12 +11,12 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ..config import Config
-from ..utils.logger import get_logger
-from .text_processor import TextProcessor
+from app.config import Config
+from app.utils.logger import get_logger
+from app.services.text_processor import TextProcessor
 from .local_graph_extractor import LocalGraphExtractor
 from .local_graph_store import LocalEntity, LocalNeo4jGraphStore, LocalRelation
-from .entity_type_normalizer import canonicalize_entity_type
+from app.services.entity_type_normalizer import canonicalize_entity_type
 from .local_vector_store import QdrantChunkStore
 
 logger = get_logger("mirofish.local_graph_builder")

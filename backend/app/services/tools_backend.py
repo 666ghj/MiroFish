@@ -7,8 +7,8 @@ Switches between ZepToolsService and LocalToolsService based on Config.GRAPH_BAC
 from __future__ import annotations
 
 from ..config import Config
-from .zep_tools import ZepToolsService
-from .local_tools import LocalToolsService
+from app.services.zep.zep_tools import ZepToolsService
+from app.services.local.local_tools import LocalToolsService
 
 
 def get_tools_service() -> ZepToolsService | LocalToolsService:

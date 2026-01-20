@@ -18,8 +18,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from queue import Queue, Empty
 
-from ..utils.logger import get_logger
-from .zep_graph_memory_updater import AgentActivity  # 复用数据类
+from app.utils.logger import get_logger
+from app.services.zep.zep_graph_memory_updater import AgentActivity  # 复用数据类
 from .local_graph_store import LocalNeo4jGraphStore, LocalEntity, LocalRelation
 from .local_graph_extractor import LocalGraphExtractor
 from .local_edge_invalidator import RuleBasedEdgeInvalidator

@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from ..config import Config
-from ..utils.logger import get_logger
-from ..utils.llm_client import LLMClient
+from app.config import Config
+from app.utils.logger import get_logger
+from app.utils.llm_client import LLMClient
 
 logger = get_logger("mirofish.local_vector_store")
 

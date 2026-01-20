@@ -9,9 +9,9 @@
 
 from typing import Dict, List, Any, Optional
 
-from ..config import Config
-from ..utils.logger import get_logger
-from ..utils.llm_client import LLMClient
+from app.config import Config
+from app.utils.logger import get_logger
+from app.utils.llm_client import LLMClient
 
 logger = get_logger("mirofish.local_edge_invalidator")
 

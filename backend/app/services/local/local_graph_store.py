@@ -16,8 +16,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from neo4j import GraphDatabase, Driver
 
-from ..config import Config
-from ..utils.logger import get_logger
+from app.config import Config
+from app.utils.logger import get_logger
 
 logger = get_logger("mirofish.local_graph_store")
 

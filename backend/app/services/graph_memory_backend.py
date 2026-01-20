@@ -6,15 +6,13 @@
 - "local": 使用 LocalGraphMemoryManager（本地 Neo4j）
 """
 
-from typing import Type, Union
-
 from ..config import Config
 from ..utils.logger import get_logger
 
 logger = get_logger("mirofish.graph_memory_backend")
 
-from .zep_graph_memory_updater import ZepGraphMemoryManager
-from .local_graph_memory_updater import LocalGraphMemoryManager
+from app.services.zep.zep_graph_memory_updater import ZepGraphMemoryManager
+from app.services.local.local_graph_memory_updater import LocalGraphMemoryManager
 
 
 def get_graph_memory_manager() -> type[ZepGraphMemoryManager | LocalGraphMemoryManager]:

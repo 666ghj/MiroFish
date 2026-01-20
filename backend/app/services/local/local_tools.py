@@ -12,11 +12,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..config import Config
-from ..utils.logger import get_logger
+from app.config import Config
+from app.utils.logger import get_logger
 from .local_graph_store import LocalNeo4jGraphStore
 from .local_vector_store import QdrantChunkStore
-from .zep_tools import (
+from app.services.zep.zep_tools import (
     InsightForgeResult,
     PanoramaResult,
     SearchResult,
