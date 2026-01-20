@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
@@ -29,7 +29,7 @@ class QdrantChunkStore:
         self._client = QdrantClient(
             url=Config.QDRANT_URL,
             api_key=Config.QDRANT_API_KEY,
-            timeout=30.0,
+            timeout=30,
         )
         self._collection = Config.QDRANT_COLLECTION_CHUNKS
         self._llm = llm or LLMClient(

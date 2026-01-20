@@ -7,14 +7,15 @@ Switches between ZepToolsService and LocalToolsService based on Config.GRAPH_BAC
 from __future__ import annotations
 
 from ..config import Config
+from .zep_tools import ZepToolsService
+from .local_tools import LocalToolsService
 
 
-def get_tools_service():
-    if Config.GRAPH_BACKEND == "local":
-        from .local_tools import LocalToolsService
-
-        return LocalToolsService()
-
-    from .zep_tools import ZepToolsService
-
-    return ZepToolsService()
+def get_tools_service() -> ZepToolsService | LocalToolsService:
+    """
+    获取工具服务
+    
+    Returns:
+        ZepToolsService 或 LocalToolsService 实例
+    """
+    return ZepToolsService() if Config.GRAPH_BACKEND == "zep" else LocalToolsService()
