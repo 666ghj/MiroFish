@@ -392,6 +392,37 @@ class LocalGraphMemoryUpdater:
         
         return entity_uuid_map
     
+    def _find_existing_entity(self, name: str, entity_type: str) -> Optional[str]:
+        """
+        在图谱中查找已有实体的 UUID
+        
+        使用 LocalEntityResolver 进行消歧，而不是简单的精确匹配，
+        以符合 Zep 的两阶段实体去重策略。
+        
+        Args:
+            name: 实体名称
+            entity_type: 实体类型
+            
+        Returns:
+            已有实体的 UUID，如果不存在则返回 None
+        """
+        if not name or not name.strip():
+            return None
+        
+        # 使用 EntityResolver 进行解析
+        resolved = self._entity_resolver.resolve(
+            graph_id=self.graph_id,
+            name=name.strip(),
+            entity_type=entity_type,
+            summary="",
+        )
+        
+        # 只返回已有实体的 UUID，不创建新实体
+        if not resolved.is_new:
+            return resolved.uuid
+        
+        return None
+    
     def _process_relations(
         self,
         relations: List[Dict],
@@ -438,12 +469,23 @@ class LocalGraphMemoryUpdater:
                 logger.debug(f"跳过关系: 找不到实体 UUID - {source_name} -> {target_name}")
                 continue
             
-            # 检测矛盾并处理失效
-            self._detect_and_invalidate_contradictions(
-                source_uuid, target_uuid, relation_name, fact, timestamp
+            # 获取实体间已有边（用于去重和矛盾检测）
+            existing_edges = self._graph_store.get_edges_between_entities(
+                self.graph_id, source_uuid, target_uuid, include_invalid=False
             )
             
-            # 创建新关系
+            # ① 检查是否为重复事实
+            if existing_edges and self._is_duplicate_fact(existing_edges, relation_name, fact):
+                # 重复事实，跳过创建新边
+                continue
+            
+            # ② 检测矛盾并处理失效
+            if existing_edges:
+                self._detect_and_invalidate_contradictions_with_edges(
+                    existing_edges, source_uuid, target_uuid, relation_name, fact, timestamp
+                )
+            
+            # ③ 创建新关系
             rel_uuid = f"rel_{uuid.uuid4().hex[:16]}"
             local_rel = LocalRelation(
                 project_id=self.graph_id.split("_")[2] if "_" in self.graph_id else "default",
@@ -521,6 +563,129 @@ class LocalGraphMemoryUpdater:
                 
         except Exception as e:
             logger.warning(f"矛盾检测失败: {e}")
+    
+    def _detect_and_invalidate_contradictions_with_edges(
+        self,
+        existing_edges: List[Dict],
+        source_uuid: str,
+        target_uuid: str,
+        new_relation_name: str,
+        new_fact: str,
+        timestamp: str
+    ):
+        """
+        使用已有边列表检测并处理矛盾（避免重复查询）
+        
+        Args:
+            existing_edges: 已获取的边列表
+            source_uuid: 源实体UUID
+            target_uuid: 目标实体UUID
+            new_relation_name: 新关系名称
+            new_fact: 新事实描述
+            timestamp: 时间戳
+        """
+        if not existing_edges:
+            return
+        
+        try:
+            # 获取源和目标实体名称
+            source_entity = self._graph_store.get_entity_by_uuid(source_uuid)
+            target_entity = self._graph_store.get_entity_by_uuid(target_uuid)
+            
+            source_name = source_entity.get("name", "") if source_entity else ""
+            target_name = target_entity.get("name", "") if target_entity else ""
+            
+            # 构建新边信息
+            new_edge = {
+                "source_name": source_name,
+                "target_name": target_name,
+                "relation_name": new_relation_name,
+                "fact": new_fact,
+            }
+            
+            # 为已有边添加名称信息（创建副本避免修改原数据）
+            edges_with_names = []
+            for edge in existing_edges:
+                edge_copy = dict(edge)
+                edge_copy["source_name"] = source_name
+                edge_copy["target_name"] = target_name
+                edge_copy["relation_name"] = edge_copy.get("name", "")
+                edges_with_names.append(edge_copy)
+            
+            # 使用规则检测器检测矛盾
+            contradicted_uuids = self._edge_invalidator.detect_contradictions(
+                new_edge, edges_with_names
+            )
+            
+            # 标记矛盾边为失效
+            for edge_uuid in contradicted_uuids:
+                self._graph_store.invalidate_edge(edge_uuid, timestamp)
+                logger.info(f"已标记边失效: {edge_uuid} (矛盾关系: {new_relation_name})")
+                
+        except Exception as e:
+            logger.warning(f"矛盾检测失败: {e}")
+    
+    def _is_duplicate_fact(
+        self,
+        existing_edges: List[Dict],
+        new_relation: str,
+        new_fact: str
+    ) -> bool:
+        """
+        检查是否为重复事实
+        
+        通过比较关系类型和事实描述的相似度来判断是否重复。
+        
+        Args:
+            existing_edges: 已有边列表
+            new_relation: 新关系类型
+            new_fact: 新事实描述
+            
+        Returns:
+            是否为重复事实
+        """
+        from .local_entity_resolver import calculate_similarity, normalize_string
+        
+        DUPLICATE_THRESHOLD = 0.75  # 相似度阈值
+        
+        new_relation_normalized = normalize_string(new_relation)
+        new_fact_normalized = normalize_string(new_fact)
+        
+        for edge in existing_edges:
+            existing_relation = edge.get("name", "")
+            existing_relation_normalized = normalize_string(existing_relation)
+            
+            # 关系类型必须相同或非常相似
+            relation_similarity = calculate_similarity(
+                new_relation_normalized, 
+                existing_relation_normalized
+            )
+            if relation_similarity < 0.8:
+                continue
+            
+            # 检查事实相似度
+            existing_fact = edge.get("fact", "")
+            existing_fact_normalized = normalize_string(existing_fact)
+            
+            # 如果都无事实描述，视为重复
+            if not new_fact_normalized and not existing_fact_normalized:
+                logger.debug(f"跳过重复事实: {new_relation} (无描述)")
+                return True
+            
+            # 计算事实相似度
+            fact_similarity = calculate_similarity(
+                new_fact_normalized,
+                existing_fact_normalized
+            )
+            
+            if fact_similarity >= DUPLICATE_THRESHOLD:
+                logger.debug(
+                    f"跳过重复事实: {new_relation} "
+                    f"(相似度={fact_similarity:.2f})"
+                )
+                return True
+        
+        return False
     
     def _flush_remaining(self):
         """处理队列和缓冲区中剩余的活动"""

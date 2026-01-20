@@ -196,14 +196,20 @@ class RuleBasedEdgeInvalidator:
         "HATES": {"LOVES", "LIKES"},
         
         # 态度类
-        "SUPPORTS": {"OPPOSES", "AGAINST", "REJECTS"},
-        "OPPOSES": {"SUPPORTS", "FOR", "ENDORSES"},
+        "SUPPORTS": {"OPPOSES", "AGAINST", "REJECTS", "CRITICIZES"},
+        "OPPOSES": {"SUPPORTS", "FOR", "ENDORSES", "ADVOCATES"},
         "TRUSTS": {"DISTRUSTS", "MISTRUSTS"},
         "DISTRUSTS": {"TRUSTS"},
+        "ENDORSES": {"OPPOSES", "REJECTS", "CRITICIZES"},
+        "REJECTS": {"ACCEPTS", "ENDORSES", "SUPPORTS"},
+        "ACCEPTS": {"REJECTS", "REFUSES"},
+        "REFUSES": {"ACCEPTS", "AGREES_TO"},
         
         # 观点类
         "AGREES_WITH": {"DISAGREES_WITH", "OPPOSES"},
         "DISAGREES_WITH": {"AGREES_WITH", "SUPPORTS"},
+        "CRITICIZES": {"PRAISES", "SUPPORTS", "ENDORSES"},
+        "PRAISES": {"CRITICIZES", "OPPOSES"},
         
         # 社交类
         "FOLLOWS": {"UNFOLLOWS", "BLOCKS"},
@@ -212,9 +218,61 @@ class RuleBasedEdgeInvalidator:
         "UNBLOCKS": {"BLOCKS"},
         
         # 动作类
-        "JOINED": {"LEFT", "QUIT"},
+        "JOINED": {"LEFT", "QUIT", "RESIGNED_FROM"},
         "LEFT": {"JOINED", "REJOINED"},
+        "QUIT": {"JOINED", "REJOINED"},
+        "RESIGNED_FROM": {"JOINED", "HIRED_BY"},
+        "HIRED_BY": {"FIRED_FROM", "RESIGNED_FROM", "LEFT"},
+        "FIRED_FROM": {"HIRED_BY", "WORKS_FOR"},
+        
+        # 商业/所有权类
+        "OWNS": {"SOLD", "DIVESTED", "LOST"},
+        "SOLD": {"OWNS", "ACQUIRED", "BOUGHT"},
+        "ACQUIRED": {"SOLD", "DIVESTED"},
+        "DIVESTED": {"ACQUIRED", "OWNS", "INVESTED_IN"},
+        "INVESTED_IN": {"DIVESTED_FROM", "WITHDREW_FROM"},
+        "DIVESTED_FROM": {"INVESTED_IN", "INVESTS_IN"},
+        "WITHDREW_FROM": {"INVESTED_IN", "INVESTS_IN"},
+        "INVESTS_IN": {"DIVESTED_FROM", "WITHDREW_FROM"},
+        
+        # 合作/竞争类
+        "COLLABORATES_WITH": {"COMPETES_WITH", "CONFLICTS_WITH"},
+        "COMPETES_WITH": {"COLLABORATES_WITH", "PARTNERS_WITH"},
+        "PARTNERS_WITH": {"COMPETES_WITH", "BREAKS_WITH"},
+        "WORKS_WITH": {"CONFLICTS_WITH", "OPPOSES"},
+        "CONFLICTS_WITH": {"COLLABORATES_WITH", "WORKS_WITH"},
+        
+        # 状态变化类
+        "STARTED": {"STOPPED", "ENDED", "CANCELLED"},
+        "STOPPED": {"STARTED", "RESUMED", "CONTINUED"},
+        "ENDED": {"STARTED", "BEGAN"},
+        "BEGAN": {"ENDED", "STOPPED"},
+        "CANCELLED": {"CONFIRMED", "APPROVED"},
+        "CONFIRMED": {"CANCELLED", "DENIED"},
+        "APPROVED": {"REJECTED", "DENIED", "CANCELLED"},
+        "DENIED": {"APPROVED", "CONFIRMED"},
     }
+    
+    # 语义矛盾关键词对（用于检测同一关系类型中的语义矛盾）
+    SEMANTIC_CONTRADICTION_PAIRS = [
+        # (正面词, 反面词) - 如果旧事实包含正面词，新事实包含反面词，则矛盾
+        ({"支持", "赞成", "同意", "support", "supports", "favor", "approve", "endorse"},
+         {"反对", "不赞成", "不同意", "oppose", "opposes", "against", "reject", "disapprove"}),
+        ({"喜欢", "喜爱", "爱", "like", "likes", "love", "loves", "enjoy"},
+         {"讨厌", "厌恶", "恨", "hate", "hates", "dislike", "dislikes", "detest"}),
+        ({"信任", "相信", "trust", "trusts", "believe", "believes"},
+         {"不信任", "怀疑", "distrust", "distrusts", "doubt", "doubts", "mistrust"}),
+        ({"合作", "协作", "collaborate", "collaborates", "cooperate", "partner"},
+         {"竞争", "对抗", "compete", "competes", "rival", "conflict"}),
+        ({"接受", "同意", "accept", "accepts", "agree", "agrees"},
+         {"拒绝", "否决", "reject", "rejects", "refuse", "refuses", "decline"}),
+        ({"加入", "join", "joins", "joined", "enter", "entered"},
+         {"退出", "离开", "leave", "leaves", "left", "quit", "quits", "exit"}),
+        ({"买", "购买", "收购", "buy", "buys", "bought", "acquire", "acquires", "acquired"},
+         {"卖", "出售", "sell", "sells", "sold", "divest", "divests"}),
+        ({"开始", "启动", "start", "starts", "started", "begin", "begins", "began", "launch"},
+         {"结束", "停止", "stop", "stops", "stopped", "end", "ends", "ended", "terminate"}),
+    ]
     
     def detect_contradictions(
         self,
@@ -224,7 +282,9 @@ class RuleBasedEdgeInvalidator:
         """
         基于规则检测矛盾
         
-        只检测同一对实体之间的互斥关系
+        检测策略：
+        1. 关系类型互斥：新关系与旧关系在预定义的互斥对中
+        2. 语义矛盾：同一关系类型，但事实描述包含相反语义的关键词
         """
         if not existing_edges:
             return []
@@ -232,25 +292,64 @@ class RuleBasedEdgeInvalidator:
         new_source = new_edge.get("source_name", "").lower()
         new_target = new_edge.get("target_name", "").lower()
         new_relation = new_edge.get("relation_name", "").upper()
-        
-        contradicting = self.CONTRADICTING_RELATIONS.get(new_relation, set())
-        if not contradicting:
-            return []
+        new_fact = new_edge.get("fact", "").lower()
         
         contradicted_uuids = []
+        
+        # 策略1: 关系类型互斥
+        contradicting = self.CONTRADICTING_RELATIONS.get(new_relation, set())
         
         for edge in existing_edges:
             edge_source = edge.get("source_name", "").lower()
             edge_target = edge.get("target_name", "").lower()
             edge_relation = edge.get("relation_name", edge.get("name", "")).upper()
+            edge_fact = edge.get("fact", "").lower()
+            edge_uuid = edge.get("uuid")
+            
+            if not edge_uuid:
+                continue
             
             # 检查是否是同一对实体
-            if edge_source == new_source and edge_target == new_target:
-                if edge_relation in contradicting:
-                    if edge.get("uuid"):
-                        contradicted_uuids.append(edge["uuid"])
+            if edge_source != new_source or edge_target != new_target:
+                continue
+            
+            # 检查关系类型互斥
+            if edge_relation in contradicting:
+                contradicted_uuids.append(edge_uuid)
+                continue
+            
+            # 策略2: 语义矛盾（同一关系类型，事实语义相反）
+            if edge_relation == new_relation and new_fact and edge_fact:
+                if self._check_semantic_contradiction(edge_fact, new_fact):
+                    contradicted_uuids.append(edge_uuid)
         
         return contradicted_uuids
+    
+    def _check_semantic_contradiction(self, old_fact: str, new_fact: str) -> bool:
+        """
+        检查两个事实描述是否存在语义矛盾
+        
+        Args:
+            old_fact: 旧事实描述（已转小写）
+            new_fact: 新事实描述（已转小写）
+            
+        Returns:
+            是否存在语义矛盾
+        """
+        for positive_set, negative_set in self.SEMANTIC_CONTRADICTION_PAIRS:
+            # 检查：旧事实包含正面词 + 新事实包含反面词
+            old_has_positive = any(word in old_fact for word in positive_set)
+            new_has_negative = any(word in new_fact for word in negative_set)
+            if old_has_positive and new_has_negative:
+                return True
+            
+            # 检查：旧事实包含反面词 + 新事实包含正面词
+            old_has_negative = any(word in old_fact for word in negative_set)
+            new_has_positive = any(word in new_fact for word in positive_set)
+            if old_has_negative and new_has_positive:
+                return True
+        
+        return False
 
 
 class HybridEdgeInvalidator:

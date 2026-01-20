@@ -1285,7 +1285,7 @@ class ZepToolsService:
         Returns:
             InterviewResult: 采访结果
         """
-        from .simulation_runner import SimulationRunner
+        from app.services.simulation_runner import SimulationRunner
         
         logger.info(f"InterviewAgents 深度采访（真实API）: {interview_requirement[:50]}...")
         
