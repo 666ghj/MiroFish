@@ -27,10 +27,25 @@ def _now_iso() -> str:
 
 
 class LocalGraphBuilderService:
-    def __init__(self):
+    def __init__(self, enable_deduplication: bool = True):
+        """
+        初始化本地图谱构建服务
+        
+        Args:
+            enable_deduplication: 是否启用实体消歧。启用后会使用 LocalEntityResolver
+                                   进行实体去重，可以识别不同名称但指向同一实体的情况。
+                                   默认关闭以保持向后兼容。
+        """
         self.store = LocalNeo4jGraphStore()
         self.extractor = LocalGraphExtractor()
         self.vector_store = None  # lazy init
+        self.enable_disambiguation = enable_deduplication
+        self._entity_resolver = None
+        
+        # 如果启用消歧，初始化实体解析器
+        if enable_deduplication:
+            from .local_entity_resolver import LocalEntityResolver
+            self._entity_resolver = LocalEntityResolver(self.store)
 
     def _get_vector_store(self) -> Optional[QdrantChunkStore]:
         if Config.VECTOR_BACKEND != "qdrant":
@@ -106,30 +121,100 @@ class LocalGraphBuilderService:
             entities_in_chunk = extracted.get("entities") or []
             relations_in_chunk = extracted.get("relations") or []
 
+            # 处理实体：如果启用消歧，使用 LocalEntityResolver 进行去重
             entities: List[LocalEntity] = []
-            for ent in entities_in_chunk:
-                raw_type = ent.get("type", "")
-                canonical_type = canonicalize_entity_type(raw_type)
-                entities.append(
-                    LocalEntity(
-                        project_id=project_id,
-                        graph_id=graph_id,
-                        name=ent.get("name", ""),
-                        entity_type=canonical_type,
-                        summary=ent.get("summary", ""),
-                        attributes=ent.get("attributes") or {},
-                        source_entity_types=[raw_type] if raw_type else [],
-                        created_at=_now_iso(),
-                    )
-                )
-
-            entity_uuids = self.store.upsert_entities(entities)
-            self.store.link_mentions(chunk_id=chunk_id, entity_uuids=entity_uuids, graph_id=graph_id)
-
-            # Map for name+type -> uuid
             uuid_by_key: Dict[str, str] = {}
-            for ent in entities:
-                uuid_by_key[f"{ent.entity_type}:{ent.name}".lower()] = ent.uuid
+            entities_to_update: List[tuple] = []  # (uuid, summary, source_types)
+            
+            if self.enable_disambiguation and self._entity_resolver:
+                # 使用消歧器处理实体
+                for ent in entities_in_chunk:
+                    raw_type = ent.get("type", "")
+                    canonical_type = canonicalize_entity_type(raw_type)
+                    name = ent.get("name", "")
+                    summary = ent.get("summary", "")
+                    
+                    if not name:
+                        continue
+                    
+                    # 使用实体解析器进行消歧
+                    resolved = self._entity_resolver.resolve(
+                        graph_id=graph_id,
+                        name=name,
+                        entity_type=canonical_type,
+                        summary=summary,
+                        attributes=ent.get("attributes"),
+                    )
+                    
+                    key = f"{canonical_type}:{name}".lower()
+                    
+                    if resolved.is_new:
+                        # 创建新实体
+                        entities.append(
+                            LocalEntity(
+                                project_id=project_id,
+                                graph_id=graph_id,
+                                name=resolved.name,
+                                entity_type=canonical_type,
+                                summary=summary,
+                                attributes=ent.get("attributes") or {},
+                                source_entity_types=[raw_type] if raw_type else [],
+                                created_at=_now_iso(),
+                            )
+                        )
+                        # UUID 会在 upsert 后更新
+                    else:
+                        # 复用已有实体的 UUID
+                        uuid_by_key[key] = resolved.uuid
+                        
+                        # 如果需要更新摘要
+                        if resolved.should_update_summary and summary:
+                            entities_to_update.append((resolved.uuid, summary, [raw_type] if raw_type else []))
+                        elif raw_type:
+                            # 追加类型信息
+                            entities_to_update.append((resolved.uuid, None, [raw_type]))
+                        
+                        logger.debug(f"消歧成功: '{name}' -> 已有实体 (score={resolved.match_score:.2f})")
+                
+                # 每个 chunk 后清空缓存（避免跨 chunk 缓存污染）
+                self._entity_resolver.clear_cache()
+            else:
+                # 原有逻辑：不使用消歧
+                for ent in entities_in_chunk:
+                    raw_type = ent.get("type", "")
+                    canonical_type = canonicalize_entity_type(raw_type)
+                    entities.append(
+                        LocalEntity(
+                            project_id=project_id,
+                            graph_id=graph_id,
+                            name=ent.get("name", ""),
+                            entity_type=canonical_type,
+                            summary=ent.get("summary", ""),
+                            attributes=ent.get("attributes") or {},
+                            source_entity_types=[raw_type] if raw_type else [],
+                            created_at=_now_iso(),
+                        )
+                    )
+            
+            # 批量创建/更新实体
+            if entities:
+                entity_uuids = self.store.upsert_entities(entities)
+                self.store.link_mentions(chunk_id=chunk_id, entity_uuids=entity_uuids, graph_id=graph_id)
+                
+                # 更新 uuid_by_key 映射（新创建的实体）
+                for ent in entities:
+                    uuid_by_key[f"{ent.entity_type}:{ent.name}".lower()] = ent.uuid
+            
+            # 更新已有实体的摘要和类型
+            for uuid_val, summary, source_types in entities_to_update:
+                try:
+                    self.store.update_entity_summary(
+                        uuid=uuid_val,
+                        summary=summary or "",
+                        append_source_types=source_types,
+                    )
+                except Exception as e:
+                    logger.warning(f"更新实体摘要失败: uuid={uuid_val}, error={e}")
 
             relations: List[LocalRelation] = []
             for rel in relations_in_chunk:
