@@ -154,6 +154,20 @@ npm run backend   # 仅启动后端
 npm run frontend  # 仅启动前端
 ```
 
+### 4. Docker Compose 启动
+
+```bash
+# 使用 Docker Compose 构建并启动
+docker compose up -d
+```
+
+```bash
+# 停止并清理容器
+docker compose down
+```
+
+默认会读取根目录下的 `.env`，并映射端口 `3000/5001`。
+
 ## 📬 更多交流
 
 <div align="center">
