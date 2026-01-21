@@ -3,6 +3,7 @@ name: Build and push Docker image
 on:
   push:
     branches: ["main"]
+    tags: ["*"]
   workflow_dispatch:
 
 permissions:
@@ -36,7 +37,9 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/mirofish
           tags: |
             type=ref,event=branch
+            type=ref,event=tag
             type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
         uses: docker/build-push-action@v5
