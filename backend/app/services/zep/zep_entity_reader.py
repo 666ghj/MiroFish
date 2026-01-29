@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 
 from zep_cloud.client import Zep
 
-from ..config import Config
-from ..utils.logger import get_logger
+from app.config import Config
+from app.utils.logger import get_logger
 
 logger = get_logger('mirofish.zep_entity_reader')
 

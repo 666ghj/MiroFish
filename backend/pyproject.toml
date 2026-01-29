@@ -18,6 +18,10 @@ dependencies = [
     
     # Zep Cloud
     "zep-cloud==3.13.0",
+
+    # Local graph/vector store
+    "neo4j>=5.23.0",
+    "qdrant-client>=1.9.0",
     
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",

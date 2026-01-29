@@ -11,7 +11,7 @@ from flask import request, jsonify
 from . import graph_bp
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
-from ..services.graph_builder import GraphBuilderService
+from ..services.graph_backend import get_graph_builder
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
@@ -282,16 +282,11 @@ def build_graph():
     try:
         logger.info("=== 开始构建图谱 ===")
         
-        # 检查配置
-        errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY未配置")
+        # 检查配置（不同后端有不同要求）
+        errors = Config.validate()
         if errors:
             logger.error(f"配置错误: {errors}")
-            return jsonify({
-                "success": False,
-                "error": "配置错误: " + "; ".join(errors)
-            }), 500
+            return jsonify({"success": False, "error": "配置错误: " + "; ".join(errors)}), 500
         
         # 解析请求
         data = request.get_json() or {}
@@ -381,88 +376,62 @@ def build_graph():
                     message="初始化图谱构建服务..."
                 )
                 
-                # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
-                
-                # 分块
-                task_manager.update_task(
-                    task_id,
-                    message="文本分块中...",
-                    progress=5
-                )
-                chunks = TextProcessor.split_text(
-                    text, 
-                    chunk_size=chunk_size, 
-                    overlap=chunk_overlap
-                )
-                total_chunks = len(chunks)
-                
-                # 创建图谱
-                task_manager.update_task(
-                    task_id,
-                    message="创建Zep图谱...",
-                    progress=10
-                )
-                graph_id = builder.create_graph(name=graph_name)
-                
+                builder = get_graph_builder()
+
+                if Config.GRAPH_BACKEND == "local":
+                    # 本地化：Neo4j +（可选）Qdrant。分块与抽取在 builder 内部完成。
+                    def local_progress_callback(msg: str, ratio: float):
+                        progress = min(99, max(1, int(ratio * 95)))
+                        task_manager.update_task(task_id, message=msg, progress=progress)
+
+                    graph_id, graph_data = builder.build_graph_from_text(
+                        project_id=project_id,
+                        text=text,
+                        ontology=ontology,
+                        graph_name=graph_name,
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
+                        progress_callback=local_progress_callback,
+                    )
+                    total_chunks = len(TextProcessor.split_text(text, chunk_size=chunk_size, overlap=chunk_overlap))
+                else:
+                    # Zep Cloud：保持原有流程
+                    task_manager.update_task(task_id, message="文本分块中...", progress=5)
+                    chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=chunk_overlap)
+                    total_chunks = len(chunks)
+
+                    task_manager.update_task(task_id, message="创建Zep图谱...", progress=10)
+                    graph_id = builder.create_graph(name=graph_name)
+
+                    task_manager.update_task(task_id, message="设置本体定义...", progress=15)
+                    builder.set_ontology(graph_id, ontology)
+
+                    def add_progress_callback(msg, progress_ratio):
+                        progress = 15 + int(progress_ratio * 40)  # 15% - 55%
+                        task_manager.update_task(task_id, message=msg, progress=progress)
+
+                    task_manager.update_task(task_id, message=f"开始添加 {total_chunks} 个文本块...", progress=15)
+                    episode_uuids = builder.add_text_batches(
+                        graph_id,
+                        chunks,
+                        batch_size=3,
+                        progress_callback=add_progress_callback,
+                    )
+
+                    task_manager.update_task(task_id, message="等待Zep处理数据...", progress=55)
+
+                    def wait_progress_callback(msg, progress_ratio):
+                        progress = 55 + int(progress_ratio * 35)  # 55% - 90%
+                        task_manager.update_task(task_id, message=msg, progress=progress)
+
+                    builder._wait_for_episodes(episode_uuids, wait_progress_callback)
+
+                    task_manager.update_task(task_id, message="获取图谱数据...", progress=95)
+                    graph_data = builder.get_graph_data(graph_id)
+
                 # 更新项目的graph_id
                 project.graph_id = graph_id
                 ProjectManager.save_project(project)
-                
-                # 设置本体
-                task_manager.update_task(
-                    task_id,
-                    message="设置本体定义...",
-                    progress=15
-                )
-                builder.set_ontology(graph_id, ontology)
-                
-                # 添加文本（progress_callback 签名是 (msg, progress_ratio)）
-                def add_progress_callback(msg, progress_ratio):
-                    progress = 15 + int(progress_ratio * 40)  # 15% - 55%
-                    task_manager.update_task(
-                        task_id,
-                        message=msg,
-                        progress=progress
-                    )
-                
-                task_manager.update_task(
-                    task_id,
-                    message=f"开始添加 {total_chunks} 个文本块...",
-                    progress=15
-                )
-                
-                episode_uuids = builder.add_text_batches(
-                    graph_id, 
-                    chunks,
-                    batch_size=3,
-                    progress_callback=add_progress_callback
-                )
-                
-                # 等待Zep处理完成（查询每个episode的processed状态）
-                task_manager.update_task(
-                    task_id,
-                    message="等待Zep处理数据...",
-                    progress=55
-                )
-                
-                def wait_progress_callback(msg, progress_ratio):
-                    progress = 55 + int(progress_ratio * 35)  # 55% - 90%
-                    task_manager.update_task(
-                        task_id,
-                        message=msg,
-                        progress=progress
-                    )
-                
-                builder._wait_for_episodes(episode_uuids, wait_progress_callback)
-                
-                # 获取图谱数据
-                task_manager.update_task(
-                    task_id,
-                    message="获取图谱数据...",
-                    progress=95
-                )
-                graph_data = builder.get_graph_data(graph_id)
                 
                 # 更新项目状态
                 project.status = ProjectStatus.GRAPH_COMPLETED
@@ -567,13 +536,11 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        errors = Config.validate()
+        if errors:
+            return jsonify({"success": False, "error": "配置错误: " + "; ".join(errors)}), 500
+
+        builder = get_graph_builder()
         graph_data = builder.get_graph_data(graph_id)
         
         return jsonify({
@@ -592,16 +559,14 @@ def get_graph_data(graph_id: str):
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
 def delete_graph(graph_id: str):
     """
-    删除Zep图谱
+    删除图谱
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        errors = Config.validate()
+        if errors:
+            return jsonify({"success": False, "error": "配置错误: " + "; ".join(errors)}), 500
+
+        builder = get_graph_builder()
         builder.delete_graph(graph_id)
         
         return jsonify({

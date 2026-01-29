@@ -6,17 +6,15 @@ OASIS模拟管理器
 
 import os
 import json
-import shutil
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from ..config import Config
 from ..utils.logger import get_logger
-from .zep_entity_reader import ZepEntityReader, FilteredEntities
-from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
-from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
+from .entity_backend import get_entity_reader
+from .oasis_profile_generator import OasisProfileGenerator
+from .simulation_config_generator import SimulationConfigGenerator
 
 logger = get_logger('mirofish.simulation')
 
@@ -270,9 +268,9 @@ class SimulationManager:
             
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
-                progress_callback("reading", 0, "正在连接Zep图谱...")
+                progress_callback("reading", 0, "正在连接图谱存储...")
             
-            reader = ZepEntityReader()
+            reader = get_entity_reader()
             
             if progress_callback:
                 progress_callback("reading", 30, "正在读取节点数据...")
