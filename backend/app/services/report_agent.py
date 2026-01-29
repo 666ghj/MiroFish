@@ -1190,9 +1190,20 @@ class ReportAgent:
                 temperature=0.5,
                 max_tokens=4096
             )
-            
+
+            # 检查 LLM 返回是否为 None（API 异常或内容为空）
+            if response is None:
+                logger.warning(f"章节 {section.title} 第 {iteration + 1} 次迭代: LLM 返回 None")
+                # 如果还有迭代次数，添加消息并重试
+                if iteration < max_iterations - 1:
+                    messages.append({"role": "assistant", "content": "（响应为空）"})
+                    messages.append({"role": "user", "content": "请继续生成内容。"})
+                    continue
+                # 最后一次迭代也返回 None，跳出循环进入强制收尾
+                break
+
             logger.debug(f"LLM响应: {response[:200]}...")
-            
+
             # 检查是否有工具调用和最终答案
             has_tool_calls = bool(self._parse_tool_calls(response))
             has_final_answer = "Final Answer:" in response
@@ -1338,8 +1349,12 @@ class ReportAgent:
             temperature=0.5,
             max_tokens=4096
         )
-        
-        if "Final Answer:" in response:
+
+        # 检查强制收尾时 LLM 返回是否为 None
+        if response is None:
+            logger.error(f"章节 {section.title} 强制收尾时 LLM 返回 None，使用默认错误提示")
+            final_answer = f"（本章节生成失败：LLM 返回空响应，请稍后重试）"
+        elif "Final Answer:" in response:
             final_answer = response.split("Final Answer:")[-1].strip()
         else:
             final_answer = response
