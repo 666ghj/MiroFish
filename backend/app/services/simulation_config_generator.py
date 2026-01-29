@@ -20,7 +20,7 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
-from .zep_entity_reader import EntityNode, ZepEntityReader
+from app.services.zep.zep_entity_reader import EntityNode
 
 logger = get_logger('mirofish.simulation_config')
 
@@ -432,8 +432,7 @@ class SimulationConfigGenerator:
     
     def _call_llm_with_retry(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
         """带重试的LLM调用，包含JSON修复逻辑"""
-        import re
-        
+
         max_attempts = 3
         last_error = None
         

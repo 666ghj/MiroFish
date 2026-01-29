@@ -1,0 +1,24 @@
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: mirofish-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/mirofish
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: mirofish-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  neo4j_data:
+  qdrant_data:
