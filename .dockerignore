@@ -21,3 +21,7 @@ frontend/dist
 frontend/.vite
 
 backend/uploads
+
+*.log
+*.env.local
+CLAUDE.md
