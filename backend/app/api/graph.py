@@ -15,6 +15,7 @@ from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
+from ..utils.validators import validate_safe_id
 from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 
@@ -37,6 +38,11 @@ def get_project(project_id: str):
     """
     获取项目详情
     """
+    try:
+        validate_safe_id(project_id, "project_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     project = ProjectManager.get_project(project_id)
     
     if not project:
@@ -71,6 +77,11 @@ def delete_project(project_id: str):
     """
     删除项目
     """
+    try:
+        validate_safe_id(project_id, "project_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     success = ProjectManager.delete_project(project_id)
     
     if not success:
@@ -90,6 +101,11 @@ def reset_project(project_id: str):
     """
     重置项目状态（用于重新构建图谱）
     """
+    try:
+        validate_safe_id(project_id, "project_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     project = ProjectManager.get_project(project_id)
     
     if not project:
@@ -303,7 +319,12 @@ def build_graph():
                 "success": False,
                 "error": "请提供 project_id"
             }), 400
-        
+
+        try:
+            validate_safe_id(project_id, "project_id")
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
         # 获取项目
         project = ProjectManager.get_project(project_id)
         if not project:
@@ -531,6 +552,11 @@ def get_task(task_id: str):
     """
     查询任务状态
     """
+    try:
+        validate_safe_id(task_id, "task_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     task = TaskManager().get_task(task_id)
     
     if not task:
@@ -567,6 +593,11 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
+        validate_safe_id(graph_id, "graph_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
@@ -594,6 +625,11 @@ def delete_graph(graph_id: str):
     """
     删除Zep图谱
     """
+    try:
+        validate_safe_id(graph_id, "graph_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     try:
         if not Config.ZEP_API_KEY:
             return jsonify({

@@ -112,6 +112,8 @@ class ProjectManager:
     @classmethod
     def _get_project_dir(cls, project_id: str) -> str:
         """获取项目目录路径"""
+        from ..utils.validators import validate_safe_id
+        validate_safe_id(project_id, "project_id")
         return os.path.join(cls.PROJECTS_DIR, project_id)
     
     @classmethod
@@ -255,6 +257,10 @@ class ProjectManager:
         
         # 生成安全的文件名
         ext = os.path.splitext(original_filename)[1].lower()
+        # Validate file extension
+        allowed = {'.pdf', '.md', '.txt', '.markdown'}
+        if ext not in allowed:
+            raise ValueError(f"不允许的文件类型: {ext}")
         safe_filename = f"{uuid.uuid4().hex[:8]}{ext}"
         file_path = os.path.join(files_dir, safe_filename)
         

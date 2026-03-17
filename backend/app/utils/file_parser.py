@@ -75,7 +75,14 @@ class FileParser:
             提取的文本内容
         """
         path = Path(file_path)
-        
+
+        # Ensure file is within expected directories (uploads)
+        from ..config import Config
+        base_dir = os.path.realpath(Config.UPLOAD_FOLDER)
+        resolved = os.path.realpath(str(path))
+        if not resolved.startswith(base_dir + os.sep) and resolved != base_dir:
+            raise ValueError(f"文件路径越界: {file_path}")
+
         if not path.exists():
             raise FileNotFoundError(f"文件不存在: {file_path}")
         

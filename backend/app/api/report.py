@@ -15,6 +15,7 @@ from ..services.simulation_manager import SimulationManager
 from ..models.project import ProjectManager
 from ..models.task import TaskManager, TaskStatus
 from ..utils.logger import get_logger
+from ..utils.validators import validate_safe_id
 
 logger = get_logger('mirofish.api.report')
 
@@ -289,19 +290,24 @@ def get_report(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": f"报告不存在: {report_id}"
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": report.to_dict()
         })
-        
+
     except Exception as e:
         logger.error(f"获取报告失败: {str(e)}")
         return jsonify({
@@ -326,8 +332,13 @@ def get_report_by_simulation(simulation_id: str):
         }
     """
     try:
+        validate_safe_id(simulation_id, "simulation_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         report = ReportManager.get_report_by_simulation(simulation_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
@@ -394,9 +405,14 @@ def list_reports():
 def download_report(report_id: str):
     """
     下载报告（Markdown格式）
-    
+
     返回Markdown文件
     """
+    try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     try:
         report = ReportManager.get_report(report_id)
         
@@ -439,6 +455,11 @@ def download_report(report_id: str):
 @report_bp.route('/<report_id>', methods=['DELETE'])
 def delete_report(report_id: str):
     """删除报告"""
+    try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     try:
         success = ReportManager.delete_report(report_id)
         
@@ -580,8 +601,13 @@ def get_report_progress(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         progress = ReportManager.get_progress(report_id)
-        
+
         if not progress:
             return jsonify({
                 "success": False,
@@ -628,8 +654,13 @@ def get_report_sections(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         sections = ReportManager.get_generated_sections(report_id)
-        
+
         # 获取报告状态
         report = ReportManager.get_report(report_id)
         is_complete = report is not None and report.status == ReportStatus.COMPLETED
@@ -667,6 +698,11 @@ def get_single_section(report_id: str, section_index: int):
             }
         }
     """
+    try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     try:
         section_path = ReportManager._get_section_path(report_id, section_index)
         
@@ -719,8 +755,13 @@ def check_report_status(simulation_id: str):
         }
     """
     try:
+        validate_safe_id(simulation_id, "simulation_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         report = ReportManager.get_report_by_simulation(simulation_id)
-        
+
         has_report = report is not None
         report_status = report.status.value if report else None
         report_id = report.report_id if report else None
@@ -791,8 +832,13 @@ def get_agent_log(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         from_line = request.args.get('from_line', 0, type=int)
-        
+
         log_data = ReportManager.get_agent_log(report_id, from_line=from_line)
         
         return jsonify({
@@ -823,6 +869,11 @@ def stream_agent_log(report_id: str):
             }
         }
     """
+    try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     try:
         logs = ReportManager.get_agent_log_stream(report_id)
         
@@ -873,8 +924,13 @@ def get_console_log(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    try:
         from_line = request.args.get('from_line', 0, type=int)
-        
+
         log_data = ReportManager.get_console_log(report_id, from_line=from_line)
         
         return jsonify({
@@ -905,6 +961,11 @@ def stream_console_log(report_id: str):
             }
         }
     """
+    try:
+        validate_safe_id(report_id, "report_id")
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
     try:
         logs = ReportManager.get_console_log_stream(report_id)
         
