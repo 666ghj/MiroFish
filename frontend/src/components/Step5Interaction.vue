@@ -413,6 +413,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
+import { sanitizeHtml } from '../utils/sanitize.js'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 
 const props = defineProps({
@@ -635,7 +636,7 @@ const renderMarkdown = (content) => {
   }
   html = tokens.join('')
 
-  return html
+  return sanitizeHtml(html)
 }
 
 // Chat Methods
