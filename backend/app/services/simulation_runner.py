@@ -425,27 +425,31 @@ class SimulationRunner:
             # 创建主日志文件，避免 stdout/stderr 管道缓冲区满导致进程阻塞
             main_log_path = os.path.join(sim_dir, "simulation.log")
             main_log_file = open(main_log_path, 'w', encoding='utf-8')
-            
-            # 设置子进程环境变量，确保 Windows 上使用 UTF-8 编码
-            # 这可以修复第三方库（如 OASIS）读取文件时未指定编码的问题
-            env = os.environ.copy()
-            env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
-            env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
-            
-            # 设置工作目录为模拟目录（数据库等文件会生成在此）
-            # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
-            process = subprocess.Popen(
-                cmd,
-                cwd=sim_dir,
-                stdout=main_log_file,
-                stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
-                text=True,
-                encoding='utf-8',  # 显式指定编码
-                bufsize=1,
-                env=env,  # 传递带有 UTF-8 设置的环境变量
-                start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
-            )
-            
+
+            try:
+                # 设置子进程环境变量，确保 Windows 上使用 UTF-8 编码
+                # 这可以修复第三方库（如 OASIS）读取文件时未指定编码的问题
+                env = os.environ.copy()
+                env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
+                env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
+
+                # 设置工作目录为模拟目录（数据库等文件会生成在此）
+                # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=sim_dir,
+                    stdout=main_log_file,
+                    stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
+                    text=True,
+                    encoding='utf-8',  # 显式指定编码
+                    bufsize=1,
+                    env=env,  # 传递带有 UTF-8 设置的环境变量
+                    start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
+                )
+            except Exception:
+                main_log_file.close()
+                raise
+
             # 保存文件句柄以便后续关闭
             cls._stdout_files[simulation_id] = main_log_file
             cls._stderr_files[simulation_id] = None  # 不再需要单独的 stderr
@@ -1667,41 +1671,39 @@ class SimulationRunner:
         results = []
         
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            if agent_id is not None:
-                cursor.execute("""
-                    SELECT user_id, info, created_at
-                    FROM trace
-                    WHERE action = 'interview' AND user_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                """, (agent_id, limit))
-            else:
-                cursor.execute("""
-                    SELECT user_id, info, created_at
-                    FROM trace
-                    WHERE action = 'interview'
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                """, (limit,))
-            
-            for user_id, info_json, created_at in cursor.fetchall():
-                try:
-                    info = json.loads(info_json) if info_json else {}
-                except json.JSONDecodeError:
-                    info = {"raw": info_json}
-                
-                results.append({
-                    "agent_id": user_id,
-                    "response": info.get("response", info),
-                    "prompt": info.get("prompt", ""),
-                    "timestamp": created_at,
-                    "platform": platform_name
-                })
-            
-            conn.close()
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+
+                if agent_id is not None:
+                    cursor.execute("""
+                        SELECT user_id, info, created_at
+                        FROM trace
+                        WHERE action = 'interview' AND user_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (agent_id, limit))
+                else:
+                    cursor.execute("""
+                        SELECT user_id, info, created_at
+                        FROM trace
+                        WHERE action = 'interview'
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (limit,))
+
+                for user_id, info_json, created_at in cursor.fetchall():
+                    try:
+                        info = json.loads(info_json) if info_json else {}
+                    except json.JSONDecodeError:
+                        info = {"raw": info_json}
+
+                    results.append({
+                        "agent_id": user_id,
+                        "response": info.get("response", info),
+                        "prompt": info.get("prompt", ""),
+                        "timestamp": created_at,
+                        "platform": platform_name
+                    })
             
         except Exception as e:
             logger.error(f"读取Interview历史失败 ({platform_name}): {e}")

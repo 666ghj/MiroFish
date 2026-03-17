@@ -528,29 +528,27 @@ class ParallelIPCHandler:
             return result
         
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            # 查询最新的Interview记录
-            cursor.execute("""
-                SELECT user_id, info, created_at
-                FROM trace
-                WHERE action = ? AND user_id = ?
-                ORDER BY created_at DESC
-                LIMIT 1
-            """, (ActionType.INTERVIEW.value, agent_id))
-            
-            row = cursor.fetchone()
-            if row:
-                user_id, info_json, created_at = row
-                try:
-                    info = json.loads(info_json) if info_json else {}
-                    result["response"] = info.get("response", info)
-                    result["timestamp"] = created_at
-                except json.JSONDecodeError:
-                    result["response"] = info_json
-            
-            conn.close()
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+
+                # 查询最新的Interview记录
+                cursor.execute("""
+                    SELECT user_id, info, created_at
+                    FROM trace
+                    WHERE action = ? AND user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (ActionType.INTERVIEW.value, agent_id))
+
+                row = cursor.fetchone()
+                if row:
+                    user_id, info_json, created_at = row
+                    try:
+                        info = json.loads(info_json) if info_json else {}
+                        result["response"] = info.get("response", info)
+                        result["timestamp"] = created_at
+                    except json.JSONDecodeError:
+                        result["response"] = info_json
             
         except Exception as e:
             print(f"  读取Interview结果失败: {e}")
@@ -679,67 +677,65 @@ def fetch_new_actions_from_db(
         return actions, new_last_rowid
     
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # 使用 rowid 来追踪已处理的记录（rowid 是 SQLite 的内置自增字段）
-        # 这样可以避免 created_at 格式差异问题（Twitter 用整数，Reddit 用日期时间字符串）
-        cursor.execute("""
-            SELECT rowid, user_id, action, info
-            FROM trace
-            WHERE rowid > ?
-            ORDER BY rowid ASC
-        """, (last_rowid,))
-        
-        for rowid, user_id, action, info_json in cursor.fetchall():
-            # 更新最大 rowid
-            new_last_rowid = rowid
-            
-            # 过滤非核心动作
-            if action in FILTERED_ACTIONS:
-                continue
-            
-            # 解析动作参数
-            try:
-                action_args = json.loads(info_json) if info_json else {}
-            except json.JSONDecodeError:
-                action_args = {}
-            
-            # 精简 action_args，只保留关键字段（保留完整内容，不截断）
-            simplified_args = {}
-            if 'content' in action_args:
-                simplified_args['content'] = action_args['content']
-            if 'post_id' in action_args:
-                simplified_args['post_id'] = action_args['post_id']
-            if 'comment_id' in action_args:
-                simplified_args['comment_id'] = action_args['comment_id']
-            if 'quoted_id' in action_args:
-                simplified_args['quoted_id'] = action_args['quoted_id']
-            if 'new_post_id' in action_args:
-                simplified_args['new_post_id'] = action_args['new_post_id']
-            if 'follow_id' in action_args:
-                simplified_args['follow_id'] = action_args['follow_id']
-            if 'query' in action_args:
-                simplified_args['query'] = action_args['query']
-            if 'like_id' in action_args:
-                simplified_args['like_id'] = action_args['like_id']
-            if 'dislike_id' in action_args:
-                simplified_args['dislike_id'] = action_args['dislike_id']
-            
-            # 转换动作类型名称
-            action_type = ACTION_TYPE_MAP.get(action, action.upper())
-            
-            # 补充上下文信息（帖子内容、用户名等）
-            _enrich_action_context(cursor, action_type, simplified_args, agent_names)
-            
-            actions.append({
-                'agent_id': user_id,
-                'agent_name': agent_names.get(user_id, f'Agent_{user_id}'),
-                'action_type': action_type,
-                'action_args': simplified_args,
-            })
-        
-        conn.close()
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+
+            # 使用 rowid 来追踪已处理的记录（rowid 是 SQLite 的内置自增字段）
+            # 这样可以避免 created_at 格式差异问题（Twitter 用整数，Reddit 用日期时间字符串）
+            cursor.execute("""
+                SELECT rowid, user_id, action, info
+                FROM trace
+                WHERE rowid > ?
+                ORDER BY rowid ASC
+            """, (last_rowid,))
+
+            for rowid, user_id, action, info_json in cursor.fetchall():
+                # 更新最大 rowid
+                new_last_rowid = rowid
+
+                # 过滤非核心动作
+                if action in FILTERED_ACTIONS:
+                    continue
+
+                # 解析动作参数
+                try:
+                    action_args = json.loads(info_json) if info_json else {}
+                except json.JSONDecodeError:
+                    action_args = {}
+
+                # 精简 action_args，只保留关键字段（保留完整内容，不截断）
+                simplified_args = {}
+                if 'content' in action_args:
+                    simplified_args['content'] = action_args['content']
+                if 'post_id' in action_args:
+                    simplified_args['post_id'] = action_args['post_id']
+                if 'comment_id' in action_args:
+                    simplified_args['comment_id'] = action_args['comment_id']
+                if 'quoted_id' in action_args:
+                    simplified_args['quoted_id'] = action_args['quoted_id']
+                if 'new_post_id' in action_args:
+                    simplified_args['new_post_id'] = action_args['new_post_id']
+                if 'follow_id' in action_args:
+                    simplified_args['follow_id'] = action_args['follow_id']
+                if 'query' in action_args:
+                    simplified_args['query'] = action_args['query']
+                if 'like_id' in action_args:
+                    simplified_args['like_id'] = action_args['like_id']
+                if 'dislike_id' in action_args:
+                    simplified_args['dislike_id'] = action_args['dislike_id']
+
+                # 转换动作类型名称
+                action_type = ACTION_TYPE_MAP.get(action, action.upper())
+
+                # 补充上下文信息（帖子内容、用户名等）
+                _enrich_action_context(cursor, action_type, simplified_args, agent_names)
+
+                actions.append({
+                    'agent_id': user_id,
+                    'agent_name': agent_names.get(user_id, f'Agent_{user_id}'),
+                    'action_type': action_type,
+                    'action_args': simplified_args,
+                })
     except Exception as e:
         print(f"读取数据库动作失败: {e}")
     
