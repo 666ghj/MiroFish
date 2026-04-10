@@ -10,16 +10,18 @@ Zep检索工具服务
 
 import time
 import json
-from typing import Dict, Any, List, Optional
+import math
+import re
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
-
 from ..config import Config
+from ..graph import get_graph_backend
+from ..utils.embedding_client import EmbeddingClient
+from ..utils.reranker_client import RerankerClient
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
-from ..utils.locale import get_locale, t
-from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_tools')
 
@@ -423,14 +425,17 @@ class ZepToolsService:
     RETRY_DELAY = 2.0
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
+        self.api_key = Config.ZEP_API_KEY if api_key is None else api_key
+        errors = Config.get_graph_backend_config_errors(api_key=self.api_key)
+        if errors:
+            raise ValueError("; ".join(errors))
         
-        self.client = Zep(api_key=self.api_key)
+        self.backend = get_graph_backend(api_key=self.api_key)
         # LLM客户端用于InsightForge生成子问题
         self._llm_client = llm_client
-        logger.info(t("console.zepToolsInitialized"))
+        self._search_embedder_client = None
+        self._search_reranker_client = None
+        logger.info("ZepToolsService 初始化完成")
     
     @property
     def llm(self) -> LLMClient:
@@ -461,148 +466,696 @@ class ZepToolsService:
         
         raise last_exception
     
-    def search_graph(
-        self, 
-        graph_id: str, 
-        query: str, 
-        limit: int = 10,
-        scope: str = "edges"
-    ) -> SearchResult:
-        """
-        图谱语义搜索
-        
-        使用混合搜索（语义+BM25）在图谱中搜索相关信息。
-        如果Zep Cloud的search API不可用，则降级为本地关键词匹配。
-        
-        Args:
-            graph_id: 图谱ID (Standalone Graph)
-            query: 搜索查询
-            limit: 返回结果数量
-            scope: 搜索范围，"edges" 或 "nodes"
-            
-        Returns:
-            SearchResult: 搜索结果
-        """
-        logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
-        
-        # 尝试使用Zep Cloud Search API
+
+
+    def _normalize_text(self, text: Optional[str]) -> str:
+        """标准化文本，便于后续打分和去重。"""
+        return " ".join(str(text or "").split())
+
+    def _query_tokens(self, query: str) -> List[str]:
+        """提取查询词，兼顾中英文。"""
+        normalized = self._normalize_text(query).lower()
+        tokens = set(re.findall(r"[a-z0-9_]+", normalized))
+
+        for run in re.findall(r"[一-鿿]+", normalized):
+            if len(run) <= 4:
+                tokens.add(run)
+                continue
+
+            tokens.add(run)
+            for size in (2, 3, 4):
+                for idx in range(len(run) - size + 1):
+                    tokens.add(run[idx:idx + size])
+
+        return [token for token in tokens if len(token) > 1]
+
+    def _score_texts(self, query_lower: str, query_tokens: List[str], *parts: str) -> int:
+        """轻量级文本相关性打分，用于本地合并与退化检索。"""
+        combined = self._normalize_text(" ".join(part for part in parts if part)).lower()
+        if not combined:
+            return 0
+
+        score = 0
+        if query_lower and query_lower in combined:
+            score += 120
+
+        for token in query_tokens:
+            if token in combined:
+                score += 12 if len(token) >= 3 else 5
+
+        return score
+
+    def _graph_search_app_reranker(self) -> str:
+        """返回 app-side 检索重排模式。"""
+        return (Config.GRAPH_SEARCH_APP_RERANKER or "lexical").strip().lower() or "lexical"
+
+    def _get_search_embedder(self) -> Optional[EmbeddingClient]:
+        """懒加载图搜索 embedding client。"""
+        if self._search_embedder_client is False:
+            return None
+        if self._search_embedder_client is not None:
+            return self._search_embedder_client
+
+        embedder_config = Config.get_graph_search_embedder_config()
+        base_url = embedder_config.get("base_url")
+        model = embedder_config.get("model")
+        if not base_url or not model:
+            self._search_embedder_client = False
+            return None
+
         try:
-            search_results = self._call_with_retry(
-                func=lambda: self.client.graph.search(
-                    graph_id=graph_id,
-                    query=query,
-                    limit=limit,
-                    scope=scope,
-                    reranker="cross_encoder"
-                ),
-                operation_name=t("console.graphSearchOp", graphId=graph_id)
+            self._search_embedder_client = EmbeddingClient(
+                api_key=embedder_config.get("api_key") or "ollama",
+                base_url=base_url,
+                model=model,
+                batch_size=Config.GRAPH_SEARCH_APP_EMBED_BATCH_SIZE,
             )
-            
-            facts = []
-            edges = []
-            nodes = []
-            
-            # 解析边搜索结果
-            if hasattr(search_results, 'edges') and search_results.edges:
-                for edge in search_results.edges:
-                    if hasattr(edge, 'fact') and edge.fact:
-                        facts.append(edge.fact)
-                    edges.append({
-                        "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
-                        "name": getattr(edge, 'name', ''),
-                        "fact": getattr(edge, 'fact', ''),
-                        "source_node_uuid": getattr(edge, 'source_node_uuid', ''),
-                        "target_node_uuid": getattr(edge, 'target_node_uuid', ''),
-                    })
-            
-            # 解析节点搜索结果
-            if hasattr(search_results, 'nodes') and search_results.nodes:
-                for node in search_results.nodes:
-                    nodes.append({
-                        "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
-                        "name": getattr(node, 'name', ''),
-                        "labels": getattr(node, 'labels', []),
-                        "summary": getattr(node, 'summary', ''),
-                    })
-                    # 节点摘要也算作事实
-                    if hasattr(node, 'summary') and node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
-            
-            logger.info(t("console.searchComplete", count=len(facts)))
-            
-            return SearchResult(
-                facts=facts,
-                edges=edges,
-                nodes=nodes,
+            logger.info(
+                "图搜索语义重排已启用: mode=%s, model=%s",
+                self._graph_search_app_reranker(),
+                model,
+            )
+        except Exception as exc:
+            logger.warning(f"图搜索 embedding reranker 初始化失败: {exc}")
+            self._search_embedder_client = False
+            return None
+
+        return self._search_embedder_client
+
+    def _edge_search_text(self, edge: Dict[str, Any]) -> str:
+        """构建边候选的语义检索文本。"""
+        return self._normalize_text(
+            " ".join(
+                part
+                for part in [
+                    edge.get("fact", ""),
+                    edge.get("name", ""),
+                    edge.get("source_node_name", ""),
+                    edge.get("target_node_name", ""),
+                ]
+                if part
+            )
+        )
+
+    def _node_search_text(self, node: Dict[str, Any]) -> str:
+        """构建节点候选的语义检索文本。"""
+        return self._normalize_text(
+            " ".join(
+                part
+                for part in [
+                    node.get("name", ""),
+                    node.get("summary", ""),
+                    " ".join(node.get("labels", [])),
+                ]
+                if part
+            )
+        )
+
+    def _cosine_similarity(self, left: List[float], right: List[float]) -> float:
+        """计算两个 embedding 向量的余弦相似度。"""
+        if not left or not right or len(left) != len(right):
+            return 0.0
+
+        numerator = sum(a * b for a, b in zip(left, right))
+        left_norm = math.sqrt(sum(a * a for a in left))
+        right_norm = math.sqrt(sum(b * b for b in right))
+        if left_norm == 0 or right_norm == 0:
+            return 0.0
+
+        return numerator / (left_norm * right_norm)
+
+    def _rrf_score(self, rank: int) -> float:
+        """Reciprocal Rank Fusion score."""
+        rank = max(1, int(rank))
+        return 1.0 / (Config.GRAPH_SEARCH_APP_RERANK_FUSION_K + rank)
+
+    def _sort_candidates(self, candidates: List[Dict[str, Any]], score_key: str) -> List[Dict[str, Any]]:
+        """按分数倒序、原始召回顺序升序排序。"""
+        return sorted(
+            candidates,
+            key=lambda item: (
+                -float(item.get(score_key, 0.0) or 0.0),
+                int(item.get("_backend_rank", 10**9)),
+            ),
+        )
+
+    def _strip_candidate_meta(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        """移除仅用于本地重排的内部字段。"""
+        return {key: value for key, value in candidate.items() if not key.startswith("_")}
+
+    def _edge_candidate_key(self, edge: Dict[str, Any]) -> str:
+        """生成边候选的稳定 key。"""
+        return edge.get("uuid") or "|".join([
+            edge.get("name", ""),
+            edge.get("fact", ""),
+            edge.get("source_node_uuid", ""),
+            edge.get("target_node_uuid", ""),
+        ])
+
+    def _edge_info_to_candidate(self, edge: EdgeInfo) -> Dict[str, Any]:
+        """将 EdgeInfo 转换为本地重排使用的候选字典。"""
+        edge_candidate = {
+            "uuid": edge.uuid,
+            "name": edge.name,
+            "fact": edge.fact,
+            "source_node_uuid": edge.source_node_uuid,
+            "target_node_uuid": edge.target_node_uuid,
+            "source_node_name": edge.source_node_name or "",
+            "target_node_name": edge.target_node_name or "",
+        }
+        edge_candidate["_candidate_key"] = self._edge_candidate_key(edge_candidate)
+        return edge_candidate
+
+    def _expand_edge_candidates_from_nodes(
+        self,
+        graph_id: str,
+        ranked_nodes: List[Dict[str, Any]],
+        candidate_edges: Dict[str, Dict[str, Any]],
+        query_lower: str,
+        query_tokens: List[str],
+    ) -> None:
+        """从高相关节点补抓相邻边，提升边召回率。"""
+        if not Config.GRAPH_SEARCH_EXPAND_EDGES_FROM_NODES:
+            return
+
+        node_limit = Config.GRAPH_SEARCH_NODE_EDGE_EXPANSION_LIMIT
+        per_node_limit = Config.GRAPH_SEARCH_NODE_EDGE_PER_NODE_LIMIT
+        if node_limit <= 0 or per_node_limit <= 0 or not ranked_nodes:
+            return
+
+        expanded_node_count = 0
+        added_edge_count = 0
+
+        for node_rank, node in enumerate(ranked_nodes[:node_limit], start=1):
+            node_uuid = node.get("uuid")
+            if not node_uuid:
+                continue
+
+            related_edges = self.get_node_edges(graph_id, node_uuid)
+            if not related_edges:
+                continue
+
+            expanded_node_count += 1
+            scored_edges = []
+            for edge in related_edges:
+                edge_candidate = self._edge_info_to_candidate(edge)
+                edge_key = edge_candidate.get("_candidate_key")
+                if not edge_key or edge_key in candidate_edges:
+                    continue
+
+                lexical_score = self._score_texts(
+                    query_lower,
+                    query_tokens,
+                    self._edge_search_text(edge_candidate),
+                )
+                scored_edges.append((lexical_score, node_rank, edge_candidate))
+
+            scored_edges.sort(
+                key=lambda item: (
+                    -int(item[0]),
+                    int(item[1]),
+                    item[2].get("name", ""),
+                    item[2].get("fact", ""),
+                )
+            )
+
+            for _, _, edge_candidate in scored_edges[:per_node_limit]:
+                edge_key = edge_candidate.get("_candidate_key")
+                if edge_key and edge_key not in candidate_edges:
+                    candidate_edges[edge_key] = edge_candidate
+                    added_edge_count += 1
+
+        if added_edge_count > 0:
+            logger.info(
+                "节点召回补边完成: expanded_nodes=%s, added_edges=%s",
+                expanded_node_count,
+                added_edge_count,
+            )
+
+    def _compute_semantic_scores(self, query: str, candidates: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+        """使用 embedding 计算 query 与候选文本的相似度。"""
+        if len(candidates) < 2:
+            return {}
+
+        embedder = self._get_search_embedder()
+        if embedder is None:
+            return None
+
+        keyed_texts = [
+            (candidate.get("_candidate_key", ""), candidate.get("_search_text", ""))
+            for candidate in candidates
+            if candidate.get("_candidate_key") and candidate.get("_search_text")
+        ]
+        if not keyed_texts:
+            return {}
+
+        try:
+            embeddings = embedder.embed_texts([query] + [candidate_text for _, candidate_text in keyed_texts])
+        except Exception as exc:
+            logger.warning(f"图搜索 embedding reranker 调用失败，回退到词面排序: {exc}")
+            return None
+
+        if len(embeddings) != len(keyed_texts) + 1:
+            logger.warning("图搜索 embedding reranker 返回向量数量异常，回退到词面排序")
+            return None
+
+        query_vector = embeddings[0]
+        scores: Dict[str, float] = {}
+        for (candidate_key, _), vector in zip(keyed_texts, embeddings[1:]):
+            scores[candidate_key] = self._cosine_similarity(query_vector, vector)
+
+        return scores
+
+    def _get_search_reranker(self) -> Optional[RerankerClient]:
+        """懒加载图搜索 API reranker client。"""
+        if self._search_reranker_client is False:
+            return None
+        if self._search_reranker_client is not None:
+            return self._search_reranker_client
+
+        reranker_config = Config.get_graph_search_reranker_config()
+        base_url = reranker_config.get("base_url")
+        if not base_url:
+            self._search_reranker_client = False
+            return None
+
+        try:
+            self._search_reranker_client = RerankerClient(
+                api_key=reranker_config.get("api_key"),
+                base_url=base_url,
+                model=reranker_config.get("model"),
+                provider=reranker_config.get("provider") or "auto",
+                timeout=reranker_config.get("timeout") or 20.0,
+            )
+            logger.info(
+                "图搜索 API reranker 已启用: mode=%s, provider=%s, model=%s",
+                self._graph_search_app_reranker(),
+                reranker_config.get("provider") or "auto",
+                reranker_config.get("model"),
+            )
+        except Exception as exc:
+            logger.warning(f"图搜索 API reranker 初始化失败: {exc}")
+            self._search_reranker_client = False
+            return None
+
+        return self._search_reranker_client
+
+    def _compute_api_rerank_scores(self, query: str, candidates: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+        """使用独立 reranker endpoint 计算 query 与候选文本的相关性。"""
+        if len(candidates) < 2:
+            return {}
+
+        reranker = self._get_search_reranker()
+        if reranker is None:
+            return None
+
+        keyed_texts = [
+            (candidate.get("_candidate_key", ""), candidate.get("_search_text", ""))
+            for candidate in candidates
+            if candidate.get("_candidate_key") and candidate.get("_search_text")
+        ]
+        if not keyed_texts:
+            return {}
+
+        try:
+            score_by_index = reranker.rerank(
                 query=query,
-                total_count=len(facts)
+                documents=[candidate_text for _, candidate_text in keyed_texts],
             )
-            
-        except Exception as e:
-            logger.warning(t("console.zepSearchApiFallback", error=str(e)))
-            # 降级：使用本地关键词匹配搜索
-            return self._local_search(graph_id, query, limit, scope)
-    
-    def _local_search(
-        self, 
-        graph_id: str, 
-        query: str, 
+        except Exception as exc:
+            logger.warning(f"图搜索 API reranker 调用失败，回退到词面排序: {exc}")
+            return None
+
+        scores: Dict[str, float] = {}
+        for index, (candidate_key, _) in enumerate(keyed_texts):
+            scores[candidate_key] = float(score_by_index.get(index, 0.0))
+
+        return scores
+
+    def _apply_app_rerank(
+        self,
+        candidates: List[Dict[str, Any]],
+        query_normalized: str,
+        query_lower: str,
+        query_tokens: List[str],
+        text_builder: Callable[[Dict[str, Any]], str],
+    ) -> List[Dict[str, Any]]:
+        """对候选结果执行 app-side 重排。"""
+        if not candidates:
+            return []
+
+        prepared: List[Dict[str, Any]] = []
+        for backend_rank, original in enumerate(candidates, start=1):
+            candidate = dict(original)
+            candidate.setdefault(
+                "_candidate_key",
+                candidate.get("uuid") or candidate.get("name") or f"candidate_{backend_rank}",
+            )
+            candidate["_backend_rank"] = backend_rank
+            candidate["_search_text"] = self._normalize_text(text_builder(candidate))
+            candidate["_lexical_score"] = self._score_texts(
+                query_lower,
+                query_tokens,
+                candidate.get("_search_text", ""),
+            )
+            prepared.append(candidate)
+
+        mode = self._graph_search_app_reranker()
+        lexical_ranked = self._sort_candidates(prepared, "_lexical_score")
+
+        if mode in {"none", "off"}:
+            return [self._strip_candidate_meta(candidate) for candidate in prepared]
+
+        if mode in {"lexical", "keyword"}:
+            return [self._strip_candidate_meta(candidate) for candidate in lexical_ranked]
+
+        semantic_modes = {"embedding_rrf", "semantic_rrf", "hybrid", "embedding_similarity", "semantic", "semantic_similarity"}
+        api_score_modes = {"api_rerank", "rerank_api", "cross_encoder", "cross_encoder_api"}
+        api_rrf_modes = {"api_rrf", "rerank_rrf", "cross_encoder_rrf"}
+        supported_modes = semantic_modes | api_score_modes | api_rrf_modes
+
+        if mode not in supported_modes:
+            logger.warning(f"未知 GRAPH_SEARCH_APP_RERANKER={mode}，回退到 lexical")
+            return [self._strip_candidate_meta(candidate) for candidate in lexical_ranked]
+
+        if mode in semantic_modes:
+            semantic_scores = self._compute_semantic_scores(query_normalized, prepared)
+            if semantic_scores is None:
+                return [self._strip_candidate_meta(candidate) for candidate in lexical_ranked]
+
+            for candidate in prepared:
+                candidate["_semantic_score"] = float(semantic_scores.get(candidate["_candidate_key"], 0.0))
+
+            semantic_ranked = self._sort_candidates(prepared, "_semantic_score")
+
+            if mode in {"embedding_similarity", "semantic", "semantic_similarity"}:
+                ranked = sorted(
+                    prepared,
+                    key=lambda item: (
+                        -float(item.get("_semantic_score", 0.0) or 0.0),
+                        -float(item.get("_lexical_score", 0.0) or 0.0),
+                        int(item.get("_backend_rank", 10**9)),
+                    ),
+                )
+                return [self._strip_candidate_meta(candidate) for candidate in ranked]
+
+            backend_ranks = {candidate["_candidate_key"]: idx for idx, candidate in enumerate(prepared, start=1)}
+            lexical_ranks = {candidate["_candidate_key"]: idx for idx, candidate in enumerate(lexical_ranked, start=1)}
+            semantic_ranks = {candidate["_candidate_key"]: idx for idx, candidate in enumerate(semantic_ranked, start=1)}
+
+            for candidate in prepared:
+                candidate_key = candidate["_candidate_key"]
+                candidate["_fusion_score"] = (
+                    self._rrf_score(backend_ranks[candidate_key])
+                    + self._rrf_score(lexical_ranks[candidate_key])
+                    + (Config.GRAPH_SEARCH_APP_SEMANTIC_WEIGHT * self._rrf_score(semantic_ranks[candidate_key]))
+                )
+
+            ranked = sorted(
+                prepared,
+                key=lambda item: (
+                    -float(item.get("_fusion_score", 0.0) or 0.0),
+                    -float(item.get("_semantic_score", 0.0) or 0.0),
+                    -float(item.get("_lexical_score", 0.0) or 0.0),
+                    int(item.get("_backend_rank", 10**9)),
+                ),
+            )
+            return [self._strip_candidate_meta(candidate) for candidate in ranked]
+
+        api_scores = self._compute_api_rerank_scores(query_normalized, prepared)
+        if api_scores is None:
+            return [self._strip_candidate_meta(candidate) for candidate in lexical_ranked]
+
+        for candidate in prepared:
+            candidate["_api_rerank_score"] = float(api_scores.get(candidate["_candidate_key"], 0.0))
+
+        api_ranked = self._sort_candidates(prepared, "_api_rerank_score")
+
+        if mode in api_score_modes:
+            ranked = sorted(
+                prepared,
+                key=lambda item: (
+                    -float(item.get("_api_rerank_score", 0.0) or 0.0),
+                    -float(item.get("_lexical_score", 0.0) or 0.0),
+                    int(item.get("_backend_rank", 10**9)),
+                ),
+            )
+            return [self._strip_candidate_meta(candidate) for candidate in ranked]
+
+        backend_ranks = {candidate["_candidate_key"]: idx for idx, candidate in enumerate(prepared, start=1)}
+        lexical_ranks = {candidate["_candidate_key"]: idx for idx, candidate in enumerate(lexical_ranked, start=1)}
+        api_ranks = {candidate["_candidate_key"]: idx for idx, candidate in enumerate(api_ranked, start=1)}
+
+        for candidate in prepared:
+            candidate_key = candidate["_candidate_key"]
+            candidate["_fusion_score"] = (
+                self._rrf_score(backend_ranks[candidate_key])
+                + self._rrf_score(lexical_ranks[candidate_key])
+                + (Config.GRAPH_SEARCH_APP_SEMANTIC_WEIGHT * self._rrf_score(api_ranks[candidate_key]))
+            )
+
+        ranked = sorted(
+            prepared,
+            key=lambda item: (
+                -float(item.get("_fusion_score", 0.0) or 0.0),
+                -float(item.get("_api_rerank_score", 0.0) or 0.0),
+                -float(item.get("_lexical_score", 0.0) or 0.0),
+                int(item.get("_backend_rank", 10**9)),
+            ),
+        )
+        return [self._strip_candidate_meta(candidate) for candidate in ranked]
+
+    def _search_scope(self, graph_id: str, query: str, scope: str, limit: int) -> Any:
+        """执行单个 scope 的后端检索。"""
+        reranker = Config.GRAPH_SEARCH_RERANKER
+        return self._call_with_retry(
+            func=lambda: self.backend.search(
+                graph_id=graph_id,
+                query=query,
+                limit=limit,
+                scope=scope,
+                reranker=reranker,
+            ),
+            operation_name=f"图谱搜索(graph={graph_id}, scope={scope})",
+        )
+
+    def _parse_search_edges(self, search_results: Any) -> List[Dict[str, Any]]:
+        edges = []
+        if hasattr(search_results, 'edges') and search_results.edges:
+            for edge in search_results.edges:
+                edges.append({
+                    "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
+                    "name": getattr(edge, 'name', ''),
+                    "fact": getattr(edge, 'fact', ''),
+                    "source_node_uuid": getattr(edge, 'source_node_uuid', ''),
+                    "target_node_uuid": getattr(edge, 'target_node_uuid', ''),
+                    "source_node_name": getattr(edge, 'source_node_name', ''),
+                    "target_node_name": getattr(edge, 'target_node_name', ''),
+                })
+        return edges
+
+    def _parse_search_nodes(self, search_results: Any) -> List[Dict[str, Any]]:
+        nodes = []
+        if hasattr(search_results, 'nodes') and search_results.nodes:
+            for node in search_results.nodes:
+                nodes.append({
+                    "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
+                    "name": getattr(node, 'name', ''),
+                    "labels": getattr(node, 'labels', []),
+                    "summary": getattr(node, 'summary', ''),
+                })
+        return nodes
+
+    def search_graph(
+        self,
+        graph_id: str,
+        query: str,
         limit: int = 10,
         scope: str = "edges"
     ) -> SearchResult:
         """
-        本地关键词匹配搜索（作为Zep Search API的降级方案）
-        
-        获取所有边/节点，然后在本地进行关键词匹配
-        
-        Args:
-            graph_id: 图谱ID
-            query: 搜索查询
-            limit: 返回结果数量
-            scope: 搜索范围
-            
-        Returns:
-            SearchResult: 搜索结果
+        图谱语义搜索。
+
+        当前实现会优先召回边，再按配置补充节点摘要，避免只拿到零散 fact
+        或在 OpenZep 上完全退化到本地关键词搜索。
         """
-        logger.info(t("console.usingLocalSearch", query=query[:30]))
-        
-        facts = []
-        edges_result = []
-        nodes_result = []
-        
-        # 提取查询关键词（简单分词）
-        query_lower = query.lower()
-        keywords = [w.strip() for w in query_lower.replace(',', ' ').replace('，', ' ').split() if len(w.strip()) > 1]
-        
-        def match_score(text: str) -> int:
-            """计算文本与查询的匹配分数"""
-            if not text:
-                return 0
-            text_lower = text.lower()
-            # 完全匹配查询
-            if query_lower in text_lower:
-                return 100
-            # 关键词匹配
-            score = 0
-            for keyword in keywords:
-                if keyword in text_lower:
-                    score += 10
-            return score
-        
+        logger.info(f"图谱搜索: graph_id={graph_id}, query={query[:50]}...")
+
+        query_normalized = self._normalize_text(query)
+        query_lower = query_normalized.lower()
+        query_tokens = self._query_tokens(query_normalized)
+
+        edge_limit = max(limit, limit * Config.GRAPH_SEARCH_EDGE_LIMIT_MULTIPLIER)
+        node_limit = max(limit, limit * Config.GRAPH_SEARCH_NODE_LIMIT_MULTIPLIER)
+
+        candidate_edges: Dict[str, Dict[str, Any]] = {}
+        candidate_nodes: Dict[str, Dict[str, Any]] = {}
+        search_errors: List[str] = []
+
+        scopes_to_search: List[tuple[str, int]] = []
+        if scope in {"edges", "both"}:
+            scopes_to_search.append(("edges", edge_limit))
+        if scope in {"nodes", "both"} or Config.GRAPH_SEARCH_INCLUDE_NODES:
+            scopes_to_search.append(("nodes", node_limit))
+
+        for search_scope, scoped_limit in scopes_to_search:
+            try:
+                search_results = self._search_scope(
+                    graph_id=graph_id,
+                    query=query_normalized,
+                    scope=search_scope,
+                    limit=scoped_limit,
+                )
+            except Exception as e:
+                logger.warning(f"{search_scope} 检索失败: {str(e)}")
+                search_errors.append(f"{search_scope}:{str(e)}")
+                continue
+
+            if search_scope == "edges":
+                for edge in self._parse_search_edges(search_results):
+                    edge_key = self._edge_candidate_key(edge)
+                    if edge_key and edge_key not in candidate_edges:
+                        edge["_candidate_key"] = edge_key
+                        candidate_edges[edge_key] = edge
+            else:
+                for node in self._parse_search_nodes(search_results):
+                    node_key = node["uuid"] or node.get("name", "")
+                    if node_key and node_key not in candidate_nodes:
+                        node["_candidate_key"] = node_key
+                        candidate_nodes[node_key] = node
+
+        if not candidate_edges and not candidate_nodes:
+            if search_errors:
+                logger.warning("后端图搜索不可用，降级为本地搜索")
+            return self._local_search(graph_id, query_normalized, limit, scope)
+
+        ranked_nodes = self._apply_app_rerank(
+            list(candidate_nodes.values()),
+            query_normalized=query_normalized,
+            query_lower=query_lower,
+            query_tokens=query_tokens,
+            text_builder=self._node_search_text,
+        )
+
+        if scope in {"edges", "both"} and ranked_nodes:
+            self._expand_edge_candidates_from_nodes(
+                graph_id=graph_id,
+                ranked_nodes=ranked_nodes,
+                candidate_edges=candidate_edges,
+                query_lower=query_lower,
+                query_tokens=query_tokens,
+            )
+
+        ranked_edges = self._apply_app_rerank(
+            list(candidate_edges.values()),
+            query_normalized=query_normalized,
+            query_lower=query_lower,
+            query_tokens=query_tokens,
+            text_builder=self._edge_search_text,
+        )
+
+        selected_edges = ranked_edges[:limit] if scope in {"edges", "both"} else []
+
+        if scope == "nodes":
+            selected_nodes = ranked_nodes[:limit]
+        else:
+            node_summary_limit = min(Config.GRAPH_SEARCH_NODE_SUMMARY_LIMIT, max(1, limit))
+            related_node_uuids = {
+                edge.get("source_node_uuid", "")
+                for edge in selected_edges
+                if edge.get("source_node_uuid")
+            }
+            related_node_uuids.update(
+                edge.get("target_node_uuid", "")
+                for edge in selected_edges
+                if edge.get("target_node_uuid")
+            )
+            selected_nodes = []
+            for node in ranked_nodes:
+                if scope == "edges" and selected_edges and node.get("uuid") not in related_node_uuids:
+                    continue
+                selected_nodes.append(node)
+                if len(selected_nodes) >= node_summary_limit:
+                    break
+
+        facts: List[str] = []
+        seen_facts = set()
+
+        for edge in selected_edges:
+            fact = self._normalize_text(edge.get("fact", ""))
+            if fact and fact not in seen_facts:
+                facts.append(fact)
+                seen_facts.add(fact)
+
+        for node in selected_nodes:
+            summary = self._normalize_text(node.get("summary", ""))
+            if not summary:
+                continue
+            fact = f"[{node.get('name', '未知实体')}]: {summary}"
+            if fact not in seen_facts:
+                facts.append(fact)
+                seen_facts.add(fact)
+
+        logger.info(
+            "搜索完成: edges=%s, nodes=%s, facts=%s, backend_reranker=%s, app_reranker=%s",
+            len(selected_edges),
+            len(selected_nodes),
+            len(facts),
+            Config.GRAPH_SEARCH_RERANKER,
+            self._graph_search_app_reranker(),
+        )
+
+        return SearchResult(
+            facts=facts,
+            edges=selected_edges,
+            nodes=selected_nodes,
+            query=query_normalized,
+            total_count=len(facts),
+        )
+
+    def _local_search(
+        self,
+        graph_id: str,
+        query: str,
+        limit: int = 10,
+        scope: str = "edges"
+    ) -> SearchResult:
+        """
+        本地关键词匹配搜索（作为后端 search 不可用时的降级方案）。
+        """
+        logger.info(f"使用本地搜索: query={query[:30]}...")
+
+        facts: List[str] = []
+        edges_result: List[Dict[str, Any]] = []
+        nodes_result: List[Dict[str, Any]] = []
+
+        query_normalized = self._normalize_text(query)
+        query_lower = query_normalized.lower()
+        query_tokens = self._query_tokens(query_normalized)
+
         try:
+            node_map = {node.uuid: node for node in self.get_all_nodes(graph_id)}
+
             if scope in ["edges", "both"]:
-                # 获取所有边并匹配
                 all_edges = self.get_all_edges(graph_id)
                 scored_edges = []
                 for edge in all_edges:
-                    score = match_score(edge.fact) + match_score(edge.name)
+                    source_name = node_map.get(edge.source_node_uuid, NodeInfo('', '', [], '', {})).name
+                    target_name = node_map.get(edge.target_node_uuid, NodeInfo('', '', [], '', {})).name
+                    score = self._score_texts(
+                        query_lower,
+                        query_tokens,
+                        edge.fact,
+                        edge.name,
+                        source_name,
+                        target_name,
+                    )
                     if score > 0:
-                        scored_edges.append((score, edge))
-                
-                # 按分数排序
-                scored_edges.sort(key=lambda x: x[0], reverse=True)
-                
-                for score, edge in scored_edges[:limit]:
+                        scored_edges.append((score, edge, source_name, target_name))
+
+                scored_edges.sort(key=lambda item: item[0], reverse=True)
+
+                for score, edge, source_name, target_name in scored_edges[:limit]:
                     if edge.fact:
                         facts.append(edge.fact)
                     edges_result.append({
@@ -611,20 +1164,28 @@ class ZepToolsService:
                         "fact": edge.fact,
                         "source_node_uuid": edge.source_node_uuid,
                         "target_node_uuid": edge.target_node_uuid,
+                        "source_node_name": source_name,
+                        "target_node_name": target_name,
                     })
-            
-            if scope in ["nodes", "both"]:
-                # 获取所有节点并匹配
-                all_nodes = self.get_all_nodes(graph_id)
+
+            if scope in ["nodes", "both"] or Config.GRAPH_SEARCH_INCLUDE_NODES:
+                all_nodes = list(node_map.values())
                 scored_nodes = []
                 for node in all_nodes:
-                    score = match_score(node.name) + match_score(node.summary)
+                    score = self._score_texts(
+                        query_lower,
+                        query_tokens,
+                        node.name,
+                        node.summary,
+                        " ".join(node.labels),
+                    )
                     if score > 0:
                         scored_nodes.append((score, node))
-                
-                scored_nodes.sort(key=lambda x: x[0], reverse=True)
-                
-                for score, node in scored_nodes[:limit]:
+
+                scored_nodes.sort(key=lambda item: item[0], reverse=True)
+
+                node_limit = limit if scope == "nodes" else min(limit, Config.GRAPH_SEARCH_NODE_SUMMARY_LIMIT)
+                for score, node in scored_nodes[:node_limit]:
                     nodes_result.append({
                         "uuid": node.uuid,
                         "name": node.name,
@@ -633,33 +1194,28 @@ class ZepToolsService:
                     })
                     if node.summary:
                         facts.append(f"[{node.name}]: {node.summary}")
-            
-            logger.info(t("console.localSearchComplete", count=len(facts)))
-            
+
+            facts = list(dict.fromkeys(facts))
+            logger.info(f"本地搜索完成: 找到 {len(facts)} 条相关事实")
+
         except Exception as e:
-            logger.error(t("console.localSearchFailed", error=str(e)))
-        
+            logger.error(f"本地搜索失败: {str(e)}")
+
         return SearchResult(
             facts=facts,
             edges=edges_result,
             nodes=nodes_result,
-            query=query,
+            query=query_normalized,
             total_count=len(facts)
         )
-    
+
     def get_all_nodes(self, graph_id: str) -> List[NodeInfo]:
         """
         获取图谱的所有节点（分页获取）
-
-        Args:
-            graph_id: 图谱ID
-
-        Returns:
-            节点列表
         """
         logger.info(t("console.fetchingAllNodes", graphId=graph_id))
 
-        nodes = fetch_all_nodes(self.client, graph_id)
+        nodes = self.backend.get_all_nodes(graph_id)
 
         result = []
         for node in nodes:
@@ -678,17 +1234,10 @@ class ZepToolsService:
     def get_all_edges(self, graph_id: str, include_temporal: bool = True) -> List[EdgeInfo]:
         """
         获取图谱的所有边（分页获取，包含时间信息）
-
-        Args:
-            graph_id: 图谱ID
-            include_temporal: 是否包含时间信息（默认True）
-
-        Returns:
-            边列表（包含created_at, valid_at, invalid_at, expired_at）
         """
         logger.info(t("console.fetchingAllEdges", graphId=graph_id))
 
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = self.backend.get_all_edges(graph_id)
 
         result = []
         for edge in edges:
@@ -701,7 +1250,6 @@ class ZepToolsService:
                 target_node_uuid=edge.target_node_uuid or ""
             )
 
-            # 添加时间信息
             if include_temporal:
                 edge_info.created_at = getattr(edge, 'created_at', None)
                 edge_info.valid_at = getattr(edge, 'valid_at', None)
@@ -712,28 +1260,20 @@ class ZepToolsService:
 
         logger.info(t("console.fetchedEdges", count=len(result)))
         return result
-    
+
     def get_node_detail(self, node_uuid: str) -> Optional[NodeInfo]:
-        """
-        获取单个节点的详细信息
-        
-        Args:
-            node_uuid: 节点UUID
-            
-        Returns:
-            节点信息或None
-        """
-        logger.info(t("console.fetchingNodeDetail", uuid=node_uuid[:8]))
-        
+        """获取单个节点的详细信息。"""
+        logger.info(f"获取节点详情: {node_uuid[:8]}...")
+
         try:
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=node_uuid),
-                operation_name=t("console.fetchNodeDetailOp", uuid=node_uuid[:8])
+                func=lambda: self.backend.get_node(node_uuid),
+                operation_name=f"获取节点详情(uuid={node_uuid[:8]}...)"
             )
-            
+
             if not node:
                 return None
-            
+
             return NodeInfo(
                 uuid=getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
                 name=node.name or "",
@@ -744,39 +1284,41 @@ class ZepToolsService:
         except Exception as e:
             logger.error(t("console.fetchNodeDetailFailed", error=str(e)))
             return None
-    
+
     def get_node_edges(self, graph_id: str, node_uuid: str) -> List[EdgeInfo]:
-        """
-        获取节点相关的所有边
-        
-        通过获取图谱所有边，然后过滤出与指定节点相关的边
-        
-        Args:
-            graph_id: 图谱ID
-            node_uuid: 节点UUID
-            
-        Returns:
-            边列表
-        """
-        logger.info(t("console.fetchingNodeEdges", uuid=node_uuid[:8]))
-        
+        """获取节点相关的所有边。"""
+        logger.info(f"获取节点 {node_uuid[:8]}... 的相关边")
+
         try:
-            # 获取图谱所有边，然后过滤
-            all_edges = self.get_all_edges(graph_id)
-            
+            edges = self._call_with_retry(
+                func=lambda: self.backend.get_node_edges(node_uuid),
+                operation_name=f"获取节点边(uuid={node_uuid[:8]}...)"
+            )
+
             result = []
-            for edge in all_edges:
-                # 检查边是否与指定节点相关（作为源或目标）
-                if edge.source_node_uuid == node_uuid or edge.target_node_uuid == node_uuid:
-                    result.append(edge)
-            
-            logger.info(t("console.foundNodeEdges", count=len(result)))
+            for edge in edges:
+                edge_uuid = getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', None) or ""
+                result.append(EdgeInfo(
+                    uuid=str(edge_uuid) if edge_uuid else "",
+                    name=edge.name or "",
+                    fact=edge.fact or "",
+                    source_node_uuid=edge.source_node_uuid or "",
+                    target_node_uuid=edge.target_node_uuid or "",
+                    source_node_name=getattr(edge, 'source_node_name', None),
+                    target_node_name=getattr(edge, 'target_node_name', None),
+                    created_at=getattr(edge, 'created_at', None),
+                    valid_at=getattr(edge, 'valid_at', None),
+                    invalid_at=getattr(edge, 'invalid_at', None),
+                    expired_at=getattr(edge, 'expired_at', None),
+                ))
+
+            logger.info(f"找到 {len(result)} 条与节点相关的边")
             return result
-            
+
         except Exception as e:
             logger.warning(t("console.fetchNodeEdgesFailed", error=str(e)))
             return []
-    
+
     def get_entities_by_type(
         self, 
         graph_id: str, 
@@ -942,6 +1484,8 @@ class ZepToolsService:
     
     # ========== 核心检索工具（优化后） ==========
     
+
+
     def insight_forge(
         self,
         graph_id: str,
@@ -952,33 +1496,15 @@ class ZepToolsService:
     ) -> InsightForgeResult:
         """
         【InsightForge - 深度洞察检索】
-        
-        最强大的混合检索函数，自动分解问题并多维度检索：
-        1. 使用LLM将问题分解为多个子问题
-        2. 对每个子问题进行语义搜索
-        3. 提取相关实体并获取其详细信息
-        4. 追踪关系链
-        5. 整合所有结果，生成深度洞察
-        
-        Args:
-            graph_id: 图谱ID
-            query: 用户问题
-            simulation_requirement: 模拟需求描述
-            report_context: 报告上下文（可选，用于更精准的子问题生成）
-            max_sub_queries: 最大子问题数量
-            
-        Returns:
-            InsightForgeResult: 深度洞察检索结果
         """
-        logger.info(t("console.insightForgeStart", query=query[:50]))
-        
+        logger.info(f"InsightForge 深度洞察检索: {query[:50]}...")
+
         result = InsightForgeResult(
             query=query,
             simulation_requirement=simulation_requirement,
             sub_queries=[]
         )
-        
-        # Step 1: 使用LLM生成子问题
+
         sub_queries = self._generate_sub_queries(
             query=query,
             simulation_requirement=simulation_requirement,
@@ -986,109 +1512,130 @@ class ZepToolsService:
             max_queries=max_sub_queries
         )
         result.sub_queries = sub_queries
-        logger.info(t("console.generatedSubQueries", count=len(sub_queries)))
-        
-        # Step 2: 对每个子问题进行语义搜索
-        all_facts = []
-        all_edges = []
+        logger.info(f"生成 {len(sub_queries)} 个子问题")
+
+        all_facts: List[str] = []
         seen_facts = set()
-        
-        for sub_query in sub_queries:
-            search_result = self.search_graph(
-                graph_id=graph_id,
-                query=sub_query,
-                limit=15,
-                scope="edges"
-            )
-            
+        all_edges: Dict[str, Dict[str, Any]] = {}
+        all_nodes: Dict[str, Dict[str, Any]] = {}
+        entity_fact_map: Dict[str, List[str]] = defaultdict(list)
+
+        def merge_search(search_result: SearchResult) -> None:
             for fact in search_result.facts:
                 if fact not in seen_facts:
                     all_facts.append(fact)
                     seen_facts.add(fact)
-            
-            all_edges.extend(search_result.edges)
-        
-        # 对原始问题也进行搜索
-        main_search = self.search_graph(
-            graph_id=graph_id,
-            query=query,
-            limit=20,
-            scope="edges"
+
+            for edge in search_result.edges:
+                edge_key = edge.get('uuid') or "|".join([
+                    edge.get('name', ''),
+                    edge.get('fact', ''),
+                    edge.get('source_node_uuid', ''),
+                    edge.get('target_node_uuid', ''),
+                ])
+                if edge_key and edge_key not in all_edges:
+                    all_edges[edge_key] = edge
+
+                fact = edge.get('fact', '')
+                for node_uuid in (edge.get('source_node_uuid', ''), edge.get('target_node_uuid', '')):
+                    if node_uuid and fact and fact not in entity_fact_map[node_uuid]:
+                        entity_fact_map[node_uuid].append(fact)
+
+            for node in search_result.nodes:
+                node_uuid = node.get('uuid') or node.get('name')
+                if node_uuid and node_uuid not in all_nodes:
+                    all_nodes[node_uuid] = node
+
+        for sub_query in sub_queries:
+            merge_search(
+                self.search_graph(
+                    graph_id=graph_id,
+                    query=sub_query,
+                    limit=15,
+                    scope="edges"
+                )
+            )
+
+        merge_search(
+            self.search_graph(
+                graph_id=graph_id,
+                query=query,
+                limit=20,
+                scope="edges"
+            )
         )
-        for fact in main_search.facts:
-            if fact not in seen_facts:
-                all_facts.append(fact)
-                seen_facts.add(fact)
-        
+
         result.semantic_facts = all_facts
         result.total_facts = len(all_facts)
-        
-        # Step 3: 从边中提取相关实体UUID，只获取这些实体的信息（不获取全部节点）
-        entity_uuids = set()
-        for edge_data in all_edges:
-            if isinstance(edge_data, dict):
-                source_uuid = edge_data.get('source_node_uuid', '')
-                target_uuid = edge_data.get('target_node_uuid', '')
-                if source_uuid:
-                    entity_uuids.add(source_uuid)
-                if target_uuid:
-                    entity_uuids.add(target_uuid)
-        
-        # 获取所有相关实体的详情（不限制数量，完整输出）
+
+        entity_uuids = set(all_nodes.keys())
+        for edge in all_edges.values():
+            source_uuid = edge.get('source_node_uuid', '')
+            target_uuid = edge.get('target_node_uuid', '')
+            if source_uuid:
+                entity_uuids.add(source_uuid)
+            if target_uuid:
+                entity_uuids.add(target_uuid)
+
         entity_insights = []
-        node_map = {}  # 用于后续关系链构建
-        
-        for uuid in list(entity_uuids):  # 处理所有实体，不截断
-            if not uuid:
+        node_map: Dict[str, NodeInfo] = {}
+
+        for node_uuid in list(entity_uuids):
+            if not node_uuid:
                 continue
-            try:
-                # 单独获取每个相关节点的信息
-                node = self.get_node_detail(uuid)
-                if node:
-                    node_map[uuid] = node
-                    entity_type = next((l for l in node.labels if l not in ["Entity", "Node"]), "实体")
-                    
-                    # 获取该实体相关的所有事实（不截断）
-                    related_facts = [
-                        f for f in all_facts 
-                        if node.name.lower() in f.lower()
-                    ]
-                    
-                    entity_insights.append({
-                        "uuid": node.uuid,
-                        "name": node.name,
-                        "type": entity_type,
-                        "summary": node.summary,
-                        "related_facts": related_facts  # 完整输出，不截断
-                    })
-            except Exception as e:
-                logger.debug(f"获取节点 {uuid} 失败: {e}")
+
+            search_node = all_nodes.get(node_uuid, {})
+            node = self.get_node_detail(node_uuid)
+            if node is None and search_node:
+                node = NodeInfo(
+                    uuid=search_node.get('uuid', node_uuid),
+                    name=search_node.get('name', ''),
+                    labels=search_node.get('labels', []),
+                    summary=search_node.get('summary', ''),
+                    attributes={},
+                )
+
+            if not node:
                 continue
-        
+
+            node_map[node_uuid] = node
+            entity_type = next((label for label in node.labels if label not in ["Entity", "Node"]), "实体")
+            related_facts = list(dict.fromkeys(entity_fact_map.get(node_uuid, [])))
+            if not related_facts and node.name:
+                related_facts = [fact for fact in all_facts if node.name.lower() in fact.lower()]
+
+            entity_insights.append({
+                "uuid": node.uuid,
+                "name": node.name,
+                "type": entity_type,
+                "summary": node.summary,
+                "related_facts": related_facts,
+            })
+
         result.entity_insights = entity_insights
         result.total_entities = len(entity_insights)
-        
-        # Step 4: 构建所有关系链（不限制数量）
+
         relationship_chains = []
-        for edge_data in all_edges:  # 处理所有边，不截断
-            if isinstance(edge_data, dict):
-                source_uuid = edge_data.get('source_node_uuid', '')
-                target_uuid = edge_data.get('target_node_uuid', '')
-                relation_name = edge_data.get('name', '')
-                
-                source_name = node_map.get(source_uuid, NodeInfo('', '', [], '', {})).name or source_uuid[:8]
-                target_name = node_map.get(target_uuid, NodeInfo('', '', [], '', {})).name or target_uuid[:8]
-                
-                chain = f"{source_name} --[{relation_name}]--> {target_name}"
-                if chain not in relationship_chains:
-                    relationship_chains.append(chain)
-        
+        for edge in all_edges.values():
+            source_uuid = edge.get('source_node_uuid', '')
+            target_uuid = edge.get('target_node_uuid', '')
+            relation_name = edge.get('name', '')
+
+            source_name = node_map.get(source_uuid, NodeInfo('', '', [], '', {})).name or edge.get('source_node_name', '') or source_uuid[:8]
+            target_name = node_map.get(target_uuid, NodeInfo('', '', [], '', {})).name or edge.get('target_node_name', '') or target_uuid[:8]
+
+            chain = f"{source_name} --[{relation_name}]--> {target_name}"
+            if chain not in relationship_chains:
+                relationship_chains.append(chain)
+
         result.relationship_chains = relationship_chains
         result.total_relationships = len(relationship_chains)
-        
-        logger.info(t("console.insightForgeComplete", facts=result.total_facts, entities=result.total_entities, relationships=result.total_relationships))
+
+        logger.info(
+            f"InsightForge完成: {result.total_facts}条事实, {result.total_entities}个实体, {result.total_relationships}条关系"
+        )
         return result
-    
+
     def _generate_sub_queries(
         self,
         query: str,

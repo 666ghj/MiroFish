@@ -284,9 +284,7 @@ def build_graph():
         logger.info("=== 开始构建图谱 ===")
         
         # 检查配置
-        errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append(t('api.zepApiKeyMissing'))
+        errors = Config.get_graph_backend_config_errors()
         if errors:
             logger.error(f"配置错误: {errors}")
             return jsonify({
@@ -437,10 +435,12 @@ def build_graph():
                     progress=15
                 )
                 
+                # OpenZep 本地链路在批量抽取时更容易卡在长时间的联合推理里。
+                # 改为单块发送可以显著降低单次处理负载，牺牲吞吐换稳定性。
                 episode_uuids = builder.add_text_batches(
-                    graph_id, 
+                    graph_id,
                     chunks,
-                    batch_size=3,
+                    batch_size=1 if Config.use_openzep() else 3,
                     progress_callback=add_progress_callback
                 )
                 
@@ -459,7 +459,7 @@ def build_graph():
                         progress=progress
                     )
                 
-                builder._wait_for_episodes(episode_uuids, wait_progress_callback)
+                builder._wait_for_episodes(graph_id, episode_uuids, wait_progress_callback)
                 
                 # 获取图谱数据
                 task_manager.update_task(
@@ -469,12 +469,20 @@ def build_graph():
                 )
                 graph_data = builder.get_graph_data(graph_id)
                 
+                node_count = graph_data.get("node_count", 0)
+                edge_count = graph_data.get("edge_count", 0)
+
+                # 如果图谱仍然是空的，说明 OpenZep 没有成功完成抽取。
+                # 不能把这种情况标记为成功，否则前端会误以为构图完成。
+                if node_count == 0 and edge_count == 0:
+                    raise RuntimeError(
+                        "图谱构建未产出任何节点或边；OpenZep 处理可能超时或未完成"
+                    )
+
                 # 更新项目状态
                 project.status = ProjectStatus.GRAPH_COMPLETED
                 ProjectManager.save_project(project)
-                
-                node_count = graph_data.get("node_count", 0)
-                edge_count = graph_data.get("edge_count", 0)
+
                 build_logger.info(f"[{task_id}] 图谱构建完成: graph_id={graph_id}, 节点={node_count}, 边={edge_count}")
                 
                 # 完成
@@ -572,10 +580,11 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        errors = Config.get_graph_backend_config_errors()
+        if errors:
             return jsonify({
                 "success": False,
-                "error": t('api.zepApiKeyMissing')
+                "error": "; ".join(errors)
             }), 500
         
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
@@ -600,10 +609,11 @@ def delete_graph(graph_id: str):
     删除Zep图谱
     """
     try:
-        if not Config.ZEP_API_KEY:
+        errors = Config.get_graph_backend_config_errors()
+        if errors:
             return jsonify({
                 "success": False,
-                "error": t('api.zepApiKeyMissing')
+                "error": "; ".join(errors)
             }), 500
         
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)

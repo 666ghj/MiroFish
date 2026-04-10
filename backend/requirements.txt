@@ -10,8 +10,8 @@ flask>=3.0.0
 flask-cors>=6.0.0
 
 # ============= LLM 相关 =============
-# OpenAI SDK（默认 LLM 后端）
-openai>=1.0.0
+# OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
+openai>=1.91.0
 
 # Prompture（可选）— 多供应商 LLM 支持：LM Studio, Ollama, Claude, Groq, Kimi 等
 # Install for multi-provider support: pip install prompture
@@ -20,6 +20,10 @@ openai>=1.0.0
 
 # ============= Zep Cloud =============
 zep-cloud==3.13.0
+
+# ============= Graphiti / Neo4j =============
+graphiti-core==0.28.2
+neo4j>=5.26.0
 
 # ============= OASIS 社交媒体模拟 =============
 # OASIS 社交模拟框架
@@ -37,4 +41,4 @@ chardet>=5.0.0
 python-dotenv>=1.0.0
 
 # 数据验证
-pydantic>=2.0.0
+pydantic>=2.11.5

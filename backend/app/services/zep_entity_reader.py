@@ -7,11 +7,9 @@ import time
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
-
 from ..config import Config
+from ..graph import get_graph_backend
 from ..utils.logger import get_logger
-from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_entity_reader')
 
@@ -79,11 +77,12 @@ class ZepEntityReader:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
+        self.api_key = Config.ZEP_API_KEY if api_key is None else api_key
+        errors = Config.get_graph_backend_config_errors(api_key=self.api_key)
+        if errors:
+            raise ValueError("; ".join(errors))
         
-        self.client = Zep(api_key=self.api_key)
+        self.backend = get_graph_backend(api_key=self.api_key)
     
     def _call_with_retry(
         self, 
@@ -136,7 +135,7 @@ class ZepEntityReader:
         """
         logger.info(f"获取图谱 {graph_id} 的所有节点...")
 
-        nodes = fetch_all_nodes(self.client, graph_id)
+        nodes = self.backend.get_all_nodes(graph_id)
 
         nodes_data = []
         for node in nodes:
@@ -163,7 +162,7 @@ class ZepEntityReader:
         """
         logger.info(f"获取图谱 {graph_id} 的所有边...")
 
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = self.backend.get_all_edges(graph_id)
 
         edges_data = []
         for edge in edges:
@@ -192,7 +191,7 @@ class ZepEntityReader:
         try:
             # 使用重试机制调用Zep API
             edges = self._call_with_retry(
-                func=lambda: self.client.graph.node.get_entity_edges(node_uuid=node_uuid),
+                func=lambda: self.backend.get_node_edges(node_uuid),
                 operation_name=f"获取节点边(node={node_uuid[:8]}...)"
             )
             
@@ -348,7 +347,7 @@ class ZepEntityReader:
         try:
             # 使用重试机制获取节点
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=entity_uuid),
+                func=lambda: self.backend.get_node(entity_uuid),
                 operation_name=f"获取节点详情(uuid={entity_uuid[:8]}...)"
             )
             
@@ -433,5 +432,4 @@ class ZepEntityReader:
             enrich_with_edges=enrich_with_edges
         )
         return result.entities
-
 

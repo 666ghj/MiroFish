@@ -10,6 +10,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
 
 WORKDIR /app
 
+ARG INSTALL_GRAPHITI=true
+
 # 先复制依赖描述文件以利用缓存
 COPY package.json package-lock.json ./
 COPY frontend/package.json frontend/package-lock.json ./frontend/
@@ -18,7 +20,10 @@ COPY backend/pyproject.toml backend/uv.lock ./backend/
 # 安装依赖（Node + Python）
 RUN npm ci \
   && npm ci --prefix frontend \
-  && cd backend && uv sync --frozen
+  && cd backend && uv sync --frozen \
+  && if [ "$INSTALL_GRAPHITI" = "true" ]; then \
+       uv pip install --python /app/backend/.venv/bin/python --no-cache-dir graphiti-core==0.28.2 "neo4j>=5.26.0"; \
+     fi
 
 # 复制项目源码
 COPY . .
