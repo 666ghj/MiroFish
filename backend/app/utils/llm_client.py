@@ -88,7 +88,8 @@ class LLMClient:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            response_format={"type": "json_object"}
+            # 不設 response_format 以相容 LM Studio / Ollama 等本地模型
+            # 依賴 prompt 中的 JSON 指示 + 下方的 markdown 清理邏輯
         )
         # 清理markdown代码块标记
         cleaned_response = response.strip()
