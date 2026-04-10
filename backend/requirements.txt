@@ -10,8 +10,13 @@ flask>=3.0.0
 flask-cors>=6.0.0
 
 # ============= LLM 相关 =============
-# OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
+# OpenAI SDK（默认 LLM 后端）
 openai>=1.0.0
+
+# Prompture（可选）— 多供应商 LLM 支持：LM Studio, Ollama, Claude, Groq, Kimi 等
+# Install for multi-provider support: pip install prompture
+# https://github.com/jhd3197/prompture
+# prompture>=0.1.0
 
 # ============= Zep Cloud =============
 zep-cloud==3.13.0

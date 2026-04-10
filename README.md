@@ -127,6 +127,29 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+#### Multi-Provider Support (Optional)
+
+Install [Prompture](https://github.com/jhd3197/prompture) to unlock 12+ LLM providers beyond OpenAI-compatible APIs:
+
+```bash
+pip install prompture
+```
+
+Then use `"provider/model"` format in your `.env`:
+
+| Provider | `LLM_MODEL_NAME` | Cost |
+|---|---|---|
+| LM Studio | `lmstudio/local-model` | Free (local) |
+| Ollama | `ollama/llama3.1:8b` | Free (local) |
+| OpenAI | `openai/gpt-4o` | Paid |
+| Claude | `claude/claude-sonnet-4-20250514` | Paid |
+| Kimi / Moonshot | `moonshot/moonshot-v1-8k` | Paid |
+| Groq | `groq/llama-3.1-70b-versatile` | Free tier |
+| Google | `google/gemini-1.5-pro` | Paid |
+| OpenRouter | `openrouter/anthropic/claude-2` | Paid |
+
+> Without Prompture, the original OpenAI SDK backend works as before — no changes needed.
+
 #### 2. Install Dependencies
 
 ```bash
