@@ -1,0 +1,50 @@
+name: Spike
+description: Time-boxed investigation or research task
+title: "[Spike] "
+labels:
+  - "type:spike"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for research or technical exploration that should end with a recommendation.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question to answer
+      description: What decision or uncertainty is this spike meant to resolve?
+      placeholder: State the main question as clearly as possible.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options to evaluate
+      description: Which alternatives should be compared?
+      placeholder: List the candidate approaches or tools to investigate.
+    validations:
+      required: true
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Expected deliverable
+      description: What output should this spike produce?
+      placeholder: "Example: recommendation, benchmark, decision memo, or migration notes."
+    validations:
+      required: true
+  - type: textarea
+    id: done_criteria
+    attributes:
+      label: Done criteria
+      description: What needs to happen before this spike can be closed?
+      placeholder: Define the minimum evidence or conclusion expected.
+    validations:
+      required: true
+  - type: input
+    id: deadline
+    attributes:
+      label: Target date
+      description: Optional deadline for the spike
+      placeholder: YYYY-MM-DD
+    validations:
+      required: false

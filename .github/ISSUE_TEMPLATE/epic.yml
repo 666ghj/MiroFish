@@ -1,0 +1,60 @@
+name: Epic
+description: Coordinating issue for a larger body of work
+title: "[Epic] "
+labels:
+  - "type:epic"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for a larger initiative that will be split into smaller issues.
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What outcome should this epic deliver?
+      placeholder: Describe the main goal and the value this epic should create.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included in this epic?
+      placeholder: List the work this epic should cover.
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: What is explicitly not part of this epic?
+      placeholder: Capture boundaries to keep the work focused.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: What work, systems, or decisions does this depend on?
+      placeholder: Reference related issues, external dependencies, or blockers.
+    validations:
+      required: false
+  - type: textarea
+    id: done_criteria
+    attributes:
+      label: Done criteria
+      description: How will we know this epic is complete?
+      placeholder: Define the conditions required to close this epic.
+    validations:
+      required: true
+  - type: textarea
+    id: subissues
+    attributes:
+      label: Sub-issues checklist
+      description: List the issues that should roll up into this epic.
+      placeholder: |
+        - [ ] #123
+        - [ ] Create issue for ...
+    validations:
+      required: true

@@ -1,0 +1,52 @@
+name: Task
+description: Actionable implementation task
+title: "[Task] "
+labels:
+  - "type:task"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for a focused piece of work that should usually land in a single pull request.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What problem or opportunity is this task addressing?
+      placeholder: Summarize the relevant context and why this task matters.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_result
+    attributes:
+      label: Expected result
+      description: What should be true once this task is complete?
+      placeholder: Describe the intended outcome in concrete terms.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: What conditions must be met before this can be closed?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: What related issues, decisions, or blockers affect this task?
+      placeholder: Reference anything this task needs before it can start or finish.
+    validations:
+      required: false
+  - type: textarea
+    id: technical_notes
+    attributes:
+      label: Technical notes
+      description: Optional implementation notes, caveats, or pointers
+      placeholder: Include technical details that will help the implementer.
+    validations:
+      required: false
