@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions about setup or usage
+    url: https://github.com/LucasErcolano/MiroFish/blob/main/README.md
+    about: Check the project README before opening a workflow issue for general usage questions.
+  - name: Community chat on Discord
+    url: http://discord.gg/ePf5aPaHnA
+    about: Use Discord for broad questions, discussions, or community support.
