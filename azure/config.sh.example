@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuració de desplegament MiroFish a Azure
+#
+# INSTRUCCIONS:
+#   1. Còpia aquest fitxer a azure/config.sh  (NO comitegis config.sh — té secrets)
+#      cp azure/config.sh.example azure/config.sh
+#   2. Omple tots els valors marcats amb <...>
+#   3. Executa: az login
+#   4. Executa: bash azure/1-infra.sh        (una sola vegada)
+#   5. Executa: bash azure/2-build-deploy.sh (a cada nova versió)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Subscripció i localització Azure ─────────────────────────────────────────
+AZURE_SUBSCRIPTION_ID="<la-teva-subscription-id>"
+AZURE_LOCATION="westeurope"           # canvia si prefereixes altra regió
+
+# ── Noms de recursos (pots deixar els valors per defecte) ─────────────────────
+RESOURCE_GROUP="rg_mirofish"
+PROJECT_NAME="mirofish"               # prefix per a tots els recursos Azure
+# Nota: el nom de l'ACR serà "${PROJECT_NAME}acr" (sense guions, tot minúscula)
+
+# ── Secrets de l'aplicació ────────────────────────────────────────────────────
+
+# Contrasenya de l'usuari "demo" per fer login a l'app
+DEMO_PASSWORD="<contrasenya-segura>"
+
+# Flask SECRET_KEY per signar tokens JWT
+# Genera-la amb: python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY="<flask-secret-key>"
+
+# ── LLM principal (OpenAI-compatible) ─────────────────────────────────────────
+LLM_API_KEY="<la-teva-llm-api-key>"
+LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+LLM_MODEL_NAME="qwen-plus"
+
+# ── LLM accelerador (opcional — deixar buit per desactivar) ───────────────────
+LLM_BOOST_API_KEY=""
+LLM_BOOST_BASE_URL=""
+LLM_BOOST_MODEL_NAME=""
+
+# ── Zep Cloud (graf de memòria) ───────────────────────────────────────────────
+ZEP_API_KEY="<la-teva-zep-api-key>"
+
+# ── Simulació OASIS (valors per defecte recomanats) ───────────────────────────
+OASIS_DEFAULT_MAX_ROUNDS="10"
+
+# ── Report Agent (valors per defecte recomanats) ──────────────────────────────
+REPORT_AGENT_MAX_TOOL_CALLS="5"
+REPORT_AGENT_MAX_REFLECTION_ROUNDS="2"
+REPORT_AGENT_TEMPERATURE="0.5"

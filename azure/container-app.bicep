@@ -1,33 +1,41 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// MiroFish — Azure Container App
-// Segueix les directrius CTTI per a desplegament d'aplicacions a Azure
-// (DA/TM: Azure Container Apps com a plataforma de desplegament de contenidors)
+// MiroFish — Container App (executar a cada deploy)
 //
-// Paràmetres que l'equip d'ops ha de proporcionar en desplegar:
-//   Secrets (@secure): demoPassword, llmApiKey, llmBoostApiKey, zepApiKey, secretKey
-//   Valors:            containerImage, llmBaseUrl, llmModelName, llmBoostBaseUrl,
-//                      llmBoostModelName, oasisDefaultMaxRounds,
-//                      reportAgentMaxToolCalls, reportAgentMaxReflectionRounds,
-//                      reportAgentTemperature
+// Rep com a paràmetres els outputs d'infra.bicep (containerAppsEnvId,
+// acrLoginServer) i desplega/actualitza la Container App amb la nova imatge.
+//
+// Executar amb: azure/2-build-deploy.sh
 //
 // Extensions pendents per a l'equip d'operacions:
 //   - DNS: afegir CNAME a *.intranet.gencat.cat (PRE) / *.gencat.cat (PRO)
-//   - Xarxa: integrar en VNet Hub-Spoke + Private Link per a serveis interns
-//     (descomentar el bloc vnetConfiguration a l'entorn)
-//   - TLS: certificat gestionat via Container Apps o Azure Front Door
 //   - ingress.external: canviar a false per a accés exclusiu per intranet
+//   - TLS: certificat gestionat via Container Apps o Azure Front Door
 // ─────────────────────────────────────────────────────────────────────────────
 
-@description('Nom base del projecte (es fa servir per als noms dels recursos)')
+@description('Nom base del projecte')
 param projectName string = 'mirofish'
 
 @description('Localització Azure dels recursos')
 param location string = resourceGroup().location
 
-@description('Imatge Docker completa (registry/imatge:tag)')
+@description('ID del Container Apps Environment (output d\'infra.bicep)')
+param containerAppsEnvId string
+
+@description('Imatge Docker completa (acrLoginServer/nom:tag)')
 param containerImage string
 
+@description('Login server de l\'ACR (ex: mirofsihacr.azurecr.io)')
+param acrLoginServer string
+
 // ─── Paràmetres secrets (@secure — mai visibles als logs de desplegament) ────
+
+@description('Nom d\'usuari de l\'ACR (az acr credential show --name <acr> --query username)')
+@secure()
+param acrUsername string
+
+@description('Contrasenya de l\'ACR (az acr credential show --name <acr> --query passwords[0].value)')
+@secure()
+param acrPassword string
 
 @description('Contrasenya de l\'usuari demo')
 @secure()
@@ -45,7 +53,7 @@ param llmBoostApiKey string = ''
 @secure()
 param zepApiKey string
 
-@description('SECRET_KEY de Flask per a JWT (generar amb: python -c "import secrets; print(secrets.token_hex(32))")')
+@description('SECRET_KEY de Flask per a JWT (python -c "import secrets; print(secrets.token_hex(32))")')
 @secure()
 param secretKey string
 
@@ -81,54 +89,31 @@ param reportAgentMaxReflectionRounds string = '2'
 @description('Temperatura del model LLM per al Report Agent')
 param reportAgentTemperature string = '0.5'
 
-// ─── Log Analytics Workspace ──────────────────────────────────────────────────
-// NOR0016-C: retenció mínima de logs de seguretat = 90 dies
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-  name: '${projectName}-logs'
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 90
-  }
-}
-
-// ─── Container Apps Environment ───────────────────────────────────────────────
-resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
-  name: '${projectName}-env'
-  location: location
-  properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
-    // TODO (ops): descomentar per integrar en VNet Hub-Spoke CTTI
-    // vnetConfiguration: {
-    //   infrastructureSubnetId: '/subscriptions/.../subnets/container-apps-subnet'
-    //   internal: true   // true = accés únicament per intranet
-    // }
-  }
-}
-
 // ─── Container App ─────────────────────────────────────────────────────────────
 resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: projectName
   location: location
   properties: {
-    managedEnvironmentId: containerAppsEnv.id
+    managedEnvironmentId: containerAppsEnvId
 
     configuration: {
-      // Secrets de Container Apps — mai en text pla a les variables d'entorn
+      // Secrets: credencials ACR + variables sensibles de l'aplicació
       secrets: [
-        { name: 'demo-password',   value: demoPassword }
-        { name: 'llm-api-key',     value: llmApiKey }
-        { name: 'llm-boost-api-key', value: llmBoostApiKey }
-        { name: 'zep-api-key',     value: zepApiKey }
-        { name: 'secret-key',      value: secretKey }
+        { name: 'acr-password',        value: acrPassword }
+        { name: 'demo-password',        value: demoPassword }
+        { name: 'llm-api-key',          value: llmApiKey }
+        { name: 'llm-boost-api-key',    value: llmBoostApiKey }
+        { name: 'zep-api-key',          value: zepApiKey }
+        { name: 'secret-key',           value: secretKey }
+      ]
+
+      // Credencials del registre privat (ACR)
+      registries: [
+        {
+          server: acrLoginServer
+          username: acrUsername
+          passwordSecretRef: 'acr-password'
+        }
       ]
 
       // Ingrés: port únic 5001 (Flask serveix frontend + API)
@@ -138,11 +123,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         transport: 'http'
         // TODO (ops): afegir domini corporatiu quan estigui assignat
         // customDomains: [
-        //   {
-        //     name: 'mirofish.intranet.gencat.cat'   // PRE
-        //     certificateId: '<id-certificat-aca>'
-        //     bindingType: 'SniEnabled'
-        //   }
+        //   { name: 'mirofish.intranet.gencat.cat', certificateId: '...', bindingType: 'SniEnabled' }
         // ]
       }
 
@@ -210,11 +191,8 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
 }
 
 // ─── Outputs ──────────────────────────────────────────────────────────────────
-@description('FQDN de l\'aplicació desplegada')
+@description('FQDN públic de l\'aplicació')
 output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
 
 @description('Nom del recurs Container App')
 output containerAppName string = containerApp.name
-
-@description('ID del workspace de Log Analytics')
-output logAnalyticsWorkspaceId string = logAnalytics.id

@@ -60,3 +60,6 @@ backend/uploads/
 data/
 # Git worktrees
 .worktrees/
+
+# Configuració Azure amb secrets (no comitejar mai)
+azure/config.sh
