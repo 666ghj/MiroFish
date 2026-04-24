@@ -1,5 +1,6 @@
 import axios from 'axios'
 import i18n from '../i18n'
+import authState, { clearToken } from '../store/auth'
 
 // 创建axios实例
 const service = axios.create({
@@ -14,6 +15,9 @@ const service = axios.create({
 service.interceptors.request.use(
   config => {
     config.headers['Accept-Language'] = i18n.global.locale.value
+    if (authState.token) {
+      config.headers['Authorization'] = `Bearer ${authState.token}`
+    }
     return config
   },
   error => {
@@ -26,28 +30,37 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     const res = response.data
-    
+
     // 如果返回的状态码不是success，则抛出错误
     if (!res.success && res.success !== undefined) {
       console.error('API Error:', res.error || res.message || 'Unknown error')
       return Promise.reject(new Error(res.error || res.message || 'Error'))
     }
-    
+
     return res
   },
   error => {
     console.error('Response error:', error)
-    
+
+    // Token invàlid o expirat: netejar sessió i redirigir al login
+    if (error.response?.status === 401) {
+      clearToken()
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+      return Promise.reject(error)
+    }
+
     // 处理超时
     if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
       console.error('Request timeout')
     }
-    
+
     // 处理网络错误
     if (error.message === 'Network Error') {
       console.error('Network error - please check your connection')
     }
-    
+
     return Promise.reject(error)
   }
 )
@@ -59,7 +72,7 @@ export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 1000) 
       return await requestFn()
     } catch (error) {
       if (i === maxRetries - 1) throw error
-      
+
       console.warn(`Request failed, retrying (${i + 1}/${maxRetries})...`)
       await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)))
     }

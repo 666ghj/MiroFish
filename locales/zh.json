@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -661,5 +667,16 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "login": {
+    "title": "访问",
+    "subtitle": "// 需要身份验证",
+    "username": "用户名",
+    "usernamePlaceholder": "demo",
+    "password": "密码",
+    "passwordPlaceholder": "••••••••",
+    "submit": "登录",
+    "loading": "验证中...",
+    "invalidCredentials": "用户名或密码错误"
   }
 }

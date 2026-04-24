@@ -75,7 +75,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -661,5 +667,16 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "login": {
+    "title": "Access",
+    "subtitle": "// Authenticated access required",
+    "username": "Username",
+    "usernamePlaceholder": "demo",
+    "password": "Password",
+    "passwordPlaceholder": "••••••••",
+    "submit": "Enter",
+    "loading": "Authenticating...",
+    "invalidCredentials": "Invalid username or password"
   }
 }

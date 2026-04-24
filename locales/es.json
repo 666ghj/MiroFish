@@ -75,7 +75,13 @@
     "layoutGraph": "Grafo",
     "layoutSplit": "Doble columna",
     "layoutWorkbench": "Área de trabajo",
-    "stepNames": ["Construcción del grafo", "Configuración del entorno", "Ejecutar simulación", "Generación de informe", "Interacción profunda"]
+    "stepNames": [
+      "Construcción del grafo",
+      "Configuración del entorno",
+      "Ejecutar simulación",
+      "Generación de informe",
+      "Interacción profunda"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Generación de ontología",
@@ -661,5 +667,16 @@
     "llmSelectAgentFailed": "Selección de agente por LLM falló, usando selección por defecto: {error}",
     "generateInterviewQuestionsFailed": "Error al generar preguntas de entrevista: {error}",
     "generateInterviewSummaryFailed": "Error al generar resumen de entrevista: {error}"
+  },
+  "login": {
+    "title": "Acceso",
+    "subtitle": "// Acceso autenticado requerido",
+    "username": "Usuario",
+    "usernamePlaceholder": "demo",
+    "password": "Contraseña",
+    "passwordPlaceholder": "••••••••",
+    "submit": "Entrar",
+    "loading": "Autenticando...",
+    "invalidCredentials": "Usuario o contraseña incorrectos"
   }
 }

@@ -75,7 +75,13 @@
     "layoutGraph": "Graf",
     "layoutSplit": "Dividit",
     "layoutWorkbench": "Taulell",
-    "stepNames": ["Construcció del graf", "Configuració de l'entorn", "Execució de la simulació", "Generació de l'informe", "Interacció profunda"]
+    "stepNames": [
+      "Construcció del graf",
+      "Configuració de l'entorn",
+      "Execució de la simulació",
+      "Generació de l'informe",
+      "Interacció profunda"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Generació d'ontologia",
@@ -661,5 +667,16 @@
     "llmSelectAgentFailed": "La selecció d'agents per LLM ha fallat, usant la selecció per defecte: {error}",
     "generateInterviewQuestionsFailed": "Error en generar les preguntes d'entrevista: {error}",
     "generateInterviewSummaryFailed": "Error en generar el resum de l'entrevista: {error}"
+  },
+  "login": {
+    "title": "Accés",
+    "subtitle": "// Accés autenticat requerit",
+    "username": "Usuari",
+    "usernamePlaceholder": "demo",
+    "password": "Contrasenya",
+    "passwordPlaceholder": "••••••••",
+    "submit": "Entrar",
+    "loading": "Autenticant...",
+    "invalidCredentials": "Usuari o contrasenya incorrectes"
   }
 }
