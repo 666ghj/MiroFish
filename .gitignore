@@ -58,3 +58,5 @@ backend/uploads/
 
 # Docker 数据
 data/
+# Git worktrees
+.worktrees/
