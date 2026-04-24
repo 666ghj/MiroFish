@@ -101,7 +101,14 @@
     "creating": "创建中...",
     "enterEnvSetup": "进入环境搭建",
     "createSimulationFailed": "创建模拟失败: {error}",
-    "createSimulationException": "创建模拟异常: {error}"
+    "createSimulationException": "创建模拟异常: {error}",
+    "labelEntityTypes": "生成的实体类型",
+    "labelRelationTypes": "生成的关系类型",
+    "labelEntity": "实体",
+    "labelRelation": "关系",
+    "labelAttributes": "属性",
+    "labelExamples": "示例",
+    "labelConnections": "连接"
   },
   "step2": {
     "simInstanceInit": "模拟实例初始化",

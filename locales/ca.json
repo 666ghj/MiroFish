@@ -101,7 +101,14 @@
     "creating": "Creant...",
     "enterEnvSetup": "Entra a la configuració de l'entorn",
     "createSimulationFailed": "Error en crear la simulació: {error}",
-    "createSimulationException": "Excepció en crear la simulació: {error}"
+    "createSimulationException": "Excepció en crear la simulació: {error}",
+    "labelEntityTypes": "TIPUS D'ENTITAT GENERATS",
+    "labelRelationTypes": "TIPUS DE RELACIÓ GENERATS",
+    "labelEntity": "ENTITAT",
+    "labelRelation": "RELACIÓ",
+    "labelAttributes": "ATRIBUTS",
+    "labelExamples": "EXEMPLES",
+    "labelConnections": "CONNEXIONS"
   },
   "step2": {
     "simInstanceInit": "Inicialització de la instància de simulació",

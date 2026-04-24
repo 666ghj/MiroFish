@@ -101,7 +101,14 @@
     "creating": "Creating...",
     "enterEnvSetup": "Enter Environment Setup",
     "createSimulationFailed": "Failed to create simulation: {error}",
-    "createSimulationException": "Simulation creation error: {error}"
+    "createSimulationException": "Simulation creation error: {error}",
+    "labelEntityTypes": "GENERATED ENTITY TYPES",
+    "labelRelationTypes": "GENERATED RELATION TYPES",
+    "labelEntity": "ENTITY",
+    "labelRelation": "RELATION",
+    "labelAttributes": "ATTRIBUTES",
+    "labelExamples": "EXAMPLES",
+    "labelConnections": "CONNECTIONS"
   },
   "step2": {
     "simInstanceInit": "Simulation Instance Initialization",
