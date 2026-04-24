@@ -87,7 +87,7 @@ Fes login amb usuari `demo` i la `DEMO_PASSWORD` que has configurat.
 azure/
 ├── config.sh.example   # plantilla de configuració (commited al repo)
 ├── config.sh           # valors reals amb secrets  (NO comitejar mai — gitignored)
-├── infra.bicep         # infraestructura base: ACR + Log Analytics + Container Apps Env
+├── infra.bicep         # infraestructura base: ACR + Container Apps Env
 ├── container-app.bicep # Container App: es re-desplega a cada nova versió
 ├── 1-infra.sh          # script pas 1: crea la infraestructura (una sola vegada)
 └── 2-build-deploy.sh   # script pas 2: build Docker + push + deploy (cada versió)
@@ -152,7 +152,6 @@ Aquest script crea al resource group `rg_mirofish`:
 |---|---|---|
 | Resource Group | `rg_mirofish` | Contenidor de tots els recursos |
 | Container Registry | `mirofsihacr` | Registre privat Docker (SKU Basic) |
-| Log Analytics Workspace | `mirofish-logs` | Logs centralitzats (90 dies retenció) |
 | Container Apps Environment | `mirofish-env` | Plataforma d'execució de contenidors |
 
 Al final imprimeix l'ACR Login Server i l'ID de l'entorn. Guarda'ls si els necessites.
