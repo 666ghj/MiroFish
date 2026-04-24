@@ -31,6 +31,10 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    # JSON output mode for LLM calls. Options:
+    #   "json_object" — OpenAI-compatible default (Ollama, Qwen Cloud, Anthropic via proxy)
+    #   "none"        — runtimes that reject response_format (LM Studio, llama.cpp server)
+    LLM_JSON_MODE = os.environ.get('LLM_JSON_MODE', 'json_object').lower()
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')

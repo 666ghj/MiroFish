@@ -88,7 +88,7 @@ class LLMClient:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"} if Config.LLM_JSON_MODE == "json_object" else None
         )
         # 清理markdown代码块标记
         cleaned_response = response.strip()
