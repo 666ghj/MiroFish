@@ -1,19 +1,20 @@
 """
-LLM客户端封装
-统一使用OpenAI格式调用
+LLM client wrapper
+Unified interface using the OpenAI-compatible API format
 """
 
 import json
 import re
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlparse, parse_qs, urlunparse
 from openai import OpenAI
 
 from ..config import Config
 
 
 class LLMClient:
-    """LLM客户端"""
-    
+    """LLM client"""
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -21,17 +22,32 @@ class LLMClient:
         model: Optional[str] = None
     ):
         self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
+        raw_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
-        
+            raise ValueError("LLM_API_KEY is not configured")
+
+        # Azure Portal provides full endpoint URLs like:
+        # https://<resource>.cognitiveservices.azure.com/openai/deployments/<model>/chat/completions?api-version=...
+        # The OpenAI SDK expects a base_url and appends /chat/completions itself,
+        # so we strip that suffix and extract api-version as a default query param.
+        default_query: Dict[str, str] = {}
+        if raw_url and '/chat/completions' in raw_url:
+            parsed = urlparse(raw_url)
+            qs = parse_qs(parsed.query)
+            if 'api-version' in qs:
+                default_query['api-version'] = qs['api-version'][0]
+            clean_path = parsed.path.replace('/chat/completions', '').rstrip('/')
+            raw_url = urlunparse(parsed._replace(path=clean_path, query=''))
+
+        self.base_url = raw_url
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            default_query=default_query if default_query else None
         )
-    
+
     def chat(
         self,
         messages: List[Dict[str, str]],
@@ -40,33 +56,33 @@ class LLMClient:
         response_format: Optional[Dict] = None
     ) -> str:
         """
-        发送聊天请求
-        
+        Send a chat request
+
         Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            response_format: 响应格式（如JSON模式）
-            
+            messages: List of messages
+            temperature: Temperature parameter
+            max_tokens: Maximum number of tokens
+            response_format: Response format (e.g. JSON mode)
+
         Returns:
-            模型响应文本
+            Model response text
         """
         kwargs = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
         }
-        
+
         if response_format:
             kwargs["response_format"] = response_format
-        
+
         response = self.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
-        # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
+        # Some models (e.g. MiniMax M2.5) include <think> reasoning content in the response; strip it out
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
         return content
-    
+
     def chat_json(
         self,
         messages: List[Dict[str, str]],
@@ -74,15 +90,15 @@ class LLMClient:
         max_tokens: int = 4096
     ) -> Dict[str, Any]:
         """
-        发送聊天请求并返回JSON
-        
+        Send a chat request and return parsed JSON
+
         Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            
+            messages: List of messages
+            temperature: Temperature parameter
+            max_tokens: Maximum number of tokens
+
         Returns:
-            解析后的JSON对象
+            Parsed JSON object
         """
         response = self.chat(
             messages=messages,
@@ -90,7 +106,7 @@ class LLMClient:
             max_tokens=max_tokens,
             response_format={"type": "json_object"}
         )
-        # 清理markdown代码块标记
+        # Strip markdown code-block markers if present
         cleaned_response = response.strip()
         cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
         cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
@@ -99,5 +115,4 @@ class LLMClient:
         try:
             return json.loads(cleaned_response)
         except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
-
+            raise ValueError(f"Invalid JSON returned by LLM: {cleaned_response}")

@@ -17,14 +17,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ── Carregar configuració ─────────────────────────────────────────────────────
-CONFIG_FILE="${SCRIPT_DIR}/config.sh"
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  echo "ERROR: No s'ha trobat azure/config.sh"
-  echo "       Còpia l'exemple: cp azure/config.sh.example azure/config.sh"
-  exit 1
-fi
+#CONFIG_FILE="${SCRIPT_DIR}/config.sh"
+#if [[ ! -f "$CONFIG_FILE" ]]; then
+#  echo "ERROR: No s'ha trobat azure/config.sh"
+# echo "       Còpia l'exemple: cp azure/config.sh.example azure/config.sh"
+#  exit 1
+#fi
 # shellcheck source=config.sh.example
-source "$CONFIG_FILE"
+#source "$CONFIG_FILE"
 
 # ── Validar variables obligatòries ───────────────────────────────────────────
 REQUIRED_VARS=(
