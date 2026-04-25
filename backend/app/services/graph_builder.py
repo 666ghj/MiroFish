@@ -10,8 +10,6 @@ import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
-from zep_cloud import EntityEdgeSourceTarget
-
 from ..config import Config
 from ..graph import get_graph_backend
 from ..models.task import TaskManager, TaskStatus
@@ -197,6 +195,25 @@ class GraphBuilderService:
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
         """Set graph ontology (public method)"""
+        from ..config import Config
+        if Config.GRAPH_BACKEND != "zep":
+            entities = {
+                e["name"]: {
+                    "description": e.get("description", ""),
+                    "attributes": e.get("attributes", []),
+                }
+                for e in ontology.get("entity_types", [])
+            }
+            edges = {
+                e["name"]: {
+                    "description": e.get("description", ""),
+                    "attributes": e.get("attributes", []),
+                }
+                for e in ontology.get("edge_types", [])
+            }
+            self._graph.set_ontology(graph_ids=[graph_id], entities=entities, edges=edges)
+            return
+
         import warnings
         from typing import Optional
         from pydantic import Field
@@ -210,60 +227,51 @@ class GraphBuilderService:
         RESERVED_NAMES = {'uuid', 'name', 'group_id', 'name_embedding', 'summary', 'created_at'}
 
         def safe_attr_name(attr_name: str) -> str:
-            """Convert reserved names to safe attribute names"""
             if attr_name.lower() in RESERVED_NAMES:
                 return f"entity_{attr_name}"
             return attr_name
-        
+
         # Dynamically create entity types
         entity_types = {}
         for entity_def in ontology.get("entity_types", []):
             name = entity_def["name"]
             description = entity_def.get("description", f"A {name} entity.")
 
-            # Build attribute dict and type annotations (required by Pydantic v2)
             attrs = {"__doc__": description}
             annotations = {}
 
             for attr_def in entity_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # Use safe name
+                attr_name = safe_attr_name(attr_def["name"])
                 attr_desc = attr_def.get("description", attr_name)
-                # Zep API requires Field description — this is mandatory
                 attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[EntityText]  # Type annotation
+                annotations[attr_name] = Optional[EntityText]
 
             attrs["__annotations__"] = annotations
-
-            # Dynamically create class
             entity_class = type(name, (EntityModel,), attrs)
             entity_class.__doc__ = description
             entity_types[name] = entity_class
-        
+
         # Dynamically create edge types
         edge_definitions = {}
         for edge_def in ontology.get("edge_types", []):
             name = edge_def["name"]
             description = edge_def.get("description", f"A {name} relationship.")
 
-            # Build attribute dict and type annotations
             attrs = {"__doc__": description}
             annotations = {}
 
             for attr_def in edge_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # Use safe name
+                attr_name = safe_attr_name(attr_def["name"])
                 attr_desc = attr_def.get("description", attr_name)
-                # Zep API requires Field description — this is mandatory
                 attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[str]  # Edge attributes use str type
+                annotations[attr_name] = Optional[str]
 
             attrs["__annotations__"] = annotations
-
-            # Dynamically create class
             class_name = ''.join(word.capitalize() for word in name.split('_'))
             edge_class = type(class_name, (EdgeModel,), attrs)
             edge_class.__doc__ = description
-            
-            # Build source_targets
+
+            from zep_cloud import EntityEdgeSourceTarget
             source_targets = []
             for st in edge_def.get("source_targets", []):
                 source_targets.append(
@@ -272,10 +280,10 @@ class GraphBuilderService:
                         target=st.get("target", "Entity")
                     )
                 )
-            
+
             if source_targets:
                 edge_definitions[name] = (edge_class, source_targets)
-        
+
         if entity_types or edge_definitions:
             self._graph.set_ontology(
                 graph_ids=[graph_id],
