@@ -86,6 +86,30 @@ def test_factory_raises_on_unknown_backend():
         fmod._backend_instance = None
 
 
+def test_graphiti_backend_importable():
+    try:
+        from backend.app.graph.graphiti_backend import GraphitiBackend
+        from backend.app.graph.base import GraphBackend
+        assert issubclass(GraphitiBackend, GraphBackend)
+    except ImportError as e:
+        pytest.skip(f"graphiti-core not installed: {e}")
+
+
+def test_graphiti_backend_raises_without_password():
+    try:
+        from backend.app.graph.graphiti_backend import GraphitiBackend
+    except ImportError:
+        pytest.skip("graphiti-core not installed")
+    import backend.app.config as cfg_mod
+    orig = cfg_mod.Config.NEO4J_PASSWORD
+    try:
+        cfg_mod.Config.NEO4J_PASSWORD = None
+        with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
+            GraphitiBackend()
+    finally:
+        cfg_mod.Config.NEO4J_PASSWORD = orig
+
+
 def test_config_graphiti_errors_when_missing():
     import backend.app.config as cfg_mod
     orig_backend = cfg_mod.Config.GRAPH_BACKEND

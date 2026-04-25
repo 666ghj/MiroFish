@@ -37,6 +37,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+graphiti = [
+    "graphiti-core>=0.3.0",
+    "neo4j>=5.23.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
