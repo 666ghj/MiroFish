@@ -14,7 +14,8 @@ for (const path in localeFiles) {
   }
 }
 
-const savedLocale = localStorage.getItem('locale') || 'zh'
+let savedLocale = localStorage.getItem('locale') || 'zh'
+if (savedLocale === 'pt') savedLocale = 'pt-br'
 
 const i18n = createI18n({
   legacy: false,
