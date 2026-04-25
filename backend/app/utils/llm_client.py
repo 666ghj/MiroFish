@@ -28,6 +28,10 @@ class LLMClient:
         if not self.api_key:
             raise ValueError("LLM_API_KEY is not configured")
 
+        # Google AI Studio OpenAI-compatible endpoint
+        if (Config.LLM_PROVIDER or "").lower() == "gemini" and not base_url:
+            raw_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
         # Azure Portal provides full endpoint URLs like:
         # https://<resource>.cognitiveservices.azure.com/openai/deployments/<model>/chat/completions?api-version=...
         # The OpenAI SDK expects a base_url and appends /chat/completions itself,
