@@ -107,6 +107,45 @@ param reportAgentMaxReflectionRounds string = '2'
 @description('Temperatura del model LLM per al Report Agent')
 param reportAgentTemperature string = '0.5'
 
+// ─── Secrets i env vars condicionals (Azure rebutja secrets amb valor buit) ───
+var mandatorySecrets = [
+  { name: 'acr-password',  value: acrPassword }
+  { name: 'demo-password', value: demoPassword }
+  { name: 'llm-api-key',   value: llmApiKey }
+  { name: 'secret-key',    value: secretKey }
+]
+var optionalSecrets = concat(
+  empty(llmBoostApiKey) ? [] : [{ name: 'llm-boost-api-key', value: llmBoostApiKey }],
+  empty(zepApiKey)      ? [] : [{ name: 'zep-api-key',       value: zepApiKey }],
+  empty(neo4jPassword)  ? [] : [{ name: 'neo4j-password',    value: neo4jPassword }]
+)
+var allSecrets = concat(mandatorySecrets, optionalSecrets)
+
+var mandatoryEnv = [
+  { name: 'DEMO_PASSWORD', secretRef: 'demo-password' }
+  { name: 'LLM_API_KEY',   secretRef: 'llm-api-key' }
+  { name: 'SECRET_KEY',    secretRef: 'secret-key' }
+  { name: 'LLM_BASE_URL',          value: llmBaseUrl }
+  { name: 'LLM_MODEL_NAME',        value: llmModelName }
+  { name: 'LLM_PROVIDER',          value: llmProvider }
+  { name: 'LLM_BOOST_BASE_URL',    value: llmBoostBaseUrl }
+  { name: 'LLM_BOOST_MODEL_NAME',  value: llmBoostModelName }
+  { name: 'GRAPH_BACKEND',         value: graphBackend }
+  { name: 'NEO4J_URI',             value: neo4jUri }
+  { name: 'NEO4J_USER',            value: neo4jUser }
+  { name: 'OASIS_DEFAULT_MAX_ROUNDS',           value: oasisDefaultMaxRounds }
+  { name: 'REPORT_AGENT_MAX_TOOL_CALLS',        value: reportAgentMaxToolCalls }
+  { name: 'REPORT_AGENT_MAX_REFLECTION_ROUNDS', value: reportAgentMaxReflectionRounds }
+  { name: 'REPORT_AGENT_TEMPERATURE',           value: reportAgentTemperature }
+  { name: 'FLASK_DEBUG', value: 'False' }
+]
+var optionalEnv = concat(
+  empty(llmBoostApiKey) ? [] : [{ name: 'LLM_BOOST_API_KEY', secretRef: 'llm-boost-api-key' }],
+  empty(zepApiKey)      ? [] : [{ name: 'ZEP_API_KEY',       secretRef: 'zep-api-key' }],
+  empty(neo4jPassword)  ? [] : [{ name: 'NEO4J_PASSWORD',    secretRef: 'neo4j-password' }]
+)
+var allEnv = concat(mandatoryEnv, optionalEnv)
+
 // ─── Container App ─────────────────────────────────────────────────────────────
 resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: projectName
@@ -115,16 +154,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
     managedEnvironmentId: containerAppsEnvId
 
     configuration: {
-      // Secrets: credencials ACR + variables sensibles de l'aplicació
-      secrets: [
-        { name: 'acr-password',        value: acrPassword }
-        { name: 'demo-password',        value: demoPassword }
-        { name: 'llm-api-key',          value: llmApiKey }
-        { name: 'llm-boost-api-key',    value: llmBoostApiKey }
-        { name: 'zep-api-key',          value: zepApiKey }
-        { name: 'neo4j-password',       value: neo4jPassword }
-        { name: 'secret-key',           value: secretKey }
-      ]
+      secrets: allSecrets
 
       // Credencials del registre privat (ACR)
       registries: [
@@ -155,39 +185,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: projectName
           image: containerImage
-
-          env: [
-            // ── Secrets referenciats per nom (mai valor en text pla) ──
-            { name: 'DEMO_PASSWORD',         secretRef: 'demo-password' }
-            { name: 'LLM_API_KEY',           secretRef: 'llm-api-key' }
-            { name: 'LLM_BOOST_API_KEY',     secretRef: 'llm-boost-api-key' }
-            { name: 'ZEP_API_KEY',           secretRef: 'zep-api-key' }
-            { name: 'NEO4J_PASSWORD',        secretRef: 'neo4j-password' }
-            { name: 'SECRET_KEY',            secretRef: 'secret-key' }
-
-            // ── Variables no sensibles ──
-            { name: 'LLM_BASE_URL',          value: llmBaseUrl }
-            { name: 'LLM_MODEL_NAME',        value: llmModelName }
-            { name: 'LLM_PROVIDER',          value: llmProvider }
-            { name: 'LLM_BOOST_BASE_URL',    value: llmBoostBaseUrl }
-            { name: 'LLM_BOOST_MODEL_NAME',  value: llmBoostModelName }
-
-            // ── Backend de graf ──
-            { name: 'GRAPH_BACKEND',         value: graphBackend }
-            { name: 'NEO4J_URI',             value: neo4jUri }
-            { name: 'NEO4J_USER',            value: neo4jUser }
-
-            // ── Simulació OASIS ──
-            { name: 'OASIS_DEFAULT_MAX_ROUNDS', value: oasisDefaultMaxRounds }
-
-            // ── Report Agent ──
-            { name: 'REPORT_AGENT_MAX_TOOL_CALLS',        value: reportAgentMaxToolCalls }
-            { name: 'REPORT_AGENT_MAX_REFLECTION_ROUNDS', value: reportAgentMaxReflectionRounds }
-            { name: 'REPORT_AGENT_TEMPERATURE',           value: reportAgentTemperature }
-
-            // ── Flask ──
-            { name: 'FLASK_DEBUG', value: 'False' }
-          ]
+          env: allEnv
 
           // Recursos mínim viable — escalar horitzontalment via rèpliques
           resources: {
