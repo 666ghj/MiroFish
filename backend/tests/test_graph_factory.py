@@ -36,6 +36,24 @@ def test_config_zep_errors_when_key_missing():
         cfg_mod.Config.ZEP_API_KEY = orig_key
 
 
+def test_zep_backend_implements_interface():
+    from backend.app.graph.base import GraphBackend
+    from backend.app.graph.zep_backend import ZepBackend
+    assert issubclass(ZepBackend, GraphBackend)
+
+
+def test_zep_backend_raises_without_key():
+    import backend.app.config as cfg_mod
+    orig = cfg_mod.Config.ZEP_API_KEY
+    try:
+        cfg_mod.Config.ZEP_API_KEY = None
+        from backend.app.graph.zep_backend import ZepBackend
+        with pytest.raises(ValueError, match="ZEP_API_KEY"):
+            ZepBackend()
+    finally:
+        cfg_mod.Config.ZEP_API_KEY = orig
+
+
 def test_config_graphiti_errors_when_missing():
     import backend.app.config as cfg_mod
     orig_backend = cfg_mod.Config.GRAPH_BACKEND
