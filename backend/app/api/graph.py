@@ -282,6 +282,7 @@ def build_graph():
     """
     try:
         logger.info("=== Starting graph build ===")
+        logger.info(f"GRAPH_BACKEND={Config.GRAPH_BACKEND!r} ZEP_API_KEY={'set' if Config.ZEP_API_KEY else 'unset'} NEO4J_PASSWORD={'set' if Config.NEO4J_PASSWORD else 'unset'}")
 
         # Check configuration
         errors = Config.get_graph_config_errors()
