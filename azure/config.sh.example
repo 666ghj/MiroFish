@@ -56,6 +56,19 @@ ZEP_API_KEY="<la-teva-zep-api-key>"
 # NEO4J_URI="bolt://<ip-o-hostname>:7687"
 # NEO4J_USER="neo4j"
 # NEO4J_PASSWORD="<contrasenya-neo4j>"
+# GRAPHITI_BATCH_SIZE="10"  # chunks per crida bulk; més alt = més ràpid però més paral·lelisme LLM
+
+# --- Embedding LLM (usat per Graphiti per a indexació vectorial) ---
+# Si no s'estableix, fa fallback a LLM_API_KEY / LLM_BASE_URL.
+# LLM_EMBED_API_KEY="<la-teva-embed-api-key>"
+# LLM_EMBED_BASE_URL="https://<recurs>.cognitiveservices.azure.com/openai/deployments/<embed-deployment>/embeddings?api-version=2024-05-01-preview"
+# LLM_EMBED_MODEL_NAME="text-embedding-3-small"
+
+# --- Small/fast LLM (usat per Graphiti per a reranking i tasques lleugeres) ---
+# Si no s'estableix, fa fallback a LLM_API_KEY / LLM_BASE_URL / LLM_MODEL_NAME.
+# LLM_SMALL_API_KEY="<la-teva-small-api-key>"
+# LLM_SMALL_BASE_URL="https://<recurs>.cognitiveservices.azure.com/openai/deployments/<small-model>/chat/completions?api-version=2024-05-01-preview"
+# LLM_SMALL_MODEL_NAME="gpt-4o-mini"
 
 # ── Simulació OASIS (valors per defecte recomanats) ───────────────────────────
 OASIS_DEFAULT_MAX_ROUNDS="10"

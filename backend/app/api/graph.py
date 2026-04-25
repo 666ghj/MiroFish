@@ -284,9 +284,7 @@ def build_graph():
         logger.info("=== Starting graph build ===")
 
         # Check configuration
-        errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append(t('api.zepApiKeyMissing'))
+        errors = Config.get_graph_config_errors()
         if errors:
             logger.error(f"Configuration error: {errors}")
             return jsonify({
@@ -387,7 +385,7 @@ def build_graph():
                 )
                 
                 # Create graph builder service
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                builder = GraphBuilderService()
 
                 # Split into chunks
                 task_manager.update_task(
@@ -437,10 +435,11 @@ def build_graph():
                     progress=15
                 )
                 
+                batch_size = Config.GRAPHITI_BATCH_SIZE if Config.GRAPH_BACKEND == 'graphiti' else 3
                 episode_uuids = builder.add_text_batches(
-                    graph_id, 
+                    graph_id,
                     chunks,
-                    batch_size=3,
+                    batch_size=batch_size,
                     progress_callback=add_progress_callback
                 )
                 
@@ -572,13 +571,7 @@ def get_graph_data(graph_id: str):
     Get graph data (nodes and edges)
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         graph_data = builder.get_graph_data(graph_id)
         
         return jsonify({
@@ -600,13 +593,7 @@ def delete_graph(graph_id: str):
     Delete a Zep graph
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         builder.delete_graph(graph_id)
         
         return jsonify({
