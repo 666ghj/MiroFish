@@ -127,6 +127,8 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+> **Running with a local LLM?** MiroFish supports any OpenAI-compatible endpoint. Some local runtimes (LM Studio, llama.cpp server) reject the `response_format` parameter — set `LLM_JSON_MODE=none` to opt out. See [docs/LOCAL_LLM.md](./docs/LOCAL_LLM.md) for full setup recipes (LM Studio, Ollama, llama.cpp) and Apple Silicon caveats.
+
 #### 2. Install Dependencies
 
 ```bash
