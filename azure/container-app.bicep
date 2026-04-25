@@ -49,9 +49,13 @@ param llmApiKey string
 @secure()
 param llmBoostApiKey string = ''
 
-@description('Clau de l\'API Zep Cloud')
+@description('Clau de l\'API Zep Cloud (obligatori si GRAPH_BACKEND=zep)')
 @secure()
-param zepApiKey string
+param zepApiKey string = ''
+
+@description('Contrasenya de Neo4j (obligatori si GRAPH_BACKEND=graphiti)')
+@secure()
+param neo4jPassword string = ''
 
 @description('SECRET_KEY de Flask per a JWT (python -c "import secrets; print(secrets.token_hex(32))")')
 @secure()
@@ -64,6 +68,20 @@ param llmBaseUrl string = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 
 @description('Nom del model LLM principal')
 param llmModelName string = 'qwen-plus'
+
+@description('Proveïdor LLM (gemini per a Google AI Studio; buit per a qualsevol compatible OpenAI)')
+param llmProvider string = ''
+
+// ─── Paràmetres del backend de graf ──────────────────────────────────────────
+
+@description('Backend de graf: zep (Zep Cloud) o graphiti (Neo4j local/Azure)')
+param graphBackend string = 'zep'
+
+@description('URI de connexió bolt de Neo4j (necessari si GRAPH_BACKEND=graphiti)')
+param neo4jUri string = 'bolt://localhost:7687'
+
+@description('Usuari de Neo4j')
+param neo4jUser string = 'neo4j'
 
 // ─── Paràmetres LLM accelerador (opcionals) ──────────────────────────────────
 
@@ -104,6 +122,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'llm-api-key',          value: llmApiKey }
         { name: 'llm-boost-api-key',    value: llmBoostApiKey }
         { name: 'zep-api-key',          value: zepApiKey }
+        { name: 'neo4j-password',       value: neo4jPassword }
         { name: 'secret-key',           value: secretKey }
       ]
 
@@ -143,13 +162,20 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'LLM_API_KEY',           secretRef: 'llm-api-key' }
             { name: 'LLM_BOOST_API_KEY',     secretRef: 'llm-boost-api-key' }
             { name: 'ZEP_API_KEY',           secretRef: 'zep-api-key' }
+            { name: 'NEO4J_PASSWORD',        secretRef: 'neo4j-password' }
             { name: 'SECRET_KEY',            secretRef: 'secret-key' }
 
             // ── Variables no sensibles ──
             { name: 'LLM_BASE_URL',          value: llmBaseUrl }
             { name: 'LLM_MODEL_NAME',        value: llmModelName }
+            { name: 'LLM_PROVIDER',          value: llmProvider }
             { name: 'LLM_BOOST_BASE_URL',    value: llmBoostBaseUrl }
             { name: 'LLM_BOOST_MODEL_NAME',  value: llmBoostModelName }
+
+            // ── Backend de graf ──
+            { name: 'GRAPH_BACKEND',         value: graphBackend }
+            { name: 'NEO4J_URI',             value: neo4jUri }
+            { name: 'NEO4J_USER',            value: neo4jUser }
 
             // ── Simulació OASIS ──
             { name: 'OASIS_DEFAULT_MAX_ROUNDS', value: oasisDefaultMaxRounds }

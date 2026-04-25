@@ -28,7 +28,8 @@ WORKDIR /app
 
 # Copiar i instal·lar dependències Python (aprofita caché si pyproject.toml no canvia)
 COPY backend/pyproject.toml backend/uv.lock ./backend/
-RUN cd backend && uv sync --frozen --no-dev
+# Install all optional extras so the image supports any GRAPH_BACKEND at runtime
+RUN cd backend && uv sync --frozen --no-dev --extra graphiti
 
 # Copiar el codi font del backend i els fitxers compartits
 COPY backend/ ./backend/

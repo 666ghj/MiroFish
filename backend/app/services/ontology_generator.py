@@ -8,7 +8,8 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
-from ..utils.locale import get_language_instruction
+from ..utils.locale import get_language_instruction, t
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -62,29 +63,29 @@ Please output JSON format with the following structure:
 {
     "entity_types": [
         {
-            "name": "Entity type name (English, PascalCase)",
-            "description": "Brief description (English, max 100 characters)",
+            "name": "Entity type name (PascalCase, in the language specified by the language instruction)",
+            "description": "Brief description (in the language specified by the language instruction, max 100 characters)",
             "attributes": [
                 {
-                    "name": "Attribute name (English, snake_case)",
+                    "name": "Attribute name (snake_case, in the language specified by the language instruction)",
                     "type": "text",
-                    "description": "Attribute description"
+                    "description": "Attribute description (in the language specified by the language instruction)"
                 }
             ],
-            "examples": ["Example entity 1", "Example entity 2"]
+            "examples": ["Example entity 1 (in the language specified by the language instruction)", "Example entity 2"]
         }
     ],
     "edge_types": [
         {
-            "name": "Relationship type name (English, UPPER_SNAKE_CASE)",
-            "description": "Brief description (English, max 100 characters)",
+            "name": "Relationship type name (UPPER_SNAKE_CASE, in the language specified by the language instruction)",
+            "description": "Brief description (in the language specified by the language instruction, max 100 characters)",
             "source_targets": [
                 {"source": "Source entity type", "target": "Target entity type"}
             ],
             "attributes": []
         }
     ],
-    "analysis_summary": "Brief analysis summary of the text content"
+    "analysis_summary": "Brief analysis summary of the text content (in the language specified by the language instruction)"
 }
 ```
 
@@ -92,20 +93,21 @@ Please output JSON format with the following structure:
 
 ### 1. Entity Type Design — Must Be Strictly Followed
 
-**Quantity requirement: exactly 10 entity types**
+**Quantity requirement: see the mandatory rules in the user message**
 
 **Hierarchy requirement (must include both specific types and fallback types)**:
 
-Your 10 entity types must include the following levels:
+Your entity types must include the following levels:
 
 A. **Fallback types (required, placed as the last 2 in the list)**:
    - `Person`: Fallback type for any individual person. Use this when a person does not fit any other more specific person type.
    - `Organization`: Fallback type for any organization. Use this when an organization does not fit any other more specific organization type.
 
-B. **Specific types (8 types, designed based on text content)**:
+B. **Specific types (designed based on text content)**:
    - Design more specific types for the main roles that appear in the text
-   - Example: if the text involves an academic event, you might have `Student`, `Professor`, `University`
-   - Example: if the text involves a business event, you might have `Company`, `CEO`, `Employee`
+   - Example: if the text involves an academic event, you might have `Student`, `Professor`, `University`, `ResearchGroup`, `Alumni`, etc.
+   - Example: if the text involves a business event, you might have `Company`, `CEO`, `Employee`, `Investor`, `Regulator`, etc.
+   - Ensure broad coverage of all actor categories present in the text
 
 **Why fallback types are needed**:
 - Various people appear in text, such as "primary and secondary school teachers", "passersby", "some netizen"
@@ -119,9 +121,10 @@ B. **Specific types (8 types, designed based on text content)**:
 
 ### 2. Relationship Type Design
 
-- Quantity: 6-10
+- Quantity: see the mandatory rules in the user message
 - Relationships should reflect real connections in social media interactions
 - Ensure the source_targets in relationships cover the entity types you have defined
+- Aim for rich coverage: include hierarchical, collaborative, adversarial, and informational relationships
 
 ### 3. Attribute Design
 
@@ -129,47 +132,23 @@ B. **Specific types (8 types, designed based on text content)**:
 - **Note**: Attribute names must not use `name`, `uuid`, `group_id`, `created_at`, `summary` (these are system reserved words)
 - Recommended: `full_name`, `title`, `role`, `position`, `location`, `description`, etc.
 
-## Entity Type Reference
+## Entity and Relationship Type Reference
 
-**Individual types (specific)**:
-- Student: student
-- Professor: professor/scholar
-- Journalist: journalist
-- Celebrity: celebrity/influencer
-- Executive: corporate executive
-- Official: government official
-- Lawyer: lawyer
-- Doctor: doctor
+Use the language specified in the language instruction for ALL names. Keep PascalCase for entity names and UPPER_SNAKE_CASE for relationship names, but use words from the target language.
 
-**Individual types (fallback)**:
-- Person: any individual (use when not fitting the specific types above)
+**Individual type examples** (translate to target language):
+- A person who is a student → StudentName in target language, PascalCase
+- A person who is a journalist → JournalistName in target language, PascalCase
+- Fallback for any individual → PersonName in target language, PascalCase
 
-**Organization types (specific)**:
-- University: university/college
-- Company: company/enterprise
-- GovernmentAgency: government agency
-- MediaOutlet: media organization
-- Hospital: hospital
-- School: primary/secondary school
-- NGO: non-governmental organization
+**Organization type examples** (translate to target language):
+- A university → UniversityName in target language, PascalCase
+- A government agency → AgencyName in target language, PascalCase
+- Fallback for any organization → OrganizationName in target language, PascalCase
 
-**Organization types (fallback)**:
-- Organization: any organization (use when not fitting the specific types above)
-
-## Relationship Type Reference
-
-- WORKS_FOR: works for
-- STUDIES_AT: studies at
-- AFFILIATED_WITH: affiliated with
-- REPRESENTS: represents
-- REGULATES: regulates
-- REPORTS_ON: reports on
-- COMMENTS_ON: comments on
-- RESPONDS_TO: responds to
-- SUPPORTS: supports
-- OPPOSES: opposes
-- COLLABORATES_WITH: collaborates with
-- COMPETES_WITH: competes with
+**Relationship type examples** (translate to target language):
+- works for → WORKS_FOR translated to target language, UPPER_SNAKE_CASE
+- reports on → REPORTS_ON translated to target language, UPPER_SNAKE_CASE
 """
 
 
@@ -209,17 +188,17 @@ class OntologyGenerator:
             lang_instruction
         )
 
-        system_prompt = f"LANGUAGE INSTRUCTION (HIGHEST PRIORITY — MUST BE FOLLOWED): {lang_instruction} All description fields, analysis_summary, and examples MUST be written in this language.\n\n{ONTOLOGY_SYSTEM_PROMPT}\n\n{lang_instruction}\nIMPORTANT: Entity type names MUST be in English PascalCase (e.g., 'PersonEntity', 'MediaOrganization'). Relationship type names MUST be in English UPPER_SNAKE_CASE (e.g., 'WORKS_FOR'). Attribute names MUST be in English snake_case. Only description fields and analysis_summary should use the specified language above."
+        system_prompt = f"LANGUAGE INSTRUCTION (HIGHEST PRIORITY — MUST BE FOLLOWED): {lang_instruction} ALL fields including names, descriptions, analysis_summary, and examples MUST be written in this language.\n\n{ONTOLOGY_SYSTEM_PROMPT}\n\n{lang_instruction}\nIMPORTANT: Entity type names MUST be in PascalCase (e.g., 'AgenciaGovern', 'FuncionariPublic'). Relationship type names MUST be in UPPER_SNAKE_CASE (e.g., 'TREBALLA_PER', 'RESPON_A'). Attribute names MUST be in snake_case. All names, descriptions, and examples must use the language specified above."
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
         ]
 
-        # Call LLM
+        # Call LLM — token budget scales with ONTOLOGY_MAX_ENTITY_TYPES / ONTOLOGY_MAX_EDGE_TYPES
         result = self.llm_client.chat_json(
             messages=messages,
             temperature=0.3,
-            max_tokens=4096
+            max_tokens=8192
         )
 
         # Validate and post-process
@@ -264,15 +243,21 @@ class OntologyGenerator:
 {additional_context}
 """
 
+        max_entities = Config.ONTOLOGY_MAX_ENTITY_TYPES
+        max_edges = Config.ONTOLOGY_MAX_EDGE_TYPES
+        specific_entities = max_entities - 2
+        edge_min = max(1, max_edges - 2)
+
         message += f"""
 Based on the content above, design entity types and relationship types suitable for social opinion simulation.
 
 **Mandatory rules**:
-1. Output exactly 10 entity types
+1. Output exactly {max_entities} entity types
 2. The last 2 must be fallback types: Person (individual fallback) and Organization (organization fallback)
-3. The first 8 are specific types designed from the document content
+3. The first {specific_entities} are specific types designed from the document content
 4. All entity types must be real-world subjects capable of speaking out, not abstract concepts
 5. Attribute names must not use reserved words: name, uuid, group_id — use full_name, org_name, etc. instead
+6. Output {edge_min}-{max_edges} relationship types covering hierarchical, collaborative, adversarial, and informational relationships
 
 {lang_instruction}
 """
@@ -330,9 +315,8 @@ Based on the content above, design entity types and relationship types suitable 
             if len(edge.get("description", "")) > 100:
                 edge["description"] = edge["description"][:97] + "..."
 
-        # Zep API limit: maximum 10 custom entity types and 10 custom edge types
-        MAX_ENTITY_TYPES = 10
-        MAX_EDGE_TYPES = 10
+        MAX_ENTITY_TYPES = Config.ONTOLOGY_MAX_ENTITY_TYPES
+        MAX_EDGE_TYPES = Config.ONTOLOGY_MAX_EDGE_TYPES
 
         # Deduplicate: keep first occurrence by name
         seen_names = set()
@@ -346,31 +330,35 @@ Based on the content above, design entity types and relationship types suitable 
                 logger.warning(f"Duplicate entity type '{name}' removed during validation")
         result["entity_types"] = deduped
 
-        # Fallback type definitions
+        # Fallback type definitions — names and descriptions come from i18n so they match
+        # the locale used for the rest of the ontology (e.g. "Persona"/"Organització" in Catalan).
+        person_fallback_name = _to_pascal_case(t("step1.ontologyFallbackPersonName") or "Person")
+        org_fallback_name = _to_pascal_case(t("step1.ontologyFallbackOrgName") or "Organization")
+
         person_fallback = {
-            "name": "Person",
-            "description": "Any individual person not fitting other specific person types.",
+            "name": person_fallback_name,
+            "description": t("step1.ontologyFallbackPersonDesc") or "Any individual person not fitting other specific person types.",
             "attributes": [
                 {"name": "full_name", "type": "text", "description": "Full name of the person"},
                 {"name": "role", "type": "text", "description": "Role or occupation"}
             ],
-            "examples": ["ordinary citizen", "anonymous netizen"]
+            "examples": t("step1.ontologyFallbackPersonExamples") or ["ordinary citizen", "anonymous netizen"]
         }
 
         organization_fallback = {
-            "name": "Organization",
-            "description": "Any organization not fitting other specific organization types.",
+            "name": org_fallback_name,
+            "description": t("step1.ontologyFallbackOrgDesc") or "Any organization not fitting other specific organization types.",
             "attributes": [
                 {"name": "org_name", "type": "text", "description": "Name of the organization"},
                 {"name": "org_type", "type": "text", "description": "Type of organization"}
             ],
-            "examples": ["small business", "community group"]
+            "examples": t("step1.ontologyFallbackOrgExamples") or ["small business", "community group"]
         }
 
-        # Check whether fallback types already exist
+        # Check whether fallback types already exist (match by i18n name)
         entity_names = {e["name"] for e in result["entity_types"]}
-        has_person = "Person" in entity_names
-        has_organization = "Organization" in entity_names
+        has_person = person_fallback_name in entity_names
+        has_organization = org_fallback_name in entity_names
 
         # Collect fallback types to add
         fallbacks_to_add = []
@@ -383,11 +371,9 @@ Based on the content above, design entity types and relationship types suitable 
             current_count = len(result["entity_types"])
             needed_slots = len(fallbacks_to_add)
 
-            # If adding them would exceed 10, remove some existing types
+            # If adding them would exceed the limit, remove some existing types from the end
             if current_count + needed_slots > MAX_ENTITY_TYPES:
-                # Calculate how many to remove
                 to_remove = current_count + needed_slots - MAX_ENTITY_TYPES
-                # Remove from the end (preserve the more important specific types at the front)
                 result["entity_types"] = result["entity_types"][:-to_remove]
 
             # Add fallback types

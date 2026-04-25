@@ -7,11 +7,9 @@ import time
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
-
 from ..config import Config
+from ..graph import get_graph_backend
 from ..utils.logger import get_logger
-from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_entity_reader')
 
@@ -79,11 +77,7 @@ class ZepEntityReader:
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY is not configured")
-
-        self.client = Zep(api_key=self.api_key)
+        self._graph = get_graph_backend()
 
     def _call_with_retry(
         self,
@@ -136,18 +130,7 @@ class ZepEntityReader:
         """
         logger.info(f"Fetching all nodes for graph {graph_id}...")
 
-        nodes = fetch_all_nodes(self.client, graph_id)
-
-        nodes_data = []
-        for node in nodes:
-            nodes_data.append({
-                "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
-                "name": node.name or "",
-                "labels": node.labels or [],
-                "summary": node.summary or "",
-                "attributes": node.attributes or {},
-            })
-
+        nodes_data = self._graph.get_all_nodes(graph_id)
         logger.info(f"Fetched {len(nodes_data)} nodes")
         return nodes_data
 
@@ -163,19 +146,7 @@ class ZepEntityReader:
         """
         logger.info(f"Fetching all edges for graph {graph_id}...")
 
-        edges = fetch_all_edges(self.client, graph_id)
-
-        edges_data = []
-        for edge in edges:
-            edges_data.append({
-                "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
-                "name": edge.name or "",
-                "fact": edge.fact or "",
-                "source_node_uuid": edge.source_node_uuid,
-                "target_node_uuid": edge.target_node_uuid,
-                "attributes": edge.attributes or {},
-            })
-
+        edges_data = self._graph.get_all_edges(graph_id)
         logger.info(f"Fetched {len(edges_data)} edges")
         return edges_data
 
@@ -190,24 +161,7 @@ class ZepEntityReader:
             Edge list
         """
         try:
-            # Call Zep API with retry
-            edges = self._call_with_retry(
-                func=lambda: self.client.graph.node.get_entity_edges(node_uuid=node_uuid),
-                operation_name=f"get node edges (node={node_uuid[:8]}...)"
-            )
-
-            edges_data = []
-            for edge in edges:
-                edges_data.append({
-                    "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
-                    "name": edge.name or "",
-                    "fact": edge.fact or "",
-                    "source_node_uuid": edge.source_node_uuid,
-                    "target_node_uuid": edge.target_node_uuid,
-                    "attributes": edge.attributes or {},
-                })
-
-            return edges_data
+            return self._graph.get_node_edges(node_uuid)
         except Exception as e:
             logger.warning(f"Failed to get edges for node {node_uuid}: {str(e)}")
             return []
@@ -346,11 +300,7 @@ class ZepEntityReader:
             EntityNode or None
         """
         try:
-            # Get the node with retry
-            node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=entity_uuid),
-                operation_name=f"get node detail (uuid={entity_uuid[:8]}...)"
-            )
+            node = self._graph.get_node(entity_uuid)
 
             if not node:
                 return None
@@ -397,11 +347,11 @@ class ZepEntityReader:
                     })
 
             return EntityNode(
-                uuid=getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
-                name=node.name or "",
-                labels=node.labels or [],
-                summary=node.summary or "",
-                attributes=node.attributes or {},
+                uuid=node.get("uuid", ""),
+                name=node.get("name", ""),
+                labels=node.get("labels", []),
+                summary=node.get("summary", ""),
+                attributes=node.get("attributes", {}),
                 related_edges=related_edges,
                 related_nodes=related_nodes,
             )

@@ -77,10 +77,12 @@
             <div class="detail-section" v-if="selectedItem.data.attributes && Object.keys(selectedItem.data.attributes).length > 0">
               <div class="section-title">Properties:</div>
               <div class="properties-list">
-                <div v-for="(value, key) in selectedItem.data.attributes" :key="key" class="property-item">
-                  <span class="property-key">{{ key }}:</span>
-                  <span class="property-value">{{ value || 'None' }}</span>
-                </div>
+                <template v-for="(value, key) in selectedItem.data.attributes" :key="key">
+                  <div class="property-item" v-if="!String(key).endsWith('_embedding') && !Array.isArray(value) && key !== 'summary'">
+                    <span class="property-key">{{ key }}:</span>
+                    <span class="property-value">{{ value || 'None' }}</span>
+                  </div>
+                </template>
               </div>
             </div>
             
@@ -288,8 +290,10 @@ const entityTypes = computed(() => {
   // 美观的颜色调色板
   const colors = ['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C', '#3498db', '#9b59b6', '#27ae60', '#f39c12']
   
-  props.graphData.nodes.forEach(node => {
-    const type = node.labels?.find(l => l !== 'Entity') || 'Entity'
+  const HIDDEN = new Set(['Episodic', 'Community', 'EpisodicEdge'])
+  const SKIP = new Set(['Entity', 'Episodic', 'Community'])
+  props.graphData.nodes.filter(n => !n.labels?.some(l => HIDDEN.has(l))).forEach(node => {
+    const type = node.labels?.find(l => !SKIP.has(l)) || 'Entity'
     if (!typeMap[type]) {
       typeMap[type] = { name: type, count: 0, color: colors[Object.keys(typeMap).length % colors.length] }
     }
@@ -344,19 +348,23 @@ const renderGraph = () => {
     
   svg.selectAll('*').remove()
   
-  const nodesData = props.graphData.nodes || []
+  const HIDDEN_LABELS = new Set(['Episodic', 'Community', 'EpisodicEdge'])
+  const nodesData = (props.graphData.nodes || []).filter(
+    n => !n.labels?.some(l => HIDDEN_LABELS.has(l))
+  )
   const edgesData = props.graphData.edges || []
-  
+
   if (nodesData.length === 0) return
 
   // Prep data
   const nodeMap = {}
   nodesData.forEach(n => nodeMap[n.uuid] = n)
-  
+
+  const SKIP_TYPE_LABELS = new Set(['Entity', 'Episodic', 'Community'])
   const nodes = nodesData.map(n => ({
     id: n.uuid,
     name: n.name || 'Unnamed',
-    type: n.labels?.find(l => l !== 'Entity') || 'Entity',
+    type: n.labels?.find(l => !SKIP_TYPE_LABELS.has(l)) || 'Entity',
     rawData: n
   }))
   
