@@ -91,6 +91,35 @@ param llmBoostBaseUrl string = ''
 @description('Nom del model LLM accelerador (opcional)')
 param llmBoostModelName string = ''
 
+// ─── Paràmetres LLM embeddings (opcionals — fallback a LLM principal) ─────────
+
+@description('Clau API LLM embeddings (opcional)')
+@secure()
+param llmEmbedApiKey string = ''
+
+@description('URL base LLM embeddings (opcional)')
+param llmEmbedBaseUrl string = ''
+
+@description('Nom del model d\'embeddings')
+param llmEmbedModelName string = ''
+
+// ─── Paràmetres LLM petit/ràpid (opcionals — fallback a LLM principal) ────────
+
+@description('Clau API LLM petit (opcional)')
+@secure()
+param llmSmallApiKey string = ''
+
+@description('URL base LLM petit (opcional)')
+param llmSmallBaseUrl string = ''
+
+@description('Nom del model LLM petit (opcional)')
+param llmSmallModelName string = ''
+
+// ─── Paràmetres Neo4j addicionals ─────────────────────────────────────────────
+
+@description('Nom de la base de dades Neo4j')
+param neo4jDatabase string = 'neo4j'
+
 // ─── Paràmetres de simulació OASIS ───────────────────────────────────────────
 
 @description('Nombre màxim de rondes per a la simulació OASIS')
@@ -115,9 +144,11 @@ var mandatorySecrets = [
   { name: 'secret-key',    value: secretKey }
 ]
 var optionalSecrets = concat(
-  empty(llmBoostApiKey) ? [] : [{ name: 'llm-boost-api-key', value: llmBoostApiKey }],
-  empty(zepApiKey)      ? [] : [{ name: 'zep-api-key',       value: zepApiKey }],
-  empty(neo4jPassword)  ? [] : [{ name: 'neo4j-password',    value: neo4jPassword }]
+  empty(llmBoostApiKey)  ? [] : [{ name: 'llm-boost-api-key',  value: llmBoostApiKey }],
+  empty(llmEmbedApiKey)  ? [] : [{ name: 'llm-embed-api-key',  value: llmEmbedApiKey }],
+  empty(llmSmallApiKey)  ? [] : [{ name: 'llm-small-api-key',  value: llmSmallApiKey }],
+  empty(zepApiKey)       ? [] : [{ name: 'zep-api-key',        value: zepApiKey }],
+  empty(neo4jPassword)   ? [] : [{ name: 'neo4j-password',     value: neo4jPassword }]
 )
 var allSecrets = concat(mandatorySecrets, optionalSecrets)
 
@@ -133,6 +164,11 @@ var mandatoryEnv = [
   { name: 'GRAPH_BACKEND',         value: graphBackend }
   { name: 'NEO4J_URI',             value: neo4jUri }
   { name: 'NEO4J_USER',            value: neo4jUser }
+  { name: 'NEO4J_DATABASE',        value: neo4jDatabase }
+  { name: 'LLM_EMBED_BASE_URL',    value: llmEmbedBaseUrl }
+  { name: 'LLM_EMBED_MODEL_NAME',  value: llmEmbedModelName }
+  { name: 'LLM_SMALL_BASE_URL',    value: llmSmallBaseUrl }
+  { name: 'LLM_SMALL_MODEL_NAME',  value: llmSmallModelName }
   { name: 'OASIS_DEFAULT_MAX_ROUNDS',           value: oasisDefaultMaxRounds }
   { name: 'REPORT_AGENT_MAX_TOOL_CALLS',        value: reportAgentMaxToolCalls }
   { name: 'REPORT_AGENT_MAX_REFLECTION_ROUNDS', value: reportAgentMaxReflectionRounds }
@@ -140,9 +176,11 @@ var mandatoryEnv = [
   { name: 'FLASK_DEBUG', value: 'False' }
 ]
 var optionalEnv = concat(
-  empty(llmBoostApiKey) ? [] : [{ name: 'LLM_BOOST_API_KEY', secretRef: 'llm-boost-api-key' }],
-  empty(zepApiKey)      ? [] : [{ name: 'ZEP_API_KEY',       secretRef: 'zep-api-key' }],
-  empty(neo4jPassword)  ? [] : [{ name: 'NEO4J_PASSWORD',    secretRef: 'neo4j-password' }]
+  empty(llmBoostApiKey) ? [] : [{ name: 'LLM_BOOST_API_KEY',  secretRef: 'llm-boost-api-key' }],
+  empty(llmEmbedApiKey) ? [] : [{ name: 'LLM_EMBED_API_KEY',  secretRef: 'llm-embed-api-key' }],
+  empty(llmSmallApiKey) ? [] : [{ name: 'LLM_SMALL_API_KEY',  secretRef: 'llm-small-api-key' }],
+  empty(zepApiKey)      ? [] : [{ name: 'ZEP_API_KEY',        secretRef: 'zep-api-key' }],
+  empty(neo4jPassword)  ? [] : [{ name: 'NEO4J_PASSWORD',     secretRef: 'neo4j-password' }]
 )
 var allEnv = concat(mandatoryEnv, optionalEnv)
 
