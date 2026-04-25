@@ -29,8 +29,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # ── Validar variables obligatòries ───────────────────────────────────────────
 REQUIRED_VARS=(
   AZURE_SUBSCRIPTION_ID RESOURCE_GROUP PROJECT_NAME
-  DEMO_PASSWORD SECRET_KEY LLM_API_KEY LLM_BASE_URL LLM_MODEL_NAME ZEP_API_KEY
+  DEMO_PASSWORD SECRET_KEY LLM_API_KEY LLM_BASE_URL LLM_MODEL_NAME
 )
+# Validate graph backend config
+GRAPH_BACKEND="${GRAPH_BACKEND:-zep}"
+if [[ "$GRAPH_BACKEND" == "zep" && -z "${ZEP_API_KEY:-}" ]]; then
+  echo "ERROR: ZEP_API_KEY is required when GRAPH_BACKEND=zep"
+  exit 1
+fi
+if [[ "$GRAPH_BACKEND" == "graphiti" && -z "${NEO4J_PASSWORD:-}" ]]; then
+  echo "ERROR: NEO4J_PASSWORD is required when GRAPH_BACKEND=graphiti"
+  exit 1
+fi
 for var in "${REQUIRED_VARS[@]}"; do
   if [[ -z "${!var:-}" ]]; then
     echo "ERROR: La variable $var no està configurada a config.sh"
@@ -124,7 +134,12 @@ DEPLOY_OUTPUT=$(az deployment group create \
       demoPassword="$DEMO_PASSWORD" \
       llmApiKey="$LLM_API_KEY" \
       llmBoostApiKey="${LLM_BOOST_API_KEY:-}" \
-      zepApiKey="$ZEP_API_KEY" \
+      llmProvider="${LLM_PROVIDER:-}" \
+      zepApiKey="${ZEP_API_KEY:-}" \
+      neo4jPassword="${NEO4J_PASSWORD:-}" \
+      neo4jUri="${NEO4J_URI:-bolt://localhost:7687}" \
+      neo4jUser="${NEO4J_USER:-neo4j}" \
+      graphBackend="${GRAPH_BACKEND:-zep}" \
       secretKey="$SECRET_KEY" \
       llmBaseUrl="$LLM_BASE_URL" \
       llmModelName="$LLM_MODEL_NAME" \
