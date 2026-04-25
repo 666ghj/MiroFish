@@ -32,6 +32,18 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+
+    # Embedding LLM (used by Graphiti for vector indexing)
+    # Falls back to LLM_* values if not set
+    LLM_EMBED_API_KEY = os.environ.get('LLM_EMBED_API_KEY') or os.environ.get('LLM_API_KEY')
+    LLM_EMBED_BASE_URL = os.environ.get('LLM_EMBED_BASE_URL') or os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
+    LLM_EMBED_MODEL_NAME = os.environ.get('LLM_EMBED_MODEL_NAME', 'text-embedding-3-small')
+
+    # Small/fast LLM (used by Graphiti for lightweight tasks like reranking)
+    # Falls back to LLM_* values if not set
+    LLM_SMALL_API_KEY = os.environ.get('LLM_SMALL_API_KEY') or os.environ.get('LLM_API_KEY')
+    LLM_SMALL_BASE_URL = os.environ.get('LLM_SMALL_BASE_URL') or os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
+    LLM_SMALL_MODEL_NAME = os.environ.get('LLM_SMALL_MODEL_NAME') or os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
     # Graph backend: "zep" (default, cloud) o "graphiti" (Neo4j local)
     GRAPH_BACKEND = os.environ.get('GRAPH_BACKEND', 'zep')
@@ -43,6 +55,7 @@ class Config:
     NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
     NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
     NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
+    GRAPHITI_BATCH_SIZE = int(os.environ.get('GRAPHITI_BATCH_SIZE', '10'))
 
     # LLM provider ("" = OpenAI-compatible per defecte, "gemini" = Google AI Studio)
     LLM_PROVIDER = os.environ.get('LLM_PROVIDER', '')
@@ -55,6 +68,10 @@ class Config:
     # Text processing settings
     DEFAULT_CHUNK_SIZE = 500  # default chunk size
     DEFAULT_CHUNK_OVERLAP = 50  # default overlap size
+
+    # Ontology generation limits
+    ONTOLOGY_MAX_ENTITY_TYPES = int(os.environ.get('ONTOLOGY_MAX_ENTITY_TYPES', '12'))
+    ONTOLOGY_MAX_EDGE_TYPES = int(os.environ.get('ONTOLOGY_MAX_EDGE_TYPES', '10'))
 
     # OASIS simulation settings
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))

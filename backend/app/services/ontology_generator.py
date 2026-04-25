@@ -9,6 +9,7 @@ import re
 from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.locale import get_language_instruction, t
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -92,17 +93,17 @@ Please output JSON format with the following structure:
 
 ### 1. Entity Type Design — Must Be Strictly Followed
 
-**Quantity requirement: exactly 20 entity types**
+**Quantity requirement: see the mandatory rules in the user message**
 
 **Hierarchy requirement (must include both specific types and fallback types)**:
 
-Your 20 entity types must include the following levels:
+Your entity types must include the following levels:
 
 A. **Fallback types (required, placed as the last 2 in the list)**:
    - `Person`: Fallback type for any individual person. Use this when a person does not fit any other more specific person type.
    - `Organization`: Fallback type for any organization. Use this when an organization does not fit any other more specific organization type.
 
-B. **Specific types (18 types, designed based on text content)**:
+B. **Specific types (designed based on text content)**:
    - Design more specific types for the main roles that appear in the text
    - Example: if the text involves an academic event, you might have `Student`, `Professor`, `University`, `ResearchGroup`, `Alumni`, etc.
    - Example: if the text involves a business event, you might have `Company`, `CEO`, `Employee`, `Investor`, `Regulator`, etc.
@@ -120,7 +121,7 @@ B. **Specific types (18 types, designed based on text content)**:
 
 ### 2. Relationship Type Design
 
-- Quantity: 12-20
+- Quantity: see the mandatory rules in the user message
 - Relationships should reflect real connections in social media interactions
 - Ensure the source_targets in relationships cover the entity types you have defined
 - Aim for rich coverage: include hierarchical, collaborative, adversarial, and informational relationships
@@ -193,7 +194,7 @@ class OntologyGenerator:
             {"role": "user", "content": user_message}
         ]
 
-        # Call LLM — 20 entity types + 20 edge types need more tokens than the old 10+10
+        # Call LLM — token budget scales with ONTOLOGY_MAX_ENTITY_TYPES / ONTOLOGY_MAX_EDGE_TYPES
         result = self.llm_client.chat_json(
             messages=messages,
             temperature=0.3,
@@ -242,16 +243,21 @@ class OntologyGenerator:
 {additional_context}
 """
 
+        max_entities = Config.ONTOLOGY_MAX_ENTITY_TYPES
+        max_edges = Config.ONTOLOGY_MAX_EDGE_TYPES
+        specific_entities = max_entities - 2
+        edge_min = max(1, max_edges - 2)
+
         message += f"""
 Based on the content above, design entity types and relationship types suitable for social opinion simulation.
 
 **Mandatory rules**:
-1. Output exactly 20 entity types
+1. Output exactly {max_entities} entity types
 2. The last 2 must be fallback types: Person (individual fallback) and Organization (organization fallback)
-3. The first 18 are specific types designed from the document content
+3. The first {specific_entities} are specific types designed from the document content
 4. All entity types must be real-world subjects capable of speaking out, not abstract concepts
 5. Attribute names must not use reserved words: name, uuid, group_id — use full_name, org_name, etc. instead
-6. Output 12-20 relationship types covering hierarchical, collaborative, adversarial, and informational relationships
+6. Output {edge_min}-{max_edges} relationship types covering hierarchical, collaborative, adversarial, and informational relationships
 
 {lang_instruction}
 """
@@ -309,10 +315,8 @@ Based on the content above, design entity types and relationship types suitable 
             if len(edge.get("description", "")) > 100:
                 edge["description"] = edge["description"][:97] + "..."
 
-        # Limits: Graphiti/Neo4j has no hard cap; Zep Cloud allows max 10 of each.
-        # We keep a generous cap for Graphiti and enforce Zep's limit at build time via config.
-        MAX_ENTITY_TYPES = 20
-        MAX_EDGE_TYPES = 20
+        MAX_ENTITY_TYPES = Config.ONTOLOGY_MAX_ENTITY_TYPES
+        MAX_EDGE_TYPES = Config.ONTOLOGY_MAX_EDGE_TYPES
 
         # Deduplicate: keep first occurrence by name
         seen_names = set()
