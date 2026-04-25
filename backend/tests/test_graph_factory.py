@@ -11,3 +11,40 @@ def test_graph_backend_has_required_methods():
     ]
     for method in required:
         assert hasattr(GraphBackend, method), f"GraphBackend missing: {method}"
+
+
+def test_config_graph_backend_default():
+    import os
+    os.environ.pop("GRAPH_BACKEND", None)
+    import importlib
+    import backend.app.config as cfg_mod
+    importlib.reload(cfg_mod)
+    assert cfg_mod.Config.GRAPH_BACKEND == "zep"
+
+
+def test_config_zep_errors_when_key_missing():
+    import backend.app.config as cfg_mod
+    orig_backend = cfg_mod.Config.GRAPH_BACKEND
+    orig_key = cfg_mod.Config.ZEP_API_KEY
+    try:
+        cfg_mod.Config.GRAPH_BACKEND = "zep"
+        cfg_mod.Config.ZEP_API_KEY = None
+        errors = cfg_mod.Config.get_graph_config_errors()
+        assert any("ZEP_API_KEY" in e for e in errors)
+    finally:
+        cfg_mod.Config.GRAPH_BACKEND = orig_backend
+        cfg_mod.Config.ZEP_API_KEY = orig_key
+
+
+def test_config_graphiti_errors_when_missing():
+    import backend.app.config as cfg_mod
+    orig_backend = cfg_mod.Config.GRAPH_BACKEND
+    orig_pw = cfg_mod.Config.NEO4J_PASSWORD
+    try:
+        cfg_mod.Config.GRAPH_BACKEND = "graphiti"
+        cfg_mod.Config.NEO4J_PASSWORD = None
+        errors = cfg_mod.Config.get_graph_config_errors()
+        assert len(errors) >= 1
+    finally:
+        cfg_mod.Config.GRAPH_BACKEND = orig_backend
+        cfg_mod.Config.NEO4J_PASSWORD = orig_pw
