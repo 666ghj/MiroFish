@@ -25,6 +25,28 @@ def _neo4j_val(v: Any) -> Any:
     return v
 
 
+def _flatten_attributes(attrs: dict) -> dict:
+    """Flatten node.attributes so every value is a Neo4j-safe primitive.
+
+    Graphiti extracts entity attributes via a Pydantic model, but the raw LLM
+    response sometimes wraps each value in a nested dict (e.g. {"value": "CTTI"}).
+    Neo4j only accepts primitive types or arrays thereof, so we coerce any
+    dict/list value to its string representation.
+    """
+    result = {}
+    for k, v in attrs.items():
+        if v is None:
+            continue
+        if isinstance(v, dict):
+            # Unwrap {"value": "..."} pattern emitted by some LLMs; fall back to str()
+            result[k] = v.get("value") or v.get("text") or str(v)
+        elif isinstance(v, list):
+            result[k] = ", ".join(str(i) for i in v)
+        else:
+            result[k] = v
+    return result
+
+
 def _neo4j_props(node_or_rel: Any) -> Dict[str, Any]:
     """Return a JSON-safe dict of a Neo4j node or relationship's properties."""
     return {k: _neo4j_val(v) for k, v in dict(node_or_rel).items()}
@@ -69,7 +91,19 @@ def _make_azure_generic_client(config, client):
                     max_completion_tokens=max_tokens,
                     response_format=response_format,
                 )
-                return json.loads(response.choices[0].message.content or '{}')
+                raw = json.loads(response.choices[0].message.content or '{}')
+                if response_model is not None:
+                    # Validate through the Pydantic model and dump back to a flat dict
+                    # so that Neo4j never receives nested Maps as property values.
+                    try:
+                        raw = response_model.model_validate(raw).model_dump(
+                            mode='python', exclude_none=True
+                        )
+                        # Coerce any remaining non-primitive values to str
+                        raw = _flatten_attributes(raw)
+                    except Exception:
+                        pass
+                return raw
             except _openai.RateLimitError as e:
                 raise _RateLimitError from e
 
@@ -176,7 +210,7 @@ class GraphitiBackend(GraphBackend):
             client=async_embed_client,
         )
         cross_encoder = OpenAIRerankerClient(config=llm_config, client=async_small_client)
-        return Graphiti(
+        client = Graphiti(
             uri=self._uri,
             user=self._user,
             password=self._password,
@@ -184,6 +218,7 @@ class GraphitiBackend(GraphBackend):
             embedder=embedder,
             cross_encoder=cross_encoder,
         )
+        return client
 
     def create_graph(self, graph_id: str, name: str, description: str = "") -> None:
         logger.info(f"Graphiti graph namespace ready: {graph_id}")
