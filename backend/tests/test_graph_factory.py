@@ -54,6 +54,38 @@ def test_zep_backend_raises_without_key():
         cfg_mod.Config.ZEP_API_KEY = orig
 
 
+def test_factory_returns_zep_by_default():
+    import backend.app.graph.factory as fmod
+    import backend.app.config as cfg
+    orig_backend = cfg.Config.GRAPH_BACKEND
+    orig_key = cfg.Config.ZEP_API_KEY
+    try:
+        cfg.Config.GRAPH_BACKEND = "zep"
+        cfg.Config.ZEP_API_KEY = "test-key"
+        fmod._backend_instance = None
+        backend_instance = fmod.get_graph_backend()
+        from backend.app.graph.zep_backend import ZepBackend
+        assert isinstance(backend_instance, ZepBackend)
+    finally:
+        cfg.Config.GRAPH_BACKEND = orig_backend
+        cfg.Config.ZEP_API_KEY = orig_key
+        fmod._backend_instance = None
+
+
+def test_factory_raises_on_unknown_backend():
+    import backend.app.graph.factory as fmod
+    import backend.app.config as cfg
+    orig = cfg.Config.GRAPH_BACKEND
+    try:
+        cfg.Config.GRAPH_BACKEND = "unknown"
+        fmod._backend_instance = None
+        with pytest.raises(ValueError, match="Unknown GRAPH_BACKEND"):
+            fmod.get_graph_backend()
+    finally:
+        cfg.Config.GRAPH_BACKEND = orig
+        fmod._backend_instance = None
+
+
 def test_config_graphiti_errors_when_missing():
     import backend.app.config as cfg_mod
     orig_backend = cfg_mod.Config.GRAPH_BACKEND

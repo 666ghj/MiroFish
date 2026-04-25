@@ -1,1 +1,3 @@
-# Populated in Task 4 once factory.py exists
+from .factory import get_graph_backend
+
+__all__ = ["get_graph_backend"]
