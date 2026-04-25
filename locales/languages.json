@@ -15,9 +15,13 @@
     "label": "Français",
     "llmInstruction": "Veuillez répondre en français."
   },
-  "pt": {
-    "label": "Português",
-    "llmInstruction": "Por favor, responda em português."
+  "pt-br": {
+    "label": "Português (Brasil)",
+    "llmInstruction": "Por favor, responda em português do Brasil."
+  },
+  "pt-pt": {
+    "label": "Português (Portugal)",
+    "llmInstruction": "Por favor, responda em português de Portugal."
   },
   "ru": {
     "label": "Русский",
