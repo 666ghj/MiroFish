@@ -38,8 +38,8 @@ dependencies = [
 
 [project.optional-dependencies]
 graphiti = [
-    "graphiti-core>=0.3.0",
-    "neo4j>=5.23.0",
+    "graphiti-core==0.28.2",
+    "neo4j>=5.26.0",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -59,3 +59,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.uv]
+override-dependencies = [
+    "neo4j>=5.26.0",
+]
