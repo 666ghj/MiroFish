@@ -26,12 +26,13 @@ def _neo4j_val(v: Any) -> Any:
 
 
 def _flatten_attributes(attrs: dict) -> dict:
-    """Flatten node.attributes so every value is a Neo4j-safe primitive.
+    """Flatten entity attribute dicts so every value is a Neo4j-safe primitive.
 
     Graphiti extracts entity attributes via a Pydantic model, but the raw LLM
     response sometimes wraps each value in a nested dict (e.g. {"value": "CTTI"}).
     Neo4j only accepts primitive types or arrays thereof, so we coerce any
-    dict/list value to its string representation.
+    dict value to its string representation. Lists of primitives are kept as-is
+    because Neo4j supports array properties.
     """
     result = {}
     for k, v in attrs.items():
@@ -40,8 +41,6 @@ def _flatten_attributes(attrs: dict) -> dict:
         if isinstance(v, dict):
             # Unwrap {"value": "..."} pattern emitted by some LLMs; fall back to str()
             result[k] = v.get("value") or v.get("text") or str(v)
-        elif isinstance(v, list):
-            result[k] = ", ".join(str(i) for i in v)
         else:
             result[k] = v
     return result
@@ -91,19 +90,7 @@ def _make_azure_generic_client(config, client):
                     max_completion_tokens=max_tokens,
                     response_format=response_format,
                 )
-                raw = json.loads(response.choices[0].message.content or '{}')
-                if response_model is not None:
-                    # Validate through the Pydantic model and dump back to a flat dict
-                    # so that Neo4j never receives nested Maps as property values.
-                    try:
-                        raw = response_model.model_validate(raw).model_dump(
-                            mode='python', exclude_none=True
-                        )
-                        # Coerce any remaining non-primitive values to str
-                        raw = _flatten_attributes(raw)
-                    except Exception:
-                        pass
-                return raw
+                return json.loads(response.choices[0].message.content or '{}')
             except _openai.RateLimitError as e:
                 raise _RateLimitError from e
 
@@ -218,7 +205,27 @@ class GraphitiBackend(GraphBackend):
             embedder=embedder,
             cross_encoder=cross_encoder,
         )
+        self._patch_extract_entity_attributes()
         return client
+
+    @staticmethod
+    def _patch_extract_entity_attributes() -> None:
+        """Monkey-patch graphiti's _extract_entity_attributes to sanitize LLM output.
+
+        Some LLMs return attribute values as nested dicts ({"value": "CTTI"}) instead
+        of plain strings. Neo4j rejects these with TypeError. We intercept the raw
+        llm_response dict before it is stored in node.attributes and flatten it.
+        """
+        import graphiti_core.utils.maintenance.node_operations as _node_ops
+
+        original = _node_ops._extract_entity_attributes
+
+        async def _patched(llm_client, node, episode, previous_episodes, entity_type):
+            result = await original(llm_client, node, episode, previous_episodes, entity_type)
+            # result is a dict — flatten any dict-valued attributes
+            return _flatten_attributes(result) if result else result
+
+        _node_ops._extract_entity_attributes = _patched
 
     def create_graph(self, graph_id: str, name: str, description: str = "") -> None:
         logger.info(f"Graphiti graph namespace ready: {graph_id}")
