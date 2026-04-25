@@ -12,6 +12,29 @@ from openai import OpenAI
 from ..config import Config
 
 
+def parse_azure_url(raw_url: str):
+    """Strip /chat/completions or /embeddings suffix from Azure endpoint URLs.
+
+    Azure Portal gives full URLs like:
+      https://<resource>.cognitiveservices.azure.com/openai/deployments/<model>/chat/completions?api-version=...
+    The OpenAI SDK expects a base_url and appends /chat/completions itself.
+
+    Returns (clean_base_url, default_query_dict).
+    """
+    default_query: Dict[str, str] = {}
+    if raw_url and ('/chat/completions' in raw_url or '/embeddings' in raw_url):
+        parsed = urlparse(raw_url)
+        qs = parse_qs(parsed.query)
+        if 'api-version' in qs:
+            default_query['api-version'] = qs['api-version'][0]
+        clean_path = (parsed.path
+                      .replace('/chat/completions', '')
+                      .replace('/embeddings', '')
+                      .rstrip('/'))
+        raw_url = urlunparse(parsed._replace(path=clean_path, query=''))
+    return raw_url, default_query
+
+
 class LLMClient:
     """LLM client"""
 
@@ -32,18 +55,7 @@ class LLMClient:
         if (Config.LLM_PROVIDER or "").lower() == "gemini" and not base_url:
             raw_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-        # Azure Portal provides full endpoint URLs like:
-        # https://<resource>.cognitiveservices.azure.com/openai/deployments/<model>/chat/completions?api-version=...
-        # The OpenAI SDK expects a base_url and appends /chat/completions itself,
-        # so we strip that suffix and extract api-version as a default query param.
-        default_query: Dict[str, str] = {}
-        if raw_url and '/chat/completions' in raw_url:
-            parsed = urlparse(raw_url)
-            qs = parse_qs(parsed.query)
-            if 'api-version' in qs:
-                default_query['api-version'] = qs['api-version'][0]
-            clean_path = parsed.path.replace('/chat/completions', '').rstrip('/')
-            raw_url = urlunparse(parsed._replace(path=clean_path, query=''))
+        raw_url, default_query = parse_azure_url(raw_url)
 
         self.base_url = raw_url
         self.client = OpenAI(

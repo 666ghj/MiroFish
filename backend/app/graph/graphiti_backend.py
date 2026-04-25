@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from .base import GraphBackend
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.llm_client import parse_azure_url
 
 
 def _neo4j_val(v: Any) -> Any:
@@ -137,21 +138,6 @@ class GraphitiBackend(GraphBackend):
         self._edge_defs: Dict[str, Any] = {}
         self._client = self._build_client()
 
-    @staticmethod
-    def _parse_azure_url(raw_url: str):
-        """Strip /chat/completions or /embeddings suffix from Azure endpoint URLs.
-        Returns (clean_base_url, default_query_dict)."""
-        from urllib.parse import urlparse, parse_qs, urlunparse
-        default_query = {}
-        if raw_url and ('/chat/completions' in raw_url or '/embeddings' in raw_url):
-            parsed = urlparse(raw_url)
-            qs = parse_qs(parsed.query)
-            if 'api-version' in qs:
-                default_query['api-version'] = qs['api-version'][0]
-            clean_path = parsed.path.replace('/chat/completions', '').replace('/embeddings', '').rstrip('/')
-            raw_url = urlunparse(parsed._replace(path=clean_path, query=''))
-        return raw_url, default_query
-
     def _build_client(self):
         from graphiti_core import Graphiti
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
@@ -160,9 +146,9 @@ class GraphitiBackend(GraphBackend):
         from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
         from openai import AsyncOpenAI
 
-        llm_base_url, llm_query = self._parse_azure_url(Config.LLM_BASE_URL)
-        small_base_url, small_query = self._parse_azure_url(Config.LLM_SMALL_BASE_URL)
-        embed_base_url, embed_query = self._parse_azure_url(Config.LLM_EMBED_BASE_URL)
+        llm_base_url, llm_query = parse_azure_url(Config.LLM_BASE_URL)
+        small_base_url, small_query = parse_azure_url(Config.LLM_SMALL_BASE_URL)
+        embed_base_url, embed_query = parse_azure_url(Config.LLM_EMBED_BASE_URL)
 
         # Pre-built async clients so api-version is passed as default_query (Azure requirement)
         async_llm_client = AsyncOpenAI(
