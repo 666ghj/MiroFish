@@ -12,9 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
-
 from ..config import Config
+from ..graph import get_graph_backend
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
 
@@ -240,12 +239,7 @@ class ZepGraphMemoryUpdater:
             api_key: Zep API key (optional; defaults to config value)
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
-
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY is not configured")
-
-        self.client = Zep(api_key=self.api_key)
+        self._graph = get_graph_backend()
 
         # Activity queue
         self._activity_queue: Queue = Queue()
@@ -413,11 +407,7 @@ class ZepGraphMemoryUpdater:
         # Send with retry
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
-                )
+                self._graph.add_text(self.graph_id, combined_text)
 
                 self._total_sent += 1
                 self._total_items_sent += len(activities)

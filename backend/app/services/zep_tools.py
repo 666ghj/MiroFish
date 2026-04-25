@@ -13,13 +13,11 @@ import json
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
-
 from ..config import Config
+from ..graph import get_graph_backend
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
 from ..utils.locale import get_locale, t
-from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_tools')
 
@@ -423,12 +421,7 @@ class ZepToolsService:
     RETRY_DELAY = 2.0
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY is not configured")
-        
-        self.client = Zep(api_key=self.api_key)
-        # LLM client used by InsightForge to generate sub-queries
+        self._graph = get_graph_backend()
         self._llm_client = llm_client
         logger.info(t("console.zepToolsInitialized"))
     
@@ -485,51 +478,38 @@ class ZepToolsService:
         """
         logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
         
-        # Try using the Zep Cloud Search API
         try:
-            search_results = self._call_with_retry(
-                func=lambda: self.client.graph.search(
-                    graph_id=graph_id,
-                    query=query,
-                    limit=limit,
-                    scope=scope,
-                    reranker="cross_encoder"
-                ),
-                operation_name=t("console.graphSearchOp", graphId=graph_id)
-            )
-            
+            raw = self._graph.search(graph_id=graph_id, query=query, limit=limit, scope=scope)
+
             facts = []
             edges = []
             nodes = []
-            
-            # Parse edge search results
-            if hasattr(search_results, 'edges') and search_results.edges:
-                for edge in search_results.edges:
-                    if hasattr(edge, 'fact') and edge.fact:
-                        facts.append(edge.fact)
-                    edges.append({
-                        "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
-                        "name": getattr(edge, 'name', ''),
-                        "fact": getattr(edge, 'fact', ''),
-                        "source_node_uuid": getattr(edge, 'source_node_uuid', ''),
-                        "target_node_uuid": getattr(edge, 'target_node_uuid', ''),
-                    })
-            
-            # Parse node search results
-            if hasattr(search_results, 'nodes') and search_results.nodes:
-                for node in search_results.nodes:
-                    nodes.append({
-                        "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
-                        "name": getattr(node, 'name', ''),
-                        "labels": getattr(node, 'labels', []),
-                        "summary": getattr(node, 'summary', ''),
-                    })
-                    # Node summaries count as facts too
-                    if hasattr(node, 'summary') and node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
-            
+
+            for edge in raw.get("edges", []) or []:
+                fact = edge.get("fact", "") if isinstance(edge, dict) else getattr(edge, "fact", "")
+                if fact:
+                    facts.append(fact)
+                edges.append(edge if isinstance(edge, dict) else {
+                    "uuid": getattr(edge, "uuid_", None) or getattr(edge, "uuid", ""),
+                    "name": getattr(edge, "name", ""),
+                    "fact": getattr(edge, "fact", ""),
+                    "source_node_uuid": getattr(edge, "source_node_uuid", ""),
+                    "target_node_uuid": getattr(edge, "target_node_uuid", ""),
+                })
+
+            for node in raw.get("nodes", []) or []:
+                node_dict = node if isinstance(node, dict) else {
+                    "uuid": getattr(node, "uuid_", None) or getattr(node, "uuid", ""),
+                    "name": getattr(node, "name", ""),
+                    "labels": getattr(node, "labels", []),
+                    "summary": getattr(node, "summary", ""),
+                }
+                nodes.append(node_dict)
+                if node_dict.get("summary"):
+                    facts.append(f"[{node_dict['name']}]: {node_dict['summary']}")
+
             logger.info(t("console.searchComplete", count=len(facts)))
-            
+
             return SearchResult(
                 facts=facts,
                 edges=edges,
@@ -659,18 +639,18 @@ class ZepToolsService:
         """
         logger.info(t("console.fetchingAllNodes", graphId=graph_id))
 
-        nodes = fetch_all_nodes(self.client, graph_id)
+        nodes = self._graph.get_all_nodes(graph_id)
 
-        result = []
-        for node in nodes:
-            node_uuid = getattr(node, 'uuid_', None) or getattr(node, 'uuid', None) or ""
-            result.append(NodeInfo(
-                uuid=str(node_uuid) if node_uuid else "",
-                name=node.name or "",
-                labels=node.labels or [],
-                summary=node.summary or "",
-                attributes=node.attributes or {}
-            ))
+        result = [
+            NodeInfo(
+                uuid=n.get("uuid", ""),
+                name=n.get("name", ""),
+                labels=n.get("labels", []),
+                summary=n.get("summary", ""),
+                attributes=n.get("attributes", {})
+            )
+            for n in nodes
+        ]
 
         logger.info(t("console.fetchedNodes", count=len(result)))
         return result
@@ -688,26 +668,22 @@ class ZepToolsService:
         """
         logger.info(t("console.fetchingAllEdges", graphId=graph_id))
 
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = self._graph.get_all_edges(graph_id)
 
         result = []
-        for edge in edges:
-            edge_uuid = getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', None) or ""
+        for e in edges:
             edge_info = EdgeInfo(
-                uuid=str(edge_uuid) if edge_uuid else "",
-                name=edge.name or "",
-                fact=edge.fact or "",
-                source_node_uuid=edge.source_node_uuid or "",
-                target_node_uuid=edge.target_node_uuid or ""
+                uuid=e.get("uuid", ""),
+                name=e.get("name", ""),
+                fact=e.get("fact", ""),
+                source_node_uuid=e.get("source_node_uuid", ""),
+                target_node_uuid=e.get("target_node_uuid", ""),
             )
-
-            # Add temporal info
             if include_temporal:
-                edge_info.created_at = getattr(edge, 'created_at', None)
-                edge_info.valid_at = getattr(edge, 'valid_at', None)
-                edge_info.invalid_at = getattr(edge, 'invalid_at', None)
-                edge_info.expired_at = getattr(edge, 'expired_at', None)
-
+                edge_info.created_at = e.get("created_at")
+                edge_info.valid_at = e.get("valid_at")
+                edge_info.invalid_at = e.get("invalid_at")
+                edge_info.expired_at = e.get("expired_at")
             result.append(edge_info)
 
         logger.info(t("console.fetchedEdges", count=len(result)))
@@ -726,20 +702,17 @@ class ZepToolsService:
         logger.info(t("console.fetchingNodeDetail", uuid=node_uuid[:8]))
         
         try:
-            node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=node_uuid),
-                operation_name=t("console.fetchNodeDetailOp", uuid=node_uuid[:8])
-            )
-            
+            node = self._graph.get_node(node_uuid)
+
             if not node:
                 return None
-            
+
             return NodeInfo(
-                uuid=getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
-                name=node.name or "",
-                labels=node.labels or [],
-                summary=node.summary or "",
-                attributes=node.attributes or {}
+                uuid=node.get("uuid", ""),
+                name=node.get("name", ""),
+                labels=node.get("labels", []),
+                summary=node.get("summary", ""),
+                attributes=node.get("attributes", {})
             )
         except Exception as e:
             logger.error(t("console.fetchNodeDetailFailed", error=str(e)))
