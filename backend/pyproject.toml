@@ -25,6 +25,7 @@ dependencies = [
     
     # 文件处理
     "PyMuPDF>=1.24.0",
+    "markdown>=3.6",
     # 编码检测（支持非UTF-8编码的文本文件）
     "charset-normalizer>=3.0.0",
     "chardet>=5.0.0",
