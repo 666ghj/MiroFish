@@ -231,3 +231,150 @@ Flask + gunicorn (1 worker, 4 threads)
 | Login retorna 401 sempre | `DEMO_PASSWORD` buida o incorrecta | Verifica el valor a `config.sh` / secret Azure |
 | Container App no arrenca | Imatge no trobada a l'ACR | Verifica que `2-build-deploy.sh` hagi finalitzat sense errors |
 | Token expirat al cap de 24h | Comportament esperat | Torna a fer login a `/login` |
+
+---
+
+## 3. Backend de graf pluggable (Graphiti + Neo4j)
+
+La branca `feat-pluggable-graph-backend` introdueix un sistema de backends intercanviables per al graf de coneixement. El backend per defecte és Zep Cloud; l'alternatiu és Graphiti + Neo4j auto-allotjat.
+
+### Arquitectura
+
+```
+GraphBuilderService
+    │
+    │  self._graph = get_graph_backend()
+    ▼
+┌─────────────────────────────────┐
+│   factory.get_graph_backend()   │  ← llegeix GRAPH_BACKEND env var
+│   (patró Singleton)             │
+└────────────┬────────────────────┘
+             │
+    ┌────────┴────────┐
+    ▼                 ▼
+ZepBackend      GraphitiBackend
+    │                 │
+    ▼                 ▼
+Zep Cloud API    Neo4j (bolt://)
+                  + graphiti-core
+                  + OpenAI embedder
+```
+
+Tots dos backends implementen la mateixa interfície abstracta `GraphBackend` (`backend/app/graph/base.py`):
+
+| Mètode | Descripció |
+|--------|------------|
+| `create_graph(graph_id, name)` | Crea o registra el graf |
+| `set_ontology(graph_ids, entities, edges)` | Defineix l'ontologia |
+| `add_batch(graph_id, episodes)` | Afegeix episodis de text en lot |
+| `get_episode(uuid_)` | Consulta l'estat de processament d'un episodi |
+| `get_all_nodes(graph_id)` | Retorna tots els nodes del graf |
+| `get_all_edges(graph_id)` | Retorna totes les arestes |
+| `get_node(uuid_)` | Node per UUID |
+| `get_node_edges(node_uuid)` | Arestes d'un node |
+| `search(graph_id, query, limit)` | Cerca semàntica |
+| `add_text(graph_id, data)` | Afegeix text directament |
+| `delete_graph(graph_id)` | Elimina el graf complet |
+
+### Fitxers clau
+
+```
+backend/app/graph/
+├── base.py            — interfície abstracta GraphBackend
+├── factory.py         — factory + singleton (get_graph_backend)
+├── zep_backend.py     — implementació Zep Cloud
+└── graphiti_backend.py — implementació Graphiti + Neo4j
+```
+
+### Diferències de comportament entre backends
+
+| Aspecte | ZepBackend | GraphitiBackend |
+|---------|-----------|-----------------|
+| **Allotjament** | Zep Cloud (SaaS) | Neo4j auto-allotjat |
+| **Ontologia** | API nativa Zep | No-op (extracció LLM automàtica) |
+| **Polling d'episodis** | `episode.get(uuid_)` real | Retorna sempre `processed=True` |
+| **Consultes** | SDK Zep | Queries Cypher directes |
+| **Paginació nodes/arestes** | 100 items/pàgina, màx. 2000 | Sense límit explícit |
+| **Resiliència** | Retry amb backoff exponencial (3 intents) | Sense retry |
+| **Cerca** | `reranker=cross_encoder` | `graphiti_core.search()` |
+| **Credencials** | `ZEP_API_KEY` | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` |
+| **Threading async** | No cal (SDK síncron) | Thread daemon + `asyncio.run_coroutine_threadsafe` |
+
+### Instal·lació de les dependències Graphiti
+
+Graphiti és una dependència opcional. Per activar-la:
+
+```bash
+# Amb uv (recomanat)
+uv pip install -e ".[graphiti]"
+
+# Amb pip
+pip install "mirofish-backend[graphiti]"
+# o directament:
+pip install "graphiti-core>=0.3.0" "neo4j>=5.23.0"
+```
+
+Les dependències base (Zep) segueixen instal·lant-se com sempre:
+
+```bash
+uv pip install -r requirements.txt
+```
+
+### Variables d'entorn per a Graphiti + Neo4j
+
+```env
+# Selecció de backend (per defecte: zep)
+GRAPH_BACKEND=graphiti
+
+# Connexió Neo4j (protocol bolt)
+NEO4J_URI=bolt://<host>:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=la-teva-contrasenya
+
+# LLM_API_KEY, LLM_BASE_URL i LLM_MODEL_NAME segueixen sent necessaris
+# (graphiti-core els usa per a l'extracció d'entitats i els embeddings)
+```
+
+> **Nota:** quan `GRAPH_BACKEND=graphiti`, `ZEP_API_KEY` no és necessari.
+
+### Desplegament a Azure (aci-graphiti-neo4j)
+
+Al resource group `rg_mirofish` existeix el container group `aci-graphiti-neo4j` amb tres contenidors al mateix pod:
+
+| Contenidor | Imatge | Port intern | Funció |
+|-----------|--------|-------------|--------|
+| `neo4j` | `mirofishgeneacr.azurecr.io/neo4j:5.26.0` | 7474 (HTTP), 7687 (bolt) | Base de dades de graf |
+| `graphiti-mcp` | `mirofishgeneacr.azurecr.io/knowledge-graph-mcp:standalone` | 8000 | API graphiti-core via MCP |
+| `caddy` | `mirofishgeneacr.azurecr.io/caddy:2` | 443 | Proxy HTTPS per a graphiti-mcp |
+
+**Ports exposats públicament:**
+
+| Port | Protocol | Destí |
+|------|----------|-------|
+| 443 | TCP | caddy → graphiti-mcp (HTTPS, certificat Let's Encrypt) |
+| 7687 | TCP | bolt → neo4j (autenticat) |
+
+**Endpoints:**
+
+- Graphiti MCP: `https://graphitigene-mcp.westeurope.azurecontainer.io`
+- Neo4j bolt: `bolt://52.149.109.53:7687`
+
+**Variables d'entorn del Container App `mirofishgene` (configuració activa):**
+
+```env
+GRAPH_BACKEND=graphiti
+NEO4J_URI=bolt://52.149.109.53:7687
+NEO4J_USER=neo4j
+NEO4J_DATABASE=neo4j
+NEO4J_PASSWORD=<secret: neo4j-password>
+```
+
+### Tests
+
+```bash
+# Executar els tests del factory (no requereix Neo4j ni Zep actius)
+cd .worktrees/feat-pluggable-graph-backend
+pytest backend/tests/test_graph_factory.py -v
+```
+
+El fixture `reset_graph_factory_singleton` (a `backend/tests/conftest.py`) reseteja el singleton entre tests per evitar interferències quan es canvia `GRAPH_BACKEND`.
