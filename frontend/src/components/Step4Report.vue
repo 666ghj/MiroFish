@@ -141,14 +141,14 @@
               </svg>
             </button>
             <div v-if="showDownloadMenu" class="download-menu">
-              <a :href="getReportDownloadUrl(reportId, 'md')" download class="download-option" @click="showDownloadMenu = false">
+              <button class="download-option" @click="downloadReport('md')">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                   <polyline points="14 2 14 8 20 8"></polyline>
                 </svg>
                 <span>Markdown (.md)</span>
-              </a>
-              <a :href="getReportDownloadUrl(reportId, 'pdf')" download class="download-option" @click="showDownloadMenu = false">
+              </button>
+              <button class="download-option" @click="downloadReport('pdf')">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                   <polyline points="14 2 14 8 20 8"></polyline>
@@ -157,7 +157,7 @@
                   <polyline points="10 9 9 9 8 9"></polyline>
                 </svg>
                 <span>PDF (.pdf)</span>
-              </a>
+              </button>
             </div>
           </div>
 
@@ -427,7 +427,8 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog, getReportDownloadUrl } from '../api/report'
+import { getAgentLog, getConsoleLog } from '../api/report'
+import service from '../api'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -441,8 +442,6 @@ const props = defineProps({
 const emit = defineEmits(['add-log', 'update-status'])
 
 // Download menu
-const closeDownloadMenu = () => { showDownloadMenu.value = false }
-
 const handleClickOutside = (e) => {
   if (!e.target.closest('.download-wrapper')) showDownloadMenu.value = false
 }
@@ -451,6 +450,27 @@ const handleClickOutside = (e) => {
 const goToInteraction = () => {
   if (props.reportId) {
     router.push({ name: 'Interaction', params: { reportId: props.reportId } })
+  }
+}
+
+const downloadReport = async (format) => {
+  showDownloadMenu.value = false
+  try {
+    const resp = await service.get(
+      `/api/report/${props.reportId}/download`,
+      { params: { format }, responseType: 'blob' }
+    )
+    const blob = resp instanceof Blob ? resp : new Blob([resp])
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${props.reportId}.${format}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('Download failed:', err)
   }
 }
 
@@ -5256,6 +5276,11 @@ watch(() => props.reportId, (newId) => {
   color: #D1D5DB;
   text-decoration: none;
   transition: background 0.15s ease;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
 }
 
 .download-option:hover {
