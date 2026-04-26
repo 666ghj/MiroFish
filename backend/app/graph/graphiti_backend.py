@@ -392,13 +392,17 @@ class GraphitiBackend(GraphBackend):
             })
         return nodes
 
-    def get_all_edges(self, graph_id: str) -> List[Dict[str, Any]]:
+    def get_all_edges(self, graph_id: str, max_items: int = 5000) -> List[Dict[str, Any]]:
         results = _run_async(
             self._client.driver.execute_query(
-                "MATCH (s)-[r]->(t) WHERE r.group_id = $gid RETURN s, r, t",
-                params={"gid": graph_id},
+                "MATCH (s)-[r]->(t) WHERE r.group_id = $gid RETURN s, r, t LIMIT $limit",
+                params={"gid": graph_id, "limit": max_items},
             )
         )
+        if len(results.records) >= max_items:
+            logger.warning(
+                f"get_all_edges: result truncated at {max_items} edges for graph {graph_id}"
+            )
         edges = []
         for record in results.records:
             r = record["r"]
