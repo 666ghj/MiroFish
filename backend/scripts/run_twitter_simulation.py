@@ -258,7 +258,7 @@ class IPCHandler:
             agent_prompts = {}  # 记录每个agent的prompt
             
             for interview in interviews:
-                agent_id = interview.get("agent_id")
+                agent_id = interview.get("agent_id") or 0
                 prompt = interview.get("prompt", "")
                 
                 try:
@@ -300,20 +300,21 @@ class IPCHandler:
     def _get_interview_result(self, agent_id: int) -> Dict[str, Any]:
         """从数据库获取最新的Interview结果"""
         db_path = os.path.join(self.simulation_dir, "twitter_simulation.db")
-        
+
         result = {
             "agent_id": agent_id,
             "response": None,
             "timestamp": None
         }
-        
+
         if not os.path.exists(db_path):
             return result
-        
+
+        conn = None
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            
+
             # 查询最新的Interview记录
             cursor.execute("""
                 SELECT user_id, info, created_at
@@ -322,7 +323,7 @@ class IPCHandler:
                 ORDER BY created_at DESC
                 LIMIT 1
             """, (ActionType.INTERVIEW.value, agent_id))
-            
+
             row = cursor.fetchone()
             if row:
                 user_id, info_json, created_at = row
@@ -332,12 +333,13 @@ class IPCHandler:
                     result["timestamp"] = created_at
                 except json.JSONDecodeError:
                     result["response"] = info_json
-            
-            conn.close()
-            
+
         except Exception as e:
             print(f"  读取Interview结果失败: {e}")
-        
+        finally:
+            if conn:
+                conn.close()
+
         return result
     
     async def process_commands(self) -> bool:
