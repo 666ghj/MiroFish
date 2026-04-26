@@ -266,7 +266,8 @@
     "panelRelatedEdges": "相关关系",
     "panelRelatedNodes": "相关节点",
     "world1": "世界1",
-    "world2": "世界2"
+    "world2": "世界2",
+    "downloadReport": "下载报告"
   },
   "step5": {
     "interactiveTools": "Interactive Tools",

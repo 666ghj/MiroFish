@@ -266,7 +266,8 @@
     "panelRelatedEdges": "Related Edges",
     "panelRelatedNodes": "Related Nodes",
     "world1": "World 1",
-    "world2": "World 2"
+    "world2": "World 2",
+    "downloadReport": "Download Report"
   },
   "step5": {
     "interactiveTools": "Interactive Tools",

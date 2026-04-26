@@ -127,6 +127,40 @@
             </div>
           </div>
 
+          <!-- Download Button -->
+          <div v-if="isComplete" class="download-wrapper">
+            <button class="download-toggle-btn" @click.stop="showDownloadMenu = !showDownloadMenu">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>{{ $t('step4.downloadReport') }}</span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" class="chevron-icon" :class="{ open: showDownloadMenu }">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div v-if="showDownloadMenu" class="download-menu">
+              <a :href="getReportDownloadUrl(reportId, 'md')" download class="download-option" @click="showDownloadMenu = false">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span>Markdown (.md)</span>
+              </a>
+              <a :href="getReportDownloadUrl(reportId, 'pdf')" download class="download-option" @click="showDownloadMenu = false">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <span>PDF (.pdf)</span>
+              </a>
+            </div>
+          </div>
+
           <!-- Next Step Button - 在完成后显示 -->
           <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
             <span>{{ $t('step4.goToInteraction') }}</span>
@@ -393,7 +427,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, getReportDownloadUrl } from '../api/report'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -405,6 +439,13 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['add-log', 'update-status'])
+
+// Download menu
+const closeDownloadMenu = () => { showDownloadMenu.value = false }
+
+const handleClickOutside = (e) => {
+  if (!e.target.closest('.download-wrapper')) showDownloadMenu.value = false
+}
 
 // Navigation
 const goToInteraction = () => {
@@ -425,6 +466,7 @@ const expandedContent = ref(new Set())
 const expandedLogs = ref(new Set())
 const collapsedSections = ref(new Set())
 const isComplete = ref(false)
+const showDownloadMenu = ref(false)
 const startTime = ref(null)
 const leftPanel = ref(null)
 const rightPanel = ref(null)
@@ -2181,10 +2223,12 @@ onMounted(() => {
     addLog(`Report Agent initialized: ${props.reportId}`)
     startPolling()
   }
+  document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
   stopPolling()
+  document.removeEventListener('click', handleClickOutside)
 })
 
 watch(() => props.reportId, (newId) => {
@@ -5152,6 +5196,72 @@ watch(() => props.reportId, (newId) => {
 .log-msg.error { color: #EF5350; }
 .log-msg.warning { color: #FFA726; }
 .log-msg.success { color: #66BB6A; }
+
+/* Download dropdown */
+.download-wrapper {
+  position: relative;
+  margin: 8px 20px 0 20px;
+}
+
+.download-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #D1D5DB;
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.download-toggle-btn:hover {
+  background: #1F2937;
+  color: #F9FAFB;
+}
+
+.chevron-icon {
+  transition: transform 0.2s ease;
+  margin-left: auto;
+}
+
+.chevron-icon.open {
+  transform: rotate(180deg);
+}
+
+.download-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #1F2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 100;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+}
+
+.download-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #D1D5DB;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.download-option:hover {
+  background: #374151;
+  color: #F9FAFB;
+}
 </style>
 
 <style>
