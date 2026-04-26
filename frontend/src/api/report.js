@@ -49,3 +49,14 @@ export const getReport = (reportId) => {
 export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
 }
+
+/**
+ * Build the direct download URL for a report.
+ * @param {string} reportId
+ * @param {'md'|'pdf'} format
+ * @returns {string} URL for direct download
+ */
+export const getReportDownloadUrl = (reportId, format = 'md') => {
+  const base = import.meta.env.VITE_API_BASE_URL || ''
+  return `${base}/api/report/${reportId}/download?format=${format}`
+}
