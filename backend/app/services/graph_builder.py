@@ -233,8 +233,13 @@ class GraphBuilderService:
             annotations = {}
             
             for attr_def in entity_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
-                attr_desc = attr_def.get("description", attr_name)
+                # LLM may return attributes as strings instead of dicts
+                if isinstance(attr_def, str):
+                    attr_name = safe_attr_name(attr_def)
+                    attr_desc = attr_def
+                else:
+                    attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
+                    attr_desc = attr_def.get("description", attr_name)
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
                 annotations[attr_name] = Optional[EntityText]  # 类型注解
@@ -257,8 +262,13 @@ class GraphBuilderService:
             annotations = {}
             
             for attr_def in edge_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
-                attr_desc = attr_def.get("description", attr_name)
+                # LLM may return attributes as strings instead of dicts
+                if isinstance(attr_def, str):
+                    attr_name = safe_attr_name(attr_def)
+                    attr_desc = attr_def
+                else:
+                    attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
+                    attr_desc = attr_def.get("description", attr_name)
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
                 annotations[attr_name] = Optional[str]  # 边属性用str类型
