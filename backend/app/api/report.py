@@ -5,7 +5,6 @@ Provides simulation report generation, retrieval, and chat endpoints
 
 import io
 import os
-import tempfile
 import traceback
 import threading
 import markdown as md_lib
@@ -480,12 +479,12 @@ def download_report(report_id: str):
                     as_attachment=True,
                     download_name=f"{report_id}.md"
                 )
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.md',
-                                             delete=False, encoding='utf-8') as f:
-                f.write(markdown_content)
-                temp_path = f.name
-            return send_file(temp_path, as_attachment=True,
-                             download_name=f"{report_id}.md")
+            return send_file(
+                io.BytesIO(markdown_content.encode('utf-8')),
+                mimetype='text/markdown; charset=utf-8',
+                as_attachment=True,
+                download_name=f"{report_id}.md"
+            )
 
         # fmt == 'pdf'
         pdf_bytes = _generate_pdf_bytes(markdown_content)

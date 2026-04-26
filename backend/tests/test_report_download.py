@@ -80,13 +80,7 @@ class TestDownloadPDF:
 
         assert resp.status_code == 404
 
-    def test_download_pdf_invalid_format(self, client, tmp_path):
+    def test_download_pdf_invalid_format(self, client):
         """Returns 400 for unknown format parameter."""
-        mock_report = _make_mock_report()
-        md_path = _make_md_file(tmp_path, mock_report.report_id, mock_report.markdown_content)
-
-        with patch('app.api.report.ReportManager.get_report', return_value=mock_report), \
-             patch('app.api.report.ReportManager._get_report_markdown_path', return_value=md_path):
-            resp = client.get(f'/api/report/{mock_report.report_id}/download?format=docx')
-
+        resp = client.get('/api/report/any_id/download?format=docx')
         assert resp.status_code == 400
