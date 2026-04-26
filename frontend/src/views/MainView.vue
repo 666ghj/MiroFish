@@ -51,15 +51,18 @@
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <!-- Step 1: 图谱构建 -->
-        <Step1GraphBuild 
+        <Step1GraphBuild
           v-if="currentStep === 1"
           :currentPhase="currentPhase"
+          :ontologyReady="ontologyReady"
           :projectData="projectData"
           :ontologyProgress="ontologyProgress"
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
           @next-step="handleNextStep"
+          @proceed-to-graphrag="handleProceedToGraphRAG"
+          @delete-ontology="handleDeleteOntology"
         />
         <!-- Step 2: 环境搭建 -->
         <Step2EnvSetup
@@ -83,7 +86,7 @@ import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, importOntology, getProject, buildGraph, getTaskStatus, getGraphData, deleteProject } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
@@ -106,6 +109,7 @@ const error = ref('')
 const projectData = ref(null)
 const graphData = ref(null)
 const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
+const ontologyReady = ref(false) // true = ontology done but GraphRAG not yet started
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
@@ -198,30 +202,40 @@ const handleNewProject = async () => {
     addLog('Error: No pending files found for new project.')
     return
   }
-  
+
   try {
     loading.value = true
     currentPhase.value = 0
     ontologyProgress.value = { message: t('step1.analyzingDocs') }
-    addLog('Starting ontology generation: Uploading files...')
-    
+
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
     formData.append('simulation_requirement', pending.simulationRequirement)
-    
-    const res = await generateOntology(formData)
+
+    let res
+    if (pending.importOntologyMode && pending.ontologyFile) {
+      addLog('Importing ontology from JSON file...')
+      const ontologyText = await pending.ontologyFile.text()
+      formData.append('ontology', ontologyText)
+      res = await importOntology(formData)
+    } else {
+      addLog('Starting ontology generation: Uploading files...')
+      res = await generateOntology(formData)
+    }
+
     if (res.success) {
       clearPendingUpload()
       currentProjectId.value = res.data.project_id
       projectData.value = res.data
-      
+
       router.replace({ name: 'Process', params: { projectId: res.data.project_id } })
       ontologyProgress.value = null
-      addLog(`Ontology generated successfully for project ${res.data.project_id}`)
-      await startBuildGraph()
+      addLog(`Ontology ready for project ${res.data.project_id}. Waiting for confirmation to build GraphRAG.`)
+      ontologyReady.value = true
+      // Do NOT auto-start build — user must click "Proceed to GraphRAG"
     } else {
-      error.value = res.error || 'Ontology generation failed'
-      addLog(`Error generating ontology: ${error.value}`)
+      error.value = res.error || 'Ontology step failed'
+      addLog(`Error: ${error.value}`)
     }
   } catch (err) {
     error.value = err.message
@@ -396,6 +410,24 @@ const stopGraphPolling = () => {
     clearInterval(graphPollTimer)
     graphPollTimer = null
     addLog('Graph polling stopped.')
+  }
+}
+
+const handleProceedToGraphRAG = async () => {
+  ontologyReady.value = false
+  addLog('User confirmed: starting GraphRAG build...')
+  await startBuildGraph()
+}
+
+const handleDeleteOntology = async () => {
+  if (!currentProjectId.value || currentProjectId.value === 'new') return
+  addLog(`Deleting project ${currentProjectId.value}...`)
+  try {
+    await deleteProject(currentProjectId.value)
+    addLog('Project deleted. Returning to home.')
+    router.push('/')
+  } catch (err) {
+    addLog(`Error deleting project: ${err.message}`)
   }
 }
 

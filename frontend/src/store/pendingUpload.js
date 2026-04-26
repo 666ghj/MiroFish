@@ -7,20 +7,26 @@ import { reactive } from 'vue'
 const state = reactive({
   files: [],
   simulationRequirement: '',
-  isPending: false
+  isPending: false,
+  importOntologyMode: false,
+  ontologyFile: null
 })
 
-export function setPendingUpload(files, requirement) {
+export function setPendingUpload(files, requirement, importOntologyMode = false, ontologyFile = null) {
   state.files = files
   state.simulationRequirement = requirement
   state.isPending = true
+  state.importOntologyMode = importOntologyMode
+  state.ontologyFile = ontologyFile
 }
 
 export function getPendingUpload() {
   return {
     files: state.files,
     simulationRequirement: state.simulationRequirement,
-    isPending: state.isPending
+    isPending: state.isPending,
+    importOntologyMode: state.importOntologyMode,
+    ontologyFile: state.ontologyFile
   }
 }
 
@@ -28,6 +34,8 @@ export function clearPendingUpload() {
   state.files = []
   state.simulationRequirement = ''
   state.isPending = false
+  state.importOntologyMode = false
+  state.ontologyFile = null
 }
 
 export default state

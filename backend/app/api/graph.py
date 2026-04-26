@@ -4,6 +4,7 @@ Uses project context mechanism with server-side persistent state
 """
 
 import os
+import json
 import traceback
 import threading
 from flask import request, jsonify
@@ -247,6 +248,126 @@ def generate_ontology():
             }
         })
         
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+# ============== Endpoint 1b: Import ontology ==============
+
+@graph_bp.route('/ontology/import', methods=['POST'])
+def import_ontology():
+    """
+    Endpoint 1b: Upload files and import a pre-existing ontology definition
+
+    Request method: multipart/form-data
+
+    Parameters:
+        files: Uploaded files (PDF/MD/TXT), multiple allowed
+        simulation_requirement: Simulation requirement description (required)
+        ontology: JSON string with entity_types and edge_types (required)
+        project_name: Project name (optional)
+
+    Returns same structure as generate_ontology.
+    """
+    try:
+        logger.info("=== Starting ontology import ===")
+
+        simulation_requirement = request.form.get('simulation_requirement', '')
+        project_name = request.form.get('project_name', 'Unnamed Project')
+        ontology_json = request.form.get('ontology', '')
+
+        if not simulation_requirement:
+            return jsonify({
+                "success": False,
+                "error": t('api.requireSimulationRequirement')
+            }), 400
+
+        if not ontology_json:
+            return jsonify({
+                "success": False,
+                "error": t('api.requireOntologyJson')
+            }), 400
+
+        try:
+            ontology = json.loads(ontology_json)
+        except (ValueError, TypeError):
+            return jsonify({
+                "success": False,
+                "error": t('api.invalidOntologyJson')
+            }), 400
+
+        if not isinstance(ontology.get('entity_types'), list) or not isinstance(ontology.get('edge_types'), list):
+            return jsonify({
+                "success": False,
+                "error": t('api.invalidOntologyStructure')
+            }), 400
+
+        uploaded_files = request.files.getlist('files')
+        if not uploaded_files or all(not f.filename for f in uploaded_files):
+            return jsonify({
+                "success": False,
+                "error": t('api.requireFileUpload')
+            }), 400
+
+        project = ProjectManager.create_project(name=project_name)
+        project.simulation_requirement = simulation_requirement
+        logger.info(f"Project created for import: {project.project_id}")
+
+        document_texts = []
+        all_text = ""
+
+        for file in uploaded_files:
+            if file and file.filename and allowed_file(file.filename):
+                file_info = ProjectManager.save_file_to_project(
+                    project.project_id,
+                    file,
+                    file.filename
+                )
+                project.files.append({
+                    "filename": file_info["original_filename"],
+                    "size": file_info["size"]
+                })
+
+                text = FileParser.extract_text(file_info["path"])
+                text = TextProcessor.preprocess_text(text)
+                document_texts.append(text)
+                all_text += f"\n\n=== {file_info['original_filename']} ===\n{text}"
+
+        if not document_texts:
+            ProjectManager.delete_project(project.project_id)
+            return jsonify({
+                "success": False,
+                "error": t('api.noDocProcessed')
+            }), 400
+
+        project.total_text_length = len(all_text)
+        ProjectManager.save_extracted_text(project.project_id, all_text)
+
+        project.ontology = {
+            "entity_types": ontology.get("entity_types", []),
+            "edge_types": ontology.get("edge_types", [])
+        }
+        project.analysis_summary = ontology.get("analysis_summary", "")
+        project.status = ProjectStatus.ONTOLOGY_GENERATED
+        ProjectManager.save_project(project)
+        logger.info(f"=== Ontology import complete === Project ID: {project.project_id}")
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "project_id": project.project_id,
+                "project_name": project.name,
+                "ontology": project.ontology,
+                "analysis_summary": project.analysis_summary,
+                "files": project.files,
+                "total_text_length": project.total_text_length
+            }
+        })
+
     except Exception as e:
         return jsonify({
             "success": False,

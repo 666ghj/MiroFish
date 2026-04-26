@@ -687,11 +687,49 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
+const doReconnectSimulation = async () => {
+  addLog(t('log.reconnectingToSim'))
+  phase.value = 1
+  emit('update-status', 'processing')
+  await fetchRunStatus()
+  await fetchRunStatusDetail()
+  startStatusPolling()
+  startDetailPolling()
+}
+
+onMounted(async () => {
   addLog(t('log.step3Init'))
-  if (props.simulationId) {
-    doStartSimulation()
+  if (!props.simulationId) return
+
+  // Check if simulation is already running before starting a new one
+  try {
+    const res = await getRunStatus(props.simulationId)
+    if (res.success && res.data) {
+      const status = res.data.runner_status
+      if (status === 'running') {
+        addLog(t('log.simAlreadyRunning'))
+        await doReconnectSimulation()
+        return
+      }
+      if (status === 'completed' || status === 'stopped') {
+        addLog(t('log.simAlreadyCompleted'))
+        runStatus.value = res.data
+        phase.value = 2
+        emit('update-status', 'completed')
+        await fetchRunStatusDetail()
+        return
+      }
+      if (status === 'failed') {
+        startError.value = res.data.error || t('common.unknownError')
+        emit('update-status', 'error')
+        return
+      }
+    }
+  } catch (err) {
+    // If status check fails, fall through to start
   }
+
+  doStartSimulation()
 })
 
 onUnmounted(() => {

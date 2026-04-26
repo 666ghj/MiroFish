@@ -63,3 +63,7 @@ data/
 
 # Configuració Azure amb secrets (no comitejar mai)
 azure/config.sh
+
+# Fitxers locals de treball (no per al repo)
+exports.txt
+docs/2026-04-26-enterprise-roadmap.md

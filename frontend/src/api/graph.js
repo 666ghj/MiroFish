@@ -68,3 +68,33 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * Import a pre-existing ontology JSON (instead of generating one)
+ * @param {FormData} formData - files, simulation_requirement, ontology (JSON string)
+ * @returns {Promise}
+ */
+export function importOntology(formData) {
+  return requestWithRetry(() =>
+    service({
+      url: '/api/graph/ontology/import',
+      method: 'post',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  )
+}
+
+/**
+ * Delete a project
+ * @param {String} projectId
+ * @returns {Promise}
+ */
+export function deleteProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'delete'
+  })
+}

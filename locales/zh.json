@@ -69,7 +69,9 @@
     "promptPlaceholder": "// 用自然语言输入模拟或预测需求（例.武大若发布撤销肖某处分的公告，会引发什么舆情走向）",
     "engineBadge": "引擎: MiroFish-V1.0",
     "startEngine": "启动引擎",
-    "initializing": "初始化中..."
+    "initializing": "初始化中...",
+    "importOntology": "导入本体",
+    "importOntologyHint": "选择本体JSON文件"
   },
   "main": {
     "layoutGraph": "图谱",
@@ -114,7 +116,13 @@
     "labelRelation": "关系",
     "labelAttributes": "属性",
     "labelExamples": "示例",
-    "labelConnections": "连接"
+    "labelConnections": "连接",
+    "pauseTitle": "本体已就绪",
+    "pauseDesc": "在构建知识图谱前，请检查生成的本体。",
+    "downloadOntology": "下载本体JSON",
+    "deleteOntology": "删除本体",
+    "proceedToGraph": "继续构建GraphRAG →",
+    "deleteOntologyConfirm": "删除此本体并返回首页？"
   },
   "step2": {
     "simInstanceInit": "模拟实例初始化",
@@ -353,6 +361,9 @@
     "graphBuilding": "图谱正在构建中，请勿重复提交。如需强制重建，请添加 force: true",
     "textNotFound": "未找到提取的文本内容",
     "ontologyNotFound": "未找到本体定义",
+    "requireOntologyJson": "请提供本体JSON（ontology字段）",
+    "invalidOntologyJson": "本体JSON格式无效",
+    "invalidOntologyStructure": "本体必须包含entity_types和edge_types数组",
     "graphBuildStarted": "图谱构建任务已启动，请通过 /task/{taskId} 查询进度",
     "graphBuildComplete": "图谱构建完成",
     "buildFailed": "构建失败: {error}",
@@ -544,6 +555,9 @@
     "loadConfigFailed": "加载配置失败: {error}",
     "step2Init": "Step2 环境搭建初始化",
     "step3Init": "Step3 模拟运行初始化",
+    "reconnectingToSim": "正在重新连接到运行中的模拟...",
+    "simAlreadyRunning": "模拟已在运行，正在重新连接...",
+    "simAlreadyCompleted": "模拟已完成",
     "startingDualSim": "正在启动双平台并行模拟...",
     "setMaxRounds": "设置最大模拟轮数: {rounds}",
     "graphMemoryUpdateEnabled": "已开启动态图谱更新模式",

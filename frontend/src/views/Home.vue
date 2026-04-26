@@ -133,7 +133,7 @@
                 <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
               </div>
               
-              <div 
+              <div
                 class="upload-zone"
                 :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
                 @dragover.prevent="handleDragOver"
@@ -150,13 +150,13 @@
                   style="display: none"
                   :disabled="loading"
                 />
-                
+
                 <div v-if="files.length === 0" class="upload-placeholder">
                   <div class="upload-icon">↑</div>
                   <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
                   <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
                 </div>
-                
+
                 <div v-else class="file-list">
                   <div v-for="(file, index) in files" :key="index" class="file-item">
                     <span class="file-icon">📄</span>
@@ -164,6 +164,34 @@
                     <button @click.stop="removeFile(index)" class="remove-btn">×</button>
                   </div>
                 </div>
+              </div>
+
+              <!-- Import ontology toggle -->
+              <div class="import-toggle-row">
+                <label class="import-toggle-label">
+                  <input
+                    type="checkbox"
+                    v-model="importOntologyMode"
+                    :disabled="loading"
+                    class="import-checkbox"
+                  />
+                  <span class="import-toggle-text">{{ $t('home.importOntology') }}</span>
+                </label>
+              </div>
+
+              <!-- Ontology JSON file selector (visible when importOntologyMode) -->
+              <div v-if="importOntologyMode" class="ontology-file-row" @click="triggerOntologyInput">
+                <input
+                  ref="ontologyFileInput"
+                  type="file"
+                  accept=".json"
+                  @change="handleOntologyFileSelect"
+                  style="display: none"
+                  :disabled="loading"
+                />
+                <span class="ontology-file-icon">{ }</span>
+                <span class="ontology-file-name">{{ ontologyFile ? ontologyFile.name : $t('home.importOntologyHint') }}</span>
+                <span v-if="ontologyFile" class="remove-btn" @click.stop="ontologyFile = null">×</span>
               </div>
             </div>
 
@@ -234,10 +262,17 @@ const isDragOver = ref(false)
 
 // 文件输入引用
 const fileInput = ref(null)
+const ontologyFileInput = ref(null)
+
+// Import ontology mode
+const importOntologyMode = ref(false)
+const ontologyFile = ref(null)
 
 // 计算属性:是否可以提交
 const canSubmit = computed(() => {
-  return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
+  if (!formData.value.simulationRequirement.trim() || files.value.length === 0) return false
+  if (importOntologyMode.value && !ontologyFile.value) return false
+  return true
 })
 
 // 触发文件选择
@@ -286,6 +321,21 @@ const removeFile = (index) => {
   files.value.splice(index, 1)
 }
 
+// Ontology file input
+const triggerOntologyInput = () => {
+  if (!loading.value) {
+    ontologyFileInput.value?.click()
+  }
+}
+
+const handleOntologyFileSelect = (event) => {
+  const file = event.target.files[0]
+  if (file) {
+    ontologyFile.value = file
+  }
+  event.target.value = ''
+}
+
 // 滚动到底部
 const scrollToBottom = () => {
   window.scrollTo({
@@ -300,9 +350,13 @@ const startSimulation = () => {
   
   // 存储待上传的数据
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
-    // 立即跳转到Process页面（使用特殊标识表示新建项目）
+    setPendingUpload(
+      files.value,
+      formData.value.simulationRequirement,
+      importOntologyMode.value,
+      ontologyFile.value
+    )
+
     router.push({
       name: 'Process',
       params: { projectId: 'new' }
@@ -771,6 +825,64 @@ const startSimulation = () => {
   cursor: pointer;
   font-size: 1.2rem;
   color: #999;
+}
+
+.import-toggle-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 0 4px;
+}
+
+.import-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #666;
+  user-select: none;
+}
+
+.import-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--orange);
+}
+
+.import-toggle-text {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.ontology-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed #CCC;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: #FAFAFA;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: #666;
+  transition: all 0.2s;
+  margin-top: 6px;
+}
+
+.ontology-file-row:hover {
+  border-color: var(--orange);
+  color: #333;
+}
+
+.ontology-file-icon {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+.ontology-file-name {
+  flex: 1;
 }
 
 .console-divider {

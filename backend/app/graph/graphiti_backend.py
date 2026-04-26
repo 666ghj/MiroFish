@@ -196,22 +196,51 @@ class GraphitiBackend(GraphBackend):
 
     @staticmethod
     def _patch_extract_entity_attributes() -> None:
-        """Monkey-patch graphiti's _extract_entity_attributes to sanitize LLM output.
+        """Monkey-patch graphiti internals to fix two LLM quirks:
 
-        Some LLMs return attribute values as nested dicts ({"value": "CTTI"}) instead
-        of plain strings. Neo4j rejects these with TypeError. We intercept the raw
-        llm_response dict before it is stored in node.attributes and flatten it.
+        1. _extract_entity_attributes: some LLMs wrap attribute values in nested
+           dicts ({"value": "CTTI"}). Neo4j rejects these — flatten them.
+        2. _extract_nodes_single: some LLMs omit entity_type_id from extracted
+           entities, causing a Pydantic ValidationError. Default missing IDs to 0
+           (the generic "Entity" type) before validation runs.
         """
         import graphiti_core.utils.maintenance.node_operations as _node_ops
 
-        original = _node_ops._extract_entity_attributes
+        # --- patch 1: attribute flattening ---
+        original_attrs = _node_ops._extract_entity_attributes
 
-        async def _patched(llm_client, node, episode, previous_episodes, entity_type):
-            result = await original(llm_client, node, episode, previous_episodes, entity_type)
-            # result is a dict — flatten any dict-valued attributes
+        async def _patched_attrs(llm_client, node, episode, previous_episodes, entity_type):
+            result = await original_attrs(llm_client, node, episode, previous_episodes, entity_type)
             return _flatten_attributes(result) if result else result
 
-        _node_ops._extract_entity_attributes = _patched
+        _node_ops._extract_entity_attributes = _patched_attrs
+
+        # --- patch 2: entity_type_id defaulting ---
+        original_nodes = _node_ops._extract_nodes_single
+
+        async def _patched_nodes(llm_client, episode, context):
+            from graphiti_core.utils.maintenance.node_operations import ExtractedEntities
+            # Call the LLM the normal way but catch the Pydantic validation error
+            # that arises when the LLM forgets entity_type_id.
+            try:
+                return await original_nodes(llm_client, episode, context)
+            except Exception as exc:
+                # Only intercept Pydantic validation errors about entity_type_id
+                if "entity_type_id" not in str(exc):
+                    raise
+                logger.warning(f"LLM omitted entity_type_id — defaulting to 0 and retrying validation: {exc}")
+                # Re-run the LLM call via the internal helper to get the raw dict
+                from graphiti_core.utils.maintenance.node_operations import _call_extraction_llm
+                llm_response = await _call_extraction_llm(llm_client, episode, context)
+                # Inject entity_type_id=0 for any entity that is missing it
+                entities = llm_response.get("extracted_entities", [])
+                for ent in entities:
+                    if isinstance(ent, dict) and "entity_type_id" not in ent:
+                        ent["entity_type_id"] = 0
+                response_object = ExtractedEntities(**llm_response)
+                return response_object.extracted_entities
+
+        _node_ops._extract_nodes_single = _patched_nodes
 
     def create_graph(self, graph_id: str, name: str, description: str = "") -> None:
         logger.info(f"Graphiti graph namespace ready: {graph_id}")
@@ -428,20 +457,46 @@ class GraphitiBackend(GraphBackend):
         return edges
 
     def search(self, graph_id: str, query: str, limit: int = 10, scope: str = "edges") -> Dict[str, Any]:
-        results = _run_async(
-            self._client.search(query=query, group_ids=[graph_id], num_results=limit)
+        max_retries = 3
+        delay = 2.0
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                results = _run_async(
+                    self._client.search(query=query, group_ids=[graph_id], num_results=limit)
+                )
+                edges = [
+                    {
+                        "uuid": getattr(r, "uuid", ""),
+                        "name": getattr(r, "name", ""),
+                        "fact": getattr(r, "fact", ""),
+                        "source_node_uuid": getattr(r, "source_node_uuid", ""),
+                        "target_node_uuid": getattr(r, "target_node_uuid", ""),
+                    }
+                    for r in (results or [])
+                ]
+                return {"edges": edges, "nodes": []}
+            except Exception as e:
+                last_exc = e
+                logger.debug(
+                    f"Graphiti search attempt {attempt + 1}/{max_retries} failed: "
+                    f"{type(e).__name__}: {e}"
+                )
+                if attempt < max_retries - 1:
+                    import time as _time
+                    _time.sleep(delay)
+                    delay *= 2
+                    # Reconnect in case the Neo4j TCP connection dropped
+                    try:
+                        self._client = self._build_client()
+                    except Exception as rebuild_exc:
+                        logger.warning(f"Graphiti client rebuild failed: {rebuild_exc}")
+        import traceback as _tb
+        logger.error(
+            f"Graphiti search failed after {max_retries} attempts: "
+            f"{type(last_exc).__name__}: {last_exc}\n{_tb.format_exc()}"
         )
-        edges = [
-            {
-                "uuid": getattr(r, "uuid", ""),
-                "name": getattr(r, "name", ""),
-                "fact": getattr(r, "fact", ""),
-                "source_node_uuid": getattr(r, "source_node_uuid", ""),
-                "target_node_uuid": getattr(r, "target_node_uuid", ""),
-            }
-            for r in (results or [])
-        ]
-        return {"edges": edges, "nodes": []}
+        raise last_exc
 
     def add_text(self, graph_id: str, data: str) -> None:
         from graphiti_core.nodes import EpisodeType

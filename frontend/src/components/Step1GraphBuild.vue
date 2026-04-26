@@ -92,15 +92,35 @@
           <div v-if="projectData?.ontology?.edge_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
             <span class="tag-label">{{ $t('step1.labelRelationTypes') }}</span>
             <div class="tags-list">
-              <span 
-                v-for="rel in projectData.ontology.edge_types" 
-                :key="rel.name" 
+              <span
+                v-for="rel in projectData.ontology.edge_types"
+                :key="rel.name"
                 class="entity-tag clickable"
                 @click="selectOntologyItem(rel, 'relation')"
               >
                 {{ rel.name }}
               </span>
             </div>
+          </div>
+
+          <!-- Ontology action buttons (shown when ontology ready but GraphRAG not yet started) -->
+          <div v-if="ontologyReady && currentPhase <= 0" class="ontology-actions">
+            <div class="pause-header">
+              <span class="pause-dot"></span>
+              <span class="pause-title">{{ $t('step1.pauseTitle') }}</span>
+            </div>
+            <p class="pause-desc">{{ $t('step1.pauseDesc') }}</p>
+            <div class="ontology-btn-row">
+              <button class="ont-btn download-btn" @click="downloadOntology">
+                ↓ {{ $t('step1.downloadOntology') }}
+              </button>
+              <button class="ont-btn delete-btn" @click="confirmDeleteOntology">
+                × {{ $t('step1.deleteOntology') }}
+              </button>
+            </div>
+            <button class="ont-btn proceed-btn" @click="$emit('proceed-to-graphrag')">
+              {{ $t('step1.proceedToGraph') }}
+            </button>
           </div>
         </div>
       </div>
@@ -197,6 +217,7 @@ const { t } = useI18n()
 
 const props = defineProps({
   currentPhase: { type: Number, default: 0 },
+  ontologyReady: { type: Boolean, default: false },
   projectData: Object,
   ontologyProgress: Object,
   buildProgress: Object,
@@ -204,7 +225,7 @@ const props = defineProps({
   systemLogs: { type: Array, default: () => [] }
 })
 
-defineEmits(['next-step'])
+const emit = defineEmits(['next-step', 'proceed-to-graphrag', 'delete-ontology'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
@@ -247,6 +268,26 @@ const handleEnterEnvSetup = async () => {
 
 const selectOntologyItem = (item, type) => {
   selectedOntologyItem.value = { ...item, itemType: type }
+}
+
+const downloadOntology = () => {
+  if (!props.projectData?.ontology) return
+  const blob = new Blob(
+    [JSON.stringify(props.projectData.ontology, null, 2)],
+    { type: 'application/json' }
+  )
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `ontology_${props.projectData.project_id || 'export'}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const confirmDeleteOntology = () => {
+  if (confirm(t('step1.deleteOntologyConfirm'))) {
+    emit('delete-ontology')
+  }
 }
 
 const graphStats = computed(() => {
@@ -568,6 +609,87 @@ watch(() => props.systemLogs.length, () => {
 
 .conn-arrow {
     color: #BBB;
+}
+
+/* Ontology action panel */
+.ontology-actions {
+  margin-top: 16px;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  padding: 14px;
+  background: #FAFAFA;
+}
+
+.pause-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pause-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #FF5722;
+  animation: pulse 1s infinite;
+}
+
+.pause-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #333;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.pause-desc {
+  font-size: 11px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.ontology-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ont-btn {
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  transition: opacity 0.2s;
+}
+
+.ont-btn:hover {
+  opacity: 0.8;
+}
+
+.download-btn {
+  background: #E8F5E9;
+  color: #2E7D32;
+  flex: 1;
+}
+
+.delete-btn {
+  background: #FFEBEE;
+  color: #C62828;
+  flex: 1;
+}
+
+.proceed-btn {
+  width: 100%;
+  background: #000;
+  color: #FFF;
+  padding: 12px;
+  font-size: 12px;
 }
 
 /* Step 02 Stats */

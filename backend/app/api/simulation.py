@@ -1397,7 +1397,7 @@ def generate_profiles():
                 "error": t('api.noMatchingEntities')
             }), 400
         
-        generator = OasisProfileGenerator()
+        generator = OasisProfileGenerator(graph_id=graph_id)
         profiles = generator.generate_profiles_from_entities(
             entities=filtered.entities,
             use_llm=use_llm

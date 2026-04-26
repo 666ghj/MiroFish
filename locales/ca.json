@@ -69,7 +69,9 @@
     "promptPlaceholder": "// Descriu el teu requisit de simulació o predicció en llenguatge natural",
     "engineBadge": "Motor: MiroFish-V1.0",
     "startEngine": "Inicia el motor",
-    "initializing": "Inicialitzant..."
+    "initializing": "Inicialitzant...",
+    "importOntology": "Importa ontologia",
+    "importOntologyHint": "Selecciona el fitxer JSON d'ontologia"
   },
   "main": {
     "layoutGraph": "Graf",
@@ -114,7 +116,13 @@
     "labelRelation": "RELACIÓ",
     "labelAttributes": "ATRIBUTS",
     "labelExamples": "EXEMPLES",
-    "labelConnections": "CONNEXIONS"
+    "labelConnections": "CONNEXIONS",
+    "pauseTitle": "Ontologia llesta",
+    "pauseDesc": "Revisa l'ontologia generada abans de construir el graf de coneixement.",
+    "downloadOntology": "Descarregar ontologia JSON",
+    "deleteOntology": "Esborrar ontologia",
+    "proceedToGraph": "Continuar a GraphRAG →",
+    "deleteOntologyConfirm": "Esborrar aquesta ontologia i tornar a l'inici?"
   },
   "step2": {
     "simInstanceInit": "Inicialització de la instància de simulació",
@@ -352,6 +360,9 @@
     "graphBuilding": "Construcció del graf en curs. No reenvïis. Per forçar la reconstrucció, afegeix force: true.",
     "textNotFound": "No s'ha trobat el contingut de text extret",
     "ontologyNotFound": "No s'ha trobat la definició de l'ontologia",
+    "requireOntologyJson": "Cal proporcionar el JSON d'ontologia (camp ontology)",
+    "invalidOntologyJson": "Format JSON d'ontologia no vàlid",
+    "invalidOntologyStructure": "L'ontologia ha de tenir arrays entity_types i edge_types",
     "graphBuildStarted": "Tasca de construcció del graf iniciada. Consulta el progrés a /task/{taskId}.",
     "graphBuildComplete": "Construcció del graf completada",
     "buildFailed": "Error en la construcció: {error}",
@@ -543,6 +554,9 @@
     "loadConfigFailed": "Error en carregar la configuració: {error}",
     "step2Init": "Configuració de l'entorn del pas 2 inicialitzada",
     "step3Init": "Execució de la simulació del pas 3 inicialitzada",
+    "reconnectingToSim": "Reconnectant a la simulació en curs...",
+    "simAlreadyRunning": "La simulació ja s'està executant, reconnectant...",
+    "simAlreadyCompleted": "La simulació ja ha finalitzat",
     "startingDualSim": "Iniciant la simulació paral·lela en dues plataformes...",
     "setMaxRounds": "Nombre màxim de rondes de simulació establert a: {rounds}",
     "graphMemoryUpdateEnabled": "Actualització dinàmica de la memòria del graf activada",

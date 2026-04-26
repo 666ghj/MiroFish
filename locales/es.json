@@ -69,7 +69,9 @@
     "promptPlaceholder": "// Describe tu requisito de simulación o predicción en lenguaje natural",
     "engineBadge": "Motor: MiroFish-V1.0",
     "startEngine": "Iniciar motor",
-    "initializing": "Inicializando..."
+    "initializing": "Inicializando...",
+    "importOntology": "Importar ontología",
+    "importOntologyHint": "Seleccionar archivo JSON de ontología"
   },
   "main": {
     "layoutGraph": "Grafo",
@@ -114,7 +116,13 @@
     "labelRelation": "RELACIÓN",
     "labelAttributes": "ATRIBUTOS",
     "labelExamples": "EJEMPLOS",
-    "labelConnections": "CONEXIONES"
+    "labelConnections": "CONEXIONES",
+    "pauseTitle": "Ontología lista",
+    "pauseDesc": "Revisa la ontología generada antes de construir el grafo de conocimiento.",
+    "downloadOntology": "Descargar ontología JSON",
+    "deleteOntology": "Eliminar ontología",
+    "proceedToGraph": "Continuar a GraphRAG →",
+    "deleteOntologyConfirm": "¿Eliminar esta ontología y volver al inicio?"
   },
   "step2": {
     "simInstanceInit": "Inicialización de instancia de simulación",
@@ -352,6 +360,9 @@
     "graphBuilding": "Construcción del grafo en progreso. No reenvíes. Para forzar reconstrucción, agregá force: true.",
     "textNotFound": "Contenido de texto extraído no encontrado",
     "ontologyNotFound": "Definición de ontología no encontrada",
+    "requireOntologyJson": "Por favor proporciona el JSON de ontología (campo ontology)",
+    "invalidOntologyJson": "Formato JSON de ontología no válido",
+    "invalidOntologyStructure": "La ontología debe tener arrays entity_types y edge_types",
     "graphBuildStarted": "Tarea de construcción del grafo iniciada. Consultá progreso vía /task/{taskId}.",
     "graphBuildComplete": "Construcción del grafo completa",
     "buildFailed": "Construcción falló: {error}",
@@ -543,6 +554,9 @@
     "loadConfigFailed": "Error al cargar configuración: {error}",
     "step2Init": "Paso 2: configuración del entorno inicializada",
     "step3Init": "Paso 3: ejecución de simulación inicializada",
+    "reconnectingToSim": "Reconectando a la simulación en curso...",
+    "simAlreadyRunning": "Simulación ya en curso, reconectando...",
+    "simAlreadyCompleted": "Simulación ya completada",
     "startingDualSim": "Iniciando simulación paralela de doble plataforma...",
     "setMaxRounds": "Rondas máximas de simulación configuradas en: {rounds}",
     "graphMemoryUpdateEnabled": "Actualización dinámica de memoria del grafo habilitada",

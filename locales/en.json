@@ -69,7 +69,9 @@
     "promptPlaceholder": "// Describe your simulation or prediction requirement in natural language",
     "engineBadge": "Engine: MiroFish-V1.0",
     "startEngine": "Start Engine",
-    "initializing": "Initializing..."
+    "initializing": "Initializing...",
+    "importOntology": "Import Ontology",
+    "importOntologyHint": "Select ontology JSON file"
   },
   "main": {
     "layoutGraph": "Graph",
@@ -114,7 +116,13 @@
     "labelRelation": "RELATION",
     "labelAttributes": "ATTRIBUTES",
     "labelExamples": "EXAMPLES",
-    "labelConnections": "CONNECTIONS"
+    "labelConnections": "CONNECTIONS",
+    "pauseTitle": "Ontology Ready",
+    "pauseDesc": "Review the generated ontology before building the knowledge graph.",
+    "downloadOntology": "Download Ontology JSON",
+    "deleteOntology": "Delete Ontology",
+    "proceedToGraph": "Proceed to GraphRAG →",
+    "deleteOntologyConfirm": "Delete this ontology and return to home?"
   },
   "step2": {
     "simInstanceInit": "Simulation Instance Initialization",
@@ -353,6 +361,9 @@
     "graphBuilding": "Graph build in progress. Do not resubmit. To force rebuild, add force: true.",
     "textNotFound": "Extracted text content not found",
     "ontologyNotFound": "Ontology definition not found",
+    "requireOntologyJson": "Please provide the ontology JSON (ontology field)",
+    "invalidOntologyJson": "Invalid ontology JSON format",
+    "invalidOntologyStructure": "Ontology must have entity_types and edge_types arrays",
     "graphBuildStarted": "Graph build task started. Query progress via /task/{taskId}.",
     "graphBuildComplete": "Graph build complete",
     "buildFailed": "Build failed: {error}",
@@ -544,6 +555,9 @@
     "loadConfigFailed": "Failed to load config: {error}",
     "step2Init": "Step 2 environment setup initialized",
     "step3Init": "Step 3 simulation run initialized",
+    "reconnectingToSim": "Reconnecting to running simulation...",
+    "simAlreadyRunning": "Simulation already running, reconnecting...",
+    "simAlreadyCompleted": "Simulation already completed",
     "startingDualSim": "Starting dual-platform parallel simulation...",
     "setMaxRounds": "Max simulation rounds set to: {rounds}",
     "graphMemoryUpdateEnabled": "Dynamic graph memory update enabled",
