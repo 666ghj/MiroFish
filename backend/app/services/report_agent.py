@@ -1132,7 +1132,14 @@ class ReportAgent:
                 data["parameters"] = data.pop("params")
             return True
         return False
-    
+
+    @staticmethod
+    def _strip_fake_tool_results(response: str) -> str:
+        """Strip <tool_result> blocks fabricated by the LLM to prevent hallucination loops."""
+        cleaned = re.sub(r'<tool_result>.*?</tool_result>', '', response, flags=re.DOTALL)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
+
     def _get_tools_description(self) -> str:
         """Generate tool description text"""
         desc_parts = ["Available tools:"]
@@ -1322,7 +1329,7 @@ class ReportAgent:
                 logger.warning(t('report.sectionIterNone', title=section.title, iteration=iteration + 1))
                 # If iterations remain, append a message and retry
                 if iteration < max_iterations - 1:
-                    messages.append({"role": "assistant", "content": "(empty response)"})
+                    messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results("(empty response)")})
                     messages.append({"role": "user", "content": "Please continue generating content."})
                     continue
                 # Last iteration also returned None; break out of the loop and force a conclusion
@@ -1344,7 +1351,7 @@ class ReportAgent:
 
                 if conflict_retries <= 2:
                     # First two occurrences: discard this response and ask the LLM to reply again
-                    messages.append({"role": "assistant", "content": response})
+                    messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
                     messages.append({
                         "role": "user",
                         "content": (
@@ -1384,7 +1391,7 @@ class ReportAgent:
             if has_final_answer:
                 # Insufficient tool calls — reject and require more tool usage
                 if tool_calls_count < min_tool_calls:
-                    messages.append({"role": "assistant", "content": response})
+                    messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
                     unused_tools = all_tools - used_tools
                     unused_hint = f"(These tools have not been used yet, consider trying them: {', '.join(unused_tools)})" if unused_tools else ""
                     messages.append({
@@ -1414,7 +1421,7 @@ class ReportAgent:
             if has_tool_calls:
                 # Tool quota exhausted → notify clearly and require Final Answer output
                 if tool_calls_count >= self.MAX_TOOL_CALLS_PER_SECTION:
-                    messages.append({"role": "assistant", "content": response})
+                    messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
                     messages.append({
                         "role": "user",
                         "content": REACT_TOOL_LIMIT_MSG.format(
@@ -1462,7 +1469,7 @@ class ReportAgent:
                 if unused_tools and tool_calls_count < self.MAX_TOOL_CALLS_PER_SECTION:
                     unused_hint = REACT_UNUSED_TOOLS_HINT.format(unused_list=", ".join(unused_tools))
 
-                messages.append({"role": "assistant", "content": response})
+                messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
                 messages.append({
                     "role": "user",
                     "content": REACT_OBSERVATION_TEMPLATE.format(
@@ -1477,7 +1484,7 @@ class ReportAgent:
                 continue
 
             # ── Case 3: Neither a tool call nor a Final Answer ──
-            messages.append({"role": "assistant", "content": response})
+            messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
 
             if tool_calls_count < min_tool_calls:
                 # Insufficient tool calls — recommend unused tools
@@ -1867,7 +1874,7 @@ class ReportAgent:
                 tool_calls_made.append(call)
             
             # Append the results to the messages
-            messages.append({"role": "assistant", "content": response})
+            messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
             observation = "\n".join([f"[{r['tool']} result]\n{r['result']}" for r in tool_results])
             messages.append({
                 "role": "user",
