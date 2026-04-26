@@ -706,5 +706,8 @@
     "submit": "Entrar",
     "loading": "Autenticando...",
     "invalidCredentials": "Usuario o contraseña incorrectos"
+  },
+  "error": {
+    "filesLostAfterRefresh": "Los archivos se perdieron al refrescar la página. Redirigiendo al inicio para volver a seleccionarlos…"
   }
 }

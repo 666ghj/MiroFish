@@ -706,5 +706,8 @@
     "submit": "Entrar",
     "loading": "Autenticant...",
     "invalidCredentials": "Usuari o contrasenya incorrectes"
+  },
+  "error": {
+    "filesLostAfterRefresh": "Els fitxers s'han perdut en refrescar la pàgina. Redirigint a l'inici per tornar a seleccionar-los…"
   }
 }

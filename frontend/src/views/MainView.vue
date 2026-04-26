@@ -197,9 +197,16 @@ const initProject = async () => {
 
 const handleNewProject = async () => {
   const pending = getPendingUpload()
-  if (!pending.isPending || pending.files.length === 0) {
-    error.value = 'No pending files found.'
-    addLog('Error: No pending files found for new project.')
+
+  if (!pending.isPending) {
+    return  // not a new-project session
+  }
+
+  if (pending.files.length === 0) {
+    error.value = t('error.filesLostAfterRefresh')
+    addLog(t('error.filesLostAfterRefresh'))
+    clearPendingUpload()
+    setTimeout(() => router.push('/'), 3000)
     return
   }
 

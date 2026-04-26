@@ -707,5 +707,8 @@
     "submit": "Enter",
     "loading": "Authenticating...",
     "invalidCredentials": "Invalid username or password"
+  },
+  "error": {
+    "filesLostAfterRefresh": "Files were lost after page refresh. Redirecting to home to re-select files…"
   }
 }

@@ -1,15 +1,16 @@
 /**
- * 临时存储待上传的文件和需求
- * 用于首页点击启动引擎后立即跳转，在Process页面再进行API调用
+ * Temporary storage for files and simulation requirement.
+ * - simulationRequirement: persisted to sessionStorage (survives refresh within the tab)
+ * - files: in-memory only (File objects are not JSON-serializable)
  */
 import { reactive } from 'vue'
 
 const state = reactive({
   files: [],
-  simulationRequirement: '',
-  isPending: false,
+  simulationRequirement: sessionStorage.getItem('pendingRequirement') || '',
+  isPending: sessionStorage.getItem('pendingIsPending') === 'true',
   importOntologyMode: false,
-  ontologyFile: null
+  ontologyFile: null,
 })
 
 export function setPendingUpload(files, requirement, importOntologyMode = false, ontologyFile = null) {
@@ -18,6 +19,8 @@ export function setPendingUpload(files, requirement, importOntologyMode = false,
   state.isPending = true
   state.importOntologyMode = importOntologyMode
   state.ontologyFile = ontologyFile
+  sessionStorage.setItem('pendingRequirement', requirement)
+  sessionStorage.setItem('pendingIsPending', 'true')
 }
 
 export function getPendingUpload() {
@@ -26,7 +29,7 @@ export function getPendingUpload() {
     simulationRequirement: state.simulationRequirement,
     isPending: state.isPending,
     importOntologyMode: state.importOntologyMode,
-    ontologyFile: state.ontologyFile
+    ontologyFile: state.ontologyFile,
   }
 }
 
@@ -36,6 +39,8 @@ export function clearPendingUpload() {
   state.isPending = false
   state.importOntologyMode = false
   state.ontologyFile = null
+  sessionStorage.removeItem('pendingRequirement')
+  sessionStorage.removeItem('pendingIsPending')
 }
 
 export default state

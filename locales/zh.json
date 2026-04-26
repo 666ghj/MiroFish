@@ -707,5 +707,8 @@
     "submit": "登录",
     "loading": "验证中...",
     "invalidCredentials": "用户名或密码错误"
+  },
+  "error": {
+    "filesLostAfterRefresh": "刷新页面后文件丢失，正在跳转到首页重新选择文件…"
   }
 }
