@@ -201,6 +201,9 @@ class OntologyGenerator:
             max_tokens=8192
         )
 
+        # Normalise string attributes before validation
+        result = OntologyGenerator._normalize_ontology_attributes(result)
+
         # Validate and post-process
         result = self._validate_and_process(result)
 
@@ -263,6 +266,29 @@ Based on the content above, design entity types and relationship types suitable 
 """
 
         return message
+
+    @staticmethod
+    def _normalize_ontology_attributes(ontology: dict) -> dict:
+        """Normalize string attributes in LLM-generated ontology to dicts (in-place).
+
+        Handles both ``entities``/``edges`` keys (used in tests) and
+        ``entity_types``/``edge_types`` keys (used in production LLM output).
+        """
+        for key in ("entities", "entity_types"):
+            for entity in ontology.get(key, []):
+                entity["attributes"] = [
+                    attr if isinstance(attr, dict)
+                    else {"name": attr, "type": "text", "description": attr}
+                    for attr in entity.get("attributes", [])
+                ]
+        for key in ("edges", "edge_types"):
+            for edge in ontology.get(key, []):
+                edge["attributes"] = [
+                    attr if isinstance(attr, dict)
+                    else {"name": attr, "type": "text", "description": attr}
+                    for attr in edge.get("attributes", [])
+                ]
+        return ontology
 
     def _validate_and_process(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and post-process the result"""

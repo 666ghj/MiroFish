@@ -240,7 +240,7 @@ class GraphBuilderService:
             attrs = {"__doc__": description}
             annotations = {}
 
-            for attr_def in entity_def.get("attributes", []):
+            for attr_def in GraphBuilderService._normalize_entity_attributes(entity_def.get("attributes", [])):
                 attr_name = safe_attr_name(attr_def["name"])
                 attr_desc = attr_def.get("description", attr_name)
                 attrs[attr_name] = Field(description=attr_desc, default=None)
@@ -260,7 +260,7 @@ class GraphBuilderService:
             attrs = {"__doc__": description}
             annotations = {}
 
-            for attr_def in edge_def.get("attributes", []):
+            for attr_def in GraphBuilderService._normalize_entity_attributes(edge_def.get("attributes", [])):
                 attr_name = safe_attr_name(attr_def["name"])
                 attr_desc = attr_def.get("description", attr_name)
                 attrs[attr_name] = Field(description=attr_desc, default=None)
@@ -429,4 +429,15 @@ class GraphBuilderService:
     def delete_graph(self, graph_id: str):
         """Delete graph"""
         self._graph.delete_graph(graph_id)
+
+    @staticmethod
+    def _normalize_entity_attributes(attributes: list) -> list:
+        """Ensure each attribute item is a dict; convert strings to minimal dicts."""
+        result = []
+        for attr in attributes:
+            if isinstance(attr, str):
+                result.append({"name": attr, "type": "text", "description": attr})
+            elif isinstance(attr, dict):
+                result.append(attr)
+        return result
 
