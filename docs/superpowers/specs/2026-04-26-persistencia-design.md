@@ -295,10 +295,12 @@ En canviar de `local` a `azure` (o `s3`), els paths a la BD no canvien — nomé
 
 ### Rols i accés
 
-| Rol | Accés |
-|-----|-------|
-| `user` | Veu i gestiona els seus propis projectes |
-| `admin` | Veu tots els projectes + gestió d'usuaris + SystemConfig |
+Un `admin` **és també un `user`**: té els seus propis projectes i usa l'aplicació igual que qualsevol usuari. Les capacitats addicionals d'administració (veure tots els projectes, gestió d'usuaris, `SystemConfig`) estan en pantalles separades, accessibles des d'un menú d'administració.
+
+| Rol | Accés aplicació | Accés administració |
+|-----|-----------------|---------------------|
+| `user` | Els seus propis projectes | — |
+| `admin` | Els seus propis projectes | Tots els projectes + Gestió d'usuaris + SystemConfig |
 
 Decoradors Flask:
 
@@ -307,6 +309,10 @@ Decoradors Flask:
 @require_admin         # només admins
 @require_project_owner # propietari del projecte o admin
 ```
+
+### Auth provisional a eliminar
+
+Actualment existeix un sistema d'autenticació provisional (`backend/app/api/auth.py`) basat en un usuari únic `demo` amb `DEMO_PASSWORD` com a variable d'entorn i JWT HS256 de 24h. **Cal eliminar-lo completament** i substituir-lo pel sistema descrit en aquesta especificació.
 
 ### Flux d'invitació
 
@@ -317,16 +323,37 @@ Admin crea usuari (status: pending)
   → status: active
 ```
 
+### Flux "He oblidat la contrasenya"
+
+```
+Usuari introdueix el seu email al formulari
+  → resposta sempre idèntica: "Si l'adreça existeix, rebràs un correu en breus"
+     (no revelar si l'email és vàlid o no)
+  → si l'email existeix a la BD: enviar PasswordResetToken (TTL 1h)
+  → usuari clica l'enllaç, defineix nova contrasenya
+  → token marcat com a used_at
+```
+
+**Principi de seguretat:** cap resposta de l'API d'autenticació ha de revelar si un email existeix o no al sistema. Tant el login fallit com el forgot-password han de retornar missatges genèrics.
+
 ### Endpoints d'autenticació
 
 ```
-POST /api/auth/login
+POST /api/auth/login             → no revelar si email/password és incorrecte per separat
 POST /api/auth/refresh
 POST /api/auth/logout
-POST /api/auth/set-password     (invitació + primer login)
-POST /api/auth/forgot-password
+POST /api/auth/set-password      (invitació + primer login)
+POST /api/auth/forgot-password   → resposta genèrica sempre
 POST /api/auth/reset-password
 ```
+
+### Look & feel
+
+La interfície d'autenticació i administració seguirà el **Sistema de Disseny de la Generalitat de Catalunya (Gencat)**, consistent amb el disseny existent a `dev/AgentCAT`. Principis aplicables:
+- Accessibilitat per defecte (teclat, focus visible, labels explícits)
+- Inputs amb ajuda contextual i missatges d'error associats (però sense revelar info sensible)
+- Estados completament modelats: loading, error, confirmació
+- Patrons previsibles i feedback immediat
 
 ---
 
