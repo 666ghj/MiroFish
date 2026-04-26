@@ -597,7 +597,8 @@
     "getReportInfoFailed": "获取报告信息失败: {error}",
     "enterStep": "进入 Step {step}: {name}",
     "returnToStep": "返回 Step {step}: {name}",
-    "customSimRounds": "自定义模拟轮数: {rounds} 轮"
+    "customSimRounds": "自定义模拟轮数: {rounds} 轮",
+    "reconnectingToTask": "重新连接到活动任务 {taskId}…"
   },
   "report": {
     "taskStarted": "报告生成任务开始",

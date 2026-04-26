@@ -52,6 +52,9 @@ class Project:
     # Error info
     error: Optional[str] = None
 
+    # Persisted so the frontend can reconnect after a page refresh
+    active_task_id: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
@@ -69,7 +72,8 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
-            "error": self.error
+            "error": self.error,
+            "active_task_id": self.active_task_id,
         }
     
     @classmethod
@@ -94,7 +98,8 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
-            error=data.get('error')
+            error=data.get('error'),
+            active_task_id=data.get('active_task_id'),
         )
 
 

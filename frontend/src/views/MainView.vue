@@ -257,10 +257,14 @@ const loadProject = async () => {
       
       if (res.data.status === 'ontology_generated' && !res.data.graph_id) {
         await startBuildGraph()
-      } else if (res.data.status === 'graph_building' && res.data.graph_build_task_id) {
-        currentPhase.value = 1
-        startPollingTask(res.data.graph_build_task_id)
-        startGraphPolling()
+      } else if (res.data.status === 'graph_building') {
+        const taskId = res.data.active_task_id || res.data.graph_build_task_id
+        if (taskId) {
+          currentPhase.value = 1
+          addLog(t('log.reconnectingToTask', { taskId }))
+          startPollingTask(taskId)
+          startGraphPolling()
+        }
       } else if (res.data.status === 'graph_completed' && res.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(res.data.graph_id)

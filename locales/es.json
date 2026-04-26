@@ -596,7 +596,8 @@
     "getReportInfoFailed": "Error al obtener información del informe: {error}",
     "enterStep": "Entrando al Paso {step}: {name}",
     "returnToStep": "Volviendo al Paso {step}: {name}",
-    "customSimRounds": "Rondas de simulación personalizadas: {rounds} rondas"
+    "customSimRounds": "Rondas de simulación personalizadas: {rounds} rondas",
+    "reconnectingToTask": "Reconectando a la tarea activa {taskId}…"
   },
   "report": {
     "taskStarted": "Tarea de generación de informe iniciada",

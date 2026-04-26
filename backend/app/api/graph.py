@@ -489,6 +489,7 @@ def build_graph():
         # Update project status
         project.status = ProjectStatus.GRAPH_BUILDING
         project.graph_build_task_id = task_id
+        project.active_task_id = task_id
         ProjectManager.save_project(project)
 
         # Capture locale before spawning background thread
@@ -592,6 +593,7 @@ def build_graph():
                 
                 # Update project status
                 project.status = ProjectStatus.GRAPH_COMPLETED
+                project.active_task_id = None
                 ProjectManager.save_project(project)
 
                 node_count = graph_data.get("node_count", 0)
@@ -620,6 +622,7 @@ def build_graph():
                 
                 project.status = ProjectStatus.FAILED
                 project.error = str(e)
+                project.active_task_id = None
                 ProjectManager.save_project(project)
                 
                 task_manager.update_task(

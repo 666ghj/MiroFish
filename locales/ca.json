@@ -596,7 +596,8 @@
     "getReportInfoFailed": "Error en obtenir la informació de l'informe: {error}",
     "enterStep": "Entrant al pas {step}: {name}",
     "returnToStep": "Tornant al pas {step}: {name}",
-    "customSimRounds": "Rondes de simulació personalitzades: {rounds} rondes"
+    "customSimRounds": "Rondes de simulació personalitzades: {rounds} rondes",
+    "reconnectingToTask": "Reconnectant a la tasca activa {taskId}…"
   },
   "report": {
     "taskStarted": "Tasca de generació de l'informe iniciada",
