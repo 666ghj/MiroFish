@@ -3,9 +3,13 @@ Report API routes
 Provides simulation report generation, retrieval, and chat endpoints
 """
 
+import io
 import os
+import tempfile
 import traceback
 import threading
+import markdown as md_lib
+import fitz  # PyMuPDF
 from flask import request, jsonify, send_file
 
 from . import report_bp
@@ -395,43 +399,103 @@ def list_reports():
         }), 500
 
 
+def _generate_pdf_bytes(markdown_content: str) -> bytes:
+    """Convert Markdown string to PDF bytes using PyMuPDF (fitz.Story)."""
+    html_body = md_lib.markdown(
+        markdown_content,
+        extensions=['tables', 'fenced_code']
+    )
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{ font-family: sans-serif; font-size: 12pt; line-height: 1.6;
+         margin: 40px; color: #1a1a1a; }}
+  h1 {{ font-size: 22pt; border-bottom: 2px solid #333; padding-bottom: 6px; }}
+  h2 {{ font-size: 16pt; margin-top: 28px; }}
+  h3 {{ font-size: 13pt; }}
+  pre {{ background: #f4f4f4; padding: 10px; border-radius: 4px;
+         font-size: 10pt; overflow-x: auto; }}
+  code {{ background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: 10pt; }}
+  blockquote {{ border-left: 3px solid #aaa; margin-left: 0;
+                padding-left: 12px; color: #555; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+  th, td {{ border: 1px solid #ccc; padding: 6px 10px; text-align: left; }}
+  th {{ background: #f0f0f0; }}
+</style>
+</head>
+<body>{html_body}</body>
+</html>"""
+
+    story = fitz.Story(html)
+    buf = io.BytesIO()
+    writer = fitz.DocumentWriter(buf)
+    mediabox = fitz.paper_rect("a4")
+    where = mediabox + (36, 36, -36, -36)  # margins
+    more = True
+    while more:
+        device = writer.begin_page(mediabox)
+        more, _ = story.place(where)
+        story.draw(device)
+        writer.end_page()
+    writer.close()
+    return buf.getvalue()
+
+
 @report_bp.route('/<report_id>/download', methods=['GET'])
 def download_report(report_id: str):
     """
-    Download report (Markdown format)
+    Download report in the requested format.
 
-    Returns a Markdown file
+    Query params:
+        format: 'md' (default) | 'pdf'
     """
     try:
+        fmt = request.args.get('format', 'md').lower()
+        if fmt not in ('md', 'pdf'):
+            return jsonify({
+                "success": False,
+                "error": f"Unsupported format '{fmt}'. Use 'md' or 'pdf'."
+            }), 400
+
         report = ReportManager.get_report(report_id)
-        
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+
         md_path = ReportManager._get_report_markdown_path(report_id)
-        
-        if not os.path.exists(md_path):
-            # If MD file doesn't exist, create a temporary file
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                f.write(report.markdown_content)
+        if os.path.exists(md_path):
+            with open(md_path, 'r', encoding='utf-8') as f:
+                markdown_content = f.read()
+        else:
+            markdown_content = report.markdown_content
+
+        if fmt == 'md':
+            if os.path.exists(md_path):
+                return send_file(
+                    md_path,
+                    as_attachment=True,
+                    download_name=f"{report_id}.md"
+                )
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md',
+                                             delete=False, encoding='utf-8') as f:
+                f.write(markdown_content)
                 temp_path = f.name
-            
-            return send_file(
-                temp_path,
-                as_attachment=True,
-                download_name=f"{report_id}.md"
-            )
-        
+            return send_file(temp_path, as_attachment=True,
+                             download_name=f"{report_id}.md")
+
+        # fmt == 'pdf'
+        pdf_bytes = _generate_pdf_bytes(markdown_content)
         return send_file(
-            md_path,
+            io.BytesIO(pdf_bytes),
+            mimetype='application/pdf',
             as_attachment=True,
-            download_name=f"{report_id}.md"
+            download_name=f"{report_id}.pdf"
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to download report: {str(e)}")
         return jsonify({

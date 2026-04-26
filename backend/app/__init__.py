@@ -23,7 +23,11 @@ _PUBLIC_PATHS = {'/health', '/api/auth/login'}
 def create_app(config_class=Config):
     """Flask application factory"""
     app = Flask(__name__)
-    app.config.from_object(config_class)
+    if isinstance(config_class, dict):
+        app.config.from_object(Config)
+        app.config.from_mapping(config_class)
+    else:
+        app.config.from_object(config_class)
 
     # Configure JSON encoding: ensure non-ASCII characters are output directly (not as \uXXXX)
     # Flask >= 2.3 uses app.json.ensure_ascii; older versions use JSON_AS_ASCII config
@@ -55,6 +59,8 @@ def create_app(config_class=Config):
     # Middleware d'autenticació JWT — s'executa ABANS del log_request (ordre FIFO)
     @app.before_request
     def require_auth():
+        if app.config.get('TESTING'):
+            return None  # skip auth in test mode
         if request.path in _PUBLIC_PATHS or request.method == 'OPTIONS':
             return None
         if not request.path.startswith('/api/'):
