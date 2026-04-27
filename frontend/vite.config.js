@@ -4,6 +4,8 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Support deployment at a sub-path (e.g., /mirofish)
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [vue()],
   resolve: {
     alias: {
@@ -16,7 +18,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:5001',
         changeOrigin: true,
         secure: false
       }
