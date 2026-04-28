@@ -1,7 +1,7 @@
 [project]
 name = "mirofish-backend"
 version = "0.1.0"
-description = "MiroFish - 简洁通用的群体智能引擎，预测万物"
+description = "MiroFish - A Simple and Universal Swarm Intelligence Engine, Predicting Anything"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0" }
 authors = [
@@ -9,27 +9,27 @@ authors = [
 ]
 
 dependencies = [
-    # 核心框架
+    # Core framework
     "flask>=3.0.0",
     "flask-cors>=6.0.0",
-    
-    # LLM 相关
+
+    # LLM-related
     "openai>=1.0.0",
-    
+
     # Zep Cloud
     "zep-cloud==3.13.0",
-    
-    # OASIS 社交媒体模拟
+
+    # OASIS social media simulation
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",
-    
-    # 文件处理
+
+    # File processing
     "PyMuPDF>=1.24.0",
-    # 编码检测（支持非UTF-8编码的文本文件）
+    # Encoding detection (supports text files with non-UTF-8 encodings)
     "charset-normalizer>=3.0.0",
     "chardet>=5.0.0",
-    
-    # 工具库
+
+    # Utility libraries
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
 ]

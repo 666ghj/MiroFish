@@ -1,5 +1,5 @@
 """
-API路由模块
+API route module
 """
 
 from flask import Blueprint
@@ -13,4 +13,3 @@ from . import graph  # noqa: E402, F401
 from . import simulation  # noqa: E402, F401
 from . import report  # noqa: E402, F401
 from . import pipeline  # noqa: E402, F401
-
