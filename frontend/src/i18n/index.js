@@ -14,12 +14,14 @@ for (const path in localeFiles) {
   }
 }
 
-const savedLocale = localStorage.getItem('locale') || 'zh'
+// Default to English for production, can be overridden by VITE_DEFAULT_LOCALE
+const defaultLocale = import.meta.env.VITE_DEFAULT_LOCALE || 'en'
+const savedLocale = localStorage.getItem('locale') || defaultLocale
 
 const i18n = createI18n({
   legacy: false,
   locale: savedLocale,
-  fallbackLocale: 'zh',
+  fallbackLocale: defaultLocale,
   messages
 })
 
