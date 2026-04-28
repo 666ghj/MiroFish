@@ -1,0 +1,65 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/predictions
+
+permissions:
+  contents: read
+
+jobs:
+  cjk-guard:
+    name: CJK guard (deterministic)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run CJK regression guard
+        # Uses no LLM key, runs on every PR. Fails if any CJK ideograph
+        # re-enters the source tree outside the allowlist.
+        run: pytest backend/tests/test_prompts_no_cjk.py -v
+
+  llm-output-english:
+    name: Real LLM output is English
+    # Runs only on the main branch and on PRs labeled `run-llm-tests`.
+    # Skipped otherwise to avoid burning LLM credits on every push.
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.labels.*.name, 'run-llm-tests')
+    runs-on: ubuntu-latest
+    needs: cjk-guard
+    env:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+      LLM_MODEL_NAME: ${{ vars.LLM_MODEL_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        # We only need openai + pydantic + dotenv + pytest for this test path.
+        # Avoid installing the full MiroFish dep tree (camel-ai, torch, zep)
+        # to keep this job under 60 s.
+        run: |
+          pip install --upgrade pip
+          pip install pytest openai pydantic python-dotenv
+
+      - name: Run real-LLM output test
+        run: pytest backend/tests/test_real_llm_english_output.py -v
