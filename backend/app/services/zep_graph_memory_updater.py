@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
+from .memory import EpisodeInput, MemoryBackend, get_memory_backend
+from .memory.exceptions import (
+    MemoryBackendQuotaExceeded,
+    MemoryBackendRateLimited,
+)
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -229,21 +233,19 @@ class ZepGraphMemoryUpdater:
     MAX_RETRIES = 3
     RETRY_DELAY = 2  # 秒
     
-    def __init__(self, graph_id: str, api_key: Optional[str] = None):
-        """
-        初始化更新器
-        
-        Args:
-            graph_id: Zep图谱ID
-            api_key: Zep API Key（可选，默认从配置读取）
+    def __init__(self, graph_id: str, backend: Optional[MemoryBackend] = None):
+        """Construct the updater bound to a specific memory graph.
+
+        ``backend`` may be passed explicitly for tests; in production
+        the process-wide memory backend singleton is used.
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        # Tolerate the legacy ``api_key`` form during migration.
+        if isinstance(backend, str):  # type: ignore[unreachable]
+            import os
+            os.environ.setdefault("ZEP_API_KEY", backend)
+            backend = None
+        self.backend: MemoryBackend = backend or get_memory_backend()
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -408,28 +410,41 @@ class ZepGraphMemoryUpdater:
         episode_texts = [activity.to_episode_text() for activity in activities]
         combined_text = "\n".join(episode_texts)
         
-        # 带重试的发送
+        episode = EpisodeInput(content=combined_text, episode_type="text")
+
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
-                )
-                
+                self.backend.add_episode(self.graph_id, episode)
+
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)
-                logger.info(f"成功批量发送 {len(activities)} 条{display_name}活动到图谱 {self.graph_id}")
-                logger.debug(f"批量内容预览: {combined_text[:200]}...")
+                logger.info(
+                    f"Pushed {len(activities)} {display_name} activities to graph {self.graph_id}"
+                )
+                logger.debug(f"Batch preview: {combined_text[:200]}...")
                 return
-                
-            except Exception as e:
+
+            except (MemoryBackendQuotaExceeded, MemoryBackendRateLimited) as e:
+                # Retry transient throttling but record at warning level
+                # so the operator notices when the cloud free tier is
+                # being hit in a long simulation.
                 if attempt < self.MAX_RETRIES - 1:
-                    logger.warning(f"批量发送到Zep失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    logger.warning(
+                        f"Memory backend throttled batch send (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}"
+                    )
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                 else:
-                    logger.error(f"批量发送到Zep失败，已重试{self.MAX_RETRIES}次: {e}")
+                    logger.error(
+                        f"Memory backend rejected batch after {self.MAX_RETRIES} attempts: {e}"
+                    )
+                    self._failed_count += 1
+            except Exception as e:
+                if attempt < self.MAX_RETRIES - 1:
+                    logger.warning(f"Batch send failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    time.sleep(self.RETRY_DELAY * (attempt + 1))
+                else:
+                    logger.error(f"Batch send failed after {self.MAX_RETRIES} attempts: {e}")
                     self._failed_count += 1
     
     def _flush_remaining(self):

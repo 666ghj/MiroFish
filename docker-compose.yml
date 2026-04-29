@@ -12,3 +12,41 @@ services:
     restart: unless-stopped
     volumes:
       - ./backend/uploads:/app/backend/uploads
+    # If MEMORY_BACKEND=graphiti is set in .env, depend on the local
+    # Neo4j service. The 'graphiti' compose profile activates Neo4j;
+    # otherwise it is skipped and Zep Cloud is used.
+    depends_on:
+      neo4j:
+        condition: service_healthy
+        required: false
+
+  # Self-hosted Graphiti memory backend (Neo4j 5.x).
+  # Activate with:  docker compose --profile graphiti up -d
+  # Default credentials: neo4j / mirofish-local — override via .env.
+  neo4j:
+    image: neo4j:5.26
+    container_name: mirofish-neo4j
+    profiles: ["graphiti"]
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-mirofish-local}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 2G
+    ports:
+      - "7474:7474"  # Neo4j Browser UI
+      - "7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u $${NEO4J_USER:-neo4j} -p $${NEO4J_PASSWORD:-mirofish-local} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

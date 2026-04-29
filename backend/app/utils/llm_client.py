@@ -1,6 +1,8 @@
-"""
-LLM客户端封装
-统一使用OpenAI格式调用
+"""LLM client wrapper.
+
+Uniform OpenAI-compatible call path. Every call automatically
+records token + cost usage into :class:`UsageTracker` so the UI can
+show live spend during a simulation.
 """
 
 import json
@@ -12,25 +14,47 @@ from ..config import Config
 
 
 class LLMClient:
-    """LLM客户端"""
-    
+    """OpenAI-compatible chat client with built-in usage tracking."""
+
     def __init__(
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        simulation_id: Optional[str] = None,
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
-        
+        # Optional: tag every request from this client with a
+        # simulation_id so per-simulation totals are accurate.
+        self.simulation_id = simulation_id
+
         if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
-        
+            raise ValueError("LLM_API_KEY is not configured")
+
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
         )
+
+    def bind_simulation(self, simulation_id: Optional[str]) -> None:
+        """Attach (or clear) a simulation id for usage attribution."""
+        self.simulation_id = simulation_id
+
+    def _record_usage(self, response: Any) -> None:
+        """Best-effort hook into the usage tracker. Never raises."""
+        try:
+            from ..services.usage_tracker import get_usage_tracker
+
+            get_usage_tracker().record_from_openai_response(
+                response,
+                simulation_id=self.simulation_id,
+                model=self.model,
+            )
+        except Exception:  # noqa: BLE001
+            # Tracking is observational; never break a real call for it.
+            pass
     
     def chat(
         self,
@@ -60,10 +84,15 @@ class LLMClient:
         
         if response_format:
             kwargs["response_format"] = response_format
-        
+
         response = self.client.chat.completions.create(**kwargs)
+        # Record usage before any parsing so transient parse errors
+        # do not lose cost attribution.
+        self._record_usage(response)
+
         content = response.choices[0].message.content
-        # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
+        # Some models (e.g. MiniMax M2.5) wrap reasoning in <think>…</think>;
+        # strip that out so callers get the plain answer.
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
         return content
     

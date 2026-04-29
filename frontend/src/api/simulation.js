@@ -93,6 +93,43 @@ export const stopSimulation = (data) => {
 }
 
 /**
+ * Emergency-stop every running simulation on this host.
+ * Used by the floating "Stop All" panic button. Force-kills tracked
+ * simulations and sweeps any orphaned subprocesses left behind by a
+ * previous backend crash, so LLM credits cannot keep being burned.
+ */
+export const emergencyStopAll = () => {
+  return service.post('/api/simulation/emergency-stop', {})
+}
+
+/**
+ * Live LLM-usage snapshot for one simulation.
+ * Polled every few seconds by the usage bar so users see token /
+ * cost totals climb in real time and can stop runaway runs.
+ */
+export const getSimulationUsage = (simulationId) => {
+  return service.get(`/api/simulation/${simulationId}/usage`)
+}
+
+/**
+ * Aggregate usage across every simulation on this host.
+ * Used by the always-visible footer indicator.
+ */
+export const getGlobalUsage = () => {
+  return service.get('/api/simulation/usage/global')
+}
+
+/**
+ * Set or clear a cost cap for one simulation. Pass null to clear.
+ */
+export const setSimulationUsageCap = (simulationId, capUsd) => {
+  return service.post(
+    `/api/simulation/${simulationId}/usage/cap`,
+    { cap_usd: capUsd }
+  )
+}
+
+/**
  * 获取模拟运行实时状态
  * @param {string} simulationId
  */

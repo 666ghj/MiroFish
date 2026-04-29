@@ -1519,12 +1519,68 @@ async def main():
         default=False,
         help='模拟完成后立即关闭环境，不进入等待命令模式'
     )
-    
+    parser.add_argument(
+        '--parent-pid',
+        type=int,
+        default=0,
+        help='Parent process PID. The child watchdog aborts the simulation '
+             'if this PID disappears, preventing leaked subprocesses from '
+             'burning LLM credits after the backend dies ungracefully.',
+    )
+    parser.add_argument(
+        '--parent-heartbeat',
+        type=str,
+        default=None,
+        help='Path to the parent heartbeat file. The watchdog also aborts '
+             'if this file is older than ~30s, catching cases where the '
+             'parent PID still exists but the process is wedged.',
+    )
+
     args = parser.parse_args()
-    
-    # 在 main 函数开始时创建 shutdown 事件，确保整个程序都能响应退出信号
+
+    # Create the shutdown event up front so the watchdog (and signal
+    # handlers) can signal it from any thread.
     global _shutdown_event
     _shutdown_event = asyncio.Event()
+
+    # Spawn the parent-liveness watchdog as early as possible, before
+    # any LLM client is constructed, so a parent that dies during
+    # bootstrap cannot leave us stranded.
+    if args.parent_pid > 0:
+        try:
+            # _child_watchdog is a sibling script in this directory.
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from _child_watchdog import start_watchdog
+
+            _watchdog_loop_ref = asyncio.get_event_loop()
+
+            def _on_parent_lost(reason: str) -> None:
+                # Try a graceful shutdown first by signalling the
+                # asyncio event; fall back to os._exit if the loop
+                # is already gone.
+                try:
+                    _watchdog_loop_ref.call_soon_threadsafe(
+                        _shutdown_event.set
+                    )
+                except Exception:
+                    pass
+                # Give the asyncio loop a few seconds to wind down
+                # cleanly, then force-exit so the process really dies
+                # and stops calling the LLM API.
+                import time as _time
+                _time.sleep(5)
+                os._exit(137)
+
+            start_watchdog(
+                parent_pid=args.parent_pid,
+                heartbeat_path=args.parent_heartbeat,
+                on_parent_lost=_on_parent_lost,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"Warning: child watchdog failed to start: {exc}",
+                file=sys.stderr,
+            )
     
     if not os.path.exists(args.config):
         print(f"错误: 配置文件不存在: {args.config}")

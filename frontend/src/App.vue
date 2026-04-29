@@ -1,13 +1,21 @@
 <template>
   <router-view />
+  <!-- Always-on cost meter so the user can see live LLM spend
+       from any page and notice runaway runs immediately. -->
+  <UsageMeter />
+  <!-- Always-on safety net so the user can panic-stop any running
+       simulation from any screen, even if the rest of the UI is
+       broken. -->
+  <EmergencyStopButton />
 </template>
 
 <script setup>
-// 使用 Vue Router 来管理页面
+import EmergencyStopButton from './components/EmergencyStopButton.vue'
+import UsageMeter from './components/UsageMeter.vue'
 </script>
 
 <style>
-/* 全局样式重置 */
+/* Global style reset */
 * {
   margin: 0;
   padding: 0;
@@ -22,7 +30,7 @@
   background-color: #ffffff;
 }
 
-/* 滚动条样式 */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -40,7 +48,7 @@
   background: #333333;
 }
 
-/* 全局按钮样式 */
+/* Global button styling */
 button {
   font-family: inherit;
 }

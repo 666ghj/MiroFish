@@ -16,9 +16,15 @@ dependencies = [
     # LLM 相关
     "openai>=1.0.0",
     
-    # Zep Cloud
+    # Memory backends — at least one of the two is required at runtime.
+    # MEMORY_BACKEND=zep        → uses zep-cloud
+    # MEMORY_BACKEND=graphiti   → uses graphiti-core + Neo4j
+    # graphiti-core is pinned to the 0.9.x line because the upstream
+    # 0.20+ releases bumped neo4j>=5.26 which conflicts with
+    # camel-oasis 0.2.5 (pinned to neo4j==5.23.0).
     "zep-cloud==3.13.0",
-    
+    "graphiti-core>=0.9.0,<0.9.5",
+
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",

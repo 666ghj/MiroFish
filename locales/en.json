@@ -75,7 +75,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -661,5 +667,17 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "emergency": {
+    "stopAll": "STOP ALL",
+    "stopping": "STOPPING…",
+    "tooltip": "Force-kill every running simulation on this host"
+  },
+  "usage": {
+    "totalCostTooltip": "Total LLM spend on this run",
+    "requests": "reqs",
+    "tokens": "tokens",
+    "capLabel": "cap",
+    "overCap": "Cost cap exceeded — stop the simulation now"
   }
 }

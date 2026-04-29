@@ -4,6 +4,7 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 """
 
 import os
+import time
 import traceback
 from flask import request, jsonify, send_file
 
@@ -1638,6 +1639,150 @@ def start_simulation():
             "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/usage/global', methods=['GET'])
+def get_usage_global():
+    """Return aggregate LLM usage across every simulation on this host.
+
+    Useful for the always-visible usage indicator in the UI footer
+    so users can see total spend even when no specific simulation
+    page is open.
+    """
+    try:
+        from ..services.usage_tracker import get_usage_tracker
+
+        tracker = get_usage_tracker()
+        return jsonify({
+            "success": True,
+            "data": {
+                "global": tracker.global_snapshot().to_dict(),
+                "per_simulation": [s.to_dict() for s in tracker.all_simulations()],
+            },
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/<simulation_id>/usage', methods=['GET'])
+def get_usage_for_simulation(simulation_id: str):
+    """Return live LLM usage for one simulation.
+
+    Polled every few seconds by the UI usage bar. Returns token
+    counts, cumulative cost, and (if a cost cap is configured)
+    whether the cap has been breached.
+    """
+    try:
+        from ..services.usage_tracker import get_usage_tracker
+
+        tracker = get_usage_tracker()
+        return jsonify({
+            "success": True,
+            "data": tracker.snapshot(simulation_id).to_dict(),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/<simulation_id>/usage/cap', methods=['POST'])
+def set_usage_cap(simulation_id: str):
+    """Set or clear the cost cap for a single simulation.
+
+    Body: ``{"cap_usd": <number|null>}``. ``null`` clears any
+    explicit cap and falls back to the env-var default.
+    """
+    try:
+        from ..services.usage_tracker import get_usage_tracker
+
+        body = request.get_json(silent=True) or {}
+        cap_raw = body.get("cap_usd")
+        cap = None if cap_raw is None else float(cap_raw)
+
+        get_usage_tracker().set_cap(simulation_id, cap)
+        snap = get_usage_tracker().snapshot(simulation_id)
+        return jsonify({"success": True, "data": snap.to_dict()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@simulation_bp.route('/emergency-stop', methods=['POST'])
+def emergency_stop_all():
+    """Force-terminate every simulation subprocess on this host.
+
+    Unlike :func:`stop_simulation` which gracefully ends a single
+    simulation, this endpoint is the user-visible "panic button":
+    it iterates every tracked subprocess, sends ``SIGTERM`` to its
+    process group with a short grace period, then ``SIGKILL`` to
+    anything still alive. Any orphaned ``run_parallel_simulation.py``
+    that is no longer in our tracking dict is also reaped via
+    process-name matching, because the leak we fixed was exactly
+    that — children outliving the backend that spawned them.
+
+    Returns a summary so the UI can show "killed N processes" toast.
+    """
+    try:
+        # First pass: terminate everything we know about. The runner
+        # already has a battle-tested process-group cleanup path.
+        before_known = list(SimulationRunner._processes.keys())  # noqa: SLF001
+        SimulationRunner.cleanup_all_simulations()
+
+        # Second pass: hunt down any orphaned children that escaped
+        # tracking — typically the leaked ones from previous backend
+        # crashes.
+        import signal as _signal
+        import subprocess as _subprocess
+
+        orphans_killed = 0
+        try:
+            ps_out = _subprocess.run(
+                ["pgrep", "-f", "run_parallel_simulation.py"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip().splitlines()
+            for pid_str in ps_out:
+                try:
+                    pid = int(pid_str)
+                    # Skip ourselves and our parents — pgrep can match
+                    # the API request log line in our own command line.
+                    if pid in (os.getpid(), os.getppid()):
+                        continue
+                    try:
+                        os.kill(pid, _signal.SIGTERM)
+                    except ProcessLookupError:
+                        continue
+                    orphans_killed += 1
+                except ValueError:
+                    pass
+            # Give SIGTERM a brief moment, then SIGKILL stragglers.
+            time.sleep(2)
+            for pid_str in ps_out:
+                try:
+                    pid = int(pid_str)
+                    if pid in (os.getpid(), os.getppid()):
+                        continue
+                    os.kill(pid, _signal.SIGKILL)
+                except (ValueError, ProcessLookupError):
+                    pass
+        except Exception as _e:  # noqa: BLE001
+            logger.warning(f"orphan sweep failed (non-fatal): {_e}")
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "tracked_simulations_stopped": before_known,
+                "orphans_killed": orphans_killed,
+                "message": (
+                    f"Stopped {len(before_known)} tracked simulation(s) "
+                    f"and killed {orphans_killed} orphan process(es)."
+                ),
+            },
+        })
+    except Exception as e:
+        logger.error(f"Emergency stop failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
         }), 500
 
 

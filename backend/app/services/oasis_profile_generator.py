@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
+from .memory import MemoryBackend, get_memory_backend
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -198,16 +198,17 @@ class OasisProfileGenerator:
             base_url=self.base_url
         )
         
-        # Zep客户端用于检索丰富上下文
+        # Memory backend for context enrichment. Lazy / tolerant: if
+        # the backend cannot be constructed (e.g. ZEP_API_KEY not set
+        # but MEMORY_BACKEND=zep was selected) we degrade gracefully.
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
-        self.zep_client = None
+        self.memory_backend: Optional[MemoryBackend] = None
         self.graph_id = graph_id
-        
-        if self.zep_api_key:
-            try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
-            except Exception as e:
-                logger.warning(f"Zep客户端初始化失败: {e}")
+
+        try:
+            self.memory_backend = get_memory_backend()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Memory backend not available: {e}")
     
     def generate_profile_from_entity(
         self, 
@@ -298,95 +299,66 @@ class OasisProfileGenerator:
         """
         import concurrent.futures
         
-        if not self.zep_client:
+        if self.memory_backend is None:
             return {"facts": [], "node_summaries": [], "context": ""}
-        
+
         entity_name = entity.name
-        
-        results = {
-            "facts": [],
-            "node_summaries": [],
-            "context": ""
-        }
-        
-        # 必须有graph_id才能进行搜索
+        results = {"facts": [], "node_summaries": [], "context": ""}
+
         if not self.graph_id:
-            logger.debug(f"跳过Zep检索：未设置graph_id")
+            logger.debug("Skipping memory search: no graph_id set")
             return results
-        
+
         comprehensive_query = t('progress.zepSearchQuery', name=entity_name)
-        
+
+        def search_with_retry(scope: str, limit: int):
+            """Backend search with exponential-backoff retry."""
+            max_retries = 3
+            delay = 2.0
+            for attempt in range(max_retries):
+                try:
+                    return self.memory_backend.search(
+                        graph_id=self.graph_id,
+                        query=comprehensive_query,
+                        limit=limit,
+                        scope=scope,  # type: ignore[arg-type]
+                    )
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.debug(
+                            f"Memory backend {scope} search attempt {attempt + 1} failed: {str(e)[:80]}, retrying..."
+                        )
+                        time.sleep(delay)
+                        delay *= 2
+                    else:
+                        logger.debug(
+                            f"Memory backend {scope} search failed after {max_retries} attempts: {e}"
+                        )
+            return None
+
         def search_edges():
-            """搜索边（事实/关系）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=30,
-                        scope="edges",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep边搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep边搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
-        
+            return search_with_retry("edges", 30)
+
         def search_nodes():
-            """搜索节点（实体摘要）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=20,
-                        scope="nodes",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep节点搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep节点搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
-        
+            return search_with_retry("nodes", 20)
+
         try:
-            # 并行执行edges和nodes搜索
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 edge_future = executor.submit(search_edges)
                 node_future = executor.submit(search_nodes)
-                
-                # 获取结果
+
                 edge_result = edge_future.result(timeout=30)
                 node_result = node_future.result(timeout=30)
-            
-            # 处理边搜索结果
+
             all_facts = set()
-            if edge_result and hasattr(edge_result, 'edges') and edge_result.edges:
+            if edge_result and edge_result.edges:
                 for edge in edge_result.edges:
-                    if hasattr(edge, 'fact') and edge.fact:
+                    if edge.fact:
                         all_facts.add(edge.fact)
             results["facts"] = list(all_facts)
-            
-            # 处理节点搜索结果
+
             all_summaries = set()
-            if node_result and hasattr(node_result, 'nodes') and node_result.nodes:
+            if node_result and node_result.nodes:
                 for node in node_result.nodes:
                     if hasattr(node, 'summary') and node.summary:
                         all_summaries.add(node.summary)

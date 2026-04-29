@@ -414,14 +414,27 @@ class SimulationRunner:
             #   simulation.log        - 主进程日志
             
             cmd = [
-                sys.executable,  # Python解释器
+                sys.executable,  # Python interpreter
                 script_path,
-                "--config", config_path,  # 使用完整配置文件路径
+                "--config", config_path,
             ]
-            
-            # 如果指定了最大轮数，添加到命令行参数
+
             if max_rounds is not None and max_rounds > 0:
                 cmd.extend(["--max-rounds", str(max_rounds)])
+
+            # Watchdog plumbing: tell the child what its parent PID is
+            # and where the parent's liveness heartbeat lives, so it
+            # can abort itself if the backend dies ungracefully and
+            # stop burning LLM credits.
+            try:
+                from . import parent_heartbeat
+                parent_pid = parent_heartbeat.get_parent_pid()
+                hb_path = parent_heartbeat.get_heartbeat_path()
+                cmd.extend(["--parent-pid", str(parent_pid)])
+                if hb_path:
+                    cmd.extend(["--parent-heartbeat", hb_path])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Could not wire parent watchdog: %s", e)
             
             # 创建主日志文件，避免 stdout/stderr 管道缓冲区满导致进程阻塞
             main_log_path = os.path.join(sim_dir, "simulation.log")
@@ -497,22 +510,49 @@ class SimulationRunner:
         twitter_position = 0
         reddit_position = 0
         
+        # Pull a handle to the cost-cap event for this simulation.
+        # If the cap is exceeded by an LLM call mid-run we want to
+        # terminate the simulation gracefully without waiting for
+        # the next round to finish.
         try:
-            while process.poll() is None:  # 进程仍在运行
-                # 读取 Twitter 动作日志
+            from .usage_tracker import get_usage_tracker
+            _cap_event = get_usage_tracker().get_cap_event(simulation_id)
+        except Exception:  # noqa: BLE001
+            _cap_event = None
+
+        try:
+            while process.poll() is None:  # process still alive
                 if os.path.exists(twitter_actions_log):
                     twitter_position = cls._read_action_log(
                         twitter_actions_log, twitter_position, state, "twitter"
                     )
-                
-                # 读取 Reddit 动作日志
+
                 if os.path.exists(reddit_actions_log):
                     reddit_position = cls._read_action_log(
                         reddit_actions_log, reddit_position, state, "reddit"
                     )
-                
-                # 更新状态
+
                 cls._save_run_state(state)
+
+                # Cost-cap auto-abort. We terminate the subprocess so
+                # the user never wakes up to a blown budget.
+                if _cap_event is not None and _cap_event.is_set():
+                    logger.warning(
+                        "Cost cap breached for %s; terminating simulation",
+                        simulation_id,
+                    )
+                    state.error = "Cost cap breached — simulation auto-stopped"
+                    cls._save_run_state(state)
+                    try:
+                        cls._terminate_process(process, simulation_id)
+                    except Exception as _e:  # noqa: BLE001
+                        logger.error(
+                            "Auto-abort termination failed for %s: %s",
+                            simulation_id,
+                            _e,
+                        )
+                    break
+
                 time.sleep(2)
             
             # 进程结束后，最后读取一次日志

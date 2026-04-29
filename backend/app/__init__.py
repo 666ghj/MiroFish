@@ -42,11 +42,21 @@ def create_app(config_class=Config):
     # 启用CORS
     CORS(app, resources={r"/api/*": {"origins": "*"}})
     
-    # 注册模拟进程清理函数（确保服务器关闭时终止所有模拟进程）
+    # Register subprocess cleanup hooks (best-effort SIGTERM path).
     from .services.simulation_runner import SimulationRunner
     SimulationRunner.register_cleanup()
     if should_log_startup:
-        logger.info("已注册模拟进程清理函数")
+        logger.info("Registered simulation-process cleanup hooks")
+
+    # Start the parent-liveness heartbeat. Children spawned by the
+    # simulation runner monitor this file and abort themselves if the
+    # backend dies ungracefully — this is the safety net that prevents
+    # leaked simulation subprocesses from burning LLM credits after a
+    # SIGKILL, system sleep, or unclean shutdown.
+    from .services import parent_heartbeat
+    heartbeat_path = parent_heartbeat.start()
+    if should_log_startup and heartbeat_path:
+        logger.info("Parent heartbeat active: %s", heartbeat_path)
     
     # 请求日志中间件
     @app.before_request

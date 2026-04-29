@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -661,5 +667,17 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "emergency": {
+    "stopAll": "全部停止",
+    "stopping": "正在停止…",
+    "tooltip": "强制终止本机上所有正在运行的模拟"
+  },
+  "usage": {
+    "totalCostTooltip": "本次运行累计 LLM 消费",
+    "requests": "请求",
+    "tokens": "令牌",
+    "capLabel": "上限",
+    "overCap": "已超过费用上限——请立即停止模拟"
   }
 }
