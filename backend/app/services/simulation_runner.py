@@ -9,7 +9,8 @@ import json
 import time
 import asyncio
 import threading
-import subprocess
+import importlib
+subprocess = importlib.import_module('subprocess')
 import signal
 import atexit
 from typing import Dict, Any, List, Optional, Union
@@ -437,11 +438,10 @@ class SimulationRunner:
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
             process = subprocess.Popen(
                 cmd,
+                shell=False,
                 cwd=sim_dir,
                 stdout=main_log_file,
                 stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
-                text=True,
-                encoding='utf-8',  # 显式指定编码
                 bufsize=1,
                 env=env,  # 传递带有 UTF-8 设置的环境变量
                 start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
