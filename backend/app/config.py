@@ -91,7 +91,26 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
-    
+
+    # ── Persistència ──────────────────────────────────────────────
+    # Base de dades
+    DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///mirofish_dev.db')
+
+    # Storage de fitxers
+    STORAGE_TYPE = os.environ.get('STORAGE_TYPE', 'local')          # local | azure
+    STORAGE_LOCAL_PATH = os.environ.get(
+        'STORAGE_LOCAL_PATH',
+        os.path.join(os.path.dirname(__file__), '../uploads')
+    )
+    AZURE_STORAGE_CONNECTION_STRING = os.environ.get('AZURE_STORAGE_CONNECTION_STRING', '')
+    AZURE_STORAGE_CONTAINER = os.environ.get('AZURE_STORAGE_CONTAINER', 'mirofish')
+
+    # JWT (per a la Fase 2 d'autenticació — definits aquí perquè flask-jwt-extended els necessita en create_app)
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET', 'change-me-in-production')
+    JWT_REFRESH_SECRET_KEY = os.environ.get('JWT_REFRESH_SECRET', 'change-me-refresh-in-production')
+    JWT_ACCESS_TOKEN_EXPIRES_HOURS = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', '8'))
+    JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(os.environ.get('JWT_REFRESH_TOKEN_EXPIRES_DAYS', '7'))
+
     @classmethod
     def get_graph_config_errors(cls) -> list:
         errors = []
