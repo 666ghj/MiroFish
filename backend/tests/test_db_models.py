@@ -12,8 +12,16 @@ from backend.app.models.db_models import (
 @pytest.fixture
 def db_session():
     """Sessió SQLite en memòria per a tests."""
+    from sqlalchemy import event
     from backend.app import db as db_module
     db_module._engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+
+    @event.listens_for(db_module._engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     db_module._SessionLocal = sessionmaker(bind=db_module._engine, autocommit=False, autoflush=False)
     Base.metadata.create_all(db_module._engine)
     session = db_module._SessionLocal()
@@ -56,22 +64,24 @@ def test_project_cascade_delete(db_session):
 
 
 def test_task_set_null_on_delete(db_session):
-    """SQLite no aplica FK ON DELETE SET NULL sense PRAGMA foreign_keys=ON.
-    El test verifica que el TaskModel s'elimina correctament i que el ProjectModel
-    manté la seva integritat (active_task_id pot no quedar NULL en SQLite sense PRAGMA)."""
+    """SQLite applies FK ON DELETE SET NULL with PRAGMA foreign_keys=ON.
+    Test verifies that when a TaskModel is deleted, the ProjectModel's active_task_id
+    is set to NULL due to the ON DELETE SET NULL constraint."""
     task = TaskModel(id="task-del", task_type="graph_build")
+    db_session.add(task)
+    db_session.flush()  # Ensure task is persisted before project references it
     proj = ProjectModel(id="proj-2", name="P2", active_task_id="task-del")
-    db_session.add_all([task, proj])
+    db_session.add(proj)
     db_session.commit()
     db_session.delete(task)
     db_session.commit()
     # Verify task is deleted
     assert db_session.get(TaskModel, "task-del") is None
-    # Verify project still exists (SQLite may not NULL the FK without PRAGMA)
+    # Verify project still exists
     refreshed = db_session.get(ProjectModel, "proj-2")
     assert refreshed is not None
-    # active_task_id may be None (with FK enforcement) or still "task-del" (SQLite default)
-    assert refreshed.active_task_id in (None, "task-del")
+    # With PRAGMA foreign_keys=ON, active_task_id should be NULL
+    assert refreshed.active_task_id is None
 
 
 def test_graph_linked_to_ontology(db_session):
