@@ -2721,6 +2721,8 @@ def patch_agent(simulation_id: str, user_id: int):
             return jsonify({"success": False, "error": str(e)}), 403
         except LookupError as e:
             return jsonify({"success": False, "error": str(e)}), 404
+        except FileNotFoundError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
 
         return jsonify({"success": True, "data": updated})
     except Exception as e:
