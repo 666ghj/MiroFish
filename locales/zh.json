@@ -339,6 +339,7 @@
     "taskNotFound": "任务不存在: {id}",
     "graphDeleted": "图谱已删除: {id}",
     "entityNotFound": "实体不存在: {id}",
+    "zepQuotaExceeded": "Zep 免费计划配额已用完：您的账户已达到最大 episode 数量限制，请升级 Zep 计划或清理旧数据。",
     "graphNotBuilt": "项目尚未构建图谱，请先调用 /api/graph/build",
     "requireSimulationId": "请提供 simulation_id",
     "simulationNotFound": "模拟不存在: {id}",

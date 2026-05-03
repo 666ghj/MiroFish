@@ -339,6 +339,7 @@
     "taskNotFound": "Task not found: {id}",
     "graphDeleted": "Graph deleted: {id}",
     "entityNotFound": "Entity not found: {id}",
+    "zepQuotaExceeded": "Zep Free Plan Quota Exceeded: Your account has reached the maximum allowed episode usage. Please upgrade your Zep plan or clear old data.",
     "graphNotBuilt": "Graph not yet built. Please call /api/graph/build first.",
     "requireSimulationId": "Please provide simulation_id",
     "simulationNotFound": "Simulation not found: {id}",
