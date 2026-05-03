@@ -1,11 +1,11 @@
 # backend/app/models/db_models.py
 """Models SQLAlchemy per a tota la persistència de MiroFish."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import (
     String, Integer, Text, Boolean, DateTime, JSON,
-    ForeignKey, UniqueConstraint
+    ForeignKey
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..db import Base
@@ -16,7 +16,7 @@ def _uuid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 class UserModel(Base):

@@ -1,6 +1,5 @@
 """Adapter de storage per a filesystem local."""
 import io
-import os
 import shutil
 from pathlib import Path
 from .protocol import StorageService
@@ -16,7 +15,9 @@ class LocalFSStorage:
     def _safe_path(self, relative: str) -> Path:
         """Resol el path i valida que estigui dins del base per evitar path traversal."""
         resolved = (self._base / relative).resolve()
-        if not str(resolved).startswith(str(self._base)):
+        try:
+            resolved.relative_to(self._base)
+        except ValueError:
             raise ValueError(f"Path traversal detectat: {relative!r}")
         return resolved
 
@@ -41,6 +42,8 @@ class LocalFSStorage:
             p.unlink()
 
     def delete_prefix(self, prefix: str) -> None:
+        if not prefix or prefix in (".", "/"):
+            raise ValueError("prefix no pot ser buit ni arrel")
         p = self._safe_path(prefix)
         if p.is_dir():
             shutil.rmtree(p)
