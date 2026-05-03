@@ -68,3 +68,14 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 获取图谱轮询配置（速率限制参数）
+ * @returns {Promise} { poll_interval, cache_ttl, rate_limit, rate_limit_window }
+ */
+export function getGraphConfig() {
+  return service({
+    url: '/api/graph/config',
+    method: 'get'
+  })
+}

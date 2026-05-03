@@ -17,6 +17,7 @@ from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..models.task import TaskManager, TaskStatus
+from ..utils.zep_rate_limiter import graph_data_cache
 from ..models.project import ProjectManager, ProjectStatus
 
 # 获取日志器
@@ -564,12 +565,35 @@ def list_tasks():
     })
 
 
+# ============== 配置接口 ==============
+
+@graph_bp.route('/config', methods=['GET'])
+def get_graph_config():
+    """
+    返回前端需要的图谱轮询配置。
+    前端根据这些值决定是否自动轮询以及间隔。
+    """
+    # 初始化缓存 TTL（确保与 Config 同步）
+    graph_data_cache.ttl = Config.ZEP_CACHE_TTL
+    
+    return jsonify({
+        "success": True,
+        "data": {
+            "poll_interval": Config.ZEP_GRAPH_POLL_INTERVAL,  # 0 = 仅手动刷新
+            "cache_ttl": Config.ZEP_CACHE_TTL,
+            "rate_limit": Config.ZEP_RATE_LIMIT,
+            "rate_limit_window": Config.ZEP_RATE_LIMIT_WINDOW,
+        }
+    })
+
+
 # ============== 图谱数据接口 ==============
 
 @graph_bp.route('/data/<graph_id>', methods=['GET'])
 def get_graph_data(graph_id: str):
     """
-    获取图谱数据（节点和边）
+    获取图谱数据（节点和边）。
+    使用响应缓存避免频繁调用 Zep API。
     """
     try:
         if not Config.ZEP_API_KEY:
@@ -578,12 +602,28 @@ def get_graph_data(graph_id: str):
                 "error": t('api.zepApiKeyMissing')
             }), 500
         
+        # 检查缓存
+        cache_key = f"graph_data:{graph_id}"
+        cached = graph_data_cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Serving cached graph data for {graph_id}")
+            return jsonify({
+                "success": True,
+                "data": cached,
+                "cached": True
+            })
+        
+        # 缓存未命中，调用 Zep API
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
         graph_data = builder.get_graph_data(graph_id)
         
+        # 缓存成功响应
+        graph_data_cache.set(cache_key, graph_data)
+        
         return jsonify({
             "success": True,
-            "data": graph_data
+            "data": graph_data,
+            "cached": False
         })
         
     except Exception as e:
