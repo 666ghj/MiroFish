@@ -1,6 +1,5 @@
 """Project context management — persistent via SQLAlchemy + StorageService."""
 import uuid
-import io
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from enum import Enum
@@ -122,7 +121,9 @@ class ProjectManager:
     @classmethod
     def save_extracted_text(cls, project_id: str, text: str, storage) -> None:
         storage_path = f"projects/{project_id}/extracted_text.txt"
-        storage.upload(storage_path, text.encode("utf-8"), "text/plain")
+        encoded = text.encode("utf-8")
+        size = len(encoded)
+        storage.upload(storage_path, encoded, "text/plain")
 
         with get_session() as db:
             from sqlalchemy import select
@@ -133,14 +134,14 @@ class ProjectManager:
             existing = db.execute(stmt).scalar_one_or_none()
             if existing:
                 existing.storage_path = storage_path
-                existing.size = len(text.encode("utf-8"))
+                existing.size = size
             else:
                 rec = ProjectFileModel(
                     id=str(uuid.uuid4()),
                     project_id=project_id,
                     original_name="extracted_text.txt",
                     storage_path=storage_path,
-                    size=len(text.encode("utf-8")),
+                    size=size,
                     mime_type="text/plain",
                     file_type="extracted_text",
                 )
@@ -156,6 +157,7 @@ class ProjectManager:
 
     @classmethod
     def save_ontology(cls, project_id: str, entity_types: list, edge_types: list) -> str:
+        # Upsert: versioning complet planificat a F2-3
         from .db_models import OntologyModel
         from sqlalchemy import select
         with get_session() as db:
@@ -240,21 +242,8 @@ class ProjectManager:
 
     @classmethod
     def _to_dict(cls, proj: "ProjectModel") -> Dict[str, Any]:
-        from .db_models import GraphModel, OntologyModel
-        from sqlalchemy import select
-        graph_external_id = None
-        ontology = None
-        with get_session() as db2:
-            graph_rec = db2.execute(
-                select(GraphModel).where(GraphModel.project_id == proj.id).order_by(GraphModel.created_at.desc())
-            ).scalars().first()
-            ont_rec = db2.execute(
-                select(OntologyModel).where(OntologyModel.project_id == proj.id).order_by(OntologyModel.version.desc())
-            ).scalars().first()
-            if graph_rec:
-                graph_external_id = graph_rec.external_id
-            if ont_rec:
-                ontology = {"entity_types": ont_rec.entity_types or [], "edge_types": ont_rec.edge_types or []}
+        ontology = cls.get_ontology(proj.id)
+        graph_external_id = cls.get_latest_graph_external_id(proj.id)
         return {
             "id": proj.id,
             "project_id": proj.id,
