@@ -148,6 +148,7 @@ def generate_ontology():
             }
         }
     """
+    project_id = None
     try:
         logger.info("=== Starting ontology generation ===")
         storage = get_storage()
@@ -230,6 +231,11 @@ def generate_ontology():
         })
 
     except Exception as e:
+        if project_id:
+            try:
+                ProjectManager.delete_project(project_id, storage=get_storage())
+            except Exception:
+                pass
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
@@ -250,6 +256,7 @@ def import_ontology():
 
     Returns same structure as generate_ontology.
     """
+    project_id = None
     try:
         logger.info("=== Starting ontology import ===")
         storage = get_storage()
@@ -330,6 +337,11 @@ def import_ontology():
         })
 
     except Exception as e:
+        if project_id:
+            try:
+                ProjectManager.delete_project(project_id, storage=get_storage())
+            except Exception:
+                pass
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
