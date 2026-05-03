@@ -58,6 +58,9 @@ backend/uploads/
 
 # Docker 数据
 data/
+
+# SQLite local dev database
+*.db
 # Git worktrees
 .worktrees/
 
