@@ -29,6 +29,14 @@ def create_app(config_class=Config):
     else:
         app.config.from_object(config_class)
 
+    # Inicialitzar BD
+    from .db import init_db
+    init_db(app.config['DATABASE_URL'])
+
+    # Inicialitzar Storage
+    from .storage import create_storage_service
+    app.extensions['storage'] = create_storage_service()
+
     # Configure JSON encoding: ensure non-ASCII characters are output directly (not as \uXXXX)
     # Flask >= 2.3 uses app.json.ensure_ascii; older versions use JSON_AS_ASCII config
     if hasattr(app, 'json') and hasattr(app.json, 'ensure_ascii'):
@@ -120,3 +128,9 @@ def create_app(config_class=Config):
         logger.info("MiroFish Backend startup complete")
 
     return app
+
+
+def get_storage():
+    """Accés al StorageService des de qualsevol context Flask."""
+    from flask import current_app
+    return current_app.extensions['storage']
