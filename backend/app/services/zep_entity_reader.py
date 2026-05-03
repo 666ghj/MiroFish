@@ -12,6 +12,7 @@ from zep_cloud.client import Zep
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from ..utils.zep_retry import with_zep_retry
 
 logger = get_logger('mirofish.zep_entity_reader')
 
@@ -104,25 +105,11 @@ class ZepEntityReader:
         Returns:
             API调用结果
         """
-        last_exception = None
-        delay = initial_delay
-        
-        for attempt in range(max_retries):
-            try:
-                return func()
-            except Exception as e:
-                last_exception = e
-                if attempt < max_retries - 1:
-                    logger.warning(
-                        f"Zep {operation_name} 第 {attempt + 1} 次尝试失败: {str(e)[:100]}, "
-                        f"{delay:.1f}秒后重试..."
-                    )
-                    time.sleep(delay)
-                    delay *= 2  # 指数退避
-                else:
-                    logger.error(f"Zep {operation_name} 在 {max_retries} 次尝试后仍失败: {str(e)}")
-        
-        raise last_exception
+        @with_zep_retry(max_retries=max_retries, initial_delay=initial_delay, operation_name=operation_name)
+        def _execute():
+            return func()
+            
+        return _execute()
     
     def get_all_nodes(self, graph_id: str) -> List[Dict[str, Any]]:
         """

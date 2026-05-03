@@ -10,7 +10,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from zep_cloud import InternalServerError
 from zep_cloud.client import Zep
 
 from .logger import get_logger
@@ -23,6 +22,8 @@ _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_RETRY_DELAY = 2.0  # seconds, doubles each retry
 
 
+from .zep_retry import with_zep_retry
+
 def _fetch_page_with_retry(
     api_call: Callable[..., list[Any]],
     *args: Any,
@@ -32,28 +33,11 @@ def _fetch_page_with_retry(
     **kwargs: Any,
 ) -> list[Any]:
     """单页请求，失败时指数退避重试。仅重试网络/IO类瞬态错误。"""
-    if max_retries < 1:
-        raise ValueError("max_retries must be >= 1")
-
-    last_exception: Exception | None = None
-    delay = retry_delay
-
-    for attempt in range(max_retries):
-        try:
-            return api_call(*args, **kwargs)
-        except (ConnectionError, TimeoutError, OSError, InternalServerError) as e:
-            last_exception = e
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Zep {page_description} attempt {attempt + 1} failed: {str(e)[:100]}, retrying in {delay:.1f}s..."
-                )
-                time.sleep(delay)
-                delay *= 2
-            else:
-                logger.error(f"Zep {page_description} failed after {max_retries} attempts: {str(e)}")
-
-    assert last_exception is not None
-    raise last_exception
+    @with_zep_retry(max_retries=max_retries, initial_delay=retry_delay, operation_name=f"Zep {page_description}")
+    def execute_call():
+        return api_call(*args, **kwargs)
+        
+    return execute_call()
 
 
 def fetch_all_nodes(
