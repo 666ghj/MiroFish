@@ -201,7 +201,37 @@
     "genderOther": "其他",
     "yearsOld": "岁",
     "initializing": "初始化",
-    "generating": "生成中"
+    "generating": "生成中",
+    "agentCount": "智能体数量",
+    "agentCountHint": "按图谱连接度排序（连接最多的优先）",
+    "agentCountWarning": "少于15个智能体可能导致模拟不够丰富",
+    "phaseATitle": "智能体个性",
+    "phaseASubtitle": "查看并编辑生成的智能体档案",
+    "continueToPhaseB": "继续 →",
+    "phaseBTitle": "模拟参数",
+    "phaseBSubtitle": "编辑行为参数和模拟设置",
+    "launchSimulation": "启动模拟",
+    "editAgent": "编辑",
+    "deleteAgent": "删除",
+    "deleteAgentConfirm": "删除此智能体？此操作不可撤销。",
+    "regenerateAgent": "重新生成",
+    "regenerateAgentHint": "额外说明（可选）",
+    "createAgent": "添加智能体",
+    "createAgentTitle": "添加新智能体",
+    "selectEntityType": "实体类型",
+    "selectEntity": "选择实体",
+    "extraInstructions": "额外说明（可选）",
+    "manuallyEditedBadge": "已编辑",
+    "generatingConfig": "正在生成行为配置...",
+    "cloneFrom": "从已有模拟克隆",
+    "newSimulation": "新模拟",
+    "simulationSource": "模拟来源",
+    "behaviorParams": "行为参数",
+    "globalParams": "全局参数",
+    "totalHours": "总小时数",
+    "minutesPerRound": "每轮分钟数",
+    "followingProbability": "关注概率",
+    "recsysType": "推荐系统类型"
   },
   "step3": {
     "startGenerateReport": "开始生成结果报告",
@@ -275,7 +305,16 @@
     "panelRelatedNodes": "相关节点",
     "world1": "世界1",
     "world2": "世界2",
-    "downloadReport": "下载报告"
+    "downloadReport": "下载报告",
+    "reportFailedGeneric": "报告生成失败",
+    "reportFailedTitle": "报告生成失败",
+    "reportFailedBanner": "报告生成失败",
+    "retryBtn": "重试",
+    "retryFailed": "重新启动报告生成失败",
+    "statusFailed": "失败",
+    "statusCompleted": "已完成",
+    "statusGenerating": "生成中...",
+    "statusWaiting": "等待中"
   },
   "step5": {
     "interactiveTools": "Interactive Tools",
@@ -419,7 +458,15 @@
     "envRunning": "环境正在运行，可以接收Interview命令",
     "envNotRunningShort": "环境未运行或已关闭",
     "requireGraphIdAndQuery": "请提供 graph_id 和 query",
-    "initReportAgent": "初始化Report Agent..."
+    "initReportAgent": "初始化Report Agent...",
+    "requireFields": "未提供字段",
+    "requireEntityUuid": "需要 source_entity_uuid",
+    "requireProfilesReady": "模拟必须处于 profiles_ready 状态（当前：{status}）",
+    "requireAgentId": "需要 agent user_id",
+    "agentNotFound": "未找到 user_id={user_id} 的智能体",
+    "agentNoSourceEntity": "智能体没有 source_entity_uuid，无法重新生成",
+    "cannotCreateAgentInStatus": "模拟状态为 {status} 时无法创建智能体",
+    "regenerateRequiresProfilesReady": "重新生成需要 profiles_ready 状态（当前：{status}）"
   },
   "progress": {
     "initGraphService": "初始化图谱构建服务...",
@@ -481,7 +528,8 @@
     "readingGraphEntities": "读取图谱实体",
     "generatingProfiles": "生成Agent人设",
     "generatingSimConfig": "生成模拟配置",
-    "preparingScripts": "准备模拟脚本"
+    "preparingScripts": "准备模拟脚本",
+    "generatingProfile": "正在生成智能体档案..."
   },
   "log": {
     "preparingGoBack": "准备返回 Step 2，正在关闭模拟...",

@@ -201,7 +201,37 @@
     "genderOther": "Other",
     "yearsOld": "years old",
     "initializing": "Initializing",
-    "generating": "Generating"
+    "generating": "Generating",
+    "agentCount": "Number of Agents",
+    "agentCountHint": "Select entities by graph connectivity (most connected first)",
+    "agentCountWarning": "Fewer than 15 agents may produce less rich simulations",
+    "phaseATitle": "Agent Personalities",
+    "phaseASubtitle": "Review and edit generated agent profiles",
+    "continueToPhaseB": "Continue →",
+    "phaseBTitle": "Simulation Parameters",
+    "phaseBSubtitle": "Edit behavior parameters and simulation settings",
+    "launchSimulation": "Launch Simulation",
+    "editAgent": "Edit",
+    "deleteAgent": "Delete",
+    "deleteAgentConfirm": "Delete this agent? This cannot be undone.",
+    "regenerateAgent": "Regenerate",
+    "regenerateAgentHint": "Extra instructions (optional)",
+    "createAgent": "Add Agent",
+    "createAgentTitle": "Add New Agent",
+    "selectEntityType": "Entity Type",
+    "selectEntity": "Select Entity",
+    "extraInstructions": "Extra Instructions (optional)",
+    "manuallyEditedBadge": "Edited",
+    "generatingConfig": "Generating behavior config...",
+    "cloneFrom": "Clone from previous simulation",
+    "newSimulation": "New simulation",
+    "simulationSource": "Simulation Source",
+    "behaviorParams": "Behavior Parameters",
+    "globalParams": "Global Parameters",
+    "totalHours": "Total Hours",
+    "minutesPerRound": "Minutes per Round",
+    "followingProbability": "Following Probability",
+    "recsysType": "Recommendation System"
   },
   "step3": {
     "startGenerateReport": "Generate Report",
@@ -275,7 +305,16 @@
     "panelRelatedNodes": "Related Nodes",
     "world1": "World 1",
     "world2": "World 2",
-    "downloadReport": "Download Report"
+    "downloadReport": "Download Report",
+    "reportFailedGeneric": "Report generation failed",
+    "reportFailedTitle": "Report generation failed",
+    "reportFailedBanner": "Report generation failed",
+    "retryBtn": "Retry",
+    "retryFailed": "Failed to restart report generation",
+    "statusFailed": "Failed",
+    "statusCompleted": "Completed",
+    "statusGenerating": "Generating...",
+    "statusWaiting": "Waiting"
   },
   "step5": {
     "interactiveTools": "Interactive Tools",
@@ -419,7 +458,15 @@
     "envRunning": "Environment is running and ready for Interview commands",
     "envNotRunningShort": "Environment not running or closed",
     "requireGraphIdAndQuery": "Please provide graph_id and query",
-    "initReportAgent": "Initializing Report Agent..."
+    "initReportAgent": "Initializing Report Agent...",
+    "requireFields": "No fields provided",
+    "requireEntityUuid": "source_entity_uuid is required",
+    "requireProfilesReady": "Simulation must be in profiles_ready status (current: {status})",
+    "requireAgentId": "agent user_id is required",
+    "agentNotFound": "Agent user_id={user_id} not found",
+    "agentNoSourceEntity": "Agent has no source_entity_uuid — cannot regenerate",
+    "cannotCreateAgentInStatus": "Cannot create agent when simulation status is {status}",
+    "regenerateRequiresProfilesReady": "Regenerate requires profiles_ready status (current: {status})"
   },
   "progress": {
     "initGraphService": "Initializing graph build service...",
@@ -481,7 +528,8 @@
     "readingGraphEntities": "Reading Graph Entities",
     "generatingProfiles": "Generating Agent Profiles",
     "generatingSimConfig": "Generating Simulation Config",
-    "preparingScripts": "Preparing Scripts"
+    "preparingScripts": "Preparing Scripts",
+    "generatingProfile": "Generating agent profile..."
   },
   "log": {
     "preparingGoBack": "Preparing to return to Step 2, closing simulation...",
