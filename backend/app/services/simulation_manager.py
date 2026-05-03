@@ -614,6 +614,9 @@ class SimulationManager:
         profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
         backup_file = profiles_file + ".bak"
 
+        if not os.path.exists(profiles_file):
+            raise FileNotFoundError(f"reddit_profiles.json not found for {simulation_id}")
+
         with open(profiles_file, 'r', encoding='utf-8') as f:
             profiles = json.load(f)
 

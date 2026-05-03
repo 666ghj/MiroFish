@@ -2743,6 +2743,8 @@ def delete_agent(simulation_id: str, user_id: int):
             return jsonify({"success": False, "error": str(e)}), 403
         except LookupError as e:
             return jsonify({"success": False, "error": str(e)}), 404
+        except FileNotFoundError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
 
         return jsonify({"success": True, "data": {"deleted_user_id": user_id}})
     except Exception as e:
