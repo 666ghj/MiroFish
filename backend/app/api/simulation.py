@@ -449,6 +449,11 @@ def prepare_simulation():
         
         entity_types_list = data.get('entity_types')
         max_agents = data.get('max_agents')  # optional: limit to top-N most-connected entities
+        if max_agents is not None:
+            try:
+                max_agents = int(max_agents)
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "error": "max_agents must be an integer"}), 400
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
         
