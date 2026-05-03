@@ -2889,6 +2889,8 @@ def clone_simulation(simulation_id: str):
         manager = SimulationManager()
         try:
             new_state = manager.clone_simulation(simulation_id, project_id)
+        except LookupError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
         except ValueError as e:
             return jsonify({"success": False, "error": str(e)}), 400
 
@@ -2902,4 +2904,4 @@ def clone_simulation(simulation_id: str):
         })
     except Exception as e:
         logger.error(f"clone_simulation failed: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500

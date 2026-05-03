@@ -88,3 +88,9 @@ def test_clone_status_is_profiles_ready(completed_sim):
     state = json.loads(state_file.read_text())
     assert state["status"] == "profiles_ready"
     assert state["parent_simulation_id"] == src_id
+
+
+def test_clone_source_not_found_returns_404(app_client):
+    client, tmp_path = app_client
+    resp = client.post("/api/simulation/nonexistent_sim/clone", json={"project_id": "proj_x"})
+    assert resp.status_code == 404

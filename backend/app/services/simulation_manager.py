@@ -7,6 +7,7 @@ Uses preset scripts with LLM-generated configuration parameters.
 import os
 import json
 import shutil
+import uuid
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -222,7 +223,6 @@ class SimulationManager:
         Returns:
             SimulationState
         """
-        import uuid
         simulation_id = f"sim_{uuid.uuid4().hex[:12]}"
 
         state = SimulationState(
@@ -654,12 +654,11 @@ class SimulationManager:
         """
         source_state = self.get_simulation(source_simulation_id)
         if not source_state:
-            raise ValueError(f"Source simulation {source_simulation_id} not found")
+            raise LookupError(f"Source simulation {source_simulation_id} not found")
 
         if source_state.status == SimulationStatus.CREATED:
             raise ValueError("Cannot clone a simulation in 'created' status (no profiles yet)")
 
-        import uuid
         new_sim_id = f"sim_{uuid.uuid4().hex[:12]}"
         new_state = SimulationState(
             simulation_id=new_sim_id,
@@ -677,7 +676,6 @@ class SimulationManager:
 
         src_dir = self._get_simulation_dir(source_simulation_id)
         dst_dir = self._get_simulation_dir(new_sim_id)
-        os.makedirs(dst_dir, exist_ok=True)
 
         for fname in ("reddit_profiles.json", "twitter_profiles.csv", "agent_profiles.json"):
             src_file = os.path.join(src_dir, fname)
