@@ -10,6 +10,7 @@ import threading
 from flask import request, jsonify
 
 from . import graph_bp
+from .. import get_storage
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
 from ..services.graph_builder import GraphBuilderService
@@ -49,7 +50,7 @@ def get_project(project_id: str):
 
     return jsonify({
         "success": True,
-        "data": project.to_dict()
+        "data": project
     })
 
 
@@ -63,7 +64,7 @@ def list_projects():
     
     return jsonify({
         "success": True,
-        "data": [p.to_dict() for p in projects],
+        "data": projects,
         "count": len(projects)
     })
 
@@ -73,7 +74,8 @@ def delete_project(project_id: str):
     """
     Delete a project
     """
-    success = ProjectManager.delete_project(project_id)
+    storage = get_storage()
+    success = ProjectManager.delete_project(project_id, storage=storage)
     
     if not success:
         return jsonify({
@@ -93,28 +95,25 @@ def reset_project(project_id: str):
     Reset project status (used to rebuild the graph)
     """
     project = ProjectManager.get_project(project_id)
-    
+
     if not project:
         return jsonify({
             "success": False,
             "error": t('api.projectNotFound', id=project_id)
         }), 404
 
-    # Reset to ontology-generated status
-    if project.ontology:
-        project.status = ProjectStatus.ONTOLOGY_GENERATED
-    else:
-        project.status = ProjectStatus.CREATED
-    
-    project.graph_id = None
-    project.graph_build_task_id = None
-    project.error = None
-    ProjectManager.save_project(project)
-    
+    new_status = ProjectStatus.ONTOLOGY_GENERATED if project.get("ontology") else ProjectStatus.CREATED
+    ProjectManager.save_project({
+        "id": project_id,
+        "status": new_status,
+        "active_task_id": None,
+    })
+    updated = ProjectManager.get_project(project_id)
+
     return jsonify({
         "success": True,
         "message": t('api.projectReset', id=project_id),
-        "data": project.to_dict()
+        "data": updated
     })
 
 
@@ -670,7 +669,7 @@ def get_task(task_id: str):
     
     return jsonify({
         "success": True,
-        "data": task.to_dict()
+        "data": task
     })
 
 
@@ -683,7 +682,7 @@ def list_tasks():
     
     return jsonify({
         "success": True,
-        "data": [t.to_dict() for t in tasks],
+        "data": tasks,
         "count": len(tasks)
     })
 
