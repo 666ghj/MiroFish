@@ -8,6 +8,7 @@ import traceback
 from flask import request, jsonify, send_file
 
 from . import simulation_bp
+from .. import get_storage
 from ..config import Config
 from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
@@ -190,7 +191,7 @@ def create_simulation():
                 "error": t('api.projectNotFound', id=project_id)
             }), 404
         
-        graph_id = data.get('graph_id') or project.graph_id
+        graph_id = data.get('graph_id') or project.get("graph_id")
         if not graph_id:
             return jsonify({
                 "success": False,
@@ -436,7 +437,7 @@ def prepare_simulation():
             }), 404
         
         # Get simulation requirement
-        simulation_requirement = project.simulation_requirement or ""
+        simulation_requirement = project.get("simulation_requirement") or ""
         if not simulation_requirement:
             return jsonify({
                 "success": False,
@@ -444,7 +445,7 @@ def prepare_simulation():
             }), 400
 
         # Get document text
-        document_text = ProjectManager.get_extracted_text(state.project_id) or ""
+        document_text = ProjectManager.get_extracted_text(state.project_id, get_storage()) or ""
         
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
@@ -718,7 +719,7 @@ def get_prepare_status():
                 "error": t('api.taskNotFound', id=task_id)
             }), 404
         
-        task_dict = task.to_dict()
+        task_dict = task
         task_dict["already_prepared"] = False
         
         return jsonify({
@@ -932,10 +933,10 @@ def get_simulation_history():
             
             # Get associated project's file list (up to 3)
             project = ProjectManager.get_project(sim.project_id)
-            if project and hasattr(project, 'files') and project.files:
+            if project and project.get("files"):
                 sim_dict["files"] = [
                     {"filename": f.get("filename", "Unknown file")}
-                    for f in project.files[:3]
+                    for f in project.get("files", [])[:3]
                 ]
             else:
                 sim_dict["files"] = []
@@ -1573,8 +1574,8 @@ def start_simulation():
                 # Try to get from project
                 project = ProjectManager.get_project(state.project_id)
                 if project:
-                    graph_id = project.graph_id
-            
+                    graph_id = project.get("graph_id")
+
             if not graph_id:
                 return jsonify({
                     "success": False,
@@ -2699,3 +2700,29 @@ def close_simulation_env():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+# ============== F2-A: Agent CRUD endpoints ==============
+
+@simulation_bp.route('/<simulation_id>/agent/<int:user_id>', methods=['PATCH'])
+def patch_agent(simulation_id: str, user_id: int):
+    """Update an agent profile (Fase A/B fields). Sets manually_edited=True."""
+    try:
+        fields = request.get_json() or {}
+        if not fields:
+            return jsonify({"success": False, "error": t('api.requireFields')}), 400
+
+        manager = SimulationManager()
+        try:
+            updated = manager.patch_agent_profile(simulation_id, user_id, fields)
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"success": False, "error": str(e)}), 403
+        except LookupError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
+
+        return jsonify({"success": True, "data": updated})
+    except Exception as e:
+        logger.error(f"patch_agent failed: {e}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500

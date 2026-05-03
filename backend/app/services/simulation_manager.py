@@ -539,3 +539,57 @@ class SimulationManager:
                 f"   - Both platforms in parallel: python {scripts_dir}/run_parallel_simulation.py --config {config_path}"
             )
         }
+
+    def patch_agent_profile(self, simulation_id: str, user_id: int, fields: dict) -> dict:
+        """
+        Update an agent's profile fields and set manually_edited=True.
+        Raises ValueError if simulation not found.
+        Raises PermissionError if simulation status is running or completed.
+        Raises LookupError if agent user_id not found.
+        Uses atomic write: backup → write → delete backup on success, restore on failure.
+        """
+        state = self.get_simulation(simulation_id)
+        if not state:
+            raise ValueError(f"Simulation {simulation_id} not found")
+
+        immutable = {SimulationStatus.RUNNING, SimulationStatus.COMPLETED}
+        if state.status in immutable:
+            raise PermissionError(f"Cannot edit agent while simulation is {state.status.value}")
+
+        sim_dir = self._get_simulation_dir(simulation_id)
+        profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+        backup_file = profiles_file + ".bak"
+
+        if not os.path.exists(profiles_file):
+            raise FileNotFoundError(f"reddit_profiles.json not found for {simulation_id}")
+
+        with open(profiles_file, 'r', encoding='utf-8') as f:
+            profiles = json.load(f)
+
+        target = next((p for p in profiles if p.get("user_id") == user_id), None)
+        if target is None:
+            raise LookupError(f"Agent user_id={user_id} not found in simulation {simulation_id}")
+
+        allowed = {
+            "name", "bio", "persona", "age", "gender", "mbti",
+            "country", "profession", "interested_topics", "stance", "sentiment_bias",
+            "posts_per_hour", "comments_per_hour", "active_hours",
+            "response_delay_min", "response_delay_max", "activity_level", "influence_weight",
+        }
+        for k, v in fields.items():
+            if k in allowed:
+                target[k] = v
+        target["manually_edited"] = True
+
+        import shutil
+        shutil.copy2(profiles_file, backup_file)
+        try:
+            with open(profiles_file, 'w', encoding='utf-8') as f:
+                json.dump(profiles, f, ensure_ascii=False, indent=2)
+            os.remove(backup_file)
+        except Exception:
+            shutil.copy2(backup_file, profiles_file)
+            os.remove(backup_file)
+            raise
+
+        return target
