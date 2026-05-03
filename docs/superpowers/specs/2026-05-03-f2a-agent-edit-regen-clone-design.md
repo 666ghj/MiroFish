@@ -338,6 +338,16 @@ executa les dues queries APOC via `execute_query()`.
 **`POST /api/report/generate`** — passa `graph_id_simulation` al `ReportAgent`
 si existeix; si no (simulació sense graph update), passa `graph_id_document` com ara.
 
+**`DELETE /api/simulation/{sim_id}`** (endpoint d'esborrat ja existent) — si la
+simulació té `graph_id_simulation`, esborrar tots els nodes i relacions d'aquell
+`group_id` a Neo4j abans d'esborrar la simulació de la BD:
+
+```python
+await session.run("""
+    MATCH (n) WHERE n.group_id = $gid DETACH DELETE n
+""", gid=graph_id_simulation)
+```
+
 ### Canvis al frontend (Step 3)
 
 Eliminar el hardcodejat `enable_graph_memory_update: true` i convertir-ho en
