@@ -613,7 +613,7 @@
           <p><strong>Persona:</strong> {{ selectedAgent?.persona }}</p>
           <div class="modal-actions">
             <button class="btn-secondary" @click="agentModalMode = 'regen'">{{ $t('step2.regenerateAgent') }}</button>
-            <button class="btn-danger" @click="confirmDeleteAgent(selectedAgent); closeAgentModal()">{{ $t('step2.deleteAgent') }}</button>
+            <button class="btn-danger" @click="confirmDeleteAgent(selectedAgent)">{{ $t('step2.deleteAgent') }}</button>
             <button class="btn-primary" @click="agentModalMode = 'edit'">{{ $t('step2.editAgent') }}</button>
           </div>
         </div>
@@ -1189,6 +1189,7 @@ const loadPreparedData = async () => {
 // ---- Fase A/B helpers ----
 
 const pollTaskUntilDone = async (taskId, onComplete, intervalMs = 2000) => {
+  if (!taskId) { onComplete && onComplete(); return }
   return new Promise((resolve) => {
     const interval = setInterval(async () => {
       try {
@@ -1243,9 +1244,14 @@ const saveAgent = async () => {
 
 const confirmDeleteAgent = async (agent) => {
   if (!confirm(t('step2.deleteAgentConfirm'))) return
-  const res = await deleteAgent(props.simulationId, agent.user_id)
-  if (res.data?.success) {
-    profiles.value = profiles.value.filter(p => p.user_id !== agent.user_id)
+  try {
+    const res = await deleteAgent(props.simulationId, agent.user_id)
+    if (res.data?.success) {
+      profiles.value = profiles.value.filter(p => p.user_id !== agent.user_id)
+      closeAgentModal()
+    }
+  } catch (err) {
+    addLog(`Delete failed: ${err.message}`)
   }
 }
 
