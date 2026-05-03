@@ -95,14 +95,17 @@ def generate_report():
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
         
-        graph_id = state.graph_id or project.graph_id
+        graph_id = state.graph_id or project.get("graph_id")
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphIdEnsure')
             }), 400
-        
-        simulation_requirement = project.simulation_requirement
+
+        # Use per-simulation graph if available (set during simulation start for isolation)
+        effective_graph_id = getattr(state, 'graph_id_simulation', None) or graph_id
+
+        simulation_requirement = project.get("simulation_requirement")
         if not simulation_requirement:
             return jsonify({
                 "success": False,
@@ -119,11 +122,11 @@ def generate_report():
             task_type="report_generate",
             metadata={
                 "simulation_id": simulation_id,
-                "graph_id": graph_id,
+                "graph_id": effective_graph_id,
                 "report_id": report_id
             }
         )
-        
+
         # Capture locale before spawning background thread
         current_locale = get_locale()
 
@@ -138,9 +141,9 @@ def generate_report():
                     message=t('api.initReportAgent')
                 )
 
-                # Create Report Agent
+                # Create Report Agent (use per-simulation graph if available)
                 agent = ReportAgent(
-                    graph_id=graph_id,
+                    graph_id=effective_graph_id,
                     simulation_id=simulation_id,
                     simulation_requirement=simulation_requirement
                 )
@@ -595,18 +598,21 @@ def chat_with_report_agent():
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
         
-        graph_id = state.graph_id or project.graph_id
+        graph_id = state.graph_id or project.get("graph_id")
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphId')
             }), 400
-        
-        simulation_requirement = project.simulation_requirement or ""
-        
+
+        # Use per-simulation graph if available
+        effective_graph_id = getattr(state, 'graph_id_simulation', None) or graph_id
+
+        simulation_requirement = project.get("simulation_requirement") or ""
+
         # Create agent and start chat
         agent = ReportAgent(
-            graph_id=graph_id,
+            graph_id=effective_graph_id,
             simulation_id=simulation_id,
             simulation_requirement=simulation_requirement
         )

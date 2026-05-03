@@ -1591,6 +1591,33 @@ def start_simulation():
             
             logger.info(f"Graph memory update enabled: simulation_id={simulation_id}, graph_id={graph_id}")
 
+        # Clone graph for per-simulation isolation
+        graph_id_simulation = None
+        if enable_graph_memory_update and graph_id:
+            try:
+                graph_id_sim = f"mirofish_{simulation_id}_sim"
+                from ..graph import get_graph_backend
+                graph_backend = get_graph_backend()
+                if hasattr(graph_backend, 'clone_graph'):
+                    import asyncio as _asyncio
+                    import concurrent.futures as _futures
+                    try:
+                        loop = _asyncio.get_event_loop()
+                        if loop.is_running():
+                            with _futures.ThreadPoolExecutor() as pool:
+                                future = pool.submit(_asyncio.run, graph_backend.clone_graph(graph_id, graph_id_sim))
+                                future.result()
+                        else:
+                            loop.run_until_complete(graph_backend.clone_graph(graph_id, graph_id_sim))
+                    except RuntimeError:
+                        _asyncio.run(graph_backend.clone_graph(graph_id, graph_id_sim))
+                    state.graph_id_simulation = graph_id_sim
+                    manager._save_simulation_state(state)
+                    graph_id_simulation = graph_id_sim
+                    logger.info(f"Graph cloned for simulation isolation: {graph_id_sim}")
+            except Exception as e:
+                logger.warning(f"Graph cloning failed, simulation uses shared graph: {e}")
+
         # Start simulation
         run_state = SimulationRunner.start_simulation(
             simulation_id=simulation_id,
@@ -1611,6 +1638,8 @@ def start_simulation():
         response_data['force_restarted'] = force_restarted
         if enable_graph_memory_update:
             response_data['graph_id'] = graph_id
+        if graph_id_simulation:
+            response_data['graph_id_simulation'] = graph_id_simulation
         
         return jsonify({
             "success": True,
