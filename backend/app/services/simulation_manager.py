@@ -26,6 +26,8 @@ class SimulationStatus(str, Enum):
     """Simulation status"""
     CREATED = "created"
     PREPARING = "preparing"
+    PROFILES_READY = "profiles_ready"   # agents generated, awaiting user confirmation for Fase B
+    CONFIGURING = "configuring"          # generating behavior config async
     READY = "ready"
     RUNNING = "running"
     PAUSED = "paused"
@@ -75,6 +77,10 @@ class SimulationState:
     # Error message
     error: Optional[str] = None
 
+    # F2-A+B fields
+    parent_simulation_id: Optional[str] = None   # set when cloned from another simulation
+    graph_id_simulation: Optional[str] = None    # per-simulation Neo4j group_id
+
     def to_dict(self) -> Dict[str, Any]:
         """Full state dictionary (internal use)"""
         return {
@@ -95,6 +101,8 @@ class SimulationState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "parent_simulation_id": self.parent_simulation_id,
+            "graph_id_simulation": self.graph_id_simulation,
         }
 
     def to_simple_dict(self) -> Dict[str, Any]:
@@ -109,6 +117,8 @@ class SimulationState:
             "entity_types": self.entity_types,
             "config_generated": self.config_generated,
             "error": self.error,
+            "parent_simulation_id": self.parent_simulation_id,
+            "graph_id_simulation": self.graph_id_simulation,
         }
 
 
@@ -186,6 +196,8 @@ class SimulationManager:
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             error=data.get("error"),
+            parent_simulation_id=data.get("parent_simulation_id"),
+            graph_id_simulation=data.get("graph_id_simulation"),
         )
 
         self._simulations[simulation_id] = state
