@@ -397,58 +397,42 @@ def build_graph():
         # Get project
         project = ProjectManager.get_project(project_id)
         if not project:
-            return jsonify({
-                "success": False,
-                "error": t('api.projectNotFound', id=project_id)
-            }), 404
+            return jsonify({"success": False, "error": t('api.projectNotFound', id=project_id)}), 404
+        storage = get_storage()
 
         # Check project status
-        force = data.get('force', False)  # Force rebuild
+        force = data.get('force', False)
 
-        if project.status == ProjectStatus.CREATED:
-            return jsonify({
-                "success": False,
-                "error": t('api.ontologyNotGenerated')
-            }), 400
+        if project["status"] == ProjectStatus.CREATED:
+            return jsonify({"success": False, "error": t('api.ontologyNotGenerated')}), 400
 
-        if project.status == ProjectStatus.GRAPH_BUILDING and not force:
+        if project["status"] == ProjectStatus.GRAPH_BUILDING and not force:
             return jsonify({
                 "success": False,
                 "error": t('api.graphBuilding'),
-                "task_id": project.graph_build_task_id
+                "task_id": project.get("active_task_id")
             }), 400
 
         # If force rebuild, reset status
-        if force and project.status in [ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED, ProjectStatus.GRAPH_COMPLETED]:
-            project.status = ProjectStatus.ONTOLOGY_GENERATED
-            project.graph_id = None
-            project.graph_build_task_id = None
-            project.error = None
+        if force and project["status"] in [ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED, ProjectStatus.GRAPH_COMPLETED]:
+            ProjectManager.save_project({"id": project_id, "status": ProjectStatus.ONTOLOGY_GENERATED, "active_task_id": None})
+            project = ProjectManager.get_project(project_id)
 
         # Get configuration
-        graph_name = data.get('graph_name', project.name or 'MiroFish Graph')
-        chunk_size = data.get('chunk_size', project.chunk_size or Config.DEFAULT_CHUNK_SIZE)
-        chunk_overlap = data.get('chunk_overlap', project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP)
-
-        # Update project configuration
-        project.chunk_size = chunk_size
-        project.chunk_overlap = chunk_overlap
+        graph_name = data.get('graph_name', project["name"] or 'MiroFish Graph')
+        chunk_size = data.get('chunk_size', project.get("chunk_size") or Config.DEFAULT_CHUNK_SIZE)
+        chunk_overlap = data.get('chunk_overlap', project.get("chunk_overlap") or Config.DEFAULT_CHUNK_OVERLAP)
+        ProjectManager.save_project({"id": project_id, "chunk_size": chunk_size, "chunk_overlap": chunk_overlap})
 
         # Get extracted text
-        text = ProjectManager.get_extracted_text(project_id)
+        text = ProjectManager.get_extracted_text(project_id, storage)
         if not text:
-            return jsonify({
-                "success": False,
-                "error": t('api.textNotFound')
-            }), 400
+            return jsonify({"success": False, "error": t('api.textNotFound')}), 400
 
         # Get ontology
-        ontology = project.ontology
+        ontology = project.get("ontology") or ProjectManager.get_ontology(project_id)
         if not ontology:
-            return jsonify({
-                "success": False,
-                "error": t('api.ontologyNotFound')
-            }), 400
+            return jsonify({"success": False, "error": t('api.ontologyNotFound')}), 400
 
         # Create async task
         task_manager = TaskManager()
@@ -456,10 +440,11 @@ def build_graph():
         logger.info(f"Graph build task created: task_id={task_id}, project_id={project_id}")
 
         # Update project status
-        project.status = ProjectStatus.GRAPH_BUILDING
-        project.graph_build_task_id = task_id
-        project.active_task_id = task_id
-        ProjectManager.save_project(project)
+        ProjectManager.save_project({
+            "id": project_id,
+            "status": ProjectStatus.GRAPH_BUILDING,
+            "active_task_id": task_id,
+        })
 
         # Capture locale before spawning background thread
         current_locale = get_locale()
@@ -500,9 +485,22 @@ def build_graph():
                 )
                 graph_id = builder.create_graph(name=graph_name)
                 
-                # Update project graph_id
-                project.graph_id = graph_id
-                ProjectManager.save_project(project)
+                # Persist graph record
+                ont_id = None
+                try:
+                    from ..models.db_models import OntologyModel
+                    from sqlalchemy import select as sa_select
+                    from ..db import get_session
+                    with get_session() as _db:
+                        _ont = _db.execute(
+                            sa_select(OntologyModel)
+                            .where(OntologyModel.project_id == project_id)
+                            .order_by(OntologyModel.version.desc())
+                        ).scalars().first()
+                        ont_id = _ont.id if _ont else None
+                except Exception:
+                    pass
+                ProjectManager.save_graph_record(project_id, graph_id, ontology_id=ont_id)
 
                 # Set ontology
                 task_manager.update_task(
@@ -560,13 +558,16 @@ def build_graph():
                 )
                 graph_data = builder.get_graph_data(graph_id)
                 
-                # Update project status
-                project.status = ProjectStatus.GRAPH_COMPLETED
-                project.active_task_id = None
-                ProjectManager.save_project(project)
-
                 node_count = graph_data.get("node_count", 0)
                 edge_count = graph_data.get("edge_count", 0)
+
+                # Update project status
+                ProjectManager.complete_graph_record(project_id, node_count, edge_count)
+                ProjectManager.save_project({
+                    "id": project_id,
+                    "status": ProjectStatus.GRAPH_COMPLETED,
+                    "active_task_id": None,
+                })
                 build_logger.info(f"[{task_id}] Graph build complete: graph_id={graph_id}, nodes={node_count}, edges={edge_count}")
 
                 # Complete
@@ -589,10 +590,11 @@ def build_graph():
                 build_logger.error(f"[{task_id}] Graph build failed: {str(e)}")
                 build_logger.debug(traceback.format_exc())
                 
-                project.status = ProjectStatus.FAILED
-                project.error = str(e)
-                project.active_task_id = None
-                ProjectManager.save_project(project)
+                ProjectManager.save_project({
+                    "id": project_id,
+                    "status": ProjectStatus.FAILED,
+                    "active_task_id": None,
+                })
                 
                 task_manager.update_task(
                     task_id,
