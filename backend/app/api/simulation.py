@@ -2875,3 +2875,31 @@ def patch_simulation_config_endpoint(simulation_id: str):
     except Exception as e:
         logger.error(f"patch_simulation_config failed: {e}")
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/<simulation_id>/clone', methods=['POST'])
+def clone_simulation(simulation_id: str):
+    """Clone a simulation: copy agent profiles, set status=profiles_ready."""
+    try:
+        data = request.get_json() or {}
+        project_id = data.get('project_id')
+        if not project_id:
+            return jsonify({"success": False, "error": "project_id is required"}), 400
+
+        manager = SimulationManager()
+        try:
+            new_state = manager.clone_simulation(simulation_id, project_id)
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "new_simulation_id": new_state.simulation_id,
+                "parent_simulation_id": simulation_id,
+                "status": new_state.status.value,
+            }
+        })
+    except Exception as e:
+        logger.error(f"clone_simulation failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500

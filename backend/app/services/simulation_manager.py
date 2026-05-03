@@ -635,6 +635,59 @@ class SimulationManager:
             os.remove(backup_file)
             raise
 
+    def clone_simulation(self, source_simulation_id: str, project_id: str) -> 'SimulationState':
+        """
+        Clone a simulation by copying its agent profiles to a new simulation.
+
+        The cloned simulation starts at PROFILES_READY status with config_generated=False.
+        Only profile files are copied; simulation_config.json is NOT copied.
+
+        Args:
+            source_simulation_id: ID of the simulation to clone
+            project_id: project ID for the new simulation
+
+        Returns:
+            New SimulationState
+
+        Raises:
+            ValueError: if source simulation not found or is in CREATED status
+        """
+        source_state = self.get_simulation(source_simulation_id)
+        if not source_state:
+            raise ValueError(f"Source simulation {source_simulation_id} not found")
+
+        if source_state.status == SimulationStatus.CREATED:
+            raise ValueError("Cannot clone a simulation in 'created' status (no profiles yet)")
+
+        import uuid
+        new_sim_id = f"sim_{uuid.uuid4().hex[:12]}"
+        new_state = SimulationState(
+            simulation_id=new_sim_id,
+            project_id=project_id,
+            graph_id=source_state.graph_id,
+            enable_twitter=source_state.enable_twitter,
+            enable_reddit=source_state.enable_reddit,
+            status=SimulationStatus.PROFILES_READY,
+            entities_count=source_state.entities_count,
+            profiles_count=source_state.profiles_count,
+            entity_types=list(source_state.entity_types),
+            config_generated=False,
+            parent_simulation_id=source_simulation_id,
+        )
+
+        src_dir = self._get_simulation_dir(source_simulation_id)
+        dst_dir = self._get_simulation_dir(new_sim_id)
+        os.makedirs(dst_dir, exist_ok=True)
+
+        for fname in ("reddit_profiles.json", "twitter_profiles.csv", "agent_profiles.json"):
+            src_file = os.path.join(src_dir, fname)
+            if os.path.exists(src_file):
+                shutil.copy2(src_file, os.path.join(dst_dir, fname))
+
+        self._save_simulation_state(new_state)
+        logger.info(f"Simulation cloned: {source_simulation_id} -> {new_sim_id}, project={project_id}")
+        return new_state
+
     def patch_simulation_config(self, simulation_id: str, fields: dict) -> dict:
         """
         Update global simulation config parameters (Fase B).
