@@ -3058,6 +3058,23 @@ def regenerate_agent(simulation_id: str, user_id: int):
                 "error": t('api.requireProfilesReady', status=state.status.value)
             }), 400
 
+        # Validate agent synchronously before creating the task
+        sim_dir = manager._get_simulation_dir(simulation_id)
+        profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+        if not os.path.exists(profiles_file):
+            return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+
+        with open(profiles_file, 'r', encoding='utf-8') as f:
+            profiles_snapshot = json.load(f)
+
+        agent_entry = next((p for p in profiles_snapshot if p.get("user_id") == user_id), None)
+        if agent_entry is None:
+            return jsonify({"success": False, "error": t('api.agentNotFound', user_id=user_id)}), 404
+
+        source_entity_uuid = agent_entry.get("source_entity_uuid")
+        if not source_entity_uuid:
+            return jsonify({"success": False, "error": t('api.agentNoSourceEntity')}), 400
+
         task_manager = TaskManager()
         task_id = task_manager.create_task(
             task_type="regenerate_agent",
@@ -3072,13 +3089,10 @@ def regenerate_agent(simulation_id: str, user_id: int):
                 task_manager.update_task(task_id, status=TaskStatus.PROCESSING, progress=0,
                                          message=t('progress.generatingProfile'))
 
-                sim_dir = manager._get_simulation_dir(simulation_id)
-                profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
-
                 with open(profiles_file, 'r', encoding='utf-8') as f:
                     profiles = json.load(f)
 
-                # Find the agent
+                # Find the agent (re-read to get latest state)
                 agent_idx = None
                 agent = None
                 for i, p in enumerate(profiles):

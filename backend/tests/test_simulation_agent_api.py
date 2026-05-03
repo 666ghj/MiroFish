@@ -239,3 +239,16 @@ def test_regenerate_agent_returns_task_id(client, sim_with_profiles, monkeypatch
     data = resp.get_json()
     assert data["success"] is True
     assert "task_id" in data["data"]
+
+
+def test_regenerate_agent_not_found_returns_404(client, sim_with_profiles):
+    sim_id = sim_with_profiles
+    resp = client.post(f"/api/simulation/{sim_id}/agent/999/regenerate", json={})
+    assert resp.status_code == 404
+
+
+def test_regenerate_agent_no_source_entity_returns_400(client, sim_with_profiles):
+    sim_id = sim_with_profiles
+    # user_id=0 exists but has no source_entity_uuid in the default fixture
+    resp = client.post(f"/api/simulation/{sim_id}/agent/0/regenerate", json={})
+    assert resp.status_code == 400
