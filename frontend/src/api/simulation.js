@@ -185,3 +185,66 @@ export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
 
+/**
+ * Update an agent's profile fields (Fase A/B)
+ * @param {string} simulationId
+ * @param {number} userId
+ * @param {Object} fields - partial profile fields to update
+ */
+export const patchAgent = (simulationId, userId, fields) => {
+  return service.patch(`/api/simulation/${simulationId}/agent/${userId}`, fields)
+}
+
+/**
+ * Delete an agent from a simulation
+ * @param {string} simulationId
+ * @param {number} userId
+ */
+export const deleteAgent = (simulationId, userId) => {
+  return service.delete(`/api/simulation/${simulationId}/agent/${userId}`)
+}
+
+/**
+ * Create a new agent from an existing graph entity
+ * @param {string} simulationId
+ * @param {Object} data - { source_entity_uuid, extra_instructions? }
+ */
+export const createAgent = (simulationId, data) => {
+  return requestWithRetry(() => service.post(`/api/simulation/${simulationId}/agent`, data), 3, 1000)
+}
+
+/**
+ * Regenerate an agent's personality profile
+ * @param {string} simulationId
+ * @param {number} userId
+ * @param {Object} data - { extra_instructions? }
+ */
+export const regenerateAgent = (simulationId, userId, data = {}) => {
+  return requestWithRetry(() => service.post(`/api/simulation/${simulationId}/agent/${userId}/regenerate`, data), 3, 1000)
+}
+
+/**
+ * Trigger Fase A → Fase B transition (generate behavior config)
+ * @param {string} simulationId
+ */
+export const generateConfig = (simulationId) => {
+  return requestWithRetry(() => service.post(`/api/simulation/${simulationId}/generate-config`, {}), 3, 1000)
+}
+
+/**
+ * Update simulation global config parameters (Fase B)
+ * @param {string} simulationId
+ * @param {Object} fields - partial config fields
+ */
+export const patchSimulationConfig = (simulationId, fields) => {
+  return service.patch(`/api/simulation/${simulationId}/config`, fields)
+}
+
+/**
+ * Clone a simulation (copy agent profiles, set status=profiles_ready)
+ * @param {string} simulationId - source simulation ID
+ * @param {string} projectId
+ */
+export const cloneSimulation = (simulationId, projectId) => {
+  return requestWithRetry(() => service.post(`/api/simulation/${simulationId}/clone`, { project_id: projectId }), 3, 1000)
+}
