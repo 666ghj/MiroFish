@@ -10,6 +10,7 @@
           </div>
           <div class="step-status">
             <span v-if="currentPhase > 0" class="badge success">{{ $t('step1.ontologyCompleted') }}</span>
+            <span v-else-if="errorMsg && currentPhase === 0" class="badge error">FAILED</span>
             <span v-else-if="currentPhase === 0" class="badge processing">{{ $t('step1.ontologyGenerating') }}</span>
             <span v-else class="badge pending">{{ $t('step1.ontologyPending') }}</span>
           </div>
@@ -22,9 +23,15 @@
           </p>
 
           <!-- Loading / Progress -->
-          <div v-if="currentPhase === 0 && ontologyProgress" class="progress-section">
+          <div v-if="currentPhase === 0 && ontologyProgress && !errorMsg" class="progress-section">
             <div class="spinner-sm"></div>
             <span>{{ ontologyProgress.message || $t('step1.analyzingDocs') }}</span>
+          </div>
+          
+          <!-- Error Alert for Phase 0 -->
+          <div v-if="currentPhase === 0 && errorMsg" class="error-alert">
+            <span class="error-icon">⚠️</span>
+            <span class="error-text">{{ errorMsg }}</span>
           </div>
 
           <!-- Detail Overlay -->
@@ -114,6 +121,7 @@
           </div>
           <div class="step-status">
             <span v-if="currentPhase > 1" class="badge success">{{ $t('step1.ontologyCompleted') }}</span>
+            <span v-else-if="errorMsg && currentPhase === 1" class="badge error">FAILED</span>
             <span v-else-if="currentPhase === 1" class="badge processing">{{ buildProgress?.progress || 0 }}%</span>
             <span v-else class="badge pending">{{ $t('step1.ontologyPending') }}</span>
           </div>
@@ -124,6 +132,12 @@
           <p class="description">
             {{ $t('step1.graphRagDesc') }}
           </p>
+          
+          <!-- Error Alert for Phase 1 -->
+          <div v-if="currentPhase === 1 && errorMsg" class="error-alert" style="margin-bottom: 16px;">
+            <span class="error-icon">⚠️</span>
+            <span class="error-text">{{ errorMsg }}</span>
+          </div>
           
           <!-- Stats Cards -->
           <div class="stats-grid">
@@ -201,7 +215,8 @@ const props = defineProps({
   ontologyProgress: Object,
   buildProgress: Object,
   graphData: Object,
-  systemLogs: { type: Array, default: () => [] }
+  systemLogs: { type: Array, default: () => [] },
+  errorMsg: { type: String, default: '' }
 })
 
 defineEmits(['next-step'])
@@ -349,6 +364,7 @@ watch(() => props.systemLogs.length, () => {
 .badge.processing { background: #FF5722; color: #FFF; }
 .badge.accent { background: #FF5722; color: #FFF; }
 .badge.pending { background: #F5F5F5; color: #999; }
+.badge.error { background: #FFEBEE; color: #D32F2F; }
 
 .api-note {
   font-family: 'JetBrains Mono', monospace;
@@ -362,6 +378,28 @@ watch(() => props.systemLogs.length, () => {
   color: #666;
   line-height: 1.5;
   margin-bottom: 16px;
+}
+
+.error-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #FFF5F5;
+  border: 1px solid #FFCDD2;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.error-icon {
+  font-size: 14px;
+}
+
+.error-text {
+  font-size: 12px;
+  color: #C62828;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 /* Step 01 Tags */

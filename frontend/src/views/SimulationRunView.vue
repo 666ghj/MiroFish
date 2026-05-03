@@ -73,7 +73,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step3Simulation from '../components/Step3Simulation.vue'
-import { getProject, getGraphData } from '../api/graph'
+import { getProject, getGraphData, getGraphConfig } from '../api/graph'
 import { getSimulation, getSimulationConfig, stopSimulation, closeSimulationEnv, getEnvStatus } from '../api/simulation'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { useI18n } from 'vue-i18n'
@@ -100,6 +100,7 @@ const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
+const graphPollInterval = ref(0) // 0 = manual only
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -208,6 +209,16 @@ const loadSimulationData = async () => {
   try {
     addLog(t('log.loadingSimData', { id: currentSimulationId.value }))
     
+    // Fetch graph polling config from backend
+    try {
+      const configRes = await getGraphConfig()
+      if (configRes.success && configRes.data) {
+        graphPollInterval.value = configRes.data.poll_interval || 0
+      }
+    } catch (err) {
+      graphPollInterval.value = 0
+    }
+    
     // 获取 simulation 信息
     const simRes = await getSimulation(currentSimulationId.value)
     if (simRes.success && simRes.data) {
@@ -278,9 +289,15 @@ let graphRefreshTimer = null
 
 const startGraphRefresh = () => {
   if (graphRefreshTimer) return
-  addLog(t('log.graphRealtimeRefreshStart'))
-  // 立即刷新一次，然后每30秒刷新
-  graphRefreshTimer = setInterval(refreshGraph, 30000)
+  
+  // Only set up automatic refresh if poll_interval > 0 (paid plan)
+  if (graphPollInterval.value > 0) {
+    const intervalMs = Math.max(graphPollInterval.value * 1000, 30000) // At least 30s during simulation
+    addLog(t('log.graphRealtimeRefreshStart'))
+    graphRefreshTimer = setInterval(refreshGraph, intervalMs)
+  } else {
+    addLog('Automatic graph refresh disabled (FREE plan). Use manual refresh.')
+  }
 }
 
 const stopGraphRefresh = () => {

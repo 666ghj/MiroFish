@@ -59,6 +59,7 @@
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :errorMsg="error"
           @next-step="handleNextStep"
         />
         <!-- Step 2: 环境搭建 -->
@@ -83,7 +84,7 @@ import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData, getGraphConfig } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
@@ -113,6 +114,9 @@ const systemLogs = ref([])
 // Polling timers
 let pollTimer = null
 let graphPollTimer = null
+
+// Graph polling config (fetched from backend)
+const graphPollInterval = ref(0) // 0 = manual only
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -184,6 +188,19 @@ const handleGoBack = () => {
 
 const initProject = async () => {
   addLog('Project view initialized.')
+  
+  // Fetch graph polling config from backend
+  try {
+    const configRes = await getGraphConfig()
+    if (configRes.success && configRes.data) {
+      graphPollInterval.value = configRes.data.poll_interval || 0
+      addLog(`Graph config loaded: poll_interval=${graphPollInterval.value}s, cache_ttl=${configRes.data.cache_ttl}s`)
+    }
+  } catch (err) {
+    addLog('Could not load graph config, defaulting to manual refresh only.')
+    graphPollInterval.value = 0
+  }
+  
   if (currentProjectId.value === 'new') {
     await handleNewProject()
   } else {
@@ -295,9 +312,17 @@ const startBuildGraph = async () => {
 }
 
 const startGraphPolling = () => {
-  addLog('Started polling for graph data...')
+  // Always do one immediate fetch
   fetchGraphData()
-  graphPollTimer = setInterval(fetchGraphData, 10000)
+  
+  // Only set up automatic polling if poll_interval > 0 (paid plan)
+  if (graphPollInterval.value > 0) {
+    const intervalMs = graphPollInterval.value * 1000
+    addLog(`Started automatic graph polling (every ${graphPollInterval.value}s)...`)
+    graphPollTimer = setInterval(fetchGraphData, intervalMs)
+  } else {
+    addLog('Automatic graph polling disabled (FREE plan). Use manual refresh.')
+  }
 }
 
 const fetchGraphData = async () => {

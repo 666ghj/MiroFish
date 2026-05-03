@@ -414,7 +414,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData, getGraphConfig } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import * as d3 from 'd3'
 
@@ -442,6 +442,9 @@ const graphSvg = ref(null)
 
 // 轮询定时器
 let pollTimer = null
+
+// Graph polling config (fetched from backend)
+const graphPollInterval = ref(0) // 0 = manual only
 
 // 计算属性
 const statusClass = computed(() => {
@@ -553,6 +556,16 @@ const getPhaseStatusText = (phase) => {
 // 初始化 - 处理新建项目或加载已有项目
 const initProject = async () => {
   const paramProjectId = route.params.projectId
+  
+  // Fetch graph polling config from backend
+  try {
+    const configRes = await getGraphConfig()
+    if (configRes.success && configRes.data) {
+      graphPollInterval.value = configRes.data.poll_interval || 0
+    }
+  } catch (err) {
+    graphPollInterval.value = 0
+  }
   
   if (paramProjectId === 'new') {
     // 新建项目：从 store 获取待上传的数据
@@ -715,10 +728,13 @@ const startGraphPolling = () => {
   // 立即获取一次
   fetchGraphData()
   
-  // 每 10 秒自动获取一次图谱数据
-  graphPollTimer = setInterval(async () => {
-    await fetchGraphData()
-  }, 10000)
+  // Only set up automatic polling if poll_interval > 0 (paid plan)
+  if (graphPollInterval.value > 0) {
+    const intervalMs = graphPollInterval.value * 1000
+    graphPollTimer = setInterval(async () => {
+      await fetchGraphData()
+    }, intervalMs)
+  }
 }
 
 // 手动刷新图谱
