@@ -84,3 +84,87 @@ def test_patch_agent_not_found(client, sim_with_profiles):
     sim_id = sim_with_profiles
     resp = client.patch(f"/api/simulation/{sim_id}/agent/99", json={"bio": "x"})
     assert resp.status_code == 404
+
+
+def test_delete_agent_removes_from_profiles(client, sim_with_profiles, tmp_path):
+    sim_id = sim_with_profiles
+    resp = client.delete(f"/api/simulation/{sim_id}/agent/1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    # Verify file on disk
+    from pathlib import Path
+    import json as _json
+    import os as _os
+    sim_dir = Path(_os.environ.get("OASIS_SIMULATION_DATA_DIR", str(tmp_path))) / sim_id
+    # Use the monkeypatched path from SimulationManager
+    from backend.app.services.simulation_manager import SimulationManager
+    sim_manager_dir = Path(SimulationManager.SIMULATION_DATA_DIR) / sim_id
+    profiles = _json.loads((sim_manager_dir / "reddit_profiles.json").read_text())
+    assert all(p["user_id"] != 1 for p in profiles)
+    assert len(profiles) == 1
+
+
+def test_delete_agent_not_found(client, sim_with_profiles):
+    sim_id = sim_with_profiles
+    resp = client.delete(f"/api/simulation/{sim_id}/agent/99")
+    assert resp.status_code == 404
+
+
+def test_generate_config_returns_task_id(client, sim_with_profiles, monkeypatch):
+    sim_id = sim_with_profiles
+    # Mock SimulationConfigGenerator to avoid real LLM calls
+    # We just need the endpoint to accept the request and return task_id
+    # The background thread will fail quickly but that's OK for this test
+    import backend.app.services.simulation_config_generator as scg_module
+    from backend.app.models.project import ProjectManager
+
+    class FakeParams:
+        def to_dict(self):
+            return {"time_config": {"total_simulation_hours": 24}}
+
+    monkeypatch.setattr(scg_module, "SimulationConfigGenerator",
+                        lambda **kwargs: type('G', (), {
+                            'generate_simulation_parameters': lambda self, **kw: FakeParams()
+                        })())
+
+    monkeypatch.setattr(ProjectManager, "get_project",
+                        staticmethod(lambda pid: {"project_id": pid, "simulation_requirement": "test"}))
+
+    resp = client.post(f"/api/simulation/{sim_id}/generate-config", json={})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "task_id" in data["data"]
+
+
+@pytest.fixture
+def sim_prepared(tmp_path, monkeypatch):
+    """Creates a simulation with status=ready and a simulation_config.json"""
+    from backend.app.services.simulation_manager import SimulationManager
+    monkeypatch.setattr(SimulationManager, 'SIMULATION_DATA_DIR', str(tmp_path))
+    sim_id = "sim_prepared001"
+    sim_dir = tmp_path / sim_id
+    sim_dir.mkdir()
+    state = {
+        "simulation_id": sim_id, "project_id": "p", "graph_id": "g",
+        "status": "ready", "entities_count": 1, "profiles_count": 1,
+        "entity_types": [], "config_generated": True, "config_reasoning": "",
+        "current_round": 0, "twitter_status": "not_started", "reddit_status": "not_started",
+        "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00",
+        "error": None, "parent_simulation_id": None, "graph_id_simulation": None,
+        "enable_twitter": True, "enable_reddit": True,
+    }
+    (sim_dir / "state.json").write_text(json.dumps(state))
+    config = {"time_config": {"total_simulation_hours": 24, "minutes_per_round": 60}, "agent_configs": []}
+    (sim_dir / "simulation_config.json").write_text(json.dumps(config))
+    return sim_id
+
+
+def test_patch_config_updates_total_hours(client, sim_prepared):
+    sim_id = sim_prepared
+    resp = client.patch(f"/api/simulation/{sim_id}/config", json={"total_simulation_hours": 48})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["data"]["time_config"]["total_simulation_hours"] == 48

@@ -593,3 +593,94 @@ class SimulationManager:
             raise
 
         return target
+
+    def delete_agent_profile(self, simulation_id: str, user_id: int) -> None:
+        """
+        Remove an agent from reddit_profiles.json.
+        Raises ValueError if simulation not found.
+        Raises PermissionError if status is running or completed.
+        Raises LookupError if agent not found.
+        Atomic write.
+        """
+        state = self.get_simulation(simulation_id)
+        if not state:
+            raise ValueError(f"Simulation {simulation_id} not found")
+
+        immutable = {SimulationStatus.RUNNING, SimulationStatus.COMPLETED}
+        if state.status in immutable:
+            raise PermissionError(f"Cannot delete agent while simulation is {state.status.value}")
+
+        sim_dir = self._get_simulation_dir(simulation_id)
+        profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+        backup_file = profiles_file + ".bak"
+
+        with open(profiles_file, 'r', encoding='utf-8') as f:
+            profiles = json.load(f)
+
+        original_len = len(profiles)
+        profiles = [p for p in profiles if p.get("user_id") != user_id]
+        if len(profiles) == original_len:
+            raise LookupError(f"Agent user_id={user_id} not found")
+
+        shutil.copy2(profiles_file, backup_file)
+        try:
+            with open(profiles_file, 'w', encoding='utf-8') as f:
+                json.dump(profiles, f, ensure_ascii=False, indent=2)
+            os.remove(backup_file)
+        except Exception:
+            shutil.copy2(backup_file, profiles_file)
+            os.remove(backup_file)
+            raise
+
+    def patch_simulation_config(self, simulation_id: str, fields: dict) -> dict:
+        """
+        Update global simulation config parameters (Fase B).
+        Supported top-level: total_simulation_hours, minutes_per_round, agents_per_hour_min,
+        agents_per_hour_max, following_probability, recsys_type, twitter_config (dict merged),
+        reddit_config (dict merged).
+        Atomic write.
+        """
+        state = self.get_simulation(simulation_id)
+        if not state:
+            raise ValueError(f"Simulation {simulation_id} not found")
+
+        immutable = {SimulationStatus.RUNNING, SimulationStatus.COMPLETED}
+        if state.status in immutable:
+            raise PermissionError(f"Cannot edit config while simulation is {state.status.value}")
+
+        sim_dir = self._get_simulation_dir(simulation_id)
+        config_file = os.path.join(sim_dir, "simulation_config.json")
+        backup_file = config_file + ".bak"
+
+        if not os.path.exists(config_file):
+            raise FileNotFoundError("simulation_config.json not found")
+
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
+        time_fields = {"total_simulation_hours", "minutes_per_round",
+                       "agents_per_hour_min", "agents_per_hour_max"}
+        time_config = config.setdefault("time_config", {})
+        for k in time_fields:
+            if k in fields:
+                time_config[k] = fields[k]
+
+        for k in ("following_probability", "recsys_type"):
+            if k in fields:
+                config[k] = fields[k]
+
+        for nested in ("twitter_config", "reddit_config"):
+            if nested in fields and isinstance(fields[nested], dict):
+                config.setdefault(nested, {}).update(fields[nested])
+
+        shutil.copy2(config_file, backup_file)
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            os.remove(backup_file)
+        except Exception:
+            shutil.copy2(backup_file, config_file)
+            os.remove(backup_file)
+            raise
+
+        return config

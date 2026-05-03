@@ -2728,3 +2728,148 @@ def patch_agent(simulation_id: str, user_id: int):
     except Exception as e:
         logger.error(f"patch_agent failed: {e}")
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/<simulation_id>/agent/<int:user_id>', methods=['DELETE'])
+def delete_agent(simulation_id: str, user_id: int):
+    """Remove an agent from the simulation (Fase A only)."""
+    try:
+        manager = SimulationManager()
+        try:
+            manager.delete_agent_profile(simulation_id, user_id)
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"success": False, "error": str(e)}), 403
+        except LookupError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
+
+        return jsonify({"success": True, "data": {"deleted_user_id": user_id}})
+    except Exception as e:
+        logger.error(f"delete_agent failed: {e}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/<simulation_id>/generate-config', methods=['POST'])
+def generate_config_endpoint(simulation_id: str):
+    """
+    Transition from Fase A to Fase B.
+    Requires status=profiles_ready. Changes to configuring, starts async config generation.
+    Returns task_id for polling.
+    """
+    import threading
+    from ..models.task import TaskManager, TaskStatus
+    from ..services.simulation_config_generator import SimulationConfigGenerator
+
+    try:
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+
+        if not state:
+            return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+
+        if state.status != SimulationStatus.PROFILES_READY:
+            return jsonify({
+                "success": False,
+                "error": t('api.requireProfilesReady', status=state.status.value)
+            }), 400
+
+        project = ProjectManager.get_project(state.project_id)
+        if not project:
+            return jsonify({"success": False, "error": t('api.projectNotFound', id=state.project_id)}), 404
+
+        simulation_requirement = project.get("simulation_requirement") or ""
+        document_text = ProjectManager.get_extracted_text(state.project_id, get_storage()) or ""
+
+        task_manager = TaskManager()
+        task_id = task_manager.create_task(
+            task_type="generate_config",
+            metadata={"simulation_id": simulation_id}
+        )
+
+        state.status = SimulationStatus.CONFIGURING
+        manager._save_simulation_state(state)
+
+        current_locale = get_locale()
+
+        def run_generate_config():
+            set_locale(current_locale)
+            try:
+                task_manager.update_task(task_id, status=TaskStatus.PROCESSING, progress=0,
+                                         message=t('progress.generatingSimConfig'))
+
+                sim_dir = manager._get_simulation_dir(simulation_id)
+                profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+                with open(profiles_file, 'r', encoding='utf-8') as f:
+                    profiles = json.load(f)
+
+                from ..services.zep_entity_reader import ZepEntityReader
+                entity_nodes = []
+                reader = ZepEntityReader()
+                for p in profiles:
+                    uuid_ = p.get("source_entity_uuid")
+                    if uuid_:
+                        try:
+                            entity = reader.get_entity_with_context(state.graph_id, uuid_)
+                            if entity:
+                                entity_nodes.append(entity)
+                        except Exception:
+                            pass
+
+                gen = SimulationConfigGenerator(graph_id=state.graph_id)
+                params = gen.generate_simulation_parameters(
+                    simulation_requirement=simulation_requirement,
+                    document_text=document_text,
+                    entities=entity_nodes,
+                )
+
+                config_data = params.to_dict() if hasattr(params, 'to_dict') else {}
+                config_file = os.path.join(sim_dir, "simulation_config.json")
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+                state2 = manager.get_simulation(simulation_id)
+                if state2:
+                    state2.status = SimulationStatus.READY
+                    state2.config_generated = True
+                    manager._save_simulation_state(state2)
+
+                task_manager.complete_task(task_id, result={"status": "prepared"})
+            except Exception as e:
+                logger.error(f"generate_config background failed: {e}")
+                task_manager.fail_task(task_id, str(e))
+                state2 = manager.get_simulation(simulation_id)
+                if state2:
+                    state2.status = SimulationStatus.PROFILES_READY
+                    manager._save_simulation_state(state2)
+
+        threading.Thread(target=run_generate_config, daemon=True).start()
+
+        return jsonify({"success": True, "data": {"simulation_id": simulation_id, "task_id": task_id}})
+    except Exception as e:
+        logger.error(f"generate_config endpoint error: {e}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/<simulation_id>/config', methods=['PATCH'])
+def patch_simulation_config_endpoint(simulation_id: str):
+    """Update simulation global config parameters (Fase B)."""
+    try:
+        fields = request.get_json() or {}
+        if not fields:
+            return jsonify({"success": False, "error": t('api.requireFields')}), 400
+
+        manager = SimulationManager()
+        try:
+            updated = manager.patch_simulation_config(simulation_id, fields)
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"success": False, "error": str(e)}), 403
+        except FileNotFoundError as e:
+            return jsonify({"success": False, "error": str(e)}), 404
+
+        return jsonify({"success": True, "data": updated})
+    except Exception as e:
+        logger.error(f"patch_simulation_config failed: {e}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
