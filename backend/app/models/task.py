@@ -104,7 +104,7 @@ class TaskManager:
             if task_type:
                 stmt = stmt.where(TaskModel.task_type == task_type)
             tasks = db.execute(stmt).scalars().all()
-            return [self._to_dict(t) for t in tasks]
+            return [self._to_dict(task_row) for task_row in tasks]
 
     def cleanup_old_tasks(self, max_age_hours: int = 24) -> None:
         from datetime import timedelta
