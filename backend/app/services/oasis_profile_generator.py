@@ -21,6 +21,7 @@ from zep_cloud.client import Zep
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ..utils.zep_retry import with_zep_retry
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
@@ -316,55 +317,27 @@ class OasisProfileGenerator:
         
         comprehensive_query = t('progress.zepSearchQuery', name=entity_name)
         
+        @with_zep_retry(max_retries=3, initial_delay=2.0, operation_name="Zep Edge Search")
         def search_edges():
             """搜索边（事实/关系）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=30,
-                        scope="edges",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep边搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep边搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
+            return self.zep_client.graph.search(
+                query=comprehensive_query,
+                graph_id=self.graph_id,
+                limit=30,
+                scope="edges",
+                reranker="rrf"
+            )
         
+        @with_zep_retry(max_retries=3, initial_delay=2.0, operation_name="Zep Node Search")
         def search_nodes():
             """搜索节点（实体摘要）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=20,
-                        scope="nodes",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep节点搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep节点搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
+            return self.zep_client.graph.search(
+                query=comprehensive_query,
+                graph_id=self.graph_id,
+                limit=20,
+                scope="nodes",
+                reranker="rrf"
+            )
         
         try:
             # 并行执行edges和nodes搜索

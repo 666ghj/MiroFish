@@ -18,6 +18,7 @@ from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from .text_processor import TextProcessor
 from ..utils.locale import t, get_locale, set_locale
+from ..utils.zep_retry import with_zep_retry
 
 
 @dataclass
@@ -190,6 +191,7 @@ class GraphBuilderService:
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
             self.task_manager.fail_task(task_id, error_msg)
     
+    @with_zep_retry(max_retries=3, operation_name="create_graph")
     def create_graph(self, name: str) -> str:
         """创建Zep图谱（公开方法）"""
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
@@ -285,11 +287,14 @@ class GraphBuilderService:
         
         # 调用Zep API设置本体
         if entity_types or edge_definitions:
-            self.client.graph.set_ontology(
-                graph_ids=[graph_id],
-                entities=entity_types if entity_types else None,
-                edges=edge_definitions if edge_definitions else None,
-            )
+            @with_zep_retry(max_retries=3, operation_name="set_ontology")
+            def _set_ontology():
+                self.client.graph.set_ontology(
+                    graph_ids=[graph_id],
+                    entities=entity_types if entity_types else None,
+                    edges=edge_definitions if edge_definitions else None,
+                )
+            _set_ontology()
     
     def add_text_batches(
         self,
@@ -322,10 +327,14 @@ class GraphBuilderService:
             
             # 发送到Zep
             try:
-                batch_result = self.client.graph.add_batch(
-                    graph_id=graph_id,
-                    episodes=episodes
-                )
+                @with_zep_retry(max_retries=3, operation_name=f"add_batch {batch_num}/{total_batches}")
+                def _add_batch():
+                    return self.client.graph.add_batch(
+                        graph_id=graph_id,
+                        episodes=episodes
+                    )
+                    
+                batch_result = _add_batch()
                 
                 # 收集返回的 episode uuid
                 if batch_result and isinstance(batch_result, list):
@@ -376,7 +385,11 @@ class GraphBuilderService:
             # 检查每个 episode 的处理状态
             for ep_uuid in list(pending_episodes):
                 try:
-                    episode = self.client.graph.episode.get(uuid_=ep_uuid)
+                    @with_zep_retry(max_retries=2, initial_delay=1.0, operation_name="get_episode")
+                    def _get_episode():
+                        return self.client.graph.episode.get(uuid_=ep_uuid)
+                        
+                    episode = _get_episode()
                     is_processed = getattr(episode, 'processed', False)
                     
                     if is_processed:
@@ -500,6 +513,7 @@ class GraphBuilderService:
             "edge_count": len(edges_data),
         }
     
+    @with_zep_retry(max_retries=3, operation_name="delete_graph")
     def delete_graph(self, graph_id: str):
         """删除图谱"""
         self.client.graph.delete(graph_id=graph_id)

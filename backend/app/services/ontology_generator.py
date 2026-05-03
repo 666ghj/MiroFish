@@ -225,8 +225,9 @@ class OntologyGenerator:
         
         return result
     
-    # 传给 LLM 的文本最大长度（5万字）
-    MAX_TEXT_LENGTH_FOR_LLM = 50000
+    # 传给 LLM 的文本最大长度（2万字）
+    # 本体分析只需识别实体/关系类型，不需要完整文本；完整文本仍用于后续图谱构建
+    MAX_TEXT_LENGTH_FOR_LLM = 20000
     
     def _build_user_message(
         self,
