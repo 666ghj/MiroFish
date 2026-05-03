@@ -19,6 +19,8 @@ def init_db(database_url: str) -> None:
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     _engine = create_engine(database_url, connect_args=connect_args, echo=False)
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
+    # Import models so that all ORM classes register with Base.metadata before create_all
+    from .models import db_models as _  # noqa: F401
     Base.metadata.create_all(_engine)
 
 
