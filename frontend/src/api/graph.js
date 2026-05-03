@@ -98,3 +98,15 @@ export function deleteProject(projectId) {
     method: 'delete'
   })
 }
+
+/**
+ * Llista tots els projectes (per a la Recovery UI)
+ * @param {Number} limit - Màxim de projectes a retornar (default 50)
+ * @returns {Promise}
+ */
+export function listProjects(limit = 50) {
+  return service({
+    url: `/api/graph/project/list?limit=${limit}`,
+    method: 'get'
+  })
+}
