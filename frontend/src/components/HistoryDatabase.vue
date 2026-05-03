@@ -21,7 +21,7 @@
     <div v-if="projects.length > 0" class="cards-container" :class="{ expanded: isExpanded }" :style="containerStyle">
       <div 
         v-for="(project, index) in projects" 
-        :key="project.simulation_id"
+        :key="project.project_id"
         class="project-card"
         :class="{ expanded: isExpanded, hovering: hoveringCard === index }"
         :style="getCardStyle(index)"
@@ -31,20 +31,20 @@
       >
         <!-- 卡片头部：simulation_id 和 功能可用状态 -->
         <div class="card-header">
-          <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
+          <span class="card-id">{{ project.name || (project.project_id || '').slice(0, 8) }}</span>
           <div class="card-status-icons">
             <span 
               class="status-icon" 
               :class="{ available: project.project_id, unavailable: !project.project_id }"
               :title="$t('history.graphBuild')"
             >◇</span>
-            <span 
-              class="status-icon available" 
+            <span
+              class="status-icon"
+              :class="{ available: project.graph_id, unavailable: !project.graph_id }"
               :title="$t('history.envSetup')"
             >◈</span>
-            <span 
-              class="status-icon" 
-              :class="{ available: project.report_id, unavailable: !project.report_id }"
+            <span
+              class="status-icon unavailable"
               :title="$t('history.analysisReport')"
             >◆</span>
           </div>
@@ -113,7 +113,7 @@
             <!-- 弹窗头部 -->
             <div class="modal-header">
               <div class="modal-title-section">
-                <span class="modal-id">{{ formatSimulationId(selectedProject.simulation_id) }}</span>
+                <span class="modal-id">{{ selectedProject.name || (selectedProject.project_id || '').slice(0, 8) }}</span>
                 <span class="modal-progress" :class="getProgressClass(selectedProject)">
                   <span class="status-dot">●</span> {{ formatRounds(selectedProject) }}
                 </span>
@@ -161,18 +161,19 @@
                 <span class="btn-icon">◇</span>
                 <span class="btn-text">{{ $t('history.step1Button') }}</span>
               </button>
-              <button 
-                class="modal-btn btn-simulation" 
+              <button
+                class="modal-btn btn-simulation"
                 @click="goToSimulation"
+                :disabled="!selectedProject.graph_id"
               >
                 <span class="btn-step">Step2</span>
                 <span class="btn-icon">◈</span>
                 <span class="btn-text">{{ $t('history.step2Button') }}</span>
               </button>
-              <button 
-                class="modal-btn btn-report" 
+              <button
+                class="modal-btn btn-report"
                 @click="goToReport"
-                :disabled="!selectedProject.report_id"
+                :disabled="true"
               >
                 <span class="btn-step">Step4</span>
                 <span class="btn-icon">◆</span>
@@ -194,7 +195,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getSimulationHistory } from '../api/simulation'
+import { listProjects } from '../api/graph'
 
 const router = useRouter()
 const route = useRoute()
@@ -416,10 +417,10 @@ const goToProject = () => {
 
 // 导航到环境配置页面（Simulation）
 const goToSimulation = () => {
-  if (selectedProject.value?.simulation_id) {
+  if (selectedProject.value?.graph_id) {
     router.push({
-      name: 'Simulation',
-      params: { simulationId: selectedProject.value.simulation_id }
+      name: 'Process',
+      params: { projectId: selectedProject.value.project_id }
     })
     closeModal()
   }
@@ -427,20 +428,14 @@ const goToSimulation = () => {
 
 // 导航到分析报告页面（Report）
 const goToReport = () => {
-  if (selectedProject.value?.report_id) {
-    router.push({
-      name: 'Report',
-      params: { reportId: selectedProject.value.report_id }
-    })
-    closeModal()
-  }
+  // Report not yet implemented in F1-1
 }
 
 // 加载历史项目
 const loadHistory = async () => {
   try {
     loading.value = true
-    const response = await getSimulationHistory(20)
+    const response = await listProjects(20)
     if (response.success) {
       projects.value = response.data || []
     }
