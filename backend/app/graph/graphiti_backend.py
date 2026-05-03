@@ -521,8 +521,9 @@ class GraphitiBackend(GraphBackend):
         )
 
     async def _execute_neo4j_query(self, query: str, parameters: dict = None):
-        """Execute a raw Cypher query against Neo4j via the sync driver in the shared event loop."""
-        result = await asyncio.get_event_loop().run_in_executor(
+        """Execute a raw Cypher query against Neo4j via the sync driver in a thread pool."""
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
             None,
             lambda: self._client.driver.execute_query(query, **({"parameters_": parameters} if parameters else {}))
         )
@@ -548,15 +549,9 @@ class GraphitiBackend(GraphBackend):
         """
         await self._execute_neo4j_query(clone_rels_query, {"src": src_group_id, "dst": dst_group_id})
 
-    async def delete_graph_async(self, group_id: str) -> None:
-        """Delete all nodes and relationships for a given group_id (async version)."""
-        delete_query = "MATCH (n) WHERE n.group_id = $gid DETACH DELETE n"
-        await self._execute_neo4j_query(delete_query, {"gid": group_id})
-
     def delete_graph(self, graph_id: str) -> None:
-        _run_async(
-            self._client.driver.execute_query(
-                "MATCH (n {group_id: $gid}) DETACH DELETE n",
-                params={"gid": graph_id},
-            )
-        )
+        """Delete all nodes and relationships for a given group_id."""
+        _run_async(self._execute_neo4j_query(
+            "MATCH (n) WHERE n.group_id = $gid DETACH DELETE n",
+            {"gid": graph_id},
+        ))
