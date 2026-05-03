@@ -7,6 +7,7 @@ from enum import Enum
 
 from ..db import get_session
 from ..models.db_models import ProjectModel, ProjectFileModel
+from ..config import Config
 
 
 class ProjectStatus(str, Enum):
@@ -28,7 +29,8 @@ class ProjectManager:
             db.add(proj)
             db.commit()
             db.refresh(proj)
-            return cls._to_dict(proj)
+            db.expunge(proj)
+        return cls._to_dict(proj)
 
     @classmethod
     def get_project(cls, project_id: str) -> Optional[Dict[str, Any]]:
@@ -36,7 +38,8 @@ class ProjectManager:
             proj = db.get(ProjectModel, project_id)
             if proj is None:
                 return None
-            return cls._to_dict(proj)
+            db.expunge(proj)
+        return cls._to_dict(proj)
 
     @classmethod
     def save_project(cls, project_data: Dict[str, Any]) -> None:
@@ -62,7 +65,9 @@ class ProjectManager:
         with get_session() as db:
             stmt = select(ProjectModel).order_by(desc(ProjectModel.created_at)).limit(limit)
             projects = db.execute(stmt).scalars().all()
-            return [cls._to_dict(p) for p in projects]
+            for p in projects:
+                db.expunge(p)
+        return [cls._to_dict(p) for p in projects]
 
     @classmethod
     def delete_project(cls, project_id: str, storage=None) -> bool:
@@ -149,11 +154,110 @@ class ProjectManager:
             return None
         return storage.download(storage_path).decode("utf-8")
 
-    @staticmethod
-    def _to_dict(proj: ProjectModel) -> Dict[str, Any]:
+    @classmethod
+    def save_ontology(cls, project_id: str, entity_types: list, edge_types: list) -> str:
+        from .db_models import OntologyModel
+        from sqlalchemy import select
+        with get_session() as db:
+            stmt = select(OntologyModel).where(OntologyModel.project_id == project_id).order_by(OntologyModel.version.desc())
+            existing = db.execute(stmt).scalars().first()
+            if existing:
+                existing.entity_types = entity_types
+                existing.edge_types = edge_types
+                db.commit()
+                return existing.id
+            else:
+                rec = OntologyModel(
+                    id=str(uuid.uuid4()),
+                    project_id=project_id,
+                    version=1,
+                    entity_types=entity_types,
+                    edge_types=edge_types,
+                )
+                db.add(rec)
+                db.commit()
+                return rec.id
+
+    @classmethod
+    def get_ontology(cls, project_id: str) -> Optional[Dict[str, Any]]:
+        from .db_models import OntologyModel
+        from sqlalchemy import select
+        with get_session() as db:
+            stmt = select(OntologyModel).where(OntologyModel.project_id == project_id).order_by(OntologyModel.version.desc())
+            rec = db.execute(stmt).scalars().first()
+            if rec is None:
+                return None
+            return {"entity_types": rec.entity_types or [], "edge_types": rec.edge_types or []}
+
+    @classmethod
+    def save_graph_record(cls, project_id: str, external_id: str, ontology_id: Optional[str] = None) -> str:
+        from .db_models import GraphModel
+        from sqlalchemy import select
+        with get_session() as db:
+            stmt = select(GraphModel).where(GraphModel.project_id == project_id).order_by(GraphModel.created_at.desc())
+            existing = db.execute(stmt).scalars().first()
+            if existing:
+                existing.external_id = external_id
+                existing.status = "building"
+                if ontology_id:
+                    existing.ontology_id = ontology_id
+                db.commit()
+                return existing.id
+            else:
+                rec = GraphModel(
+                    id=str(uuid.uuid4()),
+                    project_id=project_id,
+                    external_id=external_id,
+                    ontology_id=ontology_id,
+                    status="building",
+                    backend=Config.GRAPH_BACKEND,
+                )
+                db.add(rec)
+                db.commit()
+                return rec.id
+
+    @classmethod
+    def get_latest_graph_external_id(cls, project_id: str) -> Optional[str]:
+        from .db_models import GraphModel
+        from sqlalchemy import select
+        with get_session() as db:
+            stmt = select(GraphModel).where(GraphModel.project_id == project_id).order_by(GraphModel.created_at.desc())
+            rec = db.execute(stmt).scalars().first()
+            return rec.external_id if rec else None
+
+    @classmethod
+    def complete_graph_record(cls, project_id: str, node_count: int, edge_count: int) -> None:
+        from .db_models import GraphModel
+        from sqlalchemy import select
+        with get_session() as db:
+            stmt = select(GraphModel).where(GraphModel.project_id == project_id).order_by(GraphModel.created_at.desc())
+            rec = db.execute(stmt).scalars().first()
+            if rec:
+                rec.status = "ready"
+                rec.node_count = node_count
+                rec.edge_count = edge_count
+                db.commit()
+
+    @classmethod
+    def _to_dict(cls, proj: "ProjectModel") -> Dict[str, Any]:
+        from .db_models import GraphModel, OntologyModel
+        from sqlalchemy import select
+        graph_external_id = None
+        ontology = None
+        with get_session() as db2:
+            graph_rec = db2.execute(
+                select(GraphModel).where(GraphModel.project_id == proj.id).order_by(GraphModel.created_at.desc())
+            ).scalars().first()
+            ont_rec = db2.execute(
+                select(OntologyModel).where(OntologyModel.project_id == proj.id).order_by(OntologyModel.version.desc())
+            ).scalars().first()
+            if graph_rec:
+                graph_external_id = graph_rec.external_id
+            if ont_rec:
+                ontology = {"entity_types": ont_rec.entity_types or [], "edge_types": ont_rec.edge_types or []}
         return {
             "id": proj.id,
-            "project_id": proj.id,  # compatibilitat amb codi existent
+            "project_id": proj.id,
             "name": proj.name,
             "status": proj.status,
             "analysis_summary": proj.analysis_summary,
@@ -163,11 +267,10 @@ class ProjectManager:
             "active_task_id": proj.active_task_id,
             "created_at": proj.created_at.isoformat(),
             "updated_at": proj.updated_at.isoformat(),
-            # Camps llegits del model antic — ara buits per compatibilitat
             "files": [],
             "total_text_length": 0,
-            "ontology": None,
-            "graph_id": None,
+            "ontology": ontology,
+            "graph_id": graph_external_id,
             "graph_build_task_id": None,
             "error": None,
         }
