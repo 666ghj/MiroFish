@@ -32,8 +32,19 @@ class Config:
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
+    # Boost/Fallback LLM配置（可选，主 LLM 失败时自动回退）
+    LLM_BOOST_API_KEY = os.environ.get('LLM_BOOST_API_KEY')
+    LLM_BOOST_BASE_URL = os.environ.get('LLM_BOOST_BASE_URL')
+    LLM_BOOST_MODEL_NAME = os.environ.get('LLM_BOOST_MODEL_NAME')
+    
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    
+    # Zep 速率限制配置（可通过 .env 调整，升级付费计划后放宽）
+    ZEP_RATE_LIMIT = int(os.environ.get('ZEP_RATE_LIMIT', '5'))           # 每个窗口期允许的请求数
+    ZEP_RATE_LIMIT_WINDOW = int(os.environ.get('ZEP_RATE_LIMIT_WINDOW', '60'))  # 窗口期（秒）
+    ZEP_CACHE_TTL = int(os.environ.get('ZEP_CACHE_TTL', '30'))           # graph data 缓存时间（秒），0=不缓存
+    ZEP_GRAPH_POLL_INTERVAL = int(os.environ.get('ZEP_GRAPH_POLL_INTERVAL', '0'))  # 前端自动轮询间隔（秒），0=仅手动刷新
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB

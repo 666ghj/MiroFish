@@ -58,3 +58,6 @@ backend/uploads/
 
 # Docker 数据
 data/
+# Personal configuration
+CLAUDE.md
+skills/
