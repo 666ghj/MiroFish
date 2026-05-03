@@ -245,6 +245,7 @@ class SimulationManager:
         simulation_requirement: str,
         document_text: str,
         defined_entity_types: Optional[List[str]] = None,
+        max_agents: Optional[int] = None,
         use_llm_for_profiles: bool = True,
         progress_callback: Optional[callable] = None,
         parallel_profile_count: int = 3
@@ -290,11 +291,29 @@ class SimulationManager:
             if progress_callback:
                 progress_callback("reading", 30, t('progress.readingNodeData'))
 
-            filtered = reader.filter_defined_entities(
-                graph_id=state.graph_id,
-                defined_entity_types=defined_entity_types,
-                enrich_with_edges=True
-            )
+            if max_agents is not None and max_agents > 0:
+                top_entities = reader.get_entities_by_connectivity(
+                    graph_id=state.graph_id,
+                    max_n=max_agents,
+                    defined_entity_types=defined_entity_types,
+                )
+                entity_types_found = set()
+                for e in top_entities:
+                    et = e.get_entity_type()
+                    if et:
+                        entity_types_found.add(et)
+                filtered = FilteredEntities(
+                    entities=top_entities,
+                    entity_types=entity_types_found,
+                    total_count=len(top_entities),
+                    filtered_count=len(top_entities),
+                )
+            else:
+                filtered = reader.filter_defined_entities(
+                    graph_id=state.graph_id,
+                    defined_entity_types=defined_entity_types,
+                    enrich_with_edges=True
+                )
 
             state.entities_count = filtered.filtered_count
             state.entity_types = list(filtered.entity_types)

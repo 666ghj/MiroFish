@@ -448,6 +448,7 @@ def prepare_simulation():
         document_text = ProjectManager.get_extracted_text(state.project_id, get_storage()) or ""
         
         entity_types_list = data.get('entity_types')
+        max_agents = data.get('max_agents')  # optional: limit to top-N most-connected entities
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
         
@@ -568,6 +569,7 @@ def prepare_simulation():
                     simulation_requirement=simulation_requirement,
                     document_text=document_text,
                     defined_entity_types=entity_types_list,
+                    max_agents=max_agents,
                     use_llm_for_profiles=use_llm_for_profiles,
                     progress_callback=progress_callback,
                     parallel_profile_count=parallel_profile_count

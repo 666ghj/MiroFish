@@ -360,6 +360,27 @@ class ZepEntityReader:
             logger.error(f"Failed to get entity {entity_uuid}: {str(e)}")
             return None
 
+    def get_entities_by_connectivity(
+        self,
+        graph_id: str,
+        max_n: Optional[int] = None,
+        defined_entity_types: Optional[List[str]] = None,
+    ) -> List[EntityNode]:
+        """Return entities sorted by edge degree (descending), optionally capped at max_n."""
+        filtered = self.filter_defined_entities(
+            graph_id=graph_id,
+            defined_entity_types=defined_entity_types,
+            enrich_with_edges=True,
+        )
+        entities = sorted(
+            filtered.entities,
+            key=lambda e: len(e.related_edges),
+            reverse=True,
+        )
+        if max_n is not None and max_n > 0:
+            entities = entities[:max_n]
+        return entities
+
     def get_entities_by_type(
         self,
         graph_id: str,
