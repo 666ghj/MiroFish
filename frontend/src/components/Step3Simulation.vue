@@ -91,7 +91,14 @@
       </div>
 
       <div class="action-controls">
-        <button 
+        <div class="option-row">
+          <label class="toggle-label">
+            <input type="checkbox" v-model="enableGraphMemoryUpdate" :disabled="phase >= 1" />
+            <span>Graph Memory Update</span>
+            <span class="hint">Update agent conversations to graph in real time (needed for report analysis)</span>
+          </label>
+        </div>
+        <button
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
           @click="handleNextStep"
@@ -318,6 +325,7 @@ const router = useRouter()
 // State
 const isGeneratingReport = ref(false)
 const phase = ref(0) // 0: 未开始, 1: 运行中, 2: 已完成
+const enableGraphMemoryUpdate = ref(true)
 const isStarting = ref(false)
 const isStopping = ref(false)
 const startError = ref(null)
@@ -399,7 +407,7 @@ const doStartSimulation = async () => {
       simulation_id: props.simulationId,
       platform: 'parallel',
       force: true,  // 强制重新开始
-      enable_graph_memory_update: true  // 开启动态图谱更新
+      enable_graph_memory_update: enableGraphMemoryUpdate.value  // 开启动态图谱更新
     }
     
     if (props.maxRounds) {
@@ -1302,4 +1310,16 @@ onUnmounted(() => {
   animation: spin 0.8s linear infinite;
   margin-right: 6px;
 }
+
+/* Graph memory update toggle */
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.option-row { display: flex; align-items: center; gap: 8px; }
+.toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: #555; }
+.toggle-label input[type="checkbox"] { cursor: pointer; }
+.toggle-label .hint { color: #999; font-size: 11px; }
 </style>

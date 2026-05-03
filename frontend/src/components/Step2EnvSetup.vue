@@ -83,15 +83,17 @@
               <span class="preview-title">{{ $t('step2.generatedAgentPersonas') }}</span>
             </div>
             <div class="profiles-list">
-              <div 
-                v-for="(profile, idx) in profiles" 
-                :key="idx" 
+              <div
+                v-for="(profile, idx) in profiles"
+                :key="idx"
                 class="profile-card"
                 @click="selectProfile(profile)"
               >
                 <div class="profile-header">
                   <span class="profile-realname">{{ profile.username || 'Unknown' }}</span>
                   <span class="profile-username">@{{ profile.name || `agent_${idx}` }}</span>
+                  <span v-if="profile.manually_edited" class="manually-edited-badge">{{ $t('step2.manuallyEditedBadge') }}</span>
+                  <button v-if="currentPhase === 'phase_a'" class="agent-action-btn" @click.stop="openAgentModal(profile)">···</button>
                 </div>
                 <div class="profile-meta">
                   <span class="profile-profession">{{ profile.profession || $t('step2.unknownProfession') }}</span>
@@ -108,6 +110,54 @@
                   </span>
                 </div>
               </div>
+            </div>
+
+            <!-- Fase A: continue button -->
+            <div v-if="currentPhase === 'phase_a'" class="phase-a-footer">
+              <button
+                class="continue-btn"
+                :disabled="generateConfigLoading"
+                @click="continueToPhaseB"
+              >
+                <span v-if="generateConfigLoading">{{ $t('step2.generatingConfig') }}</span>
+                <span v-else>{{ $t('step2.continueToPhaseB') }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Fase B: Global parameters form -->
+          <div v-if="currentPhase === 'phase_b'" class="phase-b-section">
+            <h3>{{ $t('step2.phaseBTitle') }}</h3>
+            <p class="section-subtitle">{{ $t('step2.phaseBSubtitle') }}</p>
+
+            <div class="config-form">
+              <div class="config-field">
+                <label>{{ $t('step2.totalHours') }}</label>
+                <input type="number" v-model.number="configForm.total_simulation_hours" min="1" max="720" />
+              </div>
+              <div class="config-field">
+                <label>{{ $t('step2.minutesPerRound') }}</label>
+                <input type="number" v-model.number="configForm.minutes_per_round" min="1" max="1440" />
+              </div>
+              <div class="config-field">
+                <label>{{ $t('step2.followingProbability') }}</label>
+                <input type="number" v-model.number="configForm.following_probability" min="0" max="1" step="0.01" />
+              </div>
+              <div class="config-field">
+                <label>{{ $t('step2.recsysType') }}</label>
+                <select v-model="configForm.recsys_type">
+                  <option value="random">Random</option>
+                  <option value="interest">Interest-based</option>
+                  <option value="twhin">TWHIN</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="phase-b-footer">
+              <button class="action-btn secondary" @click="currentPhase = 'phase_a'">← Back</button>
+              <button class="continue-btn" :disabled="phaseBSaving" @click="launchSimulation">
+                {{ $t('step2.launchSimulation') }}
+              </button>
             </div>
           </div>
         </div>
@@ -528,6 +578,48 @@
       </div>
     </div>
 
+    <!-- Agent edit/regen modal -->
+    <div v-if="agentModalOpen" class="agent-modal-overlay" @click.self="closeAgentModal">
+      <div class="agent-modal">
+        <div class="modal-header">
+          <span class="modal-title">{{ selectedAgent?.name || selectedAgent?.username }}</span>
+          <span v-if="selectedAgent?.manually_edited" class="edited-badge">{{ $t('step2.manuallyEditedBadge') }}</span>
+          <button class="modal-close" @click="closeAgentModal">✕</button>
+        </div>
+
+        <div v-if="agentModalMode === 'edit'" class="modal-body">
+          <div class="field-group" v-for="field in ['name', 'bio', 'persona', 'age', 'gender', 'mbti', 'country', 'profession', 'stance']" :key="field">
+            <label>{{ field }}</label>
+            <textarea v-if="['bio', 'persona'].includes(field)" v-model="editForm[field]" rows="3" />
+            <input v-else v-model="editForm[field]" />
+          </div>
+          <div class="modal-actions">
+            <button class="btn-secondary" @click="closeAgentModal">{{ $t('common.cancel') }}</button>
+            <button class="btn-primary" :disabled="editLoading" @click="saveAgent">{{ $t('common.save') }}</button>
+          </div>
+        </div>
+
+        <div v-else-if="agentModalMode === 'regen'" class="modal-body">
+          <p>{{ $t('step2.regenerateAgentHint') }}</p>
+          <textarea v-model="regenInstructions" rows="3" :placeholder="$t('step2.extraInstructions')" />
+          <div class="modal-actions">
+            <button class="btn-secondary" @click="closeAgentModal">{{ $t('common.cancel') }}</button>
+            <button class="btn-primary" :disabled="regenLoading" @click="doRegenerate">{{ $t('step2.regenerateAgent') }}</button>
+          </div>
+        </div>
+
+        <div v-else class="modal-body modal-view">
+          <p><strong>Bio:</strong> {{ selectedAgent?.bio }}</p>
+          <p><strong>Persona:</strong> {{ selectedAgent?.persona }}</p>
+          <div class="modal-actions">
+            <button class="btn-secondary" @click="agentModalMode = 'regen'">{{ $t('step2.regenerateAgent') }}</button>
+            <button class="btn-danger" @click="confirmDeleteAgent(selectedAgent); closeAgentModal()">{{ $t('step2.deleteAgent') }}</button>
+            <button class="btn-primary" @click="agentModalMode = 'edit'">{{ $t('step2.editAgent') }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Profile Detail Modal -->
     <Transition name="modal">
       <div v-if="selectedProfile" class="profile-modal-overlay" @click.self="selectedProfile = null">
@@ -639,7 +731,12 @@ import {
   getPrepareStatus,
   getSimulationProfilesRealtime,
   getSimulationConfig,
-  getSimulationConfigRealtime
+  getSimulationConfigRealtime,
+  patchAgent,
+  deleteAgent,
+  regenerateAgent,
+  generateConfig,
+  patchSimulationConfig
 } from '../api/simulation'
 
 const { t } = useI18n()
@@ -674,6 +771,29 @@ let lastLoggedConfigStage = ''
 // 模拟轮数配置
 const useCustomRounds = ref(false) // 默认使用自动配置轮数
 const customMaxRounds = ref(40)   // 默认推荐40轮
+
+// Fase A/B state
+const currentPhase = ref('generating') // 'generating' | 'phase_a' | 'phase_b'
+const agentModalOpen = ref(false)
+const agentModalMode = ref('view')    // 'view' | 'edit' | 'regen'
+const selectedAgent = ref(null)
+const editForm = ref({})
+const regenInstructions = ref('')
+const regenLoading = ref(false)
+const editLoading = ref(false)
+const deleteConfirmAgent = ref(null)
+const generateConfigLoading = ref(false)
+const generateConfigTaskId = ref(null)
+
+// Fase B state
+const phaseBConfig = ref(null)
+const phaseBSaving = ref(false)
+const configForm = ref({
+  total_simulation_hours: 24,
+  minutes_per_round: 60,
+  following_probability: 0.05,
+  recsys_type: 'random',
+})
 
 // Watch stage to update phase
 watch(currentStage, (newStage) => {
@@ -892,7 +1012,15 @@ const pollPrepareStatus = async () => {
       }
       
       // 检查是否完成
-      if (data.status === 'completed' || data.status === 'ready' || data.already_prepared) {
+      if (data.status === 'profiles_ready') {
+        addLog(t('log.prepareComplete'))
+        stopPolling()
+        stopProfilesPolling()
+        await fetchProfilesRealtime()
+        addLog(t('log.loadedAgentProfiles', { count: profiles.value.length }))
+        currentPhase.value = 'phase_a'
+        emit('update-status', 'profiles_ready')
+      } else if (data.status === 'completed' || data.status === 'ready' || data.already_prepared) {
         addLog(t('log.prepareComplete'))
         stopPolling()
         stopProfilesPolling()
@@ -1056,6 +1184,136 @@ const loadPreparedData = async () => {
     addLog(t('log.loadConfigFailed', { error: err.message }))
     emit('update-status', 'error')
   }
+}
+
+// ---- Fase A/B helpers ----
+
+const pollTaskUntilDone = async (taskId, onComplete, intervalMs = 2000) => {
+  return new Promise((resolve) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await getPrepareStatus({
+          task_id: taskId,
+          simulation_id: props.simulationId
+        })
+        const status = res.data?.status || res.data?.data?.status
+        if (status === 'completed') {
+          clearInterval(interval)
+          onComplete && onComplete(res.data?.result || res.data?.data?.result)
+          resolve()
+        } else if (status === 'failed') {
+          clearInterval(interval)
+          resolve()
+        }
+      } catch {
+        clearInterval(interval)
+        resolve()
+      }
+    }, intervalMs)
+  })
+}
+
+const openAgentModal = (agent, mode = 'view') => {
+  selectedAgent.value = agent
+  agentModalMode.value = mode
+  editForm.value = { ...agent }
+  regenInstructions.value = ''
+  agentModalOpen.value = true
+}
+
+const closeAgentModal = () => {
+  agentModalOpen.value = false
+  selectedAgent.value = null
+}
+
+const saveAgent = async () => {
+  if (!selectedAgent.value || !props.simulationId) return
+  editLoading.value = true
+  try {
+    const res = await patchAgent(props.simulationId, selectedAgent.value.user_id, editForm.value)
+    if (res.data?.success) {
+      const idx = profiles.value.findIndex(p => p.user_id === selectedAgent.value.user_id)
+      if (idx !== -1) profiles.value[idx] = res.data.data
+      closeAgentModal()
+    }
+  } finally {
+    editLoading.value = false
+  }
+}
+
+const confirmDeleteAgent = async (agent) => {
+  if (!confirm(t('step2.deleteAgentConfirm'))) return
+  const res = await deleteAgent(props.simulationId, agent.user_id)
+  if (res.data?.success) {
+    profiles.value = profiles.value.filter(p => p.user_id !== agent.user_id)
+  }
+}
+
+const doRegenerate = async () => {
+  if (!selectedAgent.value) return
+  regenLoading.value = true
+  try {
+    const res = await regenerateAgent(props.simulationId, selectedAgent.value.user_id, {
+      extra_instructions: regenInstructions.value
+    })
+    if (res.data?.success) {
+      await pollTaskUntilDone(res.data.data?.task_id, () => {})
+      // Refresh profiles
+      await fetchProfilesRealtime()
+      closeAgentModal()
+    }
+  } finally {
+    regenLoading.value = false
+  }
+}
+
+const continueToPhaseB = async () => {
+  generateConfigLoading.value = true
+  try {
+    const res = await generateConfig(props.simulationId)
+    if (res.data?.success) {
+      generateConfigTaskId.value = res.data.data?.task_id
+      await pollTaskUntilDone(res.data.data?.task_id, async () => {
+        // Load config for display
+        const configRes = await getSimulationConfig(props.simulationId)
+        if (configRes.data?.success) {
+          phaseBConfig.value = configRes.data.data
+          const tc = phaseBConfig.value?.time_config || {}
+          configForm.value = {
+            total_simulation_hours: tc.total_simulation_hours ?? 24,
+            minutes_per_round: tc.minutes_per_round ?? 60,
+            following_probability: phaseBConfig.value?.following_probability ?? 0.05,
+            recsys_type: phaseBConfig.value?.recsys_type ?? 'random',
+          }
+        }
+        currentPhase.value = 'phase_b'
+      })
+      // If task_id is null, generateConfig was synchronous — set phase_b directly
+      if (!res.data.data?.task_id) {
+        currentPhase.value = 'phase_b'
+      }
+    }
+  } finally {
+    generateConfigLoading.value = false
+  }
+}
+
+const saveGlobalConfig = async () => {
+  phaseBSaving.value = true
+  try {
+    await patchSimulationConfig(props.simulationId, configForm.value)
+  } finally {
+    phaseBSaving.value = false
+  }
+}
+
+const launchSimulation = async () => {
+  await saveGlobalConfig()
+  const params = {}
+  if (useCustomRounds.value) {
+    params.maxRounds = customMaxRounds.value
+  }
+  emit('next-step', params)
 }
 
 // Scroll log to bottom
@@ -2602,4 +2860,86 @@ onUnmounted(() => {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
 }
+
+/* Fase A footer */
+.phase-a-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 0;
+  border-top: 1px solid #EAEAEA;
+  margin-top: 16px;
+}
+
+.continue-btn {
+  padding: 10px 24px;
+  background: #000;
+  color: #FFF;
+  border: none;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.continue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Fase B section */
+.phase-b-section { padding: 16px 0; }
+.section-subtitle { font-size: 13px; color: #666; margin-bottom: 16px; }
+.config-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.config-field label { display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; text-transform: uppercase; }
+.config-field input, .config-field select { width: 100%; padding: 8px 12px; border: 1px solid #E0E0E0; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+.phase-b-footer { display: flex; justify-content: space-between; padding-top: 16px; border-top: 1px solid #EAEAEA; }
+
+/* Agent action button and badge */
+.agent-action-btn { background: none; border: none; cursor: pointer; padding: 4px 8px; font-size: 18px; color: #666; margin-left: auto; }
+.agent-action-btn:hover { color: #000; }
+.manually-edited-badge {
+  background: #FFF3CD; color: #856404;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+}
+
+/* Agent edit/regen modal */
+.agent-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+
+.agent-modal {
+  background: #FFF; border-radius: 12px; padding: 24px;
+  width: 560px; max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+
+.agent-modal .modal-header {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px;
+  padding: 0;
+  border-bottom: none;
+}
+
+.modal-title { font-weight: 700; font-size: 18px; flex: 1; }
+
+.edited-badge {
+  background: #FFF3CD; color: #856404;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+}
+
+.modal-close { background: none; border: none; cursor: pointer; font-size: 18px; }
+
+.agent-modal .modal-body { padding: 0; overflow: visible; flex: unset; }
+.agent-modal .modal-body.modal-view p { font-size: 14px; color: #444; line-height: 1.6; margin-bottom: 10px; }
+.agent-modal .field-group { margin-bottom: 12px; }
+.agent-modal label { display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; text-transform: uppercase; }
+.agent-modal input, .agent-modal textarea {
+  width: 100%; padding: 8px 12px; border: 1px solid #E0E0E0;
+  border-radius: 6px; font-size: 14px; resize: vertical;
+  box-sizing: border-box;
+}
+
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.btn-primary { padding: 8px 16px; background: #000; color: #FFF; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.btn-secondary { padding: 8px 16px; background: #F5F5F5; color: #333; border: 1px solid #DDD; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.btn-danger { padding: 8px 16px; background: #FFF; color: #D32F2F; border: 1px solid #FFCDD2; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
