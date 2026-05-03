@@ -168,3 +168,74 @@ def test_patch_config_updates_total_hours(client, sim_prepared):
     data = resp.get_json()
     assert data["success"] is True
     assert data["data"]["time_config"]["total_simulation_hours"] == 48
+
+
+def test_create_agent_adds_to_profiles(client, sim_with_profiles, monkeypatch):
+    sim_id = sim_with_profiles
+
+    import backend.app.services.simulation_manager as sm_module
+    from backend.app.services.zep_entity_reader import EntityNode
+
+    fake_entity = EntityNode(
+        uuid="uuid_carol", name="Carol", labels=["Person", "Entity"],
+        summary="Carol is a scientist", attributes={}
+    )
+
+    def fake_get_entity(self, graph_id, uuid_):
+        return fake_entity
+
+    monkeypatch.setattr(
+        "backend.app.services.zep_entity_reader.ZepEntityReader.get_entity_with_context",
+        fake_get_entity
+    )
+
+    from backend.app.services.oasis_profile_generator import OasisAgentProfile
+    fake_profile = OasisAgentProfile(user_id=99, user_name="carol", name="Carol",
+                                      bio="Carol bio", persona="Scientist",
+                                      source_entity_uuid="uuid_carol")
+
+    monkeypatch.setattr(
+        "backend.app.services.oasis_profile_generator.OasisProfileGenerator.generate_profile_from_entity",
+        lambda self, entity, extra_instructions=None: fake_profile
+    )
+
+    resp = client.post(f"/api/simulation/{sim_id}/agent",
+                       json={"source_entity_uuid": "uuid_carol", "extra_instructions": "Make her skeptical"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "task_id" in data["data"]
+
+
+def test_regenerate_agent_returns_task_id(client, sim_with_profiles, monkeypatch):
+    sim_id = sim_with_profiles
+    from backend.app.services.zep_entity_reader import EntityNode
+    fake_entity = EntityNode(uuid="uuid_alice", name="Alice", labels=["Entity"], summary="", attributes={})
+    monkeypatch.setattr(
+        "backend.app.services.zep_entity_reader.ZepEntityReader.get_entity_with_context",
+        lambda self, g, u: fake_entity
+    )
+    from backend.app.services.oasis_profile_generator import OasisAgentProfile
+    fake_profile = OasisAgentProfile(user_id=0, user_name="alice2", name="Alice2",
+                                      bio="New bio", persona="Skeptic",
+                                      source_entity_uuid="uuid_alice")
+    monkeypatch.setattr(
+        "backend.app.services.oasis_profile_generator.OasisProfileGenerator.generate_profile_from_entity",
+        lambda self, entity, extra_instructions=None: fake_profile
+    )
+
+    # Add source_entity_uuid to the first profile in the fixture's sim directory
+    import json as _j
+    from pathlib import Path
+    from backend.app.services.simulation_manager import SimulationManager
+    sim_dir = Path(SimulationManager.SIMULATION_DATA_DIR) / sim_id
+    profiles = _j.loads((sim_dir / "reddit_profiles.json").read_text())
+    profiles[0]["source_entity_uuid"] = "uuid_alice"
+    (sim_dir / "reddit_profiles.json").write_text(_j.dumps(profiles))
+
+    resp = client.post(f"/api/simulation/{sim_id}/agent/0/regenerate",
+                       json={"extra_instructions": "Make her skeptical"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "task_id" in data["data"]

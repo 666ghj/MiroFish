@@ -2912,3 +2912,232 @@ def clone_simulation(simulation_id: str):
     except Exception as e:
         logger.error(f"clone_simulation failed: {e}")
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/<simulation_id>/agent', methods=['POST'])
+def create_agent(simulation_id: str):
+    """
+    Task 8 — Create a new agent from an entity UUID.
+
+    Requires status in {profiles_ready, created}.
+    Runs async; returns task_id for polling.
+    """
+    import json
+    import threading
+    from ..models.task import TaskManager, TaskStatus
+
+    try:
+        data = request.get_json() or {}
+        source_entity_uuid = data.get("source_entity_uuid")
+        if not source_entity_uuid:
+            return jsonify({"success": False, "error": t('api.requireFields')}), 400
+
+        extra_instructions = data.get("extra_instructions")
+
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+
+        allowed_statuses = {SimulationStatus.PROFILES_READY, SimulationStatus.CREATED}
+        if state.status not in allowed_statuses:
+            return jsonify({
+                "success": False,
+                "error": t('api.requireProfilesReady', status=state.status.value)
+            }), 400
+
+        task_manager = TaskManager()
+        task_id = task_manager.create_task(
+            task_type="create_agent",
+            metadata={"simulation_id": simulation_id, "source_entity_uuid": source_entity_uuid}
+        )
+
+        current_locale = get_locale()
+
+        def run_create_agent():
+            set_locale(current_locale)
+            try:
+                task_manager.update_task(task_id, status=TaskStatus.PROCESSING, progress=0,
+                                         message=t('progress.generatingProfile'))
+
+                sim_dir = manager._get_simulation_dir(simulation_id)
+                profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+
+                # Fetch entity
+                reader = ZepEntityReader()
+                entity = reader.get_entity_with_context(state.graph_id, source_entity_uuid)
+                if not entity:
+                    raise ValueError(f"Entity not found: {source_entity_uuid}")
+
+                # Read current profiles
+                with open(profiles_file, 'r', encoding='utf-8') as f:
+                    profiles = json.load(f)
+
+                # Check for duplicate source_entity_uuid
+                for p in profiles:
+                    if p.get("source_entity_uuid") == source_entity_uuid:
+                        raise ValueError(f"Agent with source_entity_uuid '{source_entity_uuid}' already exists")
+
+                # Compute next user_id
+                next_user_id = max((p.get("user_id", -1) for p in profiles), default=-1) + 1
+
+                # Generate profile
+                gen = OasisProfileGenerator(graph_id=state.graph_id)
+                profile = gen.generate_profile_from_entity(entity, extra_instructions=extra_instructions)
+                profile.user_id = next_user_id
+
+                # Convert to dict and append
+                profile_dict = profile.to_reddit_format()
+                profile_dict["user_id"] = next_user_id
+                profile_dict["source_entity_uuid"] = profile.source_entity_uuid
+                profile_dict["source_entity_type"] = profile.source_entity_type
+                profile_dict["manually_edited"] = False
+
+                profiles.append(profile_dict)
+
+                # Atomic write: backup → write → delete backup
+                backup_file = profiles_file + ".bak"
+                if os.path.exists(profiles_file):
+                    import shutil
+                    shutil.copy2(profiles_file, backup_file)
+                try:
+                    with open(profiles_file, 'w', encoding='utf-8') as f:
+                        json.dump(profiles, f, ensure_ascii=False, indent=2)
+                    if os.path.exists(backup_file):
+                        os.remove(backup_file)
+                except Exception as write_err:
+                    # Restore from backup on failure
+                    if os.path.exists(backup_file):
+                        import shutil
+                        shutil.copy2(backup_file, profiles_file)
+                    raise write_err
+
+                # Update profiles_count in state
+                state2 = manager.get_simulation(simulation_id)
+                if state2:
+                    state2.profiles_count = len(profiles)
+                    manager._save_simulation_state(state2)
+
+                task_manager.complete_task(task_id, result={"user_id": next_user_id})
+            except Exception as e:
+                logger.error(f"create_agent background failed: {e}")
+                task_manager.fail_task(task_id, str(e))
+
+        threading.Thread(target=run_create_agent, daemon=True).start()
+
+        return jsonify({"success": True, "data": {"simulation_id": simulation_id, "task_id": task_id}})
+    except Exception as e:
+        logger.error(f"create_agent endpoint error: {e}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/<simulation_id>/agent/<int:user_id>/regenerate', methods=['POST'])
+def regenerate_agent(simulation_id: str, user_id: int):
+    """
+    Task 9 — Regenerate an agent's profile from its source entity.
+
+    Requires status == profiles_ready and the agent must have source_entity_uuid.
+    Runs async; returns task_id for polling.
+    """
+    import json
+    import threading
+    from ..models.task import TaskManager, TaskStatus
+
+    try:
+        data = request.get_json() or {}
+        extra_instructions = data.get("extra_instructions")
+
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+
+        if state.status != SimulationStatus.PROFILES_READY:
+            return jsonify({
+                "success": False,
+                "error": t('api.requireProfilesReady', status=state.status.value)
+            }), 400
+
+        task_manager = TaskManager()
+        task_id = task_manager.create_task(
+            task_type="regenerate_agent",
+            metadata={"simulation_id": simulation_id, "user_id": user_id}
+        )
+
+        current_locale = get_locale()
+
+        def run_regenerate_agent():
+            set_locale(current_locale)
+            try:
+                task_manager.update_task(task_id, status=TaskStatus.PROCESSING, progress=0,
+                                         message=t('progress.generatingProfile'))
+
+                sim_dir = manager._get_simulation_dir(simulation_id)
+                profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+
+                with open(profiles_file, 'r', encoding='utf-8') as f:
+                    profiles = json.load(f)
+
+                # Find the agent
+                agent_idx = None
+                agent = None
+                for i, p in enumerate(profiles):
+                    if p.get("user_id") == user_id:
+                        agent_idx = i
+                        agent = p
+                        break
+
+                if agent_idx is None:
+                    raise LookupError(f"Agent with user_id {user_id} not found")
+
+                source_entity_uuid = agent.get("source_entity_uuid")
+                if not source_entity_uuid:
+                    raise ValueError(f"Agent {user_id} has no source_entity_uuid — cannot regenerate")
+
+                # Fetch entity
+                reader = ZepEntityReader()
+                entity = reader.get_entity_with_context(state.graph_id, source_entity_uuid)
+                if not entity:
+                    raise ValueError(f"Entity not found: {source_entity_uuid}")
+
+                # Generate new profile
+                gen = OasisProfileGenerator(graph_id=state.graph_id)
+                new_profile = gen.generate_profile_from_entity(entity, extra_instructions=extra_instructions)
+                new_profile.user_id = user_id
+
+                # Build dict, preserving user_id and resetting manually_edited
+                new_profile_dict = new_profile.to_reddit_format()
+                new_profile_dict["user_id"] = user_id
+                new_profile_dict["source_entity_uuid"] = new_profile.source_entity_uuid
+                new_profile_dict["source_entity_type"] = new_profile.source_entity_type
+                new_profile_dict["manually_edited"] = False
+
+                profiles[agent_idx] = new_profile_dict
+
+                # Atomic write
+                backup_file = profiles_file + ".bak"
+                if os.path.exists(profiles_file):
+                    import shutil
+                    shutil.copy2(profiles_file, backup_file)
+                try:
+                    with open(profiles_file, 'w', encoding='utf-8') as f:
+                        json.dump(profiles, f, ensure_ascii=False, indent=2)
+                    if os.path.exists(backup_file):
+                        os.remove(backup_file)
+                except Exception as write_err:
+                    if os.path.exists(backup_file):
+                        import shutil
+                        shutil.copy2(backup_file, profiles_file)
+                    raise write_err
+
+                task_manager.complete_task(task_id, result={"user_id": user_id})
+            except Exception as e:
+                logger.error(f"regenerate_agent background failed: {e}")
+                task_manager.fail_task(task_id, str(e))
+
+        threading.Thread(target=run_regenerate_agent, daemon=True).start()
+
+        return jsonify({"success": True, "data": {"simulation_id": simulation_id, "task_id": task_id}})
+    except Exception as e:
+        logger.error(f"regenerate_agent endpoint error: {e}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500

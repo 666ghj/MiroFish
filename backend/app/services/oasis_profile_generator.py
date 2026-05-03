@@ -233,15 +233,38 @@ class OasisProfileGenerator:
     def generate_profile_from_entity(
         self,
         entity: EntityNode,
+        extra_instructions: Optional[str] = None,
+    ) -> OasisAgentProfile:
+        """
+        Generate an OASIS Agent Profile from a Zep entity (public API).
+
+        The returned profile has user_id=0 as a placeholder; callers must
+        reassign user_id after insertion into the profiles list.
+
+        Args:
+            entity: Zep entity node
+            extra_instructions: Optional extra instructions for the LLM persona
+
+        Returns:
+            OasisAgentProfile
+        """
+        return self._generate_single_profile(entity, user_id=0,
+                                             extra_instructions=extra_instructions)
+
+    def _generate_single_profile(
+        self,
+        entity: EntityNode,
         user_id: int,
+        extra_instructions: Optional[str] = None,
         use_llm: bool = True
     ) -> OasisAgentProfile:
         """
-        Generate an OASIS Agent Profile from a Zep entity.
+        Internal: generate an OASIS Agent Profile for a single entity.
 
         Args:
             entity: Zep entity node
             user_id: User ID (for OASIS)
+            extra_instructions: Optional extra instructions injected into the LLM prompt
             use_llm: Whether to use an LLM to generate a detailed persona
 
         Returns:
@@ -975,7 +998,7 @@ Important:
             entity_type = entity.get_entity_type() or "Entity"
 
             try:
-                profile = self.generate_profile_from_entity(
+                profile = self._generate_single_profile(
                     entity=entity,
                     user_id=idx,
                     use_llm=use_llm
