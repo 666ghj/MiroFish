@@ -1,7 +1,7 @@
-# Spec F2-A: Edició, Regeneració i Clonació d'Agents
+# Spec F2-A: Edició, Regeneració, Creació i Clonació d'Agents
 
-**Data:** 2026-05-03  
-**Fase:** Fase 2-A del roadmap enterprise (2026-04-26-enterprise-roadmap.md)  
+**Data:** 2026-05-03
+**Fase:** Fase 2-A del roadmap enterprise (2026-04-26-enterprise-roadmap.md)
 **Estat:** Aprovat per disseny
 
 ---
@@ -16,19 +16,12 @@ permet modificar-los ni reutilitzar-los entre simulacions. L'usuari ha de
 reconstruir tot el projecte si vol ajustar qualsevol cosa.
 
 Aquesta spec cobreix:
+
 1. **Selector de nombre d'agents** — triar top-N per connectivitat abans de generar
 2. **Edició d'agents individuals** — editar camps LLM-generats d'un agent concret
-3. **Regeneració individual** — demanar al LLM que torni a generar un agent concret
-4. **Clonació de simulació** — crear una nova simulació dins el mateix projecte
-   partint dels agents i config d'una simulació anterior
-
-### Nota sobre l'arquitectura de grafs (F2-D)
-
-El flag `enable_graph_memory_update` resta a `False` (default actual) durant F2-A.
-Els reports es basen en el `graph_document` pur. L'arquitectura de múltiples
-`group_id` per simulació (F2-D) es resoldrà en una fase posterior: clonar el
-`graph_document` → `graph_sim_N` via Neo4j/APOC just abans de llançar cada
-simulació (viable perquè Neo4j Aura Cloud inclou APOC de sèrie).
+3. **Regeneració, creació i eliminació d'agents individuals** — regenerar un agent, crear-ne un de nou basat en una entitat del graf, o eliminar-ne un
+4. **Clonació de simulació** — crear una nova simulació dins el mateix projecte partint dels agents i config d'una simulació anterior
+5. **Aïllament de grafs per simulació** (ex F2-D) — cada simulació escriu les converses al seu propi `group_id` Neo4j via clonatge APOC
 
 ---
 
@@ -39,7 +32,8 @@ simulació (viable perquè Neo4j Aura Cloud inclou APOC de sèrie).
 Afegir una columna nullable a la taula `simulations`:
 
 ```sql
-ALTER TABLE simulations ADD COLUMN parent_simulation_id VARCHAR(64) REFERENCES simulations(simulation_id);
+ALTER TABLE simulations
+  ADD COLUMN parent_simulation_id VARCHAR(64) REFERENCES simulations(simulation_id);
 ```
 
 - `NULL` → simulació nova (comportament actual)
@@ -47,23 +41,37 @@ ALTER TABLE simulations ADD COLUMN parent_simulation_id VARCHAR(64) REFERENCES s
 
 No hi ha canvis a cap altra taula ni model existent.
 
+### Canvi a la BD: `graph_id_simulation`
+
+Afegir una columna nullable a la taula `simulations`:
+
+```sql
+ALTER TABLE simulations
+  ADD COLUMN graph_id_simulation VARCHAR(128);
+```
+
+Conté el `group_id` Neo4j exclusiu d'aquesta simulació (creat per clonatge APOC
+just abans de llançar). `NULL` fins que la simulació s'inicia.
+
 ### Immutabilitat de simulacions completades
 
-Una simulació amb `status IN ('completed', 'running')` no es pot editar.
-Una simulació amb `status IN ('created', 'prepared', 'stopped', 'failed')` és editable.
+- `status IN ('completed', 'running')` → no es pot editar
+- `status IN ('created', 'prepared', 'stopped', 'failed')` → editable
 
 ### Camps editables d'un perfil d'agent
 
 Editables (LLM-generats): `name`, `bio`, `persona`, `age`, `gender`, `mbti`,
-`country`, `profession`, `interested_topics`, `stance`, `sentiment_bias`, `activity_level`.
+`country`, `profession`, `interested_topics`, `stance`, `sentiment_bias`,
+`activity_level`.
 
-Immutables (OASIS els necessita intactes): `user_id`, `source_entity_uuid`, `source_entity_type`.
+Immutables (OASIS els necessita intactes): `user_id`, `source_entity_uuid`,
+`source_entity_type`.
 
 ### Flag de protecció contra sobreescriptura
 
-Cada agent té un flag `manually_edited: bool` (default `False`) a
-`reddit_profiles.json` i `simulation_config.json`. Quan el generador inicial
-treballa en batch, salta els agents amb `manually_edited: True`.
+Cada agent porta un flag `manually_edited: bool` (default `False`) a
+`reddit_profiles.json` i `simulation_config.json`. El generador en batch salta
+els agents amb `manually_edited: True`.
 
 ---
 
@@ -72,37 +80,36 @@ treballa en batch, salta els agents amb `manually_edited: True`.
 ### Comportament
 
 Abans del botó "Generar agents" al Step 2, el sistema consulta quantes entitats
-hi ha disponibles al graf. Mostra el total com a suggeriment (ex: "66 agents
+hi ha disponibles al graf i mostra el total com a suggeriment (ex: "66 agents
 disponibles"). L'usuari pot reduir el número. Si no toca res, el comportament
-és idèntic a l'actual (es generen tots).
+és idèntic a l'actual.
 
 Si l'usuari redueix a N, el backend selecciona les **top-N entitats per grau de
-connectivitat** (nombre d'edges entrants + sortints al graf Zep). Les entitats
-més connectades representen els actors amb més relacions al document, i generen
+connectivitat** (edges entrants + sortints al graf Zep). Les entitats més
+connectades representen els actors amb més relacions al document i generen
 simulacions socialment més riques.
 
-**Mínim recomanat:** 15 agents (mida de batch de generació; per sota, la dinàmica
-social és molt pobra). El frontend mostra un avís si l'usuari intenta posar menys de 15.
+**Mínim recomanat:** 15 agents. El frontend mostra un avís si el valor és inferior.
 
 ### Canvis al backend
 
-**`POST /api/simulation/prepare`** — afegir paràmetre opcional:
+`POST /api/simulation/prepare` — nou paràmetre opcional:
+
 ```json
 { "max_agents": 40 }
 ```
 
-Si `max_agents` present, `ZepEntityReader` ordena les entitats filtrades per
+Si `max_agents` és present, `ZepEntityReader` ordena les entitats filtrades per
 grau de connectivitat descendent i agafa les primeres N.
 
-Canvis a `oasis_profile_generator.py` / `simulation.py`:
-- `ZepEntityReader.get_entities_by_connectivity(graph_id, max_n)` → nova funció
-- Ordena per `len(edges)` de cada node retornat per `get_all_edges()`
+Nova funció: `ZepEntityReader.get_entities_by_connectivity(graph_id, max_n)` —
+obté totes les entitats, les ordena per `len(edges)` i retorna les top-N.
 
 ### Canvis al frontend (Step 2)
 
-Afegir just abans del botó "Generar agents":
-- Crida a `GET /api/simulation/entities/{graph_id}` (ja existent) per obtenir el
-  total d'entitats disponibles
+Just abans del botó "Generar agents":
+
+- Crida a `GET /api/simulation/entities/{graph_id}` (ja existent) per obtenir el total
 - Camp numèric amb valor default = total disponible
 - Avís visual si valor < 15
 - El valor es passa a `POST /api/simulation/prepare` com a `max_agents`
@@ -117,77 +124,110 @@ El modal de visualització d'agents (ja existent a `Step2EnvSetup.vue`) afegeix
 un botó "Editar" que converteix els camps en inputs editables. En desar, el
 backend actualitza el perfil i marca `manually_edited: True`.
 
-L'edició és possible:
-- Durant la generació (altres agents en curs) → l'agent editat queda protegit
-- Després de la generació completa
-- No és possible si la simulació té `status: running` o `completed`
+L'edició és possible durant la generació (l'agent editat queda protegit) i
+després de la generació completa. No és possible si `status: running` o `completed`.
 
 ### Canvis al backend
 
-**`PATCH /api/simulation/{sim_id}/agent/{user_id}`**
+`PATCH /api/simulation/{sim_id}/agent/{user_id}`
 
-```
-Body: { camps editables (qualsevol subconjunt) }
+```json
+{ "bio": "...", "stance": "opposing" }
 ```
 
 Acció:
+
 1. Valida que la simulació no és `running` ni `completed`
 2. Carrega `reddit_profiles.json` i `simulation_config.json`
 3. Localitza l'agent per `user_id`
 4. Aplica els canvis + `manually_edited: True`
-5. Desa els fitxers atòmicament (backup previ → escriptura → elimina backup si OK, restaura si falla)
+5. Desa atòmicament (backup → escriptura → elimina backup si OK, restaura si falla)
 6. Retorna el perfil actualitzat
 
 ### Canvis al frontend (Step 2)
 
 Al modal d'agent (`Step2EnvSetup.vue`):
+
 - Botó "Editar" → converteix camps en `<input>` / `<textarea>` / `<select>`
-- Botó "Desa" → `PATCH` → refrescar el modal amb dades actualitzades
+- Botó "Desa" → `PATCH` → refrescar el modal
 - Botó "Cancel·la" → descarta canvis locals
-- Indicador visual "Editat manualment" a la card de l'agent si `manually_edited: True`
+- Indicador visual "Editat manualment" a la card si `manually_edited: True`
 
 ---
 
-## Subsistema 3: Regeneració d'agents individuals
+## Subsistema 3: Regeneració, creació i eliminació d'agents individuals
 
-### Comportament
+### 3a. Regeneració d'un agent existent
 
-Disponible **només** quan la generació inicial ha completat (`status: prepared`).
-No disponible si la simulació és `running` o `completed`.
+Disponible **només** quan `status: prepared`. No disponible si `running` o `completed`.
 
-L'usuari pot opcionalment afegir instruccions addicionals per al LLM
-(ex: "Fes-lo més escèptic respecte a les polítiques de salut pública").
+L'usuari pot afegir instruccions opcionals per al LLM (ex: "Fes-lo més escèptic").
+La regeneració és asíncrona (5-15 s). El modal mostra un spinner mentre el
+`task_id` és en curs i es refrescar en completar.
 
-La regeneració és **asíncrona** (pot trigar 5-15 s). El modal mostra un spinner
-mentre el `task_id` associat és en curs. En completar, refrescar automàticament
-el modal amb el nou perfil.
+**Backend:** `POST /api/simulation/{sim_id}/agent/{user_id}/regenerate`
 
-### Canvis al backend
-
-**`POST /api/simulation/{sim_id}/agent/{user_id}/regenerate`**
-
-```
-Body: { "extra_instructions": "..." }  // opcional
+```json
+{ "extra_instructions": "..." }
 ```
 
 Acció:
-1. Valida que la simulació és `prepared` (no `running`, no `completed`)
-2. Llegeix l'agent actual per obtenir `source_entity_uuid`
+
+1. Valida `status: prepared`
+2. Llegeix `source_entity_uuid` de l'agent actual
 3. Consulta Zep per obtenir el context de l'entitat original
-4. Crida `OasisProfileGenerator.generate_profile_from_entity()` amb `use_llm=True`
-   i `extra_instructions` opcional
+4. Crida `OasisProfileGenerator.generate_profile_from_entity()` amb `extra_instructions`
 5. Actualitza `reddit_profiles.json`, `twitter_profiles.csv` i `simulation_config.json`
+6. Retorna `task_id` per polling (reutilitza `GET /api/.../task/{task_id}`)
+
+**Frontend:** botó "Regenera" al modal (visible si `is_preparing === False`),
+camp de text opcional per a instruccions, spinner durant el task, refresc en completar.
+
+### 3b. Creació d'un agent nou
+
+Permet afegir un agent basat en una **entitat existent al graf** que no té agent
+assignat (entitat sense `user_id` a `agent_profiles.json`). L'usuari tria el tipus
+d'entitat (en base a l'ontologia del projecte), selecciona una entitat concreta, i
+opcionalment afegeix un prompt que guia la generació del perfil.
+
+**Backend:** `POST /api/simulation/{sim_id}/agent`
+
+```json
+{
+  "source_entity_uuid": "uuid-de-lentitat",
+  "extra_instructions": "..."
+}
+```
+
+Acció:
+
+1. Valida que `status IN ('prepared', 'created')` i que l'entitat no té ja un agent
+2. Assigna el proper `user_id` disponible (max existent + 1)
+3. Consulta Zep per obtenir el context de l'entitat
+4. Crida `OasisProfileGenerator.generate_profile_from_entity()` amb `extra_instructions`
+5. Afegeix el nou agent a `reddit_profiles.json`, `twitter_profiles.csv` i `simulation_config.json`
 6. Retorna `task_id` per polling
 
-**Polling:** reutilitza el mecanisme existent `GET /api/.../task/{task_id}`.
+**Frontend:** botó "Afegeix agent" al panell d'agents (visible si `status: prepared`).
+Flux:
 
-### Canvis al frontend (Step 2)
+1. Desplegable de tipus d'entitat (basats en l'ontologia del projecte)
+2. Llista d'entitats disponibles d'aquell tipus sense agent assignat
+3. Camp de text opcional per a instruccions addicionals
+4. Confirmar → spinner → nou agent apareix a les cards en completar
 
-Al modal d'agent (visible només si `is_preparing === False`):
-- Botó "Regenera" → obre un petit camp de text per a instruccions addicionals (opcional)
-- Confirmar → `POST .../regenerate` → mostra spinner al modal
-- Poll `task_id` cada 2s → en `completed`, refrescar modal
-- En `failed`, mostrar missatge d'error
+### 3c. Eliminació d'un agent
+
+Permet eliminar un agent si la simulació és `prepared`. No és possible si
+`running` o `completed`.
+
+**Backend:** `DELETE /api/simulation/{sim_id}/agent/{user_id}`
+
+Acció: elimina l'agent de `reddit_profiles.json`, `twitter_profiles.csv` i
+`simulation_config.json`. No reassigna `user_id` dels agents restants
+(OASIS treballa amb IDs fixos).
+
+**Frontend:** botó "Elimina" al modal d'agent, amb confirmació explícita.
 
 ---
 
@@ -196,88 +236,176 @@ Al modal d'agent (visible només si `is_preparing === False`):
 ### Comportament
 
 Al Step 2, just sobre el botó "Generar agents", un desplegable:
+
 - **"Nova simulació"** (default) → comportament actual, genera des de zero
 - **"Des de [nom/data sim anterior]"** → clona agents i config d'una simulació existent
 
-Simulacions clonables: qualsevol simulació del mateix projecte que tingui
-agents generats (`status NOT IN ('created')`). Inclou `prepared`, `running`,
-`stopped`, `failed`, `completed`.
+Simulacions clonables: qualsevol del mateix projecte amb `status != 'created'`
+(inclou `prepared`, `running`, `stopped`, `failed`, `completed`).
 
-En triar una simulació font, el Step 2 crida `POST /clone` i **carrega
-directament** amb els agents clonats (salta la generació, estat = `prepared`).
-L'usuari pot llavors editar agents, regenerar-ne, i llançar la simulació.
+En triar una simulació font, el Step 2 crida `POST /clone` i carrega
+directament amb els agents clonats (salta la generació, `status: prepared`).
 
 ### Canvis al backend
 
-**`GET /api/simulation/list?project_id={id}`** — ja existent, retorna les
-simulacions del projecte. El frontend filtra les clonables.
+`GET /api/simulation/list?project_id={id}` — ja existent; el frontend filtra les clonables.
 
-**`POST /api/simulation/{sim_id}/clone`**
+`POST /api/simulation/{sim_id}/clone`
 
-```
-Body: { "project_id": "proj_xxxx" }
+```json
+{ "project_id": "proj_xxxx" }
 ```
 
 Acció:
+
 1. Valida que `sim_id` té agents (`status != 'created'`)
 2. Crea nova simulació al projecte amb `status: prepared`
 3. Guarda `parent_simulation_id = sim_id`
-4. Copia fitxers: `reddit_profiles.json`, `twitter_profiles.csv`,
-   `simulation_config.json`, `agent_profiles.json`
+4. Copia fitxers: `reddit_profiles.json`, `twitter_profiles.csv`, `simulation_config.json`, `agent_profiles.json`
 5. Retorna `new_simulation_id`
 
 ### Canvis al frontend (Step 2)
 
-- Desplegable "Nova simulació / Des de..." que carrega les simulacions del projecte
-- En seleccionar una simulació font → `POST /clone` → redirigir al Step 2 amb el nou `simulation_id`
-- El Step 2 detecta que la simulació ja té estat `prepared` i mostra els agents directament
+- Desplegable que carrega les simulacions clonables del projecte
+- En seleccionar → `POST /clone` → redirigir al Step 2 amb el nou `simulation_id`
+- Step 2 detecta `status: prepared` i mostra els agents directament
+
+---
+
+## Subsistema 5: Aïllament de grafs per simulació (ex F2-D)
+
+### Problema
+
+Actualment `enable_graph_memory_update` és `true` al frontend (hardcodejat a
+`Step3Simulation.vue:402`), cosa que fa que totes les simulacions escriguin les
+seves converses al mateix `graph_id` del projecte. El resultat del report de
+sim2 inclou converses de sim1.
+
+### Solució
+
+Cada simulació té el seu propi `group_id` Neo4j (`graph_id_simulation`), creat
+per clonatge APOC del `graph_document` just abans de llançar la simulació.
+El ReportAgent consulta `[graph_id_document, graph_id_simulation]`.
+
+### Flux
+
+1. **Clonatge APOC** (just abans de `POST /api/simulation/start`):
+
+```python
+# Clona nodes
+await session.run("""
+    MATCH (n) WHERE n.group_id = $src
+    WITH n, properties(n) AS props
+    CREATE (m) SET m = props SET m.group_id = $dst
+""", src=graph_id_document, dst=graph_id_simulation)
+
+# Clona relacions
+await session.run("""
+    MATCH (n)-[r]->(m)
+    WHERE n.group_id = $src AND m.group_id = $src
+    MATCH (n2 {uuid: n.uuid, group_id: $dst})
+    MATCH (m2 {uuid: m.uuid, group_id: $dst})
+    CALL apoc.create.relationship(n2, type(r), properties(r), m2) YIELD rel
+    SET rel.group_id = $dst
+    RETURN rel
+""", src=graph_id_document, dst=graph_id_simulation)
+```
+
+Neo4j Aura Cloud inclou APOC de sèrie, per tant no cal cap dependència addicional.
+
+2. **Llançament de simulació**: `enable_graph_memory_update: true` usant `graph_id_simulation`
+   (no el `graph_id_document`)
+
+3. **Report**: `ReportAgent` rep `graph_ids=[graph_id_document, graph_id_simulation]`.
+   `ZepToolsService.search_graph_multi()` fa dues queries i fusiona resultats.
+
+### Canvis al backend
+
+**`graphiti_backend.py`** — nova funció `clone_graph(src_group_id, dst_group_id)` que
+executa les dues queries APOC via `execute_query()`.
+
+**`ZepToolsService`** — nova funció `search_graph_multi(graph_ids: list, query, limit)`
+que fa N queries i fusiona + deduplicar resultats.
+
+**`POST /api/simulation/start`** — si `enable_graph_memory_update: true`:
+
+1. Genera `graph_id_simulation = f"mirofish_{sim_id}_sim"`
+2. Crida `clone_graph(graph_id_document, graph_id_simulation)`
+3. Desa `graph_id_simulation` a la BD
+4. Llança la simulació usant `graph_id_simulation`
+
+**`POST /api/report/generate`** — passa `[graph_id_document, graph_id_simulation]`
+al `ReportAgent` si `graph_id_simulation` existeix; si no (simulació sense
+graph update), passa només `[graph_id_document]` com ara.
+
+### Canvis al frontend (Step 3)
+
+Eliminar el hardcodejat `enable_graph_memory_update: true` i convertir-ho en
+una opció configurable a la UI de Step 3 (checkbox "Actualitza el graf amb les
+converses de la simulació", default `true`).
 
 ---
 
 ## Ordre d'implementació recomanat
 
-1. `PATCH /agent/{user_id}` + edició modal (menys risc, més valor immediat)
-2. Selector de N agents pre-generació (extensió de `/prepare`)
-3. `POST /agent/{user_id}/regenerate` + UI polling
-4. `POST /clone` + desplegable Step 2 + `parent_simulation_id` a la BD
+1. `PATCH /agent/{user_id}` + edició modal
+2. Selector de N agents pre-generació
+3. `DELETE /agent/{user_id}` + botó eliminar modal
+4. `POST /agent` (creació) + UI selector d'entitat
+5. `POST /agent/{user_id}/regenerate` + UI polling
+6. `POST /clone` + desplegable Step 2 + `parent_simulation_id` a la BD
+7. Subsistema 5 (aïllament de grafs): `clone_graph`, `search_graph_multi`, `graph_id_simulation` a BD
 
 ---
 
 ## Verificació end-to-end
 
 ### Test 1: Edició d'agent
-- Generar agents per a un projecte
-- Obrir modal d'un agent → clicar "Editar" → modificar `bio` i `stance`
-- Desar → verificar que el modal mostra els valors actualitzats
-- Verificar que la card de l'agent mostra l'indicador "Editat manualment"
-- Iniciar la preparació d'un altre agent → verificar que l'agent editat NO es sobreescriu
+
+- Generar agents → obrir modal → modificar `bio` i `stance` → desar
+- Verificar modal actualitzat i card amb indicador "Editat manualment"
+- Iniciar generació d'un altre agent → verificar que l'agent editat no es sobreescriu
 
 ### Test 2: Regeneració individual
-- Completar la generació d'agents
-- Obrir modal → clicar "Regenera" amb instrucció "Fes-lo més escèptic"
-- Verificar spinner mentre processa
-- Verificar que el perfil canvia i és coherent amb la instrucció
 
-### Test 3: Selector N agents
-- Projecte amb 50 entitats disponibles
-- Reduir a 30 → verificar que es generen exactament 30 agents
-- Verificar que els 30 corresponen a les entitats més connectades del graf
-- No tocar el selector → verificar que es generen els 50 (comportament actual)
+- Completar generació → obrir modal → "Regenera" amb instrucció "Fes-lo més escèptic"
+- Verificar spinner → perfil canviat coherentment amb la instrucció
 
-### Test 4: Clonació
-- Completar una simulació (sim1) dins un projecte
-- Al Step 2 del mateix projecte (nova simulació) → seleccionar "Des de sim1"
-- Verificar que el Step 2 carrega amb els mateixos agents que sim1
-- Editar un agent → llançar simulació
-- Verificar que sim1 queda intacta
+### Test 3: Creació d'agent nou
+
+- Projecte amb entitats sense agent → clicar "Afegeix agent"
+- Triar tipus d'entitat → seleccionar entitat → afegir instruccions → confirmar
+- Verificar que el nou agent apareix a les cards i és coherent amb l'entitat
+
+### Test 4: Eliminació d'agent
+
+- Modal d'un agent → "Elimina" → confirmació → agent desapareix de les cards
+- Verificar que la simulació segueix consistent
+
+### Test 5: Selector N agents
+
+- 50 entitats disponibles → reduir a 30 → verificar exactament 30 agents generats
+- Verificar que corresponen a les entitats més connectades
+- No tocar → verificar 50 agents (comportament actual)
+
+### Test 6: Clonació
+
+- Completar sim1 → Step 2 del mateix projecte → "Des de sim1"
+- Verificar que Step 2 carrega amb els mateixos agents que sim1
+- Editar un agent → llançar simulació → verificar que sim1 queda intacta
+
+### Test 7: Aïllament de grafs
+
+- Llançar sim1 amb `enable_graph_memory_update: true` → completar
+- Llançar sim2 amb `enable_graph_memory_update: true` → completar
+- Verificar que el report de sim1 NO inclou converses de sim2 i viceversa
+- Verificar que ambdós reports inclouen les entitats del `graph_document`
 
 ---
 
 ## Dependències i notes futures
 
 - **F2-B** (paràmetres simulació): independent, es pot fer en paral·lel
-- **F2-D** (multi-graph per simulació): desbloquejarà `enable_graph_memory_update=True`
-  per simulació; la clonació de `graph_document` via Neo4j/APOC és el mecanisme
-  previst (viable en Neo4j Aura Cloud que inclou APOC de sèrie)
-- **F3** (UI de llistat de simulacions per projecte): el `parent_simulation_id`
-  que afegim aquí ja prepara el terreny per a un arbre de versions navegable
+- **F3** (UI de llistat de simulacions): `parent_simulation_id` prepara l'arbre de versions
+- **Subsistema 5** depèn de Graphiti/Neo4j com a backend actiu (no Zep Cloud);
+  verificar configuració de l'entorn abans d'implementar
