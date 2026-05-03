@@ -284,8 +284,12 @@ sim2 inclou converses de sim1.
 ### Solució
 
 Cada simulació té el seu propi `group_id` Neo4j (`graph_id_simulation`), creat
-per clonatge APOC del `graph_document` just abans de llançar la simulació.
-El ReportAgent consulta `[graph_id_document, graph_id_simulation]`.
+per clonatge APOC de `graph_id_document` just abans de llançar la simulació.
+`graph_id_simulation` conté una còpia exacta del document original, i és on els
+agents escriuen les seves converses. `graph_id_document` queda immutable i serveix
+de font per a futurs clonatges.
+
+El ReportAgent consulta **únicament** `graph_id_simulation`.
 
 ### Flux
 
@@ -313,19 +317,16 @@ await session.run("""
 
 Neo4j Aura Cloud inclou APOC de sèrie, per tant no cal cap dependència addicional.
 
-2. **Llançament de simulació**: `enable_graph_memory_update: true` usant `graph_id_simulation`
-   (no el `graph_id_document`)
+2. **Llançament de simulació**: `enable_graph_memory_update: true` usant `graph_id_simulation`.
+   Els agents escriuen converses a `graph_id_simulation`, que ja conté el contingut del document.
 
-3. **Report**: `ReportAgent` rep `graph_ids=[graph_id_document, graph_id_simulation]`.
-   `ZepToolsService.search_graph_multi()` fa dues queries i fusiona resultats.
+3. **Report**: `ReportAgent` rep i consulta únicament `graph_id_simulation`.
+   No cal fusionar grafs ni canviar `ZepToolsService`.
 
 ### Canvis al backend
 
 **`graphiti_backend.py`** — nova funció `clone_graph(src_group_id, dst_group_id)` que
 executa les dues queries APOC via `execute_query()`.
-
-**`ZepToolsService`** — nova funció `search_graph_multi(graph_ids: list, query, limit)`
-que fa N queries i fusiona + deduplicar resultats.
 
 **`POST /api/simulation/start`** — si `enable_graph_memory_update: true`:
 
@@ -334,9 +335,8 @@ que fa N queries i fusiona + deduplicar resultats.
 3. Desa `graph_id_simulation` a la BD
 4. Llança la simulació usant `graph_id_simulation`
 
-**`POST /api/report/generate`** — passa `[graph_id_document, graph_id_simulation]`
-al `ReportAgent` si `graph_id_simulation` existeix; si no (simulació sense
-graph update), passa només `[graph_id_document]` com ara.
+**`POST /api/report/generate`** — passa `graph_id_simulation` al `ReportAgent`
+si existeix; si no (simulació sense graph update), passa `graph_id_document` com ara.
 
 ### Canvis al frontend (Step 3)
 
