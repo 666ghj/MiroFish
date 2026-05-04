@@ -49,12 +49,12 @@ EXPOSE 5001
 
 # gunicorn: 1 worker (Container Apps escala horitzontalment via rèpliques)
 # threads=4 per gestionar concurrència sense multiprocessing
-# timeout=120s per a les operacions LLM de llarga durada
+# timeout=300s per cobrir interview/all (timeout IPC 180s) + marge
 CMD ["backend/.venv/bin/gunicorn", \
      "--bind", "0.0.0.0:5001", \
      "--workers", "1", \
      "--threads", "4", \
-     "--timeout", "120", \
+     "--timeout", "300", \
      "--worker-class", "gthread", \
      "--chdir", "/app/backend", \
      "wsgi:application"]

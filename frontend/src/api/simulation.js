@@ -224,6 +224,14 @@ export const regenerateAgent = (simulationId, userId, data = {}) => {
 }
 
 /**
+ * Generic task status poll (for regenerate_agent and other async tasks)
+ * @param {string} taskId
+ */
+export const getTaskStatus = (taskId) => {
+  return requestWithRetry(() => service.get(`/api/simulation/task/${taskId}`), 3, 1000)
+}
+
+/**
  * Trigger Fase A → Fase B transition (generate behavior config)
  * @param {string} simulationId
  */
@@ -247,4 +255,12 @@ export const patchSimulationConfig = (simulationId, fields) => {
  */
 export const cloneSimulation = (simulationId, projectId) => {
   return requestWithRetry(() => service.post(`/api/simulation/${simulationId}/clone`, { project_id: projectId }), 3, 1000)
+}
+
+/**
+ * Get the count of available entities for a graph (fast endpoint, no entity data returned)
+ * @param {string} graphId
+ */
+export const getGraphEntityCount = (graphId) => {
+  return service.get(`/api/simulation/entities/${graphId}/count`)
 }

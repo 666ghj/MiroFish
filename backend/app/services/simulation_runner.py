@@ -1525,7 +1525,9 @@ class SimulationRunner:
         ipc_client = SimulationIPCClient(sim_dir)
 
         if not ipc_client.check_env_alive():
-            raise ValueError(f"Simulation environment is not running or has been closed; cannot interview: {simulation_id}")
+            # Env closed (simulation finished): build synthetic interview responses from DB posts
+            logger.info(f"Env not alive for {simulation_id}; building offline interview responses from DB posts")
+            return cls._offline_batch_interview(sim_dir, interviews, platform)
 
         logger.info(f"Sending batch Interview command: simulation_id={simulation_id}, count={len(interviews)}, platform={platform}")
 
@@ -1658,6 +1660,80 @@ class SimulationRunner:
                 "success": True,
                 "message": "Close-environment command sent (timed out waiting for response; environment may be closing)"
             }
+
+    @classmethod
+    @classmethod
+    def _offline_batch_interview(
+        cls,
+        sim_dir: str,
+        interviews: List[Dict[str, Any]],
+        platform: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build synthetic interview responses from DB post history when the OASIS env is closed.
+
+        Reads posts from twitter_simulation.db and reddit_simulation.db (table `post`,
+        column `content`) and assembles a text response per agent per platform.
+        Returns the same structure that the live IPC path returns so callers are unaffected.
+        """
+        import sqlite3
+        from datetime import datetime, timezone
+
+        results: Dict[str, Any] = {}
+
+        platforms_to_check = []
+        if platform in (None, "twitter"):
+            platforms_to_check.append(("twitter", os.path.join(sim_dir, "twitter_simulation.db")))
+        if platform in (None, "reddit"):
+            platforms_to_check.append(("reddit", os.path.join(sim_dir, "reddit_simulation.db")))
+
+        for interview in interviews:
+            agent_id = interview.get("agent_id")
+            if agent_id is None:
+                continue
+
+            for plat_name, db_path in platforms_to_check:
+                key = f"{plat_name}_{agent_id}"
+                response_text = None
+
+                if os.path.exists(db_path):
+                    try:
+                        conn = sqlite3.connect(db_path)
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "SELECT content FROM post WHERE user_id = ? AND content != '' ORDER BY created_at DESC LIMIT 10",
+                            (agent_id,)
+                        )
+                        rows = cursor.fetchall()
+                        conn.close()
+                        if rows:
+                            post_texts = [r[0] for r in rows if r[0]]
+                            response_text = (
+                                "(Based on simulation activity — live interview unavailable)\n\n"
+                                + "\n\n".join(post_texts)
+                            )
+                    except Exception as e:
+                        logger.warning(f"Offline interview DB read failed ({plat_name}, agent {agent_id}): {e}")
+
+                results[key] = {
+                    "agent_id": agent_id,
+                    "response": response_text or "(No activity recorded for this agent on this platform)",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "platform": plat_name,
+                    "offline": True,
+                }
+
+        if results:
+            return {
+                "success": True,
+                "interviews_count": len(results),
+                "result": {"results": results},
+                "offline": True,
+            }
+        return {
+            "success": False,
+            "interviews_count": 0,
+            "error": "No interview results available (simulation finished and no DB posts found)",
+        }
 
     @classmethod
     def _get_interview_history_from_db(

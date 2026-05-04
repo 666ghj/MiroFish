@@ -2,6 +2,7 @@
   "common": {
     "confirm": "确认",
     "cancel": "取消",
+    "save": "保存",
     "loading": "加载中...",
     "error": "错误",
     "success": "成功",
@@ -23,7 +24,8 @@
     "minutes": "分钟",
     "rounds": "轮",
     "items": "个",
-    "files": "个文件"
+    "files": "个文件",
+    "edit": "编辑"
   },
   "meta": {
     "title": "MiroFish - 预测万物",
@@ -231,7 +233,21 @@
     "totalHours": "总小时数",
     "minutesPerRound": "每轮分钟数",
     "followingProbability": "关注概率",
-    "recsysType": "推荐系统类型"
+    "recsysType": "推荐系统类型",
+    "loadingEntityCount": "正在加载可用实体数量...",
+    "availableEntities": "图谱中可用实体数：",
+    "maxAgentsLabel": "要生成的智能体数量：",
+    "minAgentsWarning": "少于15个智能体可能导致模拟效果不够丰富",
+    "startGeneration": "开始生成",
+    "agentField_name": "姓名",
+    "agentField_bio": "简介",
+    "agentField_persona": "人设",
+    "agentField_age": "年龄",
+    "agentField_gender": "性别",
+    "agentField_mbti": "MBTI",
+    "agentField_country": "国家",
+    "agentField_profession": "职业",
+    "agentField_stance": "立场"
   },
   "step3": {
     "startGenerateReport": "开始生成结果报告",
@@ -646,7 +662,8 @@
     "enterStep": "进入 Step {step}: {name}",
     "returnToStep": "返回 Step {step}: {name}",
     "customSimRounds": "自定义模拟轮数: {rounds} 轮",
-    "reconnectingToTask": "重新连接到活动任务 {taskId}…"
+    "reconnectingToTask": "重新连接到活动任务 {taskId}…",
+    "configSaved": "✓ 配置已保存"
   },
   "report": {
     "taskStarted": "报告生成任务开始",

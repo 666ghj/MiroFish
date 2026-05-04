@@ -19,7 +19,7 @@ const savedLocale = localStorage.getItem('locale') || 'ca'
 const i18n = createI18n({
   legacy: false,
   locale: savedLocale,
-  fallbackLocale: 'zh',
+  fallbackLocale: 'en',
   messages
 })
 

@@ -61,6 +61,38 @@
             {{ $t('step2.generateAgentPersonaDesc') }}
           </p>
 
+          <!-- Fase Pre: agent count selector -->
+          <div v-if="currentPhase === 'phase_pre'" class="phase-pre-section">
+            <div v-if="entityCountLoading" class="phase-pre-loading">
+              {{ $t('step2.loadingEntityCount') }}
+            </div>
+            <div v-else class="phase-pre-form">
+              <div class="phase-pre-info">
+                <span class="phase-pre-label">{{ $t('step2.availableEntities') }}</span>
+                <span class="phase-pre-count">{{ availableEntityCount ?? '—' }}</span>
+              </div>
+              <div class="phase-pre-input-row">
+                <label class="phase-pre-input-label">{{ $t('step2.maxAgentsLabel') }}</label>
+                <input
+                  v-model.number="maxAgentsInput"
+                  type="number"
+                  :min="1"
+                  :max="availableEntityCount || 9999"
+                  class="phase-pre-input"
+                  :placeholder="availableEntityCount ?? ''"
+                />
+                <span v-if="maxAgentsInput !== null && maxAgentsInput < 15" class="phase-pre-warn">
+                  {{ $t('step2.minAgentsWarning') }}
+                </span>
+              </div>
+              <div class="phase-pre-footer">
+                <button class="continue-btn" @click="confirmPrePhase">
+                  {{ $t('step2.startGeneration') }}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Profiles Stats -->
           <div v-if="profiles.length > 0" class="stats-grid">
             <div class="stat-card">
@@ -87,13 +119,13 @@
                 v-for="(profile, idx) in profiles"
                 :key="idx"
                 class="profile-card"
-                @click="selectProfile(profile)"
+                :class="{ 'profile-card--clickable': currentPhase === 'phase_a' || currentPhase === 'generating' }"
+                @click="(currentPhase === 'phase_a' || currentPhase === 'generating') ? openAgentModal(profile) : selectProfile(profile)"
               >
                 <div class="profile-header">
                   <span class="profile-realname">{{ profile.username || 'Unknown' }}</span>
                   <span class="profile-username">@{{ profile.name || `agent_${idx}` }}</span>
                   <span v-if="profile.manually_edited" class="manually-edited-badge">{{ $t('step2.manuallyEditedBadge') }}</span>
-                  <button v-if="currentPhase === 'phase_a'" class="agent-action-btn" @click.stop="openAgentModal(profile)">···</button>
                 </div>
                 <div class="profile-meta">
                   <span class="profile-profession">{{ profile.profession || $t('step2.unknownProfession') }}</span>
@@ -125,41 +157,6 @@
             </div>
           </div>
 
-          <!-- Fase B: Global parameters form -->
-          <div v-if="currentPhase === 'phase_b'" class="phase-b-section">
-            <h3>{{ $t('step2.phaseBTitle') }}</h3>
-            <p class="section-subtitle">{{ $t('step2.phaseBSubtitle') }}</p>
-
-            <div class="config-form">
-              <div class="config-field">
-                <label>{{ $t('step2.totalHours') }}</label>
-                <input type="number" v-model.number="configForm.total_simulation_hours" min="1" max="720" />
-              </div>
-              <div class="config-field">
-                <label>{{ $t('step2.minutesPerRound') }}</label>
-                <input type="number" v-model.number="configForm.minutes_per_round" min="1" max="1440" />
-              </div>
-              <div class="config-field">
-                <label>{{ $t('step2.followingProbability') }}</label>
-                <input type="number" v-model.number="configForm.following_probability" min="0" max="1" step="0.01" />
-              </div>
-              <div class="config-field">
-                <label>{{ $t('step2.recsysType') }}</label>
-                <select v-model="configForm.recsys_type">
-                  <option value="random">Random</option>
-                  <option value="interest">Interest-based</option>
-                  <option value="twhin">TWHIN</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="phase-b-footer">
-              <button class="action-btn secondary" @click="currentPhase = 'phase_a'">← Back</button>
-              <button class="continue-btn" :disabled="phaseBSaving" @click="launchSimulation">
-                {{ $t('step2.launchSimulation') }}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -183,18 +180,42 @@
             {{ $t('step2.dualPlatformConfigDesc') }}
           </p>
           
-          <!-- Config Preview -->
+          <!-- Config Preview + Edit -->
           <div v-if="simulationConfig" class="config-detail-panel">
-            <!-- 时间配置 -->
+
+            <!-- Toolbar: Edit / Save buttons -->
+            <div class="config-toolbar">
+              <button v-if="!step3EditMode" class="action-btn secondary" @click="step3EditMode = true">
+                ✏ {{ $t('common.edit') }}
+              </button>
+              <template v-else>
+                <button class="action-btn secondary" @click="step3EditMode = false">{{ $t('common.cancel') }}</button>
+                <button class="continue-btn" :disabled="configSaving" @click="saveFullConfig">
+                  <span v-if="configSaving">{{ $t('common.loading') }}</span>
+                  <span v-else>{{ $t('common.save') }} ✓</span>
+                </button>
+              </template>
+            </div>
+
+            <!-- Time config -->
             <div class="config-block">
-              <div class="config-grid">
+              <div class="config-block-header">
+                <span class="config-block-title">{{ $t('step2.simulationDuration') }}</span>
+              </div>
+              <div class="config-grid" :class="{ editable: step3EditMode }">
                 <div class="config-item">
                   <span class="config-item-label">{{ $t('step2.simulationDuration') }}</span>
-                  <span class="config-item-value">{{ simulationConfig.time_config?.total_simulation_hours || '-' }} {{ $t('common.hours') }}</span>
+                  <input v-if="step3EditMode" class="inline-input" type="number" min="1" max="720"
+                    v-model.number="simulationConfig.time_config.total_simulation_hours" />
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.total_simulation_hours }}</span>
+                  <span class="config-unit">{{ $t('common.hours') }}</span>
                 </div>
                 <div class="config-item">
                   <span class="config-item-label">{{ $t('step2.roundDuration') }}</span>
-                  <span class="config-item-value">{{ simulationConfig.time_config?.minutes_per_round || '-' }} {{ $t('common.minutes') }}</span>
+                  <input v-if="step3EditMode" class="inline-input" type="number" min="1" max="1440"
+                    v-model.number="simulationConfig.time_config.minutes_per_round" />
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.minutes_per_round }}</span>
+                  <span class="config-unit">{{ $t('common.minutes') }}</span>
                 </div>
                 <div class="config-item">
                   <span class="config-item-label">{{ $t('step2.totalRounds') }}</span>
@@ -202,46 +223,88 @@
                 </div>
                 <div class="config-item">
                   <span class="config-item-label">{{ $t('step2.activePerHour') }}</span>
-                  <span class="config-item-value">{{ simulationConfig.time_config?.agents_per_hour_min }}-{{ simulationConfig.time_config?.agents_per_hour_max }}</span>
+                  <template v-if="step3EditMode">
+                    <input class="inline-input small" type="number" min="1"
+                      v-model.number="simulationConfig.time_config.agents_per_hour_min" />
+                    <span class="config-unit">–</span>
+                    <input class="inline-input small" type="number" min="1"
+                      v-model.number="simulationConfig.time_config.agents_per_hour_max" />
+                  </template>
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.agents_per_hour_min }}–{{ simulationConfig.time_config?.agents_per_hour_max }}</span>
                 </div>
               </div>
-              <div class="time-periods">
+              <div class="time-periods" :class="{ editable: step3EditMode }">
                 <div class="period-item">
                   <span class="period-label">{{ $t('step2.peakHours') }}</span>
                   <span class="period-hours">{{ simulationConfig.time_config?.peak_hours?.join(':00, ') }}:00</span>
-                  <span class="period-multiplier">×{{ simulationConfig.time_config?.peak_activity_multiplier }}</span>
+                  <span class="period-mult-label">×</span>
+                  <input v-if="step3EditMode" class="inline-input small" type="number" min="0.1" max="5" step="0.1"
+                    v-model.number="simulationConfig.time_config.peak_activity_multiplier" />
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.peak_activity_multiplier }}</span>
                 </div>
                 <div class="period-item">
                   <span class="period-label">{{ $t('step2.workHours') }}</span>
                   <span class="period-hours">{{ simulationConfig.time_config?.work_hours?.[0] }}:00-{{ simulationConfig.time_config?.work_hours?.slice(-1)[0] }}:00</span>
-                  <span class="period-multiplier">×{{ simulationConfig.time_config?.work_activity_multiplier }}</span>
+                  <span class="period-mult-label">×</span>
+                  <input v-if="step3EditMode" class="inline-input small" type="number" min="0.1" max="5" step="0.1"
+                    v-model.number="simulationConfig.time_config.work_activity_multiplier" />
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.work_activity_multiplier }}</span>
                 </div>
                 <div class="period-item">
                   <span class="period-label">{{ $t('step2.morningHours') }}</span>
                   <span class="period-hours">{{ simulationConfig.time_config?.morning_hours?.[0] }}:00-{{ simulationConfig.time_config?.morning_hours?.slice(-1)[0] }}:00</span>
-                  <span class="period-multiplier">×{{ simulationConfig.time_config?.morning_activity_multiplier }}</span>
+                  <span class="period-mult-label">×</span>
+                  <input v-if="step3EditMode" class="inline-input small" type="number" min="0.1" max="5" step="0.1"
+                    v-model.number="simulationConfig.time_config.morning_activity_multiplier" />
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.morning_activity_multiplier }}</span>
                 </div>
                 <div class="period-item">
                   <span class="period-label">{{ $t('step2.offPeakHours') }}</span>
                   <span class="period-hours">{{ simulationConfig.time_config?.off_peak_hours?.[0] }}:00-{{ simulationConfig.time_config?.off_peak_hours?.slice(-1)[0] }}:00</span>
-                  <span class="period-multiplier">×{{ simulationConfig.time_config?.off_peak_activity_multiplier }}</span>
+                  <span class="period-mult-label">×</span>
+                  <input v-if="step3EditMode" class="inline-input small" type="number" min="0.1" max="5" step="0.1"
+                    v-model.number="simulationConfig.time_config.off_peak_activity_multiplier" />
+                  <span v-else class="config-item-value">{{ simulationConfig.time_config?.off_peak_activity_multiplier }}</span>
                 </div>
               </div>
             </div>
 
-            <!-- Agent 配置 -->
+            <!-- Global sim params -->
+            <div class="config-block">
+              <div class="config-block-header">
+                <span class="config-block-title">{{ $t('step2.phaseBTitle') }}</span>
+              </div>
+              <div class="config-grid" :class="{ editable: step3EditMode }">
+                <div class="config-item">
+                  <span class="config-item-label">{{ $t('step2.followingProbability') }}</span>
+                  <input v-if="step3EditMode" class="inline-input small" type="number" min="0" max="1" step="0.01"
+                    v-model.number="simulationConfig.following_probability" />
+                  <span v-else class="config-item-value">{{ simulationConfig.following_probability }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-item-label">{{ $t('step2.recsysType') }}</span>
+                  <select v-if="step3EditMode" class="inline-input" v-model="simulationConfig.recsys_type">
+                    <option value="random">Random</option>
+                    <option value="interest">Interest-based</option>
+                    <option value="twhin">TWHIN</option>
+                  </select>
+                  <span v-else class="config-item-value">{{ simulationConfig.recsys_type }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Agent configs -->
             <div class="config-block">
               <div class="config-block-header">
                 <span class="config-block-title">{{ $t('step2.agentConfig') }}</span>
                 <span class="config-block-badge">{{ simulationConfig.agent_configs?.length || 0 }} {{ $t('common.items') }}</span>
               </div>
               <div class="agents-cards">
-                <div 
-                  v-for="agent in simulationConfig.agent_configs" 
-                  :key="agent.agent_id" 
+                <div
+                  v-for="agent in simulationConfig.agent_configs"
+                  :key="agent.agent_id"
                   class="agent-card"
                 >
-                  <!-- 卡片头部 -->
                   <div class="agent-card-header">
                     <div class="agent-identity">
                       <span class="agent-id">Agent {{ agent.agent_id }}</span>
@@ -252,61 +315,71 @@
                       <span class="agent-stance" :class="'stance-' + agent.stance">{{ agent.stance }}</span>
                     </div>
                   </div>
-                  
-                  <!-- 活跃时间轴 -->
+
+                  <!-- Active hours timeline (clickable only in edit mode) -->
                   <div class="agent-timeline">
                     <span class="timeline-label">{{ $t('step2.activeTimePeriod') }}</span>
                     <div class="mini-timeline">
-                      <div 
-                        v-for="hour in 24" 
-                        :key="hour - 1" 
+                      <div
+                        v-for="hour in 24"
+                        :key="hour - 1"
                         class="timeline-hour"
-                        :class="{ 'active': agent.active_hours?.includes(hour - 1) }"
+                        :class="{ 'active': agent.active_hours?.includes(hour - 1), 'clickable': step3EditMode }"
                         :title="`${hour - 1}:00`"
+                        @click="step3EditMode && toggleAgentHour(agent, hour - 1)"
                       ></div>
                     </div>
                     <div class="timeline-marks">
-                      <span>0</span>
-                      <span>6</span>
-                      <span>12</span>
-                      <span>18</span>
-                      <span>24</span>
+                      <span>0</span><span>6</span><span>12</span><span>18</span><span>24</span>
                     </div>
                   </div>
 
-                  <!-- 行为参数 -->
+                  <!-- Behaviour params (editable or read-only) -->
                   <div class="agent-params">
                     <div class="param-group">
                       <div class="param-item">
                         <span class="param-label">{{ $t('step2.postsPerHour') }}</span>
-                        <span class="param-value">{{ agent.posts_per_hour }}</span>
+                        <input v-if="step3EditMode" class="inline-input small" type="number" min="0" step="0.1"
+                          v-model.number="agent.posts_per_hour" />
+                        <span v-else class="config-item-value">{{ agent.posts_per_hour }}</span>
                       </div>
                       <div class="param-item">
                         <span class="param-label">{{ $t('step2.commentsPerHour') }}</span>
-                        <span class="param-value">{{ agent.comments_per_hour }}</span>
+                        <input v-if="step3EditMode" class="inline-input small" type="number" min="0" step="0.1"
+                          v-model.number="agent.comments_per_hour" />
+                        <span v-else class="config-item-value">{{ agent.comments_per_hour }}</span>
                       </div>
                       <div class="param-item">
                         <span class="param-label">{{ $t('step2.responseDelay') }}</span>
-                        <span class="param-value">{{ agent.response_delay_min }}-{{ agent.response_delay_max }}min</span>
+                        <template v-if="step3EditMode">
+                          <input class="inline-input small" type="number" min="0"
+                            v-model.number="agent.response_delay_min" />
+                          <span class="config-unit">–</span>
+                          <input class="inline-input small" type="number" min="0"
+                            v-model.number="agent.response_delay_max" />
+                          <span class="config-unit">min</span>
+                        </template>
+                        <span v-else class="config-item-value">{{ agent.response_delay_min }}–{{ agent.response_delay_max }} min</span>
                       </div>
                     </div>
                     <div class="param-group">
                       <div class="param-item">
                         <span class="param-label">{{ $t('step2.activityLevel') }}</span>
-                        <span class="param-value with-bar">
-                          <span class="mini-bar" :style="{ width: (agent.activity_level * 100) + '%' }"></span>
-                          {{ (agent.activity_level * 100).toFixed(0) }}%
-                        </span>
+                        <input v-if="step3EditMode" class="inline-input small" type="number" min="0" max="1" step="0.01"
+                          v-model.number="agent.activity_level" />
+                        <span v-else class="config-item-value">{{ agent.activity_level }}</span>
                       </div>
                       <div class="param-item">
                         <span class="param-label">{{ $t('step2.sentimentBias') }}</span>
-                        <span class="param-value" :class="agent.sentiment_bias > 0 ? 'positive' : agent.sentiment_bias < 0 ? 'negative' : 'neutral'">
-                          {{ agent.sentiment_bias > 0 ? '+' : '' }}{{ agent.sentiment_bias?.toFixed(1) }}
-                        </span>
+                        <input v-if="step3EditMode" class="inline-input small" type="number" min="-1" max="1" step="0.1"
+                          v-model.number="agent.sentiment_bias" />
+                        <span v-else class="config-item-value">{{ agent.sentiment_bias }}</span>
                       </div>
                       <div class="param-item">
                         <span class="param-label">{{ $t('step2.influenceWeight') }}</span>
-                        <span class="param-value highlight">{{ agent.influence_weight?.toFixed(1) }}</span>
+                        <input v-if="step3EditMode" class="inline-input small" type="number" min="0" step="0.1"
+                          v-model.number="agent.influence_weight" />
+                        <span v-else class="config-item-value">{{ agent.influence_weight }}</span>
                       </div>
                     </div>
                   </div>
@@ -314,7 +387,7 @@
               </div>
             </div>
 
-            <!-- 平台配置 -->
+            <!-- Platform configs -->
             <div class="config-block">
               <div class="config-block-header">
                 <span class="config-block-title">{{ $t('step2.recommendAlgoConfig') }}</span>
@@ -325,25 +398,11 @@
                     <span class="platform-name">{{ $t('step2.platform1Name') }}</span>
                   </div>
                   <div class="platform-params">
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.recencyWeight') }}</span>
-                      <span class="param-value">{{ simulationConfig.twitter_config.recency_weight }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.popularityWeight') }}</span>
-                      <span class="param-value">{{ simulationConfig.twitter_config.popularity_weight }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.relevanceWeight') }}</span>
-                      <span class="param-value">{{ simulationConfig.twitter_config.relevance_weight }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.viralThreshold') }}</span>
-                      <span class="param-value">{{ simulationConfig.twitter_config.viral_threshold }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.echoChamberStrength') }}</span>
-                      <span class="param-value">{{ simulationConfig.twitter_config.echo_chamber_strength }}</span>
+                    <div class="param-row" v-for="key in ['recency_weight','popularity_weight','relevance_weight','viral_threshold','echo_chamber_strength']" :key="key">
+                      <span class="param-label">{{ $t('step2.' + key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())) }}</span>
+                      <input v-if="step3EditMode" class="inline-input small" type="number" min="0" max="1" step="0.01"
+                        v-model.number="simulationConfig.twitter_config[key]" />
+                      <span v-else class="config-item-value">{{ simulationConfig.twitter_config[key] }}</span>
                     </div>
                   </div>
                 </div>
@@ -352,46 +411,33 @@
                     <span class="platform-name">{{ $t('step2.platform2Name') }}</span>
                   </div>
                   <div class="platform-params">
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.recencyWeight') }}</span>
-                      <span class="param-value">{{ simulationConfig.reddit_config.recency_weight }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.popularityWeight') }}</span>
-                      <span class="param-value">{{ simulationConfig.reddit_config.popularity_weight }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.relevanceWeight') }}</span>
-                      <span class="param-value">{{ simulationConfig.reddit_config.relevance_weight }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.viralThreshold') }}</span>
-                      <span class="param-value">{{ simulationConfig.reddit_config.viral_threshold }}</span>
-                    </div>
-                    <div class="param-row">
-                      <span class="param-label">{{ $t('step2.echoChamberStrength') }}</span>
-                      <span class="param-value">{{ simulationConfig.reddit_config.echo_chamber_strength }}</span>
+                    <div class="param-row" v-for="key in ['recency_weight','popularity_weight','relevance_weight','viral_threshold','echo_chamber_strength']" :key="key">
+                      <span class="param-label">{{ $t('step2.' + key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())) }}</span>
+                      <input v-if="step3EditMode" class="inline-input small" type="number" min="0" max="1" step="0.01"
+                        v-model.number="simulationConfig.reddit_config[key]" />
+                      <span v-else class="config-item-value">{{ simulationConfig.reddit_config[key] }}</span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- LLM 配置推理 -->
+            <!-- LLM reasoning -->
             <div v-if="simulationConfig.generation_reasoning" class="config-block">
               <div class="config-block-header">
                 <span class="config-block-title">{{ $t('step2.llmConfigReasoning') }}</span>
               </div>
               <div class="reasoning-content">
-                <div 
-                  v-for="(reason, idx) in simulationConfig.generation_reasoning.split('|').slice(0, 2)" 
-                  :key="idx" 
+                <div
+                  v-for="(reason, idx) in simulationConfig.generation_reasoning.split('|').slice(0, 2)"
+                  :key="idx"
                   class="reasoning-item"
                 >
                   <p class="reasoning-text">{{ reason.trim() }}</p>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </div>
@@ -469,14 +515,14 @@
       </div>
 
       <!-- Step 05: 准备完成 -->
-      <div class="step-card" :class="{ 'active': phase === 4 }">
+      <div class="step-card" :class="{ 'active': phase >= 3 }">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">05</span>
             <span class="step-title">{{ $t('step2.setupComplete') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="phase >= 4" class="badge processing">{{ $t('step1.inProgress') }}</span>
+            <span v-if="phase >= 3" class="badge processing">{{ $t('step1.inProgress') }}</span>
             <span v-else class="badge pending">{{ $t('common.pending') }}</span>
           </div>
         </div>
@@ -568,7 +614,7 @@
             </button>
             <button 
               class="action-btn primary"
-              :disabled="phase < 4"
+              :disabled="phase < 3"
               @click="handleStartSimulation"
             >
               {{ $t('step2.startDualWorldSim') }} ➝
@@ -589,7 +635,7 @@
 
         <div v-if="agentModalMode === 'edit'" class="modal-body">
           <div class="field-group" v-for="field in ['name', 'bio', 'persona', 'age', 'gender', 'mbti', 'country', 'profession', 'stance']" :key="field">
-            <label>{{ field }}</label>
+            <label>{{ $t('step2.agentField_' + field) }}</label>
             <textarea v-if="['bio', 'persona'].includes(field)" v-model="editForm[field]" rows="3" />
             <input v-else v-model="editForm[field]" />
           </div>
@@ -728,7 +774,10 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   prepareSimulation,
+  getGraphEntityCount,
+  getSimulation,
   getPrepareStatus,
+  getTaskStatus,
   getSimulationProfilesRealtime,
   getSimulationConfig,
   getSimulationConfigRealtime,
@@ -772,8 +821,13 @@ let lastLoggedConfigStage = ''
 const useCustomRounds = ref(false) // 默认使用自动配置轮数
 const customMaxRounds = ref(40)   // 默认推荐40轮
 
+// Fase pre (agent count selector)
+const availableEntityCount = ref(null) // total entities available in the graph
+const maxAgentsInput = ref(null)       // user-selected max agents (null = all)
+const entityCountLoading = ref(false)
+
 // Fase A/B state
-const currentPhase = ref('generating') // 'generating' | 'phase_a' | 'phase_b'
+const currentPhase = ref('phase_pre') // 'phase_pre' | 'generating' | 'phase_a' | 'phase_b'
 const agentModalOpen = ref(false)
 const agentModalMode = ref('view')    // 'view' | 'edit' | 'regen'
 const selectedAgent = ref(null)
@@ -785,29 +839,28 @@ const deleteConfirmAgent = ref(null)
 const generateConfigLoading = ref(false)
 const generateConfigTaskId = ref(null)
 
-// Fase B state
-const phaseBConfig = ref(null)
-const phaseBSaving = ref(false)
-const configForm = ref({
-  total_simulation_hours: 24,
-  minutes_per_round: 60,
-  following_probability: 0.05,
-  recsys_type: 'random',
-})
+// Step 03 inline editing state
+const step3EditMode = ref(false)
+const configSaving = ref(false)
 
-// Watch stage to update phase
+// Watch stage to update phase.
+// In the F2A/B flow, config is generated in a separate step (generate-config endpoint),
+// so startConfigPolling must NOT be triggered here — only in loadPreparedData / continueToPhaseB.
 watch(currentStage, (newStage) => {
   if (newStage === '生成Agent人设' || newStage === 'generating_profiles') {
     phase.value = 1
   } else if (newStage === '生成模拟配置' || newStage === 'generating_config') {
-    phase.value = 2
-    // 进入配置生成阶段，开始轮询配置
-    if (!configTimer) {
-      addLog(t('log.startGeneratingConfig'))
-      startConfigPolling()
+    // Only activate step-03 and config polling when we are past phase_a (i.e. config was
+    // explicitly triggered via continueToPhaseB, not during profile generation).
+    if (currentPhase.value === 'phase_b' || currentPhase.value === 'generating' && phase.value >= 2) {
+      phase.value = 2
+      if (!configTimer) {
+        addLog(t('log.startGeneratingConfig'))
+        startConfigPolling()
+      }
     }
   } else if (newStage === '准备模拟脚本' || newStage === 'copying_scripts') {
-    phase.value = 2 // 仍属于配置阶段
+    phase.value = 2
   }
 })
 
@@ -860,20 +913,16 @@ const addLog = (msg) => {
   emit('add-log', msg)
 }
 
-// 处理开始模拟按钮点击
-const handleStartSimulation = () => {
-  // 构建传递给父组件的参数
+// Step 05 launch button — emits next-step
+const handleStartSimulation = async () => {
+  phase.value = 4
   const params = {}
-  
   if (useCustomRounds.value) {
-    // 用户自定义轮数，传递 max_rounds 参数
     params.maxRounds = customMaxRounds.value
     addLog(t('log.startSimCustomRounds', { rounds: customMaxRounds.value }))
   } else {
-    // 用户选择保持自动生成的轮数，不传递 max_rounds 参数
     addLog(t('log.startSimAutoRounds', { rounds: autoGeneratedRounds.value }))
   }
-  
   emit('next-step', params)
 }
 
@@ -888,6 +937,12 @@ const selectProfile = (profile) => {
   selectedProfile.value = profile
 }
 
+// Kick off preparation after the user confirms the pre-phase selector
+const confirmPrePhase = () => {
+  currentPhase.value = 'generating'
+  startPrepareSimulation()
+}
+
 // 自动开始准备模拟
 const startPrepareSimulation = async () => {
   if (!props.simulationId) {
@@ -895,24 +950,40 @@ const startPrepareSimulation = async () => {
     emit('update-status', 'error')
     return
   }
-  
+
+  // Ensure generating phase is active regardless of how this was invoked
+  if (currentPhase.value === 'phase_pre') {
+    currentPhase.value = 'generating'
+  }
+
   // 标记第一步完成，开始第二步
   phase.value = 1
   addLog(t('log.simInstanceCreated', { id: props.simulationId }))
   addLog(t('log.preparingSimEnv'))
   emit('update-status', 'processing')
-  
+
   try {
-    const res = await prepareSimulation({
+    const preparePayload = {
       simulation_id: props.simulationId,
       use_llm_for_profiles: true,
       parallel_profile_count: 5
-    })
+    }
+    if (maxAgentsInput.value && maxAgentsInput.value < (availableEntityCount.value ?? Infinity)) {
+      preparePayload.max_agents = maxAgentsInput.value
+    }
+    const res = await prepareSimulation(preparePayload)
     
     if (res.success && res.data) {
       if (res.data.already_prepared) {
         addLog(t('log.detectedExistingPrep'))
-        await loadPreparedData()
+        if (res.data.status === 'profiles_ready') {
+          await fetchProfilesRealtime()
+          addLog(t('log.loadedAgentProfiles', { count: profiles.value.length }))
+          currentPhase.value = 'phase_a'
+          emit('update-status', 'profiles_ready')
+        } else {
+          await loadPreparedData()
+        }
         return
       }
       
@@ -1011,8 +1082,13 @@ const pollPrepareStatus = async () => {
         }
       }
       
-      // 检查是否完成
-      if (data.status === 'profiles_ready') {
+      // Check completion using simulation_status (set by backend alongside task status).
+      // data.status is the task status (processing/completed/failed).
+      // data.simulation_status is the actual simulation FSM state.
+      const simStatus = data.simulation_status
+      const taskStatus = data.status
+
+      if (simStatus === 'profiles_ready') {
         addLog(t('log.prepareComplete'))
         stopPolling()
         stopProfilesPolling()
@@ -1020,12 +1096,12 @@ const pollPrepareStatus = async () => {
         addLog(t('log.loadedAgentProfiles', { count: profiles.value.length }))
         currentPhase.value = 'phase_a'
         emit('update-status', 'profiles_ready')
-      } else if (data.status === 'completed' || data.status === 'ready' || data.already_prepared) {
+      } else if (simStatus === 'ready' || (data.already_prepared && simStatus && simStatus !== 'profiles_ready')) {
         addLog(t('log.prepareComplete'))
         stopPolling()
         stopProfilesPolling()
         await loadPreparedData()
-      } else if (data.status === 'failed') {
+      } else if (taskStatus === 'failed') {
         addLog(t('log.prepareFailedWithError', { error: data.error || t('common.unknownError') }))
         stopPolling()
         stopProfilesPolling()
@@ -1111,36 +1187,12 @@ const fetchConfigRealtime = async () => {
         }
       }
       
-      // 如果配置已生成
+      // Si la config ja és generada, actualitzem simulationConfig però NO saltem a phase=4.
+      // La transició phase_b → phase=4 la gestiona exclusivament launchSimulation/loadPreparedData,
+      // per garantir que l'usuari vegi el formulari de Fase B (step 03-05) abans de llançar.
       if (data.config_generated && data.config) {
         simulationConfig.value = data.config
-        addLog(t('log.configComplete'))
-
-        // 显示详细配置摘要
-        if (data.summary) {
-          addLog(t('log.configSummaryAgents', { count: data.summary.total_agents }))
-          addLog(t('log.configSummaryHours', { hours: data.summary.simulation_hours }))
-          addLog(t('log.configSummaryPosts', { count: data.summary.initial_posts_count }))
-          addLog(t('log.configSummaryTopics', { count: data.summary.hot_topics_count }))
-          addLog(t('log.configSummaryPlatforms', { twitter: data.summary.has_twitter_config ? '✓' : '✗', reddit: data.summary.has_reddit_config ? '✓' : '✗' }))
-        }
-        
-        // 显示时间配置详情
-        if (data.config.time_config) {
-          const tc = data.config.time_config
-          addLog(t('log.timeConfigDetail', { minutes: tc.minutes_per_round, rounds: Math.floor((tc.total_simulation_hours * 60) / tc.minutes_per_round) }))
-        }
-        
-        // 显示事件配置
-        if (data.config.event_config?.narrative_direction) {
-          const narrative = data.config.event_config.narrative_direction
-          addLog(t('log.narrativeDirection', { direction: narrative.length > 50 ? narrative.substring(0, 50) + '...' : narrative }))
-        }
-        
         stopConfigPolling()
-        phase.value = 4
-        addLog(t('log.envSetupComplete'))
-        emit('update-status', 'completed')
       }
     }
   } catch (err) {
@@ -1163,16 +1215,9 @@ const loadPreparedData = async () => {
       if (res.data.config_generated && res.data.config) {
         simulationConfig.value = res.data.config
         addLog(t('log.configLoadSuccess'))
-
-        // 显示详细配置摘要
-        if (res.data.summary) {
-          addLog(t('log.configSummaryAgents', { count: res.data.summary.total_agents }))
-          addLog(t('log.configSummaryHours', { hours: res.data.summary.simulation_hours }))
-          addLog(t('log.configSummaryPostsAlt', { count: res.data.summary.initial_posts_count }))
-        }
-
         addLog(t('log.envSetupComplete'))
-        phase.value = 4
+        phase.value = 3
+        currentPhase.value = 'phase_b'
         emit('update-status', 'completed')
       } else {
         // 配置尚未生成，开始轮询
@@ -1188,21 +1233,45 @@ const loadPreparedData = async () => {
 
 // ---- Fase A/B helpers ----
 
+// Generic task poller: polls simulation status directly until status reaches targetStatuses.
+// Used for generate-config (which moves sim through configuring → ready).
+const pollSimStatusUntil = async (targetStatuses, onComplete, intervalMs = 2000, maxWaitMs = 300000) => {
+  const deadline = Date.now() + maxWaitMs
+  return new Promise((resolve) => {
+    const interval = setInterval(async () => {
+      try {
+        if (Date.now() > deadline) { clearInterval(interval); resolve(); return }
+        const res = await getSimulation(props.simulationId)
+        const simStatus = res?.data?.status
+        if (targetStatuses.includes(simStatus)) {
+          clearInterval(interval)
+          onComplete && onComplete()
+          resolve()
+        } else if (simStatus === 'failed') {
+          clearInterval(interval)
+          resolve()
+        }
+      } catch {
+        clearInterval(interval)
+        resolve()
+      }
+    }, intervalMs)
+  })
+}
+
 const pollTaskUntilDone = async (taskId, onComplete, intervalMs = 2000) => {
   if (!taskId) { onComplete && onComplete(); return }
   return new Promise((resolve) => {
     const interval = setInterval(async () => {
       try {
-        const res = await getPrepareStatus({
-          task_id: taskId,
-          simulation_id: props.simulationId
-        })
-        const status = res.data?.status || res.data?.data?.status
-        if (status === 'completed') {
+        const res = await getTaskStatus(taskId)
+        const d = res.data || {}
+        const taskStatus = d.status
+        if (taskStatus === 'completed') {
           clearInterval(interval)
-          onComplete && onComplete(res.data?.result || res.data?.data?.result)
+          onComplete && onComplete(d.result)
           resolve()
-        } else if (status === 'failed') {
+        } else if (taskStatus === 'failed') {
           clearInterval(interval)
           resolve()
         }
@@ -1232,9 +1301,10 @@ const saveAgent = async () => {
   editLoading.value = true
   try {
     const res = await patchAgent(props.simulationId, selectedAgent.value.user_id, editForm.value)
-    if (res.data?.success) {
+    // axios interceptor: res = { success, data: updatedProfile }
+    if (res.success) {
       const idx = profiles.value.findIndex(p => p.user_id === selectedAgent.value.user_id)
-      if (idx !== -1) profiles.value[idx] = res.data.data
+      if (idx !== -1) profiles.value[idx] = res.data
       closeAgentModal()
     }
   } finally {
@@ -1246,7 +1316,7 @@ const confirmDeleteAgent = async (agent) => {
   if (!confirm(t('step2.deleteAgentConfirm'))) return
   try {
     const res = await deleteAgent(props.simulationId, agent.user_id)
-    if (res.data?.success) {
+    if (res.success) {
       profiles.value = profiles.value.filter(p => p.user_id !== agent.user_id)
       closeAgentModal()
     }
@@ -1262,9 +1332,9 @@ const doRegenerate = async () => {
     const res = await regenerateAgent(props.simulationId, selectedAgent.value.user_id, {
       extra_instructions: regenInstructions.value
     })
-    if (res.data?.success) {
-      await pollTaskUntilDone(res.data.data?.task_id, () => {})
-      // Refresh profiles
+    // res = { success, data: { task_id } }
+    if (res.success) {
+      await pollTaskUntilDone(res.data?.task_id, () => {})
       await fetchProfilesRealtime()
       closeAgentModal()
     }
@@ -1275,52 +1345,62 @@ const doRegenerate = async () => {
 
 const continueToPhaseB = async () => {
   generateConfigLoading.value = true
+  phase.value = 2  // activar step 03 mentre es genera la config
+  addLog(t('log.startGeneratingConfig'))
+  startConfigPolling()
   try {
     const res = await generateConfig(props.simulationId)
-    if (res.data?.success) {
-      generateConfigTaskId.value = res.data.data?.task_id
-      await pollTaskUntilDone(res.data.data?.task_id, async () => {
-        // Load config for display
+    if (res.success) {
+      // Poll sim status directly (configuring → ready) to avoid conflicts with prepare/status endpoint
+      await pollSimStatusUntil(['ready'], async () => {
+        stopConfigPolling()
         const configRes = await getSimulationConfig(props.simulationId)
-        if (configRes.data?.success) {
-          phaseBConfig.value = configRes.data.data
-          const tc = phaseBConfig.value?.time_config || {}
-          configForm.value = {
-            total_simulation_hours: tc.total_simulation_hours ?? 24,
-            minutes_per_round: tc.minutes_per_round ?? 60,
-            following_probability: phaseBConfig.value?.following_probability ?? 0.05,
-            recsys_type: phaseBConfig.value?.recsys_type ?? 'random',
-          }
+        if (configRes.success) {
+          simulationConfig.value = configRes.data
         }
+        // phase_b mostra el formulari de paràmetres globals dins step 02,
+        // step 03 ja és visible (phase=2) amb la config generada,
+        // step 05 s'activa quan l'usuari prem "Llança"
+        phase.value = 3
         currentPhase.value = 'phase_b'
+        addLog(t('log.configComplete'))
+        addLog(t('log.envSetupComplete'))
+        emit('update-status', 'completed')
       })
-      // If task_id is null, generateConfig was synchronous — set phase_b directly
-      if (!res.data.data?.task_id) {
-        currentPhase.value = 'phase_b'
-      }
+    } else {
+      stopConfigPolling()
+      phase.value = 1
     }
   } finally {
     generateConfigLoading.value = false
   }
 }
 
-const saveGlobalConfig = async () => {
-  phaseBSaving.value = true
+const saveFullConfig = async () => {
+  if (!props.simulationId || !simulationConfig.value) return
+  configSaving.value = true
   try {
-    await patchSimulationConfig(props.simulationId, configForm.value)
+    await patchSimulationConfig(props.simulationId, simulationConfig.value)
+    step3EditMode.value = false
+    addLog(t('log.configSaved'))
+  } catch (err) {
+    addLog(`Config save failed: ${err.message}`)
   } finally {
-    phaseBSaving.value = false
+    configSaving.value = false
   }
 }
 
-const launchSimulation = async () => {
-  await saveGlobalConfig()
-  const params = {}
-  if (useCustomRounds.value) {
-    params.maxRounds = customMaxRounds.value
+const toggleAgentHour = (agent, hour) => {
+  if (!agent.active_hours) agent.active_hours = []
+  const idx = agent.active_hours.indexOf(hour)
+  if (idx === -1) {
+    agent.active_hours.push(hour)
+    agent.active_hours.sort((a, b) => a - b)
+  } else {
+    agent.active_hours.splice(idx, 1)
   }
-  emit('next-step', params)
 }
+
 
 // Scroll log to bottom
 const logContent = ref(null)
@@ -1332,11 +1412,53 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
-  // 自动开始准备流程
-  if (props.simulationId) {
-    addLog(t('log.step2Init'))
-    startPrepareSimulation()
+const fetchEntityCount = async (graphId) => {
+  if (!graphId || availableEntityCount.value !== null) return
+  entityCountLoading.value = true
+  try {
+    const res = await getGraphEntityCount(graphId)
+    const count = res?.data?.filtered_count ?? res?.filtered_count ?? null
+    availableEntityCount.value = count
+    if (maxAgentsInput.value === null) maxAgentsInput.value = count
+  } catch (err) {
+    console.warn('[Step2] getGraphEntityCount failed:', err?.message ?? err)
+  } finally {
+    entityCountLoading.value = false
+  }
+}
+
+// Watch graph_id so entity count loads even when projectData arrives after mount
+watch(() => props.projectData?.graph_id, (graphId) => {
+  if (graphId && currentPhase.value === 'phase_pre') fetchEntityCount(graphId)
+})
+
+onMounted(async () => {
+  if (!props.simulationId) return
+  addLog(t('log.step2Init'))
+
+  // Check current simulation state and restore the correct phase without re-launching preparation
+  try {
+    const simRes = await getSimulation(props.simulationId)
+    const simStatus = simRes?.data?.status
+    if (simStatus && simStatus !== 'created') {
+      if (simStatus === 'profiles_ready') {
+        // Agents generated, awaiting Fase A — load profiles and show edit controls
+        currentPhase.value = 'generating'
+        await fetchProfilesRealtime()
+        addLog(t('log.loadedAgentProfiles', { count: profiles.value.length }))
+        currentPhase.value = 'phase_a'
+        emit('update-status', 'profiles_ready')
+      } else {
+        // Any other non-created status: let startPrepareSimulation detect already_prepared
+        startPrepareSimulation()
+      }
+      return
+    }
+  } catch { /* ignore */ }
+
+  // Fresh simulation (status=created) — fetch entity count for phase_pre selector
+  if (props.projectData?.graph_id) {
+    fetchEntityCount(props.projectData.graph_id)
   }
 })
 
@@ -1622,6 +1744,11 @@ onUnmounted(() => {
   background: #FFF;
 }
 
+.profile-card--clickable:hover {
+  border-color: #1a1a1a;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
 .profile-header {
   display: flex;
   align-items: baseline;
@@ -1688,6 +1815,19 @@ onUnmounted(() => {
 /* Config Detail Panel */
 .config-detail-panel {
   margin-top: 16px;
+}
+
+.config-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.config-toolbar .action-btn,
+.config-toolbar .continue-btn {
+  padding: 6px 14px;
+  font-size: 12px;
 }
 
 .config-block {
@@ -2868,6 +3008,20 @@ onUnmounted(() => {
 }
 
 /* Fase A footer */
+.phase-pre-section { padding: 12px 0 4px; }
+.phase-pre-loading { color: #888; font-size: 13px; }
+.phase-pre-info { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 14px; color: #444; }
+.phase-pre-count { font-weight: 600; font-size: 20px; color: #1a1a1a; }
+.phase-pre-input-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.phase-pre-input-label { font-size: 13px; color: #555; white-space: nowrap; }
+.phase-pre-input {
+  width: 90px; padding: 6px 10px; border: 1px solid #D0D0D0; border-radius: 6px;
+  font-size: 14px; text-align: center;
+}
+.phase-pre-input:focus { outline: none; border-color: #1a1a1a; }
+.phase-pre-warn { font-size: 12px; color: #E07B00; }
+.phase-pre-footer { display: flex; justify-content: flex-end; padding-top: 12px; }
+
 .phase-a-footer {
   display: flex;
   justify-content: flex-end;

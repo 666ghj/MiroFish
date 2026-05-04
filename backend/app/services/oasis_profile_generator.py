@@ -99,9 +99,13 @@ class OasisAgentProfile:
             profile["profession"] = self.profession
         if self.interested_topics:
             profile["interested_topics"] = self.interested_topics
-        
+        if self.source_entity_uuid:
+            profile["source_entity_uuid"] = self.source_entity_uuid
+        if self.source_entity_type:
+            profile["source_entity_type"] = self.source_entity_type
+
         return profile
-    
+
     def to_twitter_format(self) -> Dict[str, Any]:
         """Convert to Twitter platform format"""
         profile = {

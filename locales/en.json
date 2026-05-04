@@ -2,6 +2,7 @@
   "common": {
     "confirm": "Confirm",
     "cancel": "Cancel",
+    "save": "Save",
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
@@ -23,7 +24,8 @@
     "minutes": "minutes",
     "rounds": "rounds",
     "items": "items",
-    "files": "files"
+    "files": "files",
+    "edit": "Edit"
   },
   "meta": {
     "title": "MiroFish - Predict Everything",
@@ -231,7 +233,21 @@
     "totalHours": "Total Hours",
     "minutesPerRound": "Minutes per Round",
     "followingProbability": "Following Probability",
-    "recsysType": "Recommendation System"
+    "recsysType": "Recommendation System",
+    "loadingEntityCount": "Loading available entities...",
+    "availableEntities": "Available entities in graph:",
+    "maxAgentsLabel": "Number of agents to generate:",
+    "minAgentsWarning": "Fewer than 15 agents may produce less rich simulations",
+    "startGeneration": "Start Generation",
+    "agentField_name": "Name",
+    "agentField_bio": "Bio",
+    "agentField_persona": "Persona",
+    "agentField_age": "Age",
+    "agentField_gender": "Gender",
+    "agentField_mbti": "MBTI",
+    "agentField_country": "Country",
+    "agentField_profession": "Profession",
+    "agentField_stance": "Stance"
   },
   "step3": {
     "startGenerateReport": "Generate Report",
@@ -646,7 +662,8 @@
     "enterStep": "Entering Step {step}: {name}",
     "returnToStep": "Returning to Step {step}: {name}",
     "customSimRounds": "Custom simulation rounds: {rounds} rounds",
-    "reconnectingToTask": "Reconnecting to active task {taskId}…"
+    "reconnectingToTask": "Reconnecting to active task {taskId}…",
+    "configSaved": "✓ Configuration saved"
   },
   "report": {
     "taskStarted": "Report generation task started",

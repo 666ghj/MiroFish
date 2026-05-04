@@ -46,6 +46,31 @@ def optimize_interview_prompt(prompt: str) -> str:
 
 # ============== Entity retrieval endpoints ==============
 
+@simulation_bp.route('/entities/<graph_id>/count', methods=['GET'])
+def get_graph_entity_count(graph_id: str):
+    """
+    Fast entity count for a graph — returns only the filtered_count,
+    no entity data or edge enrichment.
+    """
+    try:
+        reader = ZepEntityReader()
+        result = reader.filter_defined_entities(
+            graph_id=graph_id,
+            defined_entity_types=None,
+            enrich_with_edges=False
+        )
+        return jsonify({
+            "success": True,
+            "data": {
+                "filtered_count": result.filtered_count,
+                "entity_types": list(result.entity_types),
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to get entity count for graph {graph_id}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @simulation_bp.route('/entities/<graph_id>', methods=['GET'])
 def get_graph_entities(graph_id: str):
     """
@@ -245,14 +270,32 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     if not os.path.exists(simulation_dir):
         return False, {"reason": "Simulation directory does not exist"}
 
-    # Required file list (scripts excluded; scripts are in backend/scripts/)
-    required_files = [
-        "state.json",
-        "simulation_config.json",
-        "reddit_profiles.json",
-        "twitter_profiles.csv"
-    ]
-    
+    # Read state.json first to know which files are required.
+    # profiles_ready = agents done but config not yet generated (Fase A waiting for user).
+    # All other active statuses require simulation_config.json too.
+    state_file = os.path.join(simulation_dir, "state.json")
+    if not os.path.exists(state_file):
+        return False, {"reason": "Missing state.json"}
+
+    import json
+    try:
+        with open(state_file, 'r', encoding='utf-8') as _f:
+            _state_preview = json.load(_f)
+        _preview_status = _state_preview.get("status", "")
+    except Exception:
+        _preview_status = ""
+
+    profiles_only_statuses = {"profiles_ready"}
+    if _preview_status in profiles_only_statuses:
+        required_files = ["state.json", "reddit_profiles.json"]
+    else:
+        required_files = [
+            "state.json",
+            "simulation_config.json",
+            "reddit_profiles.json",
+            "twitter_profiles.csv"
+        ]
+
     # Check if files exist
     existing_files = []
     missing_files = []
@@ -262,7 +305,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
             existing_files.append(f)
         else:
             missing_files.append(f)
-    
+
     if missing_files:
         return False, {
             "reason": "Missing required files",
@@ -270,14 +313,10 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
             "existing_files": existing_files
         }
 
-    # Check status in state.json
-    state_file = os.path.join(simulation_dir, "state.json")
+    # Check status in state.json (already read above; reuse to avoid double read)
     try:
-        import json
-        with open(state_file, 'r', encoding='utf-8') as f:
-            state_data = json.load(f)
-        
-        status = state_data.get("status", "")
+        state_data = _state_preview
+        status = _preview_status
         config_generated = state_data.get("config_generated", False)
         
         # Detailed log
@@ -291,8 +330,10 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - completed: run finished, meaning preparation completed long ago
         # - stopped: stopped, meaning preparation completed long ago
         # - failed: run failed (but preparation was complete)
+        # profiles_ready = agents generated, awaiting user confirmation (config not yet generated)
+        # all other statuses require config_generated=True to be considered fully prepared
         prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
-        if status in prepared_statuses and config_generated:
+        if status == "profiles_ready" or (status in prepared_statuses and config_generated):
             # Get file statistics
             profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
             config_file = os.path.join(simulation_dir, "simulation_config.json")
@@ -415,11 +456,14 @@ def prepare_simulation():
             logger.debug(f"Check result: is_prepared={is_prepared}, prepare_info={prepare_info}")
             if is_prepared:
                 logger.info(f"Simulation {simulation_id} is already prepared; skipping regeneration")
+                # Return the actual simulation status so the frontend can decide
+                # whether to show Fase A (profiles_ready) or skip it (ready).
+                actual_status = state.status.value if hasattr(state.status, 'value') else str(state.status)
                 return jsonify({
                     "success": True,
                     "data": {
                         "simulation_id": simulation_id,
-                        "status": "ready",
+                        "status": actual_status,
                         "message": t('api.alreadyPrepared'),
                         "already_prepared": True,
                         "prepare_info": prepare_info
@@ -468,10 +512,11 @@ def prepare_simulation():
                 defined_entity_types=entity_types_list,
                 enrich_with_edges=False  # Skip edge info to speed things up
             )
-            # Save entity count to state (so frontend can fetch it immediately)
-            state.entities_count = filtered_preview.filtered_count
+            # Save entity count to state — capped by max_agents if provided
+            raw_count = filtered_preview.filtered_count
+            state.entities_count = min(raw_count, max_agents) if max_agents else raw_count
             state.entity_types = list(filtered_preview.entity_types)
-            logger.info(f"Expected entity count: {filtered_preview.filtered_count}, types: {filtered_preview.entity_types}")
+            logger.info(f"Expected entity count: {state.entities_count} (raw={raw_count}, max_agents={max_agents})")
         except Exception as e:
             logger.warning(f"Failed to synchronously fetch entity count (will retry in background task): {e}")
             # Failure does not block the rest of the flow; the background task will retry.
@@ -669,18 +714,21 @@ def get_prepare_status():
         if simulation_id:
             is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
             if is_prepared:
+                sim_state = SimulationManager().get_simulation(simulation_id)
+                actual_status = sim_state.status.value if sim_state and hasattr(sim_state.status, 'value') else "ready"
                 return jsonify({
                     "success": True,
                     "data": {
                         "simulation_id": simulation_id,
-                        "status": "ready",
+                        "status": actual_status,
+                        "simulation_status": actual_status,  # mirror so frontend pollPrepareStatus can detect profiles_ready
                         "progress": 100,
                         "message": t('api.alreadyPrepared'),
                         "already_prepared": True,
                         "prepare_info": prepare_info
                     }
                 })
-        
+
         # If no task_id, return error
         if not task_id:
             if simulation_id:
@@ -708,12 +756,14 @@ def get_prepare_status():
             if simulation_id:
                 is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
                 if is_prepared:
+                    sim_state = SimulationManager().get_simulation(simulation_id)
+                    actual_status = sim_state.status.value if sim_state and hasattr(sim_state.status, 'value') else "ready"
                     return jsonify({
                         "success": True,
                         "data": {
                             "simulation_id": simulation_id,
                             "task_id": task_id,
-                            "status": "ready",
+                            "status": actual_status,
                             "progress": 100,
                             "message": t('api.taskCompletedPrepared'),
                             "already_prepared": True,
@@ -728,7 +778,15 @@ def get_prepare_status():
         
         task_dict = task
         task_dict["already_prepared"] = False
-        
+
+        # Add the real simulation status alongside the task status so the frontend
+        # can show the correct phase without altering task.status (which is used by
+        # pollTaskUntilDone to detect completion).
+        if simulation_id:
+            sim_state = SimulationManager().get_simulation(simulation_id)
+            if sim_state:
+                task_dict["simulation_status"] = sim_state.status.value if hasattr(sim_state.status, 'value') else str(sim_state.status)
+
         return jsonify({
             "success": True,
             "data": task_dict
@@ -2831,6 +2889,7 @@ def generate_config_endpoint(simulation_id: str):
         current_locale = get_locale()
 
         def run_generate_config():
+            import json as _json
             set_locale(current_locale)
             try:
                 task_manager.update_task(task_id, status=TaskStatus.PROCESSING, progress=0,
@@ -2839,9 +2898,9 @@ def generate_config_endpoint(simulation_id: str):
                 sim_dir = manager._get_simulation_dir(simulation_id)
                 profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
                 with open(profiles_file, 'r', encoding='utf-8') as f:
-                    profiles = json.load(f)
+                    profiles = _json.load(f)
 
-                from ..services.zep_entity_reader import ZepEntityReader
+                from ..services.zep_entity_reader import ZepEntityReader, EntityNode
                 entity_nodes = []
                 reader = ZepEntityReader()
                 for p in profiles:
@@ -2854,17 +2913,41 @@ def generate_config_endpoint(simulation_id: str):
                         except Exception:
                             pass
 
-                gen = SimulationConfigGenerator(graph_id=state.graph_id)
-                params = gen.generate_simulation_parameters(
+                # If Zep lookup yielded nothing, synthesize minimal EntityNodes from profiles
+                # so the config generator can still produce per-agent configs.
+                if not entity_nodes:
+                    for p in profiles:
+                        user_id = p.get("user_id", 0)
+                        entity_nodes.append(EntityNode(
+                            uuid=p.get("source_entity_uuid") or f"profile_{user_id}",
+                            name=p.get("name") or p.get("username") or f"agent_{user_id}",
+                            labels=[p.get("profession") or "Person"],
+                            summary=p.get("bio") or "",
+                            attributes={
+                                "age": p.get("age"),
+                                "gender": p.get("gender"),
+                                "country": p.get("country"),
+                                "profession": p.get("profession"),
+                                "mbti": p.get("mbti"),
+                                "stance": p.get("stance"),
+                            },
+                        ))
+
+                gen = SimulationConfigGenerator()
+                params = gen.generate_config(
+                    simulation_id=simulation_id,
+                    project_id=state.project_id,
+                    graph_id=state.graph_id,
                     simulation_requirement=simulation_requirement,
                     document_text=document_text,
                     entities=entity_nodes,
+                    enable_twitter=state.enable_twitter,
+                    enable_reddit=state.enable_reddit,
                 )
 
-                config_data = params.to_dict() if hasattr(params, 'to_dict') else {}
                 config_file = os.path.join(sim_dir, "simulation_config.json")
                 with open(config_file, 'w', encoding='utf-8') as f:
-                    json.dump(config_data, f, ensure_ascii=False, indent=2)
+                    f.write(params.to_json())
 
                 state2 = manager.get_simulation(simulation_id)
                 if state2:
@@ -3100,10 +3183,8 @@ def regenerate_agent(simulation_id: str, user_id: int):
         if agent_entry is None:
             return jsonify({"success": False, "error": t('api.agentNotFound', user_id=user_id)}), 404
 
-        source_entity_uuid = agent_entry.get("source_entity_uuid")
-        if not source_entity_uuid:
-            return jsonify({"success": False, "error": t('api.agentNoSourceEntity')}), 400
-
+        # source_entity_uuid may be None for profiles generated before this field was persisted;
+        # the background task will fall back to searching by agent name.
         task_manager = TaskManager()
         task_id = task_manager.create_task(
             task_type="regenerate_agent",
@@ -3134,14 +3215,27 @@ def regenerate_agent(simulation_id: str, user_id: int):
                     raise LookupError(f"Agent with user_id {user_id} not found")
 
                 source_entity_uuid = agent.get("source_entity_uuid")
-                if not source_entity_uuid:
-                    raise ValueError(f"Agent {user_id} has no source_entity_uuid — cannot regenerate")
-
-                # Fetch entity
                 reader = ZepEntityReader()
-                entity = reader.get_entity_with_context(state.graph_id, source_entity_uuid)
+                entity = None
+                if source_entity_uuid:
+                    entity = reader.get_entity_with_context(state.graph_id, source_entity_uuid)
+
+                # Fallback: search by agent name when UUID is missing (profiles generated before
+                # source_entity_uuid was persisted in to_reddit_format).
                 if not entity:
-                    raise ValueError(f"Entity not found: {source_entity_uuid}")
+                    agent_name = agent.get("name") or agent.get("username") or ""
+                    if agent_name:
+                        all_entities_result = reader.filter_defined_entities(
+                            graph_id=state.graph_id,
+                            defined_entity_types=None,
+                            enrich_with_edges=True
+                        )
+                        for e in (all_entities_result.entities or []):
+                            if e.name and agent_name.lower() in e.name.lower():
+                                entity = e
+                                break
+                if not entity:
+                    raise ValueError(f"Entity not found for agent {user_id} (uuid={source_entity_uuid!r}, name={agent.get('name')!r})")
 
                 # Generate new profile
                 gen = OasisProfileGenerator(graph_id=state.graph_id)
@@ -3184,3 +3278,16 @@ def regenerate_agent(simulation_id: str, user_id: int):
     except Exception as e:
         logger.error(f"regenerate_agent endpoint error: {e}")
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@simulation_bp.route('/task/<task_id>', methods=['GET'])
+def get_task_status(task_id: str):
+    """Generic task status endpoint for polling any simulation-related async task."""
+    from ..models.task import TaskManager
+    try:
+        task = TaskManager().get_task(task_id)
+        if not task:
+            return jsonify({"success": False, "error": t('api.taskNotFound', id=task_id)}), 404
+        return jsonify({"success": True, "data": task})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

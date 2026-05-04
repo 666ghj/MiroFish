@@ -412,65 +412,11 @@ class SimulationManager:
                     total=len(profiles)
                 )
 
-            # ========== Stage 3: LLM intelligent simulation configuration generation ==========
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 0,
-                    t('progress.analyzingRequirements'),
-                    current=0,
-                    total=3
-                )
+            # Note: config generation (Stage 3) is intentionally NOT done here.
+            # It happens in generate_config_endpoint (Fase B) after the user reviews agents.
 
-            config_generator = SimulationConfigGenerator()
-
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 30,
-                    t('progress.callingLLMConfig'),
-                    current=1,
-                    total=3
-                )
-
-            sim_params = config_generator.generate_config(
-                simulation_id=simulation_id,
-                project_id=state.project_id,
-                graph_id=state.graph_id,
-                simulation_requirement=simulation_requirement,
-                document_text=document_text,
-                entities=filtered.entities,
-                enable_twitter=state.enable_twitter,
-                enable_reddit=state.enable_reddit
-            )
-
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 70,
-                    t('progress.savingConfigFiles'),
-                    current=2,
-                    total=3
-                )
-
-            # Save configuration file
-            config_path = os.path.join(sim_dir, "simulation_config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(sim_params.to_json())
-
-            state.config_generated = True
-            state.config_reasoning = sim_params.generation_reasoning
-
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 100,
-                    t('progress.configComplete'),
-                    current=3,
-                    total=3
-                )
-
-            # Note: run scripts remain in backend/scripts/; they are not copied to the simulation directory.
-            # When starting a simulation, simulation_runner runs scripts from the scripts/ directory.
-
-            # Update status
-            state.status = SimulationStatus.READY
+            # Update status — wait for user confirmation (Fase A) before config generation
+            state.status = SimulationStatus.PROFILES_READY
             self._save_simulation_state(state)
 
             logger.info(f"Simulation preparation complete: {simulation_id}, "

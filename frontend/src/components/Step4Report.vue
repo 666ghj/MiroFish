@@ -371,6 +371,18 @@
                       <span>Report Generation Complete</span>
                     </div>
                   </template>
+
+                  <!-- Report Error (inline log entry) -->
+                  <template v-if="log.action === 'error'">
+                    <div class="error-banner">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                      </svg>
+                      <span>{{ $t('step4.reportFailedBanner') }}</span>
+                    </div>
+                  </template>
                 </div>
 
                 <!-- Footer: Elapsed Time + Action Buttons -->
@@ -400,9 +412,27 @@
           </TransitionGroup>
 
           <!-- Empty State -->
-          <div v-if="agentLogs.length === 0 && !isComplete" class="workflow-empty">
+          <div v-if="agentLogs.length === 0 && !isComplete && !reportFailed" class="workflow-empty">
             <div class="empty-pulse"></div>
             <span>Waiting for agent activity...</span>
+          </div>
+
+          <!-- Failed State Banner (persistent) -->
+          <div v-if="reportFailed" class="failed-state-banner">
+            <div class="failed-banner-content">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color:#D32F2F">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <div class="failed-banner-text">
+                <strong>{{ $t('step4.reportFailedTitle') }}</strong>
+                <span v-if="reportErrorMessage" class="failed-error-msg">{{ reportErrorMessage }}</span>
+              </div>
+              <button class="retry-btn" @click="retryReport" :disabled="!simulationId">
+                {{ $t('step4.retryBtn') }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -427,7 +457,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, generateReport, getReport } from '../api/report'
 import service from '../api'
 
 const router = useRouter()
@@ -486,6 +516,8 @@ const expandedContent = ref(new Set())
 const expandedLogs = ref(new Set())
 const collapsedSections = ref(new Set())
 const isComplete = ref(false)
+const reportFailed = ref(false)
+const reportErrorMessage = ref('')
 const showDownloadMenu = ref(false)
 const startTime = ref(null)
 const leftPanel = ref(null)
@@ -1769,16 +1801,36 @@ const QuickSearchDisplay = {
 
 // Computed
 const statusClass = computed(() => {
+  if (reportFailed.value) return 'error'
   if (isComplete.value) return 'completed'
   if (agentLogs.value.length > 0) return 'processing'
   return 'pending'
 })
 
 const statusText = computed(() => {
-  if (isComplete.value) return 'Completed'
-  if (agentLogs.value.length > 0) return 'Generating...'
-  return 'Waiting'
+  if (reportFailed.value) return t('step4.statusFailed')
+  if (isComplete.value) return t('step4.statusCompleted')
+  if (agentLogs.value.length > 0) return t('step4.statusGenerating')
+  return t('step4.statusWaiting')
 })
+
+const retryReport = async () => {
+  if (!props.simulationId) return
+  reportFailed.value = false
+  reportErrorMessage.value = ''
+  try {
+    const res = await generateReport({
+      simulation_id: props.simulationId,
+      force_regenerate: true
+    })
+    if (res.success && res.data?.report_id) {
+      router.push({ name: 'Report', params: { reportId: res.data.report_id } })
+    }
+  } catch (err) {
+    reportFailed.value = true
+    reportErrorMessage.value = t('step4.retryFailed')
+  }
+}
 
 const totalSections = computed(() => {
   return reportOutline.value?.sections?.length || 0
@@ -2121,6 +2173,13 @@ const fetchAgentLog = async () => {
             stopPolling()
             // 滚动逻辑统一在循环结束后的 nextTick 中处理
           }
+
+          if (log.action === 'error') {
+            reportFailed.value = true
+            reportErrorMessage.value = log.details?.error_message || log.details?.message || t('step4.reportFailedGeneric')
+            emit('update-status', 'error')
+            stopPolling()
+          }
           
           if (log.action === 'report_start') {
             startTime.value = new Date(log.timestamp)
@@ -2216,12 +2275,27 @@ const fetchConsoleLog = async () => {
   }
 }
 
+const checkInitialReportStatus = async () => {
+  if (!props.reportId) return
+  try {
+    const res = await getReport(props.reportId)
+    if (res.success && res.data?.status === 'failed') {
+      reportFailed.value = true
+      reportErrorMessage.value = res.data.error || t('step4.reportFailedGeneric')
+      emit('update-status', 'error')
+      stopPolling()
+    }
+  } catch (err) {
+    console.warn('Could not check initial report status:', err)
+  }
+}
+
 const startPolling = () => {
   if (agentLogTimer || consoleLogTimer) return
-  
+
   fetchAgentLog()
   fetchConsoleLog()
-  
+
   agentLogTimer = setInterval(fetchAgentLog, 2000)
   consoleLogTimer = setInterval(fetchConsoleLog, 1500)
 }
@@ -2241,6 +2315,7 @@ const stopPolling = () => {
 onMounted(() => {
   if (props.reportId) {
     addLog(`Report Agent initialized: ${props.reportId}`)
+    checkInitialReportStatus()
     startPolling()
   }
   document.addEventListener('click', handleClickOutside)
@@ -2264,8 +2339,11 @@ watch(() => props.reportId, (newId) => {
     expandedLogs.value = new Set()
     collapsedSections.value = new Set()
     isComplete.value = false
+    reportFailed.value = false
+    reportErrorMessage.value = ''
     startTime.value = null
-    
+
+    checkInitialReportStatus()
     startPolling()
   }
 }, { immediate: true })
@@ -3464,6 +3542,74 @@ watch(() => props.reportId, (newId) => {
   color: #065F46;
   font-weight: 600;
   font-size: 14px;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: #FFF3F3;
+  border: 1px solid #FFCDD2;
+  border-radius: 8px;
+  color: #D32F2F;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.failed-state-banner {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #FFCDD2;
+  border-radius: 8px;
+  background: #FFF3F3;
+}
+
+.failed-banner-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.failed-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.failed-banner-text strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #D32F2F;
+}
+
+.failed-error-msg {
+  font-size: 12px;
+  color: #666;
+  word-break: break-word;
+}
+
+.retry-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: #000;
+  color: #FFF;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #333;
+}
+
+.retry-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .next-step-btn {
