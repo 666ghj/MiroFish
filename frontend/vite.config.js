@@ -13,7 +13,8 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true,
+    // Containers usually don't have xdg-open; keep browser auto-open opt-in.
+    open: process.env.VITE_OPEN_BROWSER === 'true',
     proxy: {
       '/api': {
         target: 'http://localhost:5001',
