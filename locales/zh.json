@@ -333,6 +333,7 @@
     "statusWaiting": "等待中"
   },
   "step5": {
+    "newSimulation": "← 新建模拟",
     "interactiveTools": "Interactive Tools",
     "agentsAvailable": "{count} agents available",
     "chatWithReportAgent": "与Report Agent对话",

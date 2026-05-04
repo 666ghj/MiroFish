@@ -323,6 +323,7 @@
     "world2": "Món 2"
   },
   "step5": {
+    "newSimulation": "← Nova simulació",
     "interactiveTools": "Eines interactives",
     "agentsAvailable": "{count} agents disponibles",
     "chatWithReportAgent": "Xateja amb l'Agent d'informe",

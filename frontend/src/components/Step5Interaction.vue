@@ -88,6 +88,12 @@
             <span class="action-bar-title">{{ $t('step5.interactiveTools') }}</span>
             <span class="action-bar-subtitle mono">{{ $t('step5.agentsAvailable', { count: profiles.length }) }}</span>
           </div>
+          <button class="restart-btn" @click="router.push('/')">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            {{ $t('step5.newSimulation') }}
+          </button>
         </div>
           <div class="action-bar-tabs">
             <button 
@@ -413,8 +419,11 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
+
+const router = useRouter()
 
 const { t } = useI18n()
 
@@ -1327,6 +1336,28 @@ watch(() => props.simulationId, (newId) => {
   align-items: center;
   gap: 12px;
   min-width: 160px;
+}
+
+.restart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  background: #F9FAFB;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.restart-btn:hover {
+  background: #F3F4F6;
+  border-color: #D1D5DB;
 }
 
 .action-bar-icon {

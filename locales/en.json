@@ -333,6 +333,7 @@
     "statusWaiting": "Waiting"
   },
   "step5": {
+    "newSimulation": "← New simulation",
     "interactiveTools": "Interactive Tools",
     "agentsAvailable": "{count} agents available",
     "chatWithReportAgent": "Chat with Report Agent",

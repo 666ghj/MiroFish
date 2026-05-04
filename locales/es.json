@@ -323,6 +323,7 @@
     "world2": "Mundo 2"
   },
   "step5": {
+    "newSimulation": "← Nueva simulación",
     "interactiveTools": "Herramientas interactivas",
     "agentsAvailable": "{count} agentes disponibles",
     "chatWithReportAgent": "Chat con Report Agent",
