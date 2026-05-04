@@ -44,7 +44,8 @@
               :title="$t('history.envSetup')"
             >◈</span>
             <span
-              class="status-icon unavailable"
+              class="status-icon"
+              :class="{ available: project.last_report_id || project.last_simulation_id, unavailable: !project.last_report_id && !project.last_simulation_id }"
               :title="$t('history.analysisReport')"
             >◆</span>
           </div>
@@ -173,7 +174,7 @@
               <button
                 class="modal-btn btn-report"
                 @click="goToReport"
-                :disabled="true"
+                :disabled="!selectedProject.last_report_id && !selectedProject.last_simulation_id"
               >
                 <span class="btn-step">Step4</span>
                 <span class="btn-icon">◆</span>
@@ -196,6 +197,7 @@ import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } f
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { listProjects } from '../api/graph'
+import { getReportBySimulation } from '../api/report'
 
 const router = useRouter()
 const route = useRoute()
@@ -427,8 +429,26 @@ const goToSimulation = () => {
 }
 
 // 导航到分析报告页面（Report）
-const goToReport = () => {
-  // Report not yet implemented in F1-1
+const goToReport = async () => {
+  if (!selectedProject.value) return
+
+  // Use known report_id if available
+  let reportId = selectedProject.value.last_report_id
+
+  // Otherwise look it up by simulation_id
+  if (!reportId && selectedProject.value.last_simulation_id) {
+    try {
+      const res = await getReportBySimulation(selectedProject.value.last_simulation_id)
+      reportId = res?.data?.report_id
+    } catch {
+      // no report found
+    }
+  }
+
+  if (reportId) {
+    closeModal()
+    router.push({ name: 'Interaction', params: { reportId } })
+  }
 }
 
 // 加载历史项目

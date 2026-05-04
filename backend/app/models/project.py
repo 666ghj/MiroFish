@@ -242,8 +242,43 @@ class ProjectManager:
 
     @classmethod
     def _to_dict(cls, proj: "ProjectModel") -> Dict[str, Any]:
+        import os, json as _json
         ontology = cls.get_ontology(proj.id)
         graph_external_id = cls.get_latest_graph_external_id(proj.id)
+
+        # Find the latest simulation for this project by scanning state.json files
+        last_simulation_id = None
+        last_report_id = None
+        sim_base = Config.OASIS_SIMULATION_DATA_DIR
+        if os.path.isdir(sim_base):
+            candidates = []
+            for entry in os.scandir(sim_base):
+                if not entry.is_dir():
+                    continue
+                state_path = os.path.join(entry.path, "state.json")
+                if not os.path.exists(state_path):
+                    continue
+                try:
+                    with open(state_path, encoding="utf-8") as f:
+                        state = _json.load(f)
+                    if state.get("project_id") == proj.id:
+                        candidates.append((state.get("updated_at", ""), state.get("simulation_id")))
+                except Exception:
+                    pass
+            if candidates:
+                candidates.sort(reverse=True)
+                last_simulation_id = candidates[0][1]
+
+        # Find latest report for that simulation
+        if last_simulation_id:
+            from ..services.report_agent import ReportManager
+            try:
+                report = ReportManager.get_report_by_simulation(last_simulation_id)
+                if report:
+                    last_report_id = report.report_id
+            except Exception:
+                pass
+
         return {
             "id": proj.id,
             "project_id": proj.id,
@@ -262,4 +297,6 @@ class ProjectManager:
             "graph_id": graph_external_id,
             "graph_build_task_id": None,
             "error": None,
+            "last_simulation_id": last_simulation_id,
+            "last_report_id": last_report_id,
         }

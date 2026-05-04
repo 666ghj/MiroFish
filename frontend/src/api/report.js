@@ -50,3 +50,11 @@ export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
 }
 
+/**
+ * Get report by simulation ID
+ * @param {string} simulationId
+ */
+export const getReportBySimulation = (simulationId) => {
+  return service.get(`/api/report/by-simulation/${simulationId}`)
+}
+
