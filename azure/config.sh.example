@@ -70,6 +70,32 @@ LLM_SMALL_API_KEY=""
 LLM_SMALL_BASE_URL=""
 LLM_SMALL_MODEL_NAME=""
 
+# ── PostgreSQL Flexible Server ────────────────────────────────────────────────
+# Contrasenya de l'administrador de la BD PostgreSQL
+# Genera-la amb: python -c "import secrets; print(secrets.token_urlsafe(24))"
+POSTGRES_ADMIN_PASSWORD="<contrasenya-segura-postgres>"
+
+# Usuari administrador de PostgreSQL (per defecte: mirofish)
+POSTGRES_ADMIN_USER="mirofish"
+
+# SKU de PostgreSQL: B_Standard_B1ms (dev/test) | GP_Standard_D2s_v3 (producció)
+POSTGRES_SKU="B_Standard_B1ms"
+
+# ── Storage (generats per 1-infra.sh — afegir després d'executar-lo) ─────────
+# Connection string d'Azure Files (output de 1-infra.sh)
+# Format: DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
+STORAGE_CONNECTION_STRING="<output-de-1-infra.sh>"
+
+# Nom del Storage Account (output de 1-infra.sh)
+STORAGE_ACCOUNT_NAME="<output-de-1-infra.sh>"
+
+# Nom del File Share (per defecte: mirofish-uploads)
+FILE_SHARE_NAME="mirofish-uploads"
+
+# DATABASE_URL PostgreSQL (output de 1-infra.sh)
+# Format: postgresql+psycopg2://mirofish:<password>@<host>/mirofish?sslmode=require
+DATABASE_URL="<output-de-1-infra.sh>"
+
 # ── Simulació OASIS (valors per defecte recomanats) ───────────────────────────
 OASIS_DEFAULT_MAX_ROUNDS="10"
 

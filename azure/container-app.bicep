@@ -61,6 +61,20 @@ param neo4jPassword string = ''
 @secure()
 param secretKey string
 
+@description('Connection string del Storage Account per a Azure Files (output d\'infra.bicep)')
+@secure()
+param storageConnectionString string = ''
+
+@description('DATABASE_URL PostgreSQL (output d\'infra.bicep: postgresql+psycopg2://...)')
+@secure()
+param databaseUrl string = ''
+
+@description('Nom del Storage Account (output d\'infra.bicep)')
+param storageAccountName string = ''
+
+@description('Nom del File Share d\'Azure Files (output d\'infra.bicep)')
+param fileShareName string = 'mirofish-uploads'
+
 // ─── Paràmetres LLM principal ─────────────────────────────────────────────────
 
 @description('URL base de l\'API LLM principal')
@@ -144,11 +158,13 @@ var mandatorySecrets = [
   { name: 'secret-key',    value: secretKey }
 ]
 var optionalSecrets = concat(
-  empty(llmBoostApiKey)  ? [] : [{ name: 'llm-boost-api-key',  value: llmBoostApiKey }],
-  empty(llmEmbedApiKey)  ? [] : [{ name: 'llm-embed-api-key',  value: llmEmbedApiKey }],
-  empty(llmSmallApiKey)  ? [] : [{ name: 'llm-small-api-key',  value: llmSmallApiKey }],
-  empty(zepApiKey)       ? [] : [{ name: 'zep-api-key',        value: zepApiKey }],
-  empty(neo4jPassword)   ? [] : [{ name: 'neo4j-password',     value: neo4jPassword }]
+  empty(llmBoostApiKey)        ? [] : [{ name: 'llm-boost-api-key',        value: llmBoostApiKey }],
+  empty(llmEmbedApiKey)        ? [] : [{ name: 'llm-embed-api-key',        value: llmEmbedApiKey }],
+  empty(llmSmallApiKey)        ? [] : [{ name: 'llm-small-api-key',        value: llmSmallApiKey }],
+  empty(zepApiKey)             ? [] : [{ name: 'zep-api-key',              value: zepApiKey }],
+  empty(neo4jPassword)         ? [] : [{ name: 'neo4j-password',           value: neo4jPassword }],
+  empty(storageConnectionString) ? [] : [{ name: 'storage-connection-string', value: storageConnectionString }],
+  empty(databaseUrl)           ? [] : [{ name: 'database-url',             value: databaseUrl }]
 )
 var allSecrets = concat(mandatorySecrets, optionalSecrets)
 
@@ -174,13 +190,19 @@ var mandatoryEnv = [
   { name: 'REPORT_AGENT_MAX_REFLECTION_ROUNDS', value: reportAgentMaxReflectionRounds }
   { name: 'REPORT_AGENT_TEMPERATURE',           value: reportAgentTemperature }
   { name: 'FLASK_DEBUG', value: 'False' }
+  // Storage: si s'usa Azure Files, les dades OASIS es guarden al volum muntat
+  { name: 'OASIS_SIMULATION_DATA_DIR', value: empty(storageAccountName) ? '/app/backend/uploads/simulations' : '/mnt/uploads/simulations' }
+  { name: 'UPLOAD_FOLDER',             value: empty(storageAccountName) ? '/app/backend/uploads' : '/mnt/uploads' }
+  { name: 'STORAGE_TYPE',              value: empty(storageConnectionString) ? 'local' : 'azure' }
 ]
 var optionalEnv = concat(
-  empty(llmBoostApiKey) ? [] : [{ name: 'LLM_BOOST_API_KEY',  secretRef: 'llm-boost-api-key' }],
-  empty(llmEmbedApiKey) ? [] : [{ name: 'LLM_EMBED_API_KEY',  secretRef: 'llm-embed-api-key' }],
-  empty(llmSmallApiKey) ? [] : [{ name: 'LLM_SMALL_API_KEY',  secretRef: 'llm-small-api-key' }],
-  empty(zepApiKey)      ? [] : [{ name: 'ZEP_API_KEY',        secretRef: 'zep-api-key' }],
-  empty(neo4jPassword)  ? [] : [{ name: 'NEO4J_PASSWORD',     secretRef: 'neo4j-password' }]
+  empty(llmBoostApiKey)          ? [] : [{ name: 'LLM_BOOST_API_KEY',              secretRef: 'llm-boost-api-key' }],
+  empty(llmEmbedApiKey)          ? [] : [{ name: 'LLM_EMBED_API_KEY',              secretRef: 'llm-embed-api-key' }],
+  empty(llmSmallApiKey)          ? [] : [{ name: 'LLM_SMALL_API_KEY',              secretRef: 'llm-small-api-key' }],
+  empty(zepApiKey)               ? [] : [{ name: 'ZEP_API_KEY',                    secretRef: 'zep-api-key' }],
+  empty(neo4jPassword)           ? [] : [{ name: 'NEO4J_PASSWORD',                 secretRef: 'neo4j-password' }],
+  empty(storageConnectionString) ? [] : [{ name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }],
+  empty(databaseUrl)             ? [] : [{ name: 'DATABASE_URL',                   secretRef: 'database-url' }]
 )
 var allEnv = concat(mandatoryEnv, optionalEnv)
 
@@ -230,6 +252,23 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
+
+          // Muntar Azure Files quan s'ha configurat storage
+          volumeMounts: empty(storageAccountName) ? [] : [
+            {
+              volumeName: 'uploads'
+              mountPath: '/mnt/uploads'
+            }
+          ]
+        }
+      ]
+
+      // Volum Azure Files (registrat a l'entorn via infra.bicep)
+      volumes: empty(storageAccountName) ? [] : [
+        {
+          name: 'uploads'
+          storageType: 'AzureFile'
+          storageName: 'uploads'
         }
       ]
 

@@ -30,6 +30,7 @@ source "$CONFIG_FILE"
 REQUIRED_VARS=(
   AZURE_SUBSCRIPTION_ID RESOURCE_GROUP PROJECT_NAME
   DEMO_PASSWORD SECRET_KEY LLM_API_KEY LLM_BASE_URL LLM_MODEL_NAME
+  DATABASE_URL STORAGE_CONNECTION_STRING
 )
 # Validate graph backend config
 GRAPH_BACKEND="${GRAPH_BACKEND:-zep}"
@@ -157,6 +158,10 @@ DEPLOY_OUTPUT=$(az deployment group create \
       reportAgentMaxToolCalls="${REPORT_AGENT_MAX_TOOL_CALLS:-5}" \
       reportAgentMaxReflectionRounds="${REPORT_AGENT_MAX_REFLECTION_ROUNDS:-2}" \
       reportAgentTemperature="${REPORT_AGENT_TEMPERATURE:-0.5}" \
+      storageConnectionString="${STORAGE_CONNECTION_STRING:-}" \
+      storageAccountName="${STORAGE_ACCOUNT_NAME:-}" \
+      fileShareName="${FILE_SHARE_NAME:-mirofish-uploads}" \
+      databaseUrl="${DATABASE_URL:-}" \
   --output json)
 
 FQDN=$(echo "$DEPLOY_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['properties']['outputs']['containerAppFqdn']['value'])")

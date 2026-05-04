@@ -44,6 +44,9 @@ dependencies = [
     # Azure 存储
     "azure-storage-blob>=12.19.0",
 
+    # PostgreSQL driver (necessari quan DATABASE_URL és postgres://)
+    "psycopg2-binary>=2.9.9",
+
     # 安全 & 认证
     "bcrypt>=4.1.0",
     "flask-jwt-extended>=4.6.0",
