@@ -72,9 +72,6 @@ param databaseUrl string = ''
 @description('Nom del Storage Account (output d\'infra.bicep)')
 param storageAccountName string = ''
 
-@description('Nom del File Share d\'Azure Files (output d\'infra.bicep)')
-param fileShareName string = 'mirofish-uploads'
-
 // ─── Paràmetres LLM principal ─────────────────────────────────────────────────
 
 @description('URL base de l\'API LLM principal')

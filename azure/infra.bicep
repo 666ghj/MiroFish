@@ -13,24 +13,24 @@
 @description('Nom base del projecte')
 param projectName string = 'mirofish'
 
-@description('Localització Azure dels recursos')
+@description('Localitzacio Azure dels recursos')
 param location string = resourceGroup().location
 
-@description('Contrasenya de l\'administrador de PostgreSQL')
+@description('Contrasenya de l-administrador de PostgreSQL')
 @secure()
 param postgresAdminPassword string
 
-@description('Nom de l\'usuari administrador de PostgreSQL')
+@description('Usuari administrador de PostgreSQL')
 param postgresAdminUser string = 'mirofish'
 
 @description('SKU de PostgreSQL (B_Standard_B1ms per dev; GP_Standard_D2s_v3 per pro)')
 param postgresSku string = 'B_Standard_B1ms'
 
-@description('Nom del Storage Account existent (o buit per crear-ne un de nou: ${projectName}store)')
+@description('Nom del Storage Account existent (o buit per crear-ne un de nou: <projectName>store)')
 param storageAccountName string = ''
 
-// Nom efectiu: el paràmetre si s'especifica, sinó el nom generat
-var effectiveStorageAccountName = empty(storageAccountName) ? '${replace(projectName, \'-\', \'\')}store' : storageAccountName
+// Nom efectiu: el parametre si s-especifica, sinó el nom generat
+var effectiveStorageAccountName = empty(storageAccountName) ? '${replace(projectName, '-', '')}store' : storageAccountName
 
 // ─── Azure Container Registry ─────────────────────────────────────────────────
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' = {
@@ -53,7 +53,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   dependsOn: [storageAccount]
 }
 
-// Registra el File Share dins l'entorn de Container Apps
+// Registra el File Share dins l-entorn de Container Apps
 resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   name: 'uploads'
   parent: containerAppsEnv
@@ -68,9 +68,6 @@ resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
 }
 
 // ─── Storage Account + File Share (dades OASIS persistents) ──────────────────
-// Azure Files és necessari per a:
-//   - uploads/simulations/  (SQLite DBs, JSONL, IPC files de les simulacions OASIS)
-//   - uploads/projects/     (fitxers pujats per l'usuari)
 // Si storageAccountName apunta a un compte existent, Bicep el reconcilia sense
 // esborrar els File Shares existents (caddydata, neo4jdata, etc.).
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -94,14 +91,12 @@ resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-0
   name: 'mirofish-uploads'
   parent: fileService
   properties: {
-    shareQuota: 100  // GB; augmenta si les simulacions creixen
+    shareQuota: 100
     enabledProtocols: 'SMB'
   }
 }
 
 // ─── Azure Database for PostgreSQL Flexible Server ────────────────────────────
-// Flexible Server és el recomanat per a desplegaments nous (Single Server deprecated)
-// La base de dades 'mirofish' es crea automàticament
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = {
   name: '${projectName}-pg'
   location: location
@@ -116,7 +111,6 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
     storage: { storageSizeGB: 32 }
     backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
     highAvailability: { mode: 'Disabled' }
-    // Accés públic desactivat; usa firewall rule per a Container Apps o VNet
     network: { publicNetworkAccess: 'Enabled' }
     authConfig: { activeDirectoryAuth: 'Disabled', passwordAuth: 'Enabled' }
   }
@@ -128,7 +122,7 @@ resource postgresDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
 
-// Regla de firewall per permetre tràfic de serveis Azure (inclou Container Apps)
+// Regla de firewall per permetre trafic de serveis Azure (inclou Container Apps)
 resource postgresFirewallAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = {
   name: 'allow-azure-services'
   parent: postgresServer
@@ -139,7 +133,7 @@ resource postgresFirewallAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewa
 }
 
 // ─── Outputs (usats pels scripts de deploy) ───────────────────────────────────
-@description('URL de login de l\'ACR')
+@description('URL de login de ACR')
 output acrLoginServer string = acr.properties.loginServer
 
 @description('Nom del recurs ACR')
@@ -149,25 +143,22 @@ output acrName string = acr.name
 output containerAppsEnvId string = containerAppsEnv.id
 
 @description('Nom del Storage Account')
-output storageAccountName string = storageAccount.name
+output storageAccountNameOut string = storageAccount.name
 
-@description('Clau primària del Storage Account (per a AZURE_STORAGE_CONNECTION_STRING)')
-@sensitive()
+@description('Clau primaria del Storage Account')
 output storageAccountKey string = storageAccount.listKeys().keys[0].value
 
-@description('Connection string del Storage Account (per a AZURE_STORAGE_CONNECTION_STRING)')
-@sensitive()
+@description('Connection string del Storage Account')
 output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
 
-@description('Nom del File Share d\'Azure Files')
+@description('Nom del File Share Azure Files')
 output fileShareName string = fileShare.name
 
 @description('FQDN del servidor PostgreSQL')
 output postgresHost string = postgresServer.properties.fullyQualifiedDomainName
 
 @description('Usuari administrador de PostgreSQL')
-output postgresAdminUser string = postgresAdminUser
+output postgresAdminUserOut string = postgresAdminUser
 
-@description('DATABASE_URL per a la Container App (postgresql+psycopg2://...)')
-@sensitive()
+@description('DATABASE_URL per a la Container App')
 output databaseUrl string = 'postgresql+psycopg2://${postgresAdminUser}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}/mirofish?sslmode=require'

@@ -160,7 +160,6 @@ DEPLOY_OUTPUT=$(az deployment group create \
       reportAgentTemperature="${REPORT_AGENT_TEMPERATURE:-0.5}" \
       storageConnectionString="${STORAGE_CONNECTION_STRING:-}" \
       storageAccountName="${STORAGE_ACCOUNT_NAME:-}" \
-      fileShareName="${FILE_SHARE_NAME:-mirofish-uploads}" \
       databaseUrl="${DATABASE_URL:-}" \
   --output json)
 
