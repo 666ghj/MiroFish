@@ -21,8 +21,11 @@ class Config:
     """Flask配置类"""
     
     # Flask配置
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
-    DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
+    DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+
+    # API authentication — set API_KEY in .env to require X-Api-Key on every request
+    API_KEY = os.environ.get('API_KEY')
     
     # JSON配置 - 禁用ASCII转义，让中文直接显示（而不是 \uXXXX 格式）
     JSON_AS_ASCII = False

@@ -14,6 +14,7 @@ from flask_cors import CORS
 
 from .config import Config
 from .utils.logger import setup_logger, get_logger
+from .utils.auth import check_api_key
 
 
 def create_app(config_class=Config):
@@ -48,6 +49,15 @@ def create_app(config_class=Config):
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
     
+    # API key authentication
+    app.before_request(check_api_key)
+
+    if not Config.API_KEY:
+        logger.warning(
+            "API_KEY is not set — all endpoints are publicly accessible. "
+            "Set API_KEY in your .env file to enable authentication."
+        )
+
     # 请求日志中间件
     @app.before_request
     def log_request():
