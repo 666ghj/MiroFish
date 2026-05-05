@@ -93,7 +93,7 @@ echo ""
 
 # ── Login a l'ACR ─────────────────────────────────────────────────────────────
 echo "→ Login a l'ACR..."
-az acr login --name "$ACR_NAME"
+az acr login --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP"
 
 # ── Build de la imatge Docker ─────────────────────────────────────────────────
 echo "→ Build de la imatge Docker..."

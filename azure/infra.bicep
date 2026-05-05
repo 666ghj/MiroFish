@@ -23,8 +23,8 @@ param postgresAdminPassword string
 @description('Usuari administrador de PostgreSQL')
 param postgresAdminUser string = 'mirofish'
 
-@description('SKU de PostgreSQL (B_Standard_B1ms per dev; GP_Standard_D2s_v3 per pro)')
-param postgresSku string = 'B_Standard_B1ms'
+@description('SKU de PostgreSQL (Standard_B1ms per dev; Standard_D2s_v3 per pro)')
+param postgresSku string = 'Standard_B1ms'
 
 @description('Nom del Storage Account existent (o buit per crear-ne un de nou: <projectName>store)')
 param storageAccountName string = ''
@@ -102,7 +102,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
   location: location
   sku: {
     name: postgresSku
-    tier: startsWith(postgresSku, 'B_') ? 'Burstable' : 'GeneralPurpose'
+    tier: contains(postgresSku, '_B') ? 'Burstable' : (contains(postgresSku, '_D') || contains(postgresSku, '_E') ? 'GeneralPurpose' : 'MemoryOptimized')
   }
   properties: {
     administratorLogin: postgresAdminUser

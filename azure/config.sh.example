@@ -78,8 +78,8 @@ POSTGRES_ADMIN_PASSWORD="<contrasenya-segura-postgres>"
 # Usuari administrador de PostgreSQL (per defecte: mirofish)
 POSTGRES_ADMIN_USER="mirofish"
 
-# SKU de PostgreSQL: B_Standard_B1ms (dev/test) | GP_Standard_D2s_v3 (producció)
-POSTGRES_SKU="B_Standard_B1ms"
+# SKU de PostgreSQL: Standard_B1ms (dev/test) | Standard_D2s_v3 (producció)
+POSTGRES_SKU="Standard_B1ms"
 
 # ── Storage ───────────────────────────────────────────────────────────────────
 # Opció A — Compte existent (ex: stgraphiti16852 que ja té caddydata, neo4jdata)
