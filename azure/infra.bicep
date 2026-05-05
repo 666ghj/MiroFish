@@ -26,6 +26,12 @@ param postgresAdminUser string = 'mirofish'
 @description('SKU de PostgreSQL (B_Standard_B1ms per dev; GP_Standard_D2s_v3 per pro)')
 param postgresSku string = 'B_Standard_B1ms'
 
+@description('Nom del Storage Account existent (o buit per crear-ne un de nou: ${projectName}store)')
+param storageAccountName string = ''
+
+// Nom efectiu: el paràmetre si s'especifica, sinó el nom generat
+var effectiveStorageAccountName = empty(storageAccountName) ? '${replace(projectName, \'-\', \'\')}store' : storageAccountName
+
 // ─── Azure Container Registry ─────────────────────────────────────────────────
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' = {
   name: '${projectName}acr'
@@ -65,9 +71,10 @@ resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
 // Azure Files és necessari per a:
 //   - uploads/simulations/  (SQLite DBs, JSONL, IPC files de les simulacions OASIS)
 //   - uploads/projects/     (fitxers pujats per l'usuari)
-// Standard LRS: suficient per a escenaris non-HA
+// Si storageAccountName apunta a un compte existent, Bicep el reconcilia sense
+// esborrar els File Shares existents (caddydata, neo4jdata, etc.).
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: '${replace(projectName, '-', '')}store'  // sense guions, màx 24 chars
+  name: effectiveStorageAccountName
   location: location
   sku: { name: 'Standard_LRS' }
   kind: 'StorageV2'

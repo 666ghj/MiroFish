@@ -81,16 +81,21 @@ POSTGRES_ADMIN_USER="mirofish"
 # SKU de PostgreSQL: B_Standard_B1ms (dev/test) | GP_Standard_D2s_v3 (producció)
 POSTGRES_SKU="B_Standard_B1ms"
 
-# ── Storage (generats per 1-infra.sh — afegir després d'executar-lo) ─────────
+# ── Storage ───────────────────────────────────────────────────────────────────
+# Opció A — Compte existent (ex: stgraphiti16852 que ja té caddydata, neo4jdata)
+#   Deixar STORAGE_ACCOUNT_NAME amb el nom del compte existent.
+#   1-infra.sh el reconciliarà sense esborrar els shares existents.
+# Opció B — Compte nou (1-infra.sh el crea automàticament com a ${PROJECT_NAME}store)
+#   Deixar STORAGE_ACCOUNT_NAME buit.
+STORAGE_ACCOUNT_NAME="stgraphiti16852"   # canvia o deixa buit per crear-ne un de nou
+
+# Nom del File Share per a MiroFish (es crea si no existeix)
+FILE_SHARE_NAME="mirofish-uploads"
+
+# ── Storage (valors generats per 1-infra.sh — afegir-los després d'executar-lo) ─
 # Connection string d'Azure Files (output de 1-infra.sh)
 # Format: DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
 STORAGE_CONNECTION_STRING="<output-de-1-infra.sh>"
-
-# Nom del Storage Account (output de 1-infra.sh)
-STORAGE_ACCOUNT_NAME="<output-de-1-infra.sh>"
-
-# Nom del File Share (per defecte: mirofish-uploads)
-FILE_SHARE_NAME="mirofish-uploads"
 
 # DATABASE_URL PostgreSQL (output de 1-infra.sh)
 # Format: postgresql+psycopg2://mirofish:<password>@<host>/mirofish?sslmode=require

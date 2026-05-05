@@ -88,6 +88,7 @@ INFRA_OUTPUT=$(az deployment group create \
       postgresAdminPassword="$POSTGRES_ADMIN_PASSWORD" \
       postgresAdminUser="${POSTGRES_ADMIN_USER:-mirofish}" \
       postgresSku="${POSTGRES_SKU:-B_Standard_B1ms}" \
+      storageAccountName="${STORAGE_ACCOUNT_NAME:-}" \
   --output json)
 
 # Extreure outputs del desplegament
