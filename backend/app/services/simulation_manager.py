@@ -334,6 +334,16 @@ class SimulationManager:
             elif state.enable_twitter:
                 realtime_output_path = os.path.join(sim_dir, "twitter_profiles.csv")
                 realtime_platform = "twitter"
+
+            # Nền tảng dùng cho metadata cost.
+            if state.enable_twitter and state.enable_reddit:
+                runtime_platform = "parallel"
+            elif state.enable_twitter:
+                runtime_platform = "twitter"
+            elif state.enable_reddit:
+                runtime_platform = "reddit"
+            else:
+                runtime_platform = None
             
             profiles = generator.generate_profiles_from_entities(
                 entities=filtered.entities,
@@ -343,6 +353,7 @@ class SimulationManager:
                 parallel_count=parallel_profile_count,  # Số dòng luồng Async
                 realtime_output_path=realtime_output_path,  # Lưu log thời gian thực
                 output_platform=realtime_platform,  # Đuôi file xuất
+                metadata_platform=runtime_platform,
                 simulation_id=simulation_id,
                 project_id=state.project_id,
             )

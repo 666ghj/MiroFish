@@ -361,7 +361,7 @@ class ParallelIPCHandler:
         """
         # Nếu có chỉ định nền tảng, chỉ phỏng vấn trên nền tảng đó
         if platform in ("twitter", "reddit"):
-            result = await self._interview_single_platform(agent_id, prompt, platform)
+            result = await self._interview_single_platform(agent_id, prompt, platform)   
             
             if "error" in result:
                 self.send_response(command_id, "failed", error=result["error"])
@@ -996,11 +996,27 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         config: Dictionary cấu hình mô phỏng
         use_boost: Có dùng cấu hình LLM tăng tốc hay không (nếu khả dụng)
     """
-    # Kiểm tra có cấu hình tăng tốc không
+    def _is_placeholder(value: str) -> bool:
+        v = (value or "").strip().lower()
+        return v in {"your_api_key_here", "your_base_url_here", "your_model_name_here"}
+
+    def _is_http_url(value: str) -> bool:
+        v = (value or "").strip().lower()
+        return v.startswith("http://") or v.startswith("https://")
+
+    # Kiểm tra có cấu hình tăng tốc hợp lệ không
     boost_api_key = os.environ.get("LLM_BOOST_API_KEY", "")
     boost_base_url = os.environ.get("LLM_BOOST_BASE_URL", "")
     boost_model = os.environ.get("LLM_BOOST_MODEL_NAME", "")
-    has_boost_config = bool(boost_api_key)
+    has_boost_config = (
+        bool(boost_api_key.strip())
+        and bool(boost_model.strip())
+        and bool(boost_base_url.strip())
+        and not _is_placeholder(boost_api_key)
+        and not _is_placeholder(boost_base_url)
+        and not _is_placeholder(boost_model)
+        and _is_http_url(boost_base_url)
+    )
     
     # Chọn LLM theo tham số và trạng thái cấu hình
     if use_boost and has_boost_config:
@@ -1011,6 +1027,8 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         config_label = "[Boost LLM]"
     else:
         # Dùng cấu hình chung
+        if use_boost and not has_boost_config:
+            print("[Boost LLM] Invalid or placeholder boost config, fallback to [General LLM].")
         llm_api_key = os.environ.get("LLM_API_KEY", "")
         llm_base_url = os.environ.get("LLM_BASE_URL", "")
         llm_model = os.environ.get("LLM_MODEL_NAME", "")
@@ -1028,6 +1046,10 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         raise ValueError("Missing API key config. Please set LLM_API_KEY in the project root .env file")
     
     if llm_base_url:
+        if not _is_http_url(llm_base_url):
+            raise ValueError(
+                f"Invalid LLM base URL: {llm_base_url}. It must start with http:// or https://"
+            )
         os.environ["OPENAI_API_BASE_URL"] = llm_base_url
     
     print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else 'default'}...")
