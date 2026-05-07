@@ -48,10 +48,10 @@ npm run dev
 
 ## Project Structure
 
-- `backend/` — Python FastAPI backend, simulation engine, LLM client, and graph builder
-- `frontend/` — Vue.js frontend
-- `locales/` — i18n translation files
-- `.env.example` — all configurable environment variables
+- `backend/` - Python FastAPI backend, simulation engine, LLM client, and graph builder
+- `frontend/` - Vue.js frontend
+- `locales/` - i18n translation files
+- `.env.example` - all configurable environment variables
 
 ## Making a Pull Request
 

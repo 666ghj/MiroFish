@@ -50,10 +50,10 @@ npm run dev
 
 ## Project Structure
 
-- `backend/` — Python FastAPI backend、simulation engine、LLM client、graph builder
-- `frontend/` — Vue.js frontend
-- `locales/` — i18n 翻译文件
-- `.env.example` — 所有可配置环境变量
+- `backend/` - Python FastAPI backend、simulation engine、LLM client、graph builder
+- `frontend/` - Vue.js frontend
+- `locales/` - i18n 翻译文件
+- `.env.example` - 所有可配置环境变量
 
 ## Making a Pull Request
 
