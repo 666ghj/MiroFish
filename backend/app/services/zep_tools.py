@@ -1419,7 +1419,7 @@ Trả về danh sách các câu hỏi phụ dưới định dạng JSON."""
                 simulation_id=simulation_id,
                 interviews=interviews_request,
                 platform=None,  # Không định dạng nền tảng -> Dual platform call
-                timeout=180.0   # Tăng timeout do phải chờ API trên 2 platforms xử lý
+                timeout= 800 # Tăng timeout do phải chờ API trên 2 platforms xử lý
             )
             
             logger.info(f"Interview API returned: {api_result.get('interviews_count', 0)} results, success={api_result.get('success')}")
@@ -1832,7 +1832,7 @@ Hãy tạo bản tóm tắt phỏng vấn."""
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3,
-                max_tokens=800
+                max_tokens=4096
             )
             return summary
             

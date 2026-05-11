@@ -615,7 +615,7 @@ Hãy tạo JSON cấu hình thời gian.
 
 Ví dụ Format như sau:
 {{
-    "total_simulation_hours": 72,
+    "total_simulation_hours": 72,                                                 
     "minutes_per_round": 60,
     "agents_per_hour_min": 5,
     "agents_per_hour_max": 50,

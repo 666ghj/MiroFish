@@ -79,7 +79,7 @@ class LLMClient:
             metadata=call_metadata,
             **{k: v for k, v in kwargs.items() if k not in {"model", "messages"}},
         )
-        content = response.choices[0].message.content
+        content = response.choices[0].message.content or ""
         # Một số model (vd MiniMax M2.5) chèn nội dung <think> vào content, cần loại bỏ
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
         return content
@@ -88,7 +88,7 @@ class LLMClient:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 4096,
+        max_tokens: int = 50000,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """

@@ -1057,6 +1057,7 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     return ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
         model_type=llm_model,
+        timeout=1000
     )
 
 
@@ -1179,7 +1180,7 @@ async def run_twitter_simulation(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.TWITTER,
         database_path=db_path,
-        semaphore=30,  # Giới hạn số request LLM đồng thời để tránh quá tải API
+        semaphore=3,  # Giới hạn số request LLM đồng thời để tránh quá tải API
     )
     
     await result.env.reset()
@@ -1370,7 +1371,7 @@ async def run_reddit_simulation(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
-        semaphore=30,  # Giới hạn số request LLM đồng thời để tránh quá tải API
+        semaphore=3,  # Giới hạn số request LLM đồng thời để tránh quá tải API
     )
     
     await result.env.reset()

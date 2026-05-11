@@ -4,6 +4,7 @@ API 2: Sử dụng Zep API để xây dựng một Standalone Graph (Đồ thị
 """
 
 import os
+import re  # changed
 import uuid
 import time
 import threading
@@ -330,27 +331,47 @@ class GraphBuilderService:
             ]
             
             # Khởi chạy gửi cho Zep Server
-            try:
-                # UPLOAD BATCH TO ZEP - Sends batch of episodes for entity extraction
-                batch_result = self.client.graph.add_batch(
-                    graph_id=graph_id,
-                    episodes=episodes
-                )
-                
-                # Cập nhật và thu thập lại UUID của các Episode được trả về sau khi tạo mới
-                if batch_result and isinstance(batch_result, list):
-                    for ep in batch_result:
-                        ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
-                        if ep_uuid:
-                            episode_uuids.append(ep_uuid)
-                
-                # Cài thời gian chờ (delay) nhỏ để tránh rate-limit bị quá tải số lượng requests
-                time.sleep(1)
-                
-            except Exception as e:
-                if progress_callback:
-                    progress_callback(f"Failed to send batch {batch_num}: {str(e)}", 0)
-                raise
+            max_retries = 10  # changed
+            for attempt in range(max_retries):  # changed
+                try:
+                    # UPLOAD BATCH TO ZEP - Sends batch of episodes for entity extraction
+                    batch_result = self.client.graph.add_batch(
+                        graph_id=graph_id,
+                        episodes=episodes
+                    )
+
+                    # Cập nhật và thu thập lại UUID của các Episode được trả về sau khi tạo mới
+                    if batch_result and isinstance(batch_result, list):
+                        for ep in batch_result:
+                            ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
+                            if ep_uuid:
+                                episode_uuids.append(ep_uuid)
+
+                    # Cài thời gian chờ (delay) nhỏ để tránh rate-limit bị quá tải số lượng requests
+                    time.sleep(3)
+                    break  # changed: thoát retry loop nếu thành công
+
+                except Exception as e:  # changed
+                    err_str = str(e)
+                    if "episode usage limit" in err_str or ("status_code: 429" in err_str):  # changed: bắt lỗi rate-limit
+                        # Đọc thời điểm reset từ error message để biết cần chờ bao lâu
+                        reset_match = re.search(r"x-ratelimit-reset['\"]:\s*['\"]?(\d+)", err_str)  # changed
+                        if reset_match:  # changed
+                            wait_seconds = max(int(reset_match.group(1)) - int(time.time()) + 2, 5)  # changed
+                        else:  # changed
+                            wait_seconds = 20  # changed: fallback 12s (5 calls/phút → cách nhau 12s)
+                        if progress_callback:  # changed
+                            progress_callback(  # changed
+                                f"Rate limited by Zep. Waiting {wait_seconds}s then retry (attempt {attempt + 1}/{max_retries})...",  # changed
+                                (i + len(batch_chunks)) / total_chunks  # changed
+                            )  # changed
+                        time.sleep(wait_seconds)  # changed
+                    else:  # changed: lỗi khác thì raise luôn, không retry
+                        if progress_callback:
+                            progress_callback(f"Failed to send batch {batch_num}: {err_str}", 0)
+                        raise  # changed
+            else:  # changed: for...else — chạy khi hết max_retries mà vẫn chưa break
+                raise Exception(f"Batch {batch_num} failed after {max_retries} retries due to rate limiting")  # changed
         
         return episode_uuids
     
@@ -358,7 +379,7 @@ class GraphBuilderService:
         self,
         episode_uuids: List[str],
         progress_callback: Optional[Callable] = None,
-        timeout: int = 600
+        timeout: int = 1000
     ):
         """Chạy vòng lặp để kiểm tra và chờ cho tới khi mọi Episode (các khối Text) đều hoàn tất quá trình process từ hệ thống"""
         if not episode_uuids:

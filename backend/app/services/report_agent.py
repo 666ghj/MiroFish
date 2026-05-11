@@ -984,7 +984,7 @@ Nhiệm vụ của bạn là:
 
 3. [Tính nhất quán về Ngôn ngữ - Nội dung trích dẫn phải được dịch sang ngôn ngữ báo cáo]
    - Nội dung trả về từ các công cụ có thể chứa tiếng Anh hoặc hỗn hợp tiếng Việt và tiếng Anh.
-   - Nếu yêu cầu mô phỏng và tài liệu gốc bằng tiếng Việt, báo cáo phải được viết hoàn toàn bằng tiếng Việt
+   - **Báo cáo phải được viết hoàn toàn bằng tiếng Việt.**
    - Khi bạn trích dẫn nội dung tiếng Anh hoặc hỗn hợp từ công cụ, bạn phải dịch sang tiếng Việt lưu loát trước khi đưa vào báo cáo
    - Giữ nguyên ý nghĩa gốc khi dịch và đảm bảo cách diễn đạt tự nhiên
    - Quy tắc này áp dụng cho cả văn bản chính và nội dung trong khối trích dẫn (định dạng >)

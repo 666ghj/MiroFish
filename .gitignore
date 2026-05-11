@@ -58,3 +58,4 @@ backend/uploads/
 
 # Dữ liệu Docker
 data/
+uploads_old/
