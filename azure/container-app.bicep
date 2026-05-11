@@ -246,8 +246,8 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
 
           // Recursos mínim viable — escalar horitzontalment via rèpliques
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json('2')
+            memory: '4Gi'
           }
 
           // Muntar Azure Files quan s'ha configurat storage
@@ -266,6 +266,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'uploads'
           storageType: 'AzureFile'
           storageName: 'uploads'
+          mountOptions: 'nobrl,cache=strict,nosharesock,actimeo=30'
         }
       ]
 

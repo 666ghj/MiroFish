@@ -521,13 +521,9 @@ class GraphitiBackend(GraphBackend):
         )
 
     async def _execute_neo4j_query(self, query: str, parameters: dict = None):
-        """Execute a raw Cypher query against Neo4j via the sync driver in a thread pool."""
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: self._client.driver.execute_query(query, **({"parameters_": parameters} if parameters else {}))
-        )
-        return result
+        """Execute a raw Cypher query against the async Neo4j driver."""
+        kwargs = {"params": parameters} if parameters else {}
+        return await self._client.driver.execute_query(query, **kwargs)
 
     async def clone_graph(self, src_group_id: str, dst_group_id: str) -> None:
         """Clone all nodes and relationships from src_group_id to dst_group_id."""
