@@ -91,6 +91,23 @@ def delete_project(project_id: str):
     })
 
 
+@graph_bp.route('/project/<project_id>', methods=['PATCH'])
+def patch_project(project_id: str):
+    """Update mutable project fields (currently: name)."""
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({"success": False, "error": t('api.projectNotFound', id=project_id)}), 404
+
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "").strip()
+    if not name:
+        return jsonify({"success": False, "error": "name cannot be empty"}), 400
+
+    ProjectManager.save_project({"id": project_id, "name": name})
+    updated = ProjectManager.get_project(project_id)
+    return jsonify({"success": True, "data": updated})
+
+
 @graph_bp.route('/project/<project_id>/reset', methods=['POST'])
 def reset_project(project_id: str):
     """
