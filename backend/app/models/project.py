@@ -241,6 +241,26 @@ class ProjectManager:
                 db.commit()
 
     @classmethod
+    def _get_project_files(cls, project_id: str) -> list:
+        from sqlalchemy import select
+        with get_session() as db:
+            stmt = select(ProjectFileModel).where(
+                ProjectFileModel.project_id == project_id,
+                ProjectFileModel.file_type == "upload",
+            )
+            files = db.execute(stmt).scalars().all()
+            return [
+                {
+                    "file_id": f.id,
+                    "filename": f.original_name,
+                    "size": f.size,
+                    "mime_type": f.mime_type,
+                    "storage_path": f.storage_path,
+                }
+                for f in files
+            ]
+
+    @classmethod
     def _to_dict(cls, proj: "ProjectModel") -> Dict[str, Any]:
         import os, json as _json
         ontology = cls.get_ontology(proj.id)
@@ -291,7 +311,7 @@ class ProjectManager:
             "active_task_id": proj.active_task_id,
             "created_at": proj.created_at.isoformat(),
             "updated_at": proj.updated_at.isoformat(),
-            "files": [],
+            "files": cls._get_project_files(proj.id),
             "total_text_length": 0,
             "ontology": ontology,
             "graph_id": graph_external_id,
