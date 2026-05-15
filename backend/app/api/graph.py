@@ -16,6 +16,7 @@ from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
 from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
+from ..services.project_name_generator import generate_project_name
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
@@ -196,6 +197,17 @@ def generate_ontology():
         ProjectManager.save_extracted_text(project_id, all_text, storage)
         logger.info(f"Text extraction complete, total {len(all_text)} characters")
 
+        # Generate project name in background (non-blocking)
+        def _name_task():
+            try:
+                name = generate_project_name(all_text)
+                ProjectManager.save_project({"id": project_id, "name": name})
+                logger.info(f"Project name generated: {name!r}")
+            except Exception as exc:
+                logger.warning(f"Background name generation failed: {exc}")
+
+        threading.Thread(target=_name_task, daemon=True).start()
+
         logger.info("Calling LLM to generate ontology definition...")
         generator = OntologyGenerator()
         ontology = generator.generate(
@@ -231,6 +243,7 @@ def generate_ontology():
         })
 
     except Exception as e:
+        logger.exception("Error in generate_ontology")
         if project_id:
             try:
                 ProjectManager.delete_project(project_id, storage=get_storage())
@@ -310,6 +323,17 @@ def import_ontology():
             return jsonify({"success": False, "error": t('api.noDocProcessed')}), 400
 
         ProjectManager.save_extracted_text(project_id, all_text, storage)
+
+        # Generate project name in background (non-blocking)
+        def _name_task():
+            try:
+                name = generate_project_name(all_text)
+                ProjectManager.save_project({"id": project_id, "name": name})
+                logger.info(f"Project name generated: {name!r}")
+            except Exception as exc:
+                logger.warning(f"Background name generation failed: {exc}")
+
+        threading.Thread(target=_name_task, daemon=True).start()
 
         entity_types = ontology.get("entity_types", [])
         edge_types = ontology.get("edge_types", [])
