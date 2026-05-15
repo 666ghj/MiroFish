@@ -8,7 +8,7 @@ import json
 import tempfile
 import traceback
 import threading
-from flask import request, jsonify
+from flask import request, jsonify, Response
 
 from . import graph_bp
 from .. import get_storage
@@ -732,15 +732,43 @@ def delete_graph(graph_id: str):
     try:
         builder = GraphBuilderService()
         builder.delete_graph(graph_id)
-        
+
         return jsonify({
             "success": True,
             "message": t('api.graphDeleted', id=graph_id)
         })
-        
+
     except Exception as e:
         return jsonify({
             "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+@graph_bp.route('/project/<project_id>/download/source', methods=['GET'])
+def download_project_source(project_id: str):
+    """Download the original uploaded document for a project."""
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({"success": False, "error": t('api.projectNotFound', id=project_id)}), 404
+
+    files = ProjectManager._get_project_files(project_id)
+    if not files:
+        return jsonify({"success": False, "error": "No source file found"}), 404
+
+    file_info = files[0]
+    storage = get_storage()
+    try:
+        data = storage.download(file_info["storage_path"])
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    return Response(
+        data,
+        status=200,
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_info["filename"]}"',
+            "Content-Type": file_info.get("mime_type", "application/octet-stream"),
+        }
+    )

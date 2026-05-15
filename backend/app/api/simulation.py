@@ -5,7 +5,7 @@ Step 2: Zep entity reading & filtering, OASIS simulation preparation & execution
 
 import os
 import traceback
-from flask import request, jsonify, send_file
+from flask import request, jsonify, send_file, Response
 
 from . import simulation_bp
 from .. import get_storage
@@ -19,6 +19,19 @@ from ..utils.locale import t, get_locale, set_locale
 from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
+
+
+def _get_simulation_log_path(simulation_id: str) -> str:
+    """Return path to the combined actions log for a simulation."""
+    sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+    for candidate in [
+        os.path.join(sim_dir, "actions.jsonl"),
+        os.path.join(sim_dir, "twitter", "actions.jsonl"),
+        os.path.join(sim_dir, "reddit", "actions.jsonl"),
+    ]:
+        if os.path.exists(candidate):
+            return candidate
+    return ""
 
 
 # Interview prompt optimization prefix
@@ -1656,33 +1669,25 @@ def start_simulation():
                 graph_id_sim = f"mirofish_{simulation_id}_sim"
                 from ..graph import get_graph_backend
                 graph_backend = get_graph_backend()
-                if hasattr(graph_backend, 'clone_graph'):
-                    import asyncio as _asyncio
-                    import concurrent.futures as _futures
-                    try:
-                        loop = _asyncio.get_event_loop()
-                        if loop.is_running():
-                            with _futures.ThreadPoolExecutor() as pool:
-                                future = pool.submit(_asyncio.run, graph_backend.clone_graph(graph_id, graph_id_sim))
-                                future.result()
-                        else:
-                            loop.run_until_complete(graph_backend.clone_graph(graph_id, graph_id_sim))
-                    except RuntimeError:
-                        _asyncio.run(graph_backend.clone_graph(graph_id, graph_id_sim))
-                    state.graph_id_simulation = graph_id_sim
-                    manager._save_simulation_state(state)
-                    graph_id_simulation = graph_id_sim
-                    logger.info(f"Graph cloned for simulation isolation: {graph_id_sim}")
+                if hasattr(graph_backend, 'clone_graph_sync'):
+                    graph_backend.clone_graph_sync(graph_id, graph_id_sim)
+                elif hasattr(graph_backend, 'clone_graph'):
+                    from ..graph.graphiti_backend import _run_async
+                    _run_async(graph_backend.clone_graph(graph_id, graph_id_sim))
+                state.graph_id_simulation = graph_id_sim
+                manager._save_simulation_state(state)
+                graph_id_simulation = graph_id_sim
+                logger.info(f"Graph cloned for simulation isolation: {graph_id_sim}")
             except Exception as e:
                 logger.warning(f"Graph cloning failed, simulation uses shared graph: {e}")
 
-        # Start simulation
+        # Start simulation — use cloned graph if available, else fall back to original
         run_state = SimulationRunner.start_simulation(
             simulation_id=simulation_id,
             platform=platform,
             max_rounds=max_rounds,
             enable_graph_memory_update=enable_graph_memory_update,
-            graph_id=graph_id
+            graph_id=graph_id_simulation or graph_id
         )
         
         # Update simulation status
@@ -2079,11 +2084,8 @@ def get_simulation_posts(simulation_id: str):
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
-        
+        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         db_file = f"{platform}_simulation.db"
         db_path = os.path.join(sim_dir, db_file)
         
@@ -2155,11 +2157,8 @@ def get_simulation_comments(simulation_id: str):
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
-        
+        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         db_path = os.path.join(sim_dir, "reddit_simulation.db")
         
         if not os.path.exists(db_path):
@@ -3291,3 +3290,51 @@ def get_task_status(task_id: str):
         return jsonify({"success": True, "data": task})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/<simulation_id>/download/report', methods=['GET'])
+def download_simulation_report(simulation_id: str):
+    """Download the final report for a simulation as a Markdown file."""
+    from ..services.report_agent import ReportManager
+    try:
+        report = ReportManager.get_report_by_simulation(simulation_id)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    if not report:
+        return jsonify({"success": False, "error": t('api.noReportForSim', id=simulation_id)}), 404
+
+    content = (report.markdown_content or "").encode("utf-8")
+    filename = f"report_{report.report_id}.md"
+    return Response(
+        content,
+        status=200,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "text/markdown; charset=utf-8",
+        }
+    )
+
+
+@simulation_bp.route('/<simulation_id>/download/log', methods=['GET'])
+def download_simulation_log(simulation_id: str):
+    """Download the raw simulation actions log (JSONL)."""
+    log_path = _get_simulation_log_path(simulation_id)
+    if not log_path:
+        return jsonify({"success": False, "error": "Log file not found"}), 404
+
+    try:
+        with open(log_path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    filename = f"simulation_{simulation_id}_log.jsonl"
+    return Response(
+        data,
+        status=200,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/x-ndjson",
+        }
+    )
