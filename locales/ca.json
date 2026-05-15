@@ -390,7 +390,16 @@
     "notStarted": "No iniciat",
     "roundsProgress": "{current}/{total} rondes",
     "untitledSimulation": "Simulació sense títol",
-    "unknownFile": "Fitxer desconegut"
+    "unknownFile": "Fitxer desconegut",
+    "deleteProject": "Elimina el projecte",
+    "deleteConfirm": "Elimines \"{title}\" i totes les seves simulacions?",
+    "deleteConfirmYes": "Elimina",
+    "deleteConfirmNo": "Cancel·la",
+    "editName": "Edita el nom",
+    "namePlaceholder": "Nom del projecte",
+    "sourceDoc": "Document original",
+    "finalReport": "Informe final",
+    "simLog": "Log de simulació"
   },
   "api": {
     "projectNotFound": "Projecte no trobat: {id}",
@@ -616,6 +625,7 @@
     "stopFailed": "Error en aturar: {error}",
     "stopException": "Excepció en aturar: {error}",
     "allPlatformsCompleted": "✓ Totes les simulacions de plataforma han finalitzat",
+    "simEndedWithError": "⚠ La simulació ha finalitzat amb un error — els resultats parcials estan disponibles per generar l'informe.",
     "simCompleted": "✓ Simulació completada",
     "reportRequestSent": "Sol·licitud de generació de l'informe enviada, espera...",
     "startingReportGen": "Iniciant la generació de l'informe...",

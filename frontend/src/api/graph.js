@@ -110,3 +110,17 @@ export function listProjects(limit = 50) {
     method: 'get'
   })
 }
+
+/**
+ * Actualitza el nom d'un projecte
+ * @param {String} projectId
+ * @param {String} name
+ * @returns {Promise}
+ */
+export function updateProjectName(projectId, name) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'patch',
+    data: { name }
+  })
+}

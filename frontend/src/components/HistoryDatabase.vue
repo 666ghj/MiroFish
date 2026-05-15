@@ -95,6 +95,9 @@
           </span>
         </div>
         
+        <!-- Delete button -->
+        <button class="card-delete-btn" @click.stop="confirmDelete(project)" :title="$t('history.deleteProject')">×</button>
+
         <!-- 底部装饰线 (hover时展开) -->
         <div class="card-bottom-line"></div>
       </div>
@@ -114,7 +117,20 @@
             <!-- 弹窗头部 -->
             <div class="modal-header">
               <div class="modal-title-section">
-                <span class="modal-id">{{ selectedProject.name || (selectedProject.project_id || '').slice(0, 8) }}</span>
+                <span v-if="!editingName" class="modal-id" @click="startEditName" style="cursor:pointer;" :title="$t('history.editName')">
+                  {{ selectedProject.name || (selectedProject.project_id || '').slice(0, 8) }}
+                  <span style="font-size:0.7rem; color:#9CA3AF; margin-left:4px;">✎</span>
+                </span>
+                <input
+                  v-else
+                  ref="nameInput"
+                  v-model="editedName"
+                  class="modal-name-input"
+                  :placeholder="$t('history.namePlaceholder')"
+                  @blur="saveEditedName"
+                  @keyup.enter="saveEditedName"
+                  @keyup.escape="cancelEditName"
+                />
                 <span class="modal-progress" :class="getProgressClass(selectedProject)">
                   <span class="status-dot">●</span> {{ formatRounds(selectedProject) }}
                 </span>
@@ -134,11 +150,37 @@
               <!-- 文件列表 -->
               <div class="modal-section">
                 <div class="modal-label">{{ $t('history.relatedFiles') }}</div>
-                <div class="modal-files" v-if="selectedProject.files && selectedProject.files.length > 0">
-                  <div v-for="(file, index) in selectedProject.files" :key="index" class="modal-file-item">
-                    <span class="file-tag" :class="getFileType(file.filename)">{{ getFileTypeLabel(file.filename) }}</span>
-                    <span class="modal-file-name">{{ file.filename }}</span>
-                  </div>
+                <div class="modal-files" v-if="hasRelatedFiles(selectedProject)">
+                  <a
+                    v-if="selectedProject.files && selectedProject.files.length > 0"
+                    :href="`/api/graph/project/${selectedProject.project_id}/download/source`"
+                    class="modal-file-item modal-file-link"
+                    download
+                  >
+                    <span class="file-tag txt">SRC</span>
+                    <span class="modal-file-name">{{ selectedProject.files[0].filename }}</span>
+                    <span class="file-download-icon">↓</span>
+                  </a>
+                  <a
+                    v-if="selectedProject.last_simulation_id"
+                    :href="`/api/simulation/${selectedProject.last_simulation_id}/download/report`"
+                    class="modal-file-item modal-file-link"
+                    download
+                  >
+                    <span class="file-tag doc">RPT</span>
+                    <span class="modal-file-name">{{ $t('history.finalReport') }}</span>
+                    <span class="file-download-icon">↓</span>
+                  </a>
+                  <a
+                    v-if="selectedProject.last_simulation_id"
+                    :href="`/api/simulation/${selectedProject.last_simulation_id}/download/log`"
+                    class="modal-file-item modal-file-link"
+                    download
+                  >
+                    <span class="file-tag code">LOG</span>
+                    <span class="modal-file-name">{{ $t('history.simLog') }}</span>
+                    <span class="file-download-icon">↓</span>
+                  </a>
                 </div>
                 <div class="modal-empty" v-else>{{ $t('history.noRelatedFiles') }}</div>
               </div>
@@ -165,7 +207,7 @@
               <button
                 class="modal-btn btn-simulation"
                 @click="goToSimulation"
-                :disabled="!selectedProject.graph_id"
+                :disabled="!selectedProject.last_simulation_id"
               >
                 <span class="btn-step">Step2</span>
                 <span class="btn-icon">◈</span>
@@ -189,6 +231,29 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Delete confirmation modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="deleteConfirmProject" class="modal-overlay delete-confirm-overlay" @click.self="cancelDelete">
+          <div class="modal-content delete-confirm-modal">
+            <div class="modal-header">
+              <span class="modal-id">{{ $t('history.deleteProject') }}</span>
+              <button class="modal-close" @click="cancelDelete">×</button>
+            </div>
+            <div class="modal-body">
+              <p class="delete-confirm-text">
+                {{ $t('history.deleteConfirm', { title: getSimulationTitle(deleteConfirmProject.simulation_requirement) }) }}
+              </p>
+            </div>
+            <div class="modal-actions">
+              <button class="modal-btn btn-delete-confirm" @click="doDelete">{{ $t('history.deleteConfirmYes') }}</button>
+              <button class="modal-btn btn-project" @click="cancelDelete">{{ $t('history.deleteConfirmNo') }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -196,7 +261,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { listProjects } from '../api/graph'
+import { listProjects, deleteProject, updateProjectName } from '../api/graph'
 import { getReportBySimulation } from '../api/report'
 
 const router = useRouter()
@@ -210,6 +275,10 @@ const isExpanded = ref(false)
 const hoveringCard = ref(null)
 const historyContainer = ref(null)
 const selectedProject = ref(null)  // 当前选中的项目（用于弹窗）
+const deleteConfirmProject = ref(null)  // project pending delete confirmation
+const editingName = ref(false)
+const editedName = ref('')
+const nameInput = ref(null)
 let observer = null
 let isAnimating = false  // 动画锁，防止闪烁
 let expandDebounceTimer = null  // 防抖定时器
@@ -406,6 +475,55 @@ const closeModal = () => {
   selectedProject.value = null
 }
 
+const confirmDelete = (project) => {
+  deleteConfirmProject.value = project
+}
+
+const cancelDelete = () => {
+  deleteConfirmProject.value = null
+}
+
+const doDelete = async () => {
+  const project = deleteConfirmProject.value
+  deleteConfirmProject.value = null
+  try {
+    await deleteProject(project.project_id)
+    projects.value = projects.value.filter(p => p.project_id !== project.project_id)
+  } catch (e) {
+    console.error('Delete project failed', e)
+  }
+}
+
+const hasRelatedFiles = (project) => {
+  if (!project) return false
+  return (project.files && project.files.length > 0) || !!project.last_simulation_id
+}
+
+const startEditName = () => {
+  editedName.value = selectedProject.value?.name || ''
+  editingName.value = true
+  nextTick(() => nameInput.value?.focus())
+}
+
+const saveEditedName = async () => {
+  const name = editedName.value.trim()
+  editingName.value = false
+  if (!name || !selectedProject.value) return
+  if (name === selectedProject.value.name) return
+  try {
+    await updateProjectName(selectedProject.value.project_id, name)
+    selectedProject.value = { ...selectedProject.value, name }
+    const idx = projects.value.findIndex(p => p.project_id === selectedProject.value.project_id)
+    if (idx !== -1) projects.value[idx] = { ...projects.value[idx], name }
+  } catch (e) {
+    console.error('Failed to update project name', e)
+  }
+}
+
+const cancelEditName = () => {
+  editingName.value = false
+}
+
 // 导航到图谱构建页面（Project）
 const goToProject = () => {
   if (selectedProject.value?.project_id) {
@@ -419,10 +537,10 @@ const goToProject = () => {
 
 // 导航到环境配置页面（Simulation）
 const goToSimulation = () => {
-  if (selectedProject.value?.graph_id) {
+  if (selectedProject.value?.last_simulation_id) {
     router.push({
-      name: 'Process',
-      params: { projectId: selectedProject.value.project_id }
+      name: 'Simulation',
+      params: { simulationId: selectedProject.value.last_simulation_id }
     })
     closeModal()
   }
@@ -1353,5 +1471,91 @@ onUnmounted(() => {
   letter-spacing: 0.3px;
   text-align: center;
   line-height: 1.5;
+}
+
+/* Delete button on project card */
+.card-delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #D1D5DB;
+  background: #fff;
+  color: #9CA3AF;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
+  z-index: 20;
+}
+
+.card-delete-btn:hover {
+  opacity: 1;
+  color: #EF4444;
+  border-color: #EF4444;
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* Delete confirmation modal */
+.delete-confirm-modal {
+  max-width: 380px;
+}
+
+.delete-confirm-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: #D1D5DB;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.btn-delete-confirm {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #EF4444;
+}
+
+.btn-delete-confirm:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+
+.modal-name-input {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  border: 1px solid #D1D5DB;
+  border-radius: 4px;
+  padding: 2px 8px;
+  outline: none;
+  width: 260px;
+}
+
+.modal-name-input:focus {
+  border-color: #3B82F6;
+}
+
+.modal-file-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.modal-file-link:hover {
+  border-color: #3B82F6;
+  background: #EFF6FF;
+}
+
+.file-download-icon {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: #9CA3AF;
 }
 </style>

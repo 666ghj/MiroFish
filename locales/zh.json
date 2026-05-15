@@ -400,7 +400,16 @@
     "notStarted": "未开始",
     "roundsProgress": "{current}/{total} 轮",
     "untitledSimulation": "未命名模拟",
-    "unknownFile": "未知文件"
+    "unknownFile": "未知文件",
+    "deleteProject": "删除项目",
+    "deleteConfirm": "删除「{title}」及其所有模拟？",
+    "deleteConfirmYes": "删除",
+    "deleteConfirmNo": "取消",
+    "editName": "编辑名称",
+    "namePlaceholder": "项目名称",
+    "sourceDoc": "原始文档",
+    "finalReport": "最终报告",
+    "simLog": "模拟日志"
   },
   "api": {
     "projectNotFound": "项目不存在: {id}",
@@ -635,6 +644,7 @@
     "stopFailed": "停止失败: {error}",
     "stopException": "停止异常: {error}",
     "allPlatformsCompleted": "✓ 检测到所有平台模拟已结束",
+    "simEndedWithError": "⚠ 模拟因错误终止 — 部分结果可用于生成报告。",
     "simCompleted": "✓ 模拟已完成",
     "reportRequestSent": "报告生成请求已发送，请稍候...",
     "startingReportGen": "正在启动报告生成...",

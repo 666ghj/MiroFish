@@ -400,7 +400,16 @@
     "notStarted": "Not started",
     "roundsProgress": "{current}/{total} rounds",
     "untitledSimulation": "Untitled simulation",
-    "unknownFile": "Unknown file"
+    "unknownFile": "Unknown file",
+    "deleteProject": "Delete project",
+    "deleteConfirm": "Delete \"{title}\" and all its simulations?",
+    "deleteConfirmYes": "Delete",
+    "deleteConfirmNo": "Cancel",
+    "editName": "Edit name",
+    "namePlaceholder": "Project name",
+    "sourceDoc": "Source document",
+    "finalReport": "Final report",
+    "simLog": "Simulation log"
   },
   "api": {
     "projectNotFound": "Project not found: {id}",
@@ -635,6 +644,7 @@
     "stopFailed": "Stop failed: {error}",
     "stopException": "Stop error: {error}",
     "allPlatformsCompleted": "✓ All platform simulations have ended",
+    "simEndedWithError": "⚠ Simulation ended with an error — partial results are available for report generation.",
     "simCompleted": "✓ Simulation completed",
     "reportRequestSent": "Report generation request sent, please wait...",
     "startingReportGen": "Starting report generation...",

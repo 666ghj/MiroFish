@@ -390,7 +390,16 @@
     "notStarted": "Sin iniciar",
     "roundsProgress": "{current}/{total} rondas",
     "untitledSimulation": "Simulación sin título",
-    "unknownFile": "Archivo desconocido"
+    "unknownFile": "Archivo desconocido",
+    "deleteProject": "Eliminar proyecto",
+    "deleteConfirm": "¿Eliminar \"{title}\" y todas sus simulaciones?",
+    "deleteConfirmYes": "Eliminar",
+    "deleteConfirmNo": "Cancelar",
+    "editName": "Editar nombre",
+    "namePlaceholder": "Nombre del proyecto",
+    "sourceDoc": "Documento original",
+    "finalReport": "Informe final",
+    "simLog": "Log de simulación"
   },
   "api": {
     "projectNotFound": "Proyecto no encontrado: {id}",
@@ -616,6 +625,7 @@
     "stopFailed": "Error al detener: {error}",
     "stopException": "Excepción al detener: {error}",
     "allPlatformsCompleted": "✓ Todas las simulaciones de plataforma han finalizado",
+    "simEndedWithError": "⚠ La simulación ha finalizado con un error — los resultados parciales están disponibles para generar el informe.",
     "simCompleted": "✓ Simulación completada",
     "reportRequestSent": "Solicitud de generación de informe enviada, por favor esperá...",
     "startingReportGen": "Iniciando generación de informe...",
