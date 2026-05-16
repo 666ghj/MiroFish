@@ -778,11 +778,38 @@
     "subtitle": "// Authenticated access required",
     "username": "Username",
     "usernamePlaceholder": "demo",
+    "email": "Email",
+    "emailPlaceholder": "your@email.com",
     "password": "Password",
     "passwordPlaceholder": "••••••••",
     "submit": "Enter",
     "loading": "Authenticating...",
-    "invalidCredentials": "Invalid username or password"
+    "invalidCredentials": "Invalid username or password",
+    "forgotPassword": "Forgot password?",
+    "accountActivated": "Account activated. You can now log in."
+  },
+  "forgotPassword": {
+    "title": "Forgot Password",
+    "subtitle": "Enter your email and we'll send you a reset link.",
+    "submit": "Send reset link",
+    "sent": "If an account exists with this email, you will receive a reset link shortly."
+  },
+  "resetPassword": {
+    "title": "Reset Password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "submit": "Set new password",
+    "done": "Password updated. You can now log in.",
+    "goToLogin": "Go to login",
+    "invalidToken": "This link is invalid or has expired.",
+    "passwordMismatch": "Passwords do not match."
+  },
+  "setPassword": {
+    "title": "Welcome to MiroFish",
+    "newPassword": "Choose a password",
+    "submit": "Activate account",
+    "done": "Account activated! Redirecting to login...",
+    "invalidToken": "This invitation link is invalid or has expired."
   },
   "error": {
     "filesLostAfterRefresh": "Files were lost after page refresh. Redirecting to home to re-select files…"

@@ -778,11 +778,38 @@
     "subtitle": "// 需要身份验证",
     "username": "用户名",
     "usernamePlaceholder": "demo",
+    "email": "邮箱",
+    "emailPlaceholder": "your@email.com",
     "password": "密码",
     "passwordPlaceholder": "••••••••",
     "submit": "登录",
     "loading": "验证中...",
-    "invalidCredentials": "用户名或密码错误"
+    "invalidCredentials": "用户名或密码错误",
+    "forgotPassword": "忘记密码？",
+    "accountActivated": "账户已激活，现在可以登录。"
+  },
+  "forgotPassword": {
+    "title": "忘记密码",
+    "subtitle": "请输入您的邮箱，我们将发送重置链接。",
+    "submit": "发送重置链接",
+    "sent": "如果该邮箱已注册，您将收到重置链接。"
+  },
+  "resetPassword": {
+    "title": "重置密码",
+    "newPassword": "新密码",
+    "confirmPassword": "确认密码",
+    "submit": "设置新密码",
+    "done": "密码已更新，现在可以登录。",
+    "goToLogin": "前往登录",
+    "invalidToken": "此链接无效或已过期。",
+    "passwordMismatch": "两次密码不一致。"
+  },
+  "setPassword": {
+    "title": "欢迎使用 MiroFish",
+    "newPassword": "设置密码",
+    "submit": "激活账户",
+    "done": "账户已激活！正在跳转到登录页面...",
+    "invalidToken": "此邀请链接无效或已过期。"
   },
   "error": {
     "filesLostAfterRefresh": "刷新页面后文件丢失，正在跳转到首页重新选择文件…"
