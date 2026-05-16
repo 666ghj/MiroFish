@@ -1,9 +1,10 @@
 """
 文件解析工具
-支持PDF、Markdown、TXT文件的文本提取
+支持PDF、Markdown、TXT、音频、视频文件的文本提取
 """
 
 import os
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -60,37 +61,46 @@ def _read_text_with_fallback(file_path: str) -> str:
 
 class FileParser:
     """文件解析器"""
-    
-    SUPPORTED_EXTENSIONS = {'.pdf', '.md', '.markdown', '.txt'}
-    
+
+    # Formats sent directly to the transcription endpoint (or multimodal chat after PyAV conversion)
+    _AUDIO_NATIVE = {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.ogg', '.wav', '.webm', '.flac'}
+    # Video container formats — audio extracted via PyAV before transcription
+    _VIDEO_CONTAINERS = {'.mkv', '.avi', '.mov', '.wmv'}
+
+    SUPPORTED_EXTENSIONS = {'.pdf', '.md', '.markdown', '.txt'} | _AUDIO_NATIVE | _VIDEO_CONTAINERS
+
     @classmethod
     def extract_text(cls, file_path: str) -> str:
         """
         从文件中提取文本
-        
+
         Args:
             file_path: 文件路径
-            
+
         Returns:
             提取的文本内容
         """
         path = Path(file_path)
-        
+
         if not path.exists():
             raise FileNotFoundError(f"文件不存在: {file_path}")
-        
+
         suffix = path.suffix.lower()
-        
+
         if suffix not in cls.SUPPORTED_EXTENSIONS:
             raise ValueError(f"不支持的文件格式: {suffix}")
-        
+
         if suffix == '.pdf':
             return cls._extract_from_pdf(file_path)
         elif suffix in {'.md', '.markdown'}:
             return cls._extract_from_md(file_path)
         elif suffix == '.txt':
             return cls._extract_from_txt(file_path)
-        
+        elif suffix in cls._AUDIO_NATIVE:
+            return cls._transcribe_audio(file_path)
+        elif suffix in cls._VIDEO_CONTAINERS:
+            return cls._transcribe_video(file_path)
+
         raise ValueError(f"无法处理的文件格式: {suffix}")
     
     @staticmethod
@@ -120,6 +130,109 @@ class FileParser:
         """从TXT提取文本，支持自动编码检测"""
         return _read_text_with_fallback(file_path)
     
+    @staticmethod
+    def _to_wav_bytes(file_path: str) -> bytes:
+        """Extract audio from any container and return raw WAV bytes using PyAV."""
+        try:
+            import av
+        except ImportError:
+            raise ImportError(
+                "PyAV is required to convert audio/video files. "
+                "Install it with: pip install av"
+            )
+        import io
+
+        buf = io.BytesIO()
+        with av.open(file_path) as inp:
+            audio = next((s for s in inp.streams if s.type == 'audio'), None)
+            if audio is None:
+                raise ValueError(f"No audio track found in: {file_path}")
+            with av.open(buf, 'w', format='wav') as out:
+                out_stream = out.add_stream('pcm_s16le', rate=16000, layout='mono')
+                for packet in inp.demux(audio):
+                    for frame in packet.decode():
+                        frame.pts = None
+                        for pkt in out_stream.encode(frame):
+                            out.mux(pkt)
+                for pkt in out_stream.encode(None):
+                    out.mux(pkt)
+        buf.seek(0)
+        return buf.read()
+
+    @staticmethod
+    def _transcribe_audio(file_path: str) -> str:
+        """Transcribe audio file.
+
+        Tries the Whisper-style /audio/transcriptions endpoint first (OpenAI, Groq, etc.).
+        Falls back to multimodal chat (Gemini and other vision/audio LLMs) if the
+        provider doesn't support that endpoint (404).
+        """
+        import base64
+        from openai import OpenAI, NotFoundError
+        from ..config import Config
+
+        client = OpenAI(api_key=Config.LLM_API_KEY, base_url=Config.LLM_BASE_URL)
+
+        # --- attempt 1: Whisper-compatible endpoint ---
+        try:
+            with open(file_path, 'rb') as f:
+                transcript = client.audio.transcriptions.create(
+                    model=Config.WHISPER_MODEL,
+                    file=f,
+                )
+            return transcript.text
+        except NotFoundError:
+            pass  # Provider doesn't expose Whisper; fall through to multimodal chat
+
+        # --- attempt 2: multimodal chat (e.g. Gemini) ---
+        # Gemini only accepts wav/mp3; convert anything else using PyAV (no system ffmpeg needed)
+        fmt = Path(file_path).suffix.lower().lstrip('.')
+        if fmt in ('wav', 'mp3'):
+            with open(file_path, 'rb') as f:
+                audio_bytes = f.read()
+        else:
+            audio_bytes = FileParser._to_wav_bytes(file_path)
+            fmt = 'wav'
+
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+
+        response = client.chat.completions.create(
+            model=Config.LLM_MODEL_NAME,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {"data": audio_b64, "format": fmt},
+                    },
+                    {
+                        "type": "text",
+                        "text": "Transcribe this audio accurately. Return only the transcription text, no commentary.",
+                    },
+                ],
+            }],
+        )
+        content = response.choices[0].message.content
+        # Strip <think> tags that some models inject
+        import re
+        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        return content
+
+    @classmethod
+    def _transcribe_video(cls, file_path: str) -> str:
+        """Extract audio from video container and transcribe, using PyAV (no system ffmpeg needed)."""
+        import io
+        # Convert to WAV in memory, write to a temp file so _transcribe_audio can open it
+        wav_bytes = cls._to_wav_bytes(file_path)
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            tmp.write(wav_bytes)
+            tmp_path = tmp.name
+        try:
+            return cls._transcribe_audio(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
     @classmethod
     def extract_from_multiple(cls, file_paths: List[str]) -> str:
         """

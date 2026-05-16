@@ -12,23 +12,20 @@ dependencies = [
     # 核心框架
     "flask>=3.0.0",
     "flask-cors>=6.0.0",
-    
     # LLM 相关
     "openai>=1.0.0",
-    
     # Zep Cloud
     "zep-cloud==3.13.0",
-    
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",
-    
     # 文件处理
     "PyMuPDF>=1.24.0",
+    # Audio/video transcription (bundles FFmpeg libs, no system install needed)
+    "av>=12.0.0",
     # 编码检测（支持非UTF-8编码的文本文件）
     "charset-normalizer>=3.0.0",
     "chardet>=5.0.0",
-    
     # 工具库
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",

@@ -145,7 +145,7 @@
                   ref="fileInput"
                   type="file"
                   multiple
-                  accept=".pdf,.md,.txt"
+                  accept=".pdf,.md,.txt,.mp3,.wav,.m4a,.ogg,.flac,.mp4,.mpeg,.webm,.mkv,.avi,.mov,.wmv"
                   @change="handleFileSelect"
                   style="display: none"
                   :disabled="loading"
@@ -276,7 +276,7 @@ const handleDrop = (e) => {
 const addFiles = (newFiles) => {
   const validFiles = newFiles.filter(file => {
     const ext = file.name.split('.').pop().toLowerCase()
-    return ['pdf', 'md', 'txt'].includes(ext)
+    return ['pdf', 'md', 'txt', 'markdown', 'mp3', 'wav', 'm4a', 'ogg', 'flac', 'mpga', 'mp4', 'mpeg', 'webm', 'mkv', 'avi', 'mov', 'wmv'].includes(ext)
   })
   files.value.push(...validFiles)
 }
