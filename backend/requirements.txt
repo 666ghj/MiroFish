@@ -33,3 +33,8 @@ python-dotenv>=1.0.0
 
 # 数据验证
 pydantic>=2.0.0
+
+# ============= Autenticació Fase 3 =============
+flask-jwt-extended>=4.6.0
+bcrypt>=4.1.0
+azure-communication-email>=1.0.0
