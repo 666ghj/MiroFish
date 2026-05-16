@@ -12,6 +12,7 @@ warnings.filterwarnings("ignore", message=".*resource_tracker.*")
 import jwt
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
 
 from .config import Config
 from .utils.logger import setup_logger, get_logger
@@ -36,6 +37,9 @@ def create_app(config_class=Config):
     # Inicialitzar Storage
     from .storage import create_storage_service
     app.extensions['storage'] = create_storage_service()
+
+    # Inicialitzar JWT
+    JWTManager(app)
 
     # Configure JSON encoding: ensure non-ASCII characters are output directly (not as \uXXXX)
     # Flask >= 2.3 uses app.json.ensure_ascii; older versions use JSON_AS_ASCII config
@@ -134,3 +138,25 @@ def get_storage():
     """Accés al StorageService des de qualsevol context Flask."""
     from flask import current_app
     return current_app.extensions['storage']
+
+
+def get_current_user():
+    """Retorna l'usuari autenticat via JWT Bearer token, o None si no hi ha token vàlid."""
+    from flask import request
+    from flask_jwt_extended import decode_token
+    from .db import get_session
+    from .models.db_models import UserModel
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return None
+    token = auth_header[len('Bearer '):]
+    try:
+        decoded = decode_token(token)
+        user_id = decoded.get('sub')
+    except Exception:
+        return None
+    with get_session() as db:
+        user = db.get(UserModel, user_id)
+        if user:
+            db.expunge(user)
+        return user
