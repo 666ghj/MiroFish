@@ -21,10 +21,10 @@ class ProjectManager:
     """Gestiona projectes: metadades a BD, fitxers a StorageService."""
 
     @classmethod
-    def create_project(cls, name: str = "Unnamed Project", storage=None) -> Dict[str, Any]:
+    def create_project(cls, name: str = "Unnamed Project", storage=None, user_id: str = None) -> Dict[str, Any]:
         project_id = str(uuid.uuid4())
         with get_session() as db:
-            proj = ProjectModel(id=project_id, name=name, status="created")
+            proj = ProjectModel(id=project_id, name=name, status="created", user_id=user_id)
             db.add(proj)
             db.commit()
             db.refresh(proj)
@@ -59,10 +59,12 @@ class ProjectManager:
             db.commit()
 
     @classmethod
-    def list_projects(cls, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_projects(cls, limit: int = 50, user_id: str = None) -> List[Dict[str, Any]]:
         from sqlalchemy import select, desc
         with get_session() as db:
             stmt = select(ProjectModel).order_by(desc(ProjectModel.created_at)).limit(limit)
+            if user_id is not None:
+                stmt = stmt.where(ProjectModel.user_id == user_id)
             projects = db.execute(stmt).scalars().all()
             for p in projects:
                 db.expunge(p)
@@ -302,6 +304,7 @@ class ProjectManager:
         return {
             "id": proj.id,
             "project_id": proj.id,
+            "user_id": proj.user_id,
             "name": proj.name,
             "status": proj.status,
             "analysis_summary": proj.analysis_summary,
