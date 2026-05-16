@@ -790,5 +790,29 @@
   },
   "error": {
     "filesLostAfterRefresh": "Files were lost after page refresh. Redirecting to home to re-select files…"
+  },
+  "admin": {
+    "users": "Users",
+    "config": "Configuration",
+    "executions": "Execution History",
+    "inviteUser": "Invite User",
+    "name": "Name",
+    "email": "Email",
+    "role": "Role",
+    "status": "Status",
+    "created": "Created",
+    "actions": "Actions",
+    "send": "Send",
+    "inviteSent": "Invitation sent.",
+    "reinvite": "Resend invitation",
+    "disable": "Disable user",
+    "noUsers": "No users found.",
+    "noConfig": "No configuration entries.",
+    "configSaved": "Configuration saved.",
+    "noExecutions": "No executions found.",
+    "user": "User",
+    "project": "Project",
+    "platform": "Platform",
+    "rounds": "Rounds"
   }
 }

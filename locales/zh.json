@@ -790,5 +790,29 @@
   },
   "error": {
     "filesLostAfterRefresh": "刷新页面后文件丢失，正在跳转到首页重新选择文件…"
+  },
+  "admin": {
+    "users": "用户",
+    "config": "配置",
+    "executions": "执行历史",
+    "inviteUser": "邀请用户",
+    "name": "姓名",
+    "email": "邮箱",
+    "role": "角色",
+    "status": "状态",
+    "created": "创建时间",
+    "actions": "操作",
+    "send": "发送",
+    "inviteSent": "邀请已发送。",
+    "reinvite": "重新发送邀请",
+    "disable": "禁用用户",
+    "noUsers": "暂无用户。",
+    "noConfig": "暂无配置项。",
+    "configSaved": "配置已保存。",
+    "noExecutions": "暂无执行记录。",
+    "user": "用户",
+    "project": "项目",
+    "platform": "平台",
+    "rounds": "轮次"
   }
 }
