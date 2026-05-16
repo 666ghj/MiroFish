@@ -221,14 +221,24 @@ def create_simulation():
                 "success": False,
                 "error": t('api.requireProjectId')
             }), 400
-        
+
+        from .. import get_current_user
+        from ..db import get_session
+        from ..models.db_models import ProjectModel
+        user = get_current_user()
+        if user and user.role != 'admin':
+            with get_session() as db:
+                proj = db.get(ProjectModel, project_id)
+                if proj and proj.user_id and proj.user_id != user.id:
+                    return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
         project = ProjectManager.get_project(project_id)
         if not project:
             return jsonify({
                 "success": False,
                 "error": t('api.projectNotFound', id=project_id)
             }), 404
-        
+
         graph_id = data.get('graph_id') or project.get("graph_id")
         if not graph_id:
             return jsonify({
@@ -457,7 +467,17 @@ def prepare_simulation():
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
-        
+
+        from .. import get_current_user
+        from ..db import get_session
+        from ..models.db_models import ProjectModel
+        user = get_current_user()
+        if user and user.role != 'admin':
+            with get_session() as db:
+                proj = db.get(ProjectModel, state.project_id)
+                if proj and proj.user_id and proj.user_id != user.id:
+                    return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
         # Check whether force regeneration is requested
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"Processing /prepare request: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
@@ -1596,6 +1616,16 @@ def start_simulation():
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
+
+        from .. import get_current_user
+        from ..db import get_session
+        from ..models.db_models import ProjectModel
+        user = get_current_user()
+        if user and user.role != 'admin':
+            with get_session() as db:
+                proj = db.get(ProjectModel, state.project_id)
+                if proj and proj.user_id and proj.user_id != user.id:
+                    return jsonify({'success': False, 'error': 'Forbidden'}), 403
 
         force_restarted = False
 
