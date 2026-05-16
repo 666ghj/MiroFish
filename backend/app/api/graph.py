@@ -11,7 +11,7 @@ import threading
 from flask import request, jsonify, Response
 
 from . import graph_bp
-from .. import get_storage
+from .. import get_storage, get_current_user, require_project_owner
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
 from ..services.graph_builder import GraphBuilderService
@@ -38,6 +38,7 @@ def allowed_file(filename: str) -> bool:
 # ============== Project management endpoints ==============
 
 @graph_bp.route('/project/<project_id>', methods=['GET'])
+@require_project_owner
 def get_project(project_id: str):
     """
     Get project details
@@ -62,16 +63,15 @@ def list_projects():
     List all projects
     """
     limit = request.args.get('limit', 50, type=int)
-    projects = ProjectManager.list_projects(limit=limit)
-    
-    return jsonify({
-        "success": True,
-        "data": projects,
-        "count": len(projects)
-    })
+    user = get_current_user()
+    # Admin i mode TESTING (user=None) veuen tots; usuaris normals veuen els seus
+    filter_user_id = None if (user is None or user.role == 'admin') else user.id
+    projects = ProjectManager.list_projects(limit=limit, user_id=filter_user_id)
+    return jsonify({"success": True, "data": projects, "count": len(projects)})
 
 
 @graph_bp.route('/project/<project_id>', methods=['DELETE'])
+@require_project_owner
 def delete_project(project_id: str):
     """
     Delete a project
@@ -182,7 +182,8 @@ def generate_ontology():
         if not uploaded_files or all(not f.filename for f in uploaded_files):
             return jsonify({"success": False, "error": t('api.requireFileUpload')}), 400
 
-        project = ProjectManager.create_project(name=project_name, storage=storage)
+        user = get_current_user()
+        project = ProjectManager.create_project(name=project_name, storage=storage, user_id=user.id if user else None)
         project_id = project["project_id"]
         logger.info(f"Project created: {project_id}")
 
@@ -310,7 +311,8 @@ def import_ontology():
         if not uploaded_files or all(not f.filename for f in uploaded_files):
             return jsonify({"success": False, "error": t('api.requireFileUpload')}), 400
 
-        project = ProjectManager.create_project(name=project_name, storage=storage)
+        user = get_current_user()
+        project = ProjectManager.create_project(name=project_name, storage=storage, user_id=user.id if user else None)
         project_id = project["project_id"]
         logger.info(f"Project created for import: {project_id}")
 
