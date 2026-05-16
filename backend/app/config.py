@@ -4,6 +4,7 @@ Loads config uniformly from the .env file at the project root
 """
 
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load the .env file from the project root
@@ -62,7 +63,10 @@ class Config:
 
     # File upload settings
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
+    UPLOAD_FOLDER = os.environ.get(
+        'UPLOAD_FOLDER',
+        os.path.join(os.path.dirname(__file__), '../uploads')
+    )
     ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
     
     # Text processing settings
@@ -75,7 +79,10 @@ class Config:
 
     # OASIS simulation settings
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
-    OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+    OASIS_SIMULATION_DATA_DIR = os.environ.get(
+        'OASIS_SIMULATION_DATA_DIR',
+        os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+    )
     
     # OASIS platform available actions
     OASIS_TWITTER_ACTIONS = [
@@ -105,11 +112,27 @@ class Config:
     AZURE_STORAGE_CONNECTION_STRING = os.environ.get('AZURE_STORAGE_CONNECTION_STRING', '')
     AZURE_STORAGE_CONTAINER = os.environ.get('AZURE_STORAGE_CONTAINER', 'mirofish')
 
-    # JWT (per a la Fase 2 d'autenticació — definits aquí perquè flask-jwt-extended els necessita en create_app)
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET', 'change-me-in-production')
-    JWT_REFRESH_SECRET_KEY = os.environ.get('JWT_REFRESH_SECRET', 'change-me-refresh-in-production')
-    JWT_ACCESS_TOKEN_EXPIRES_HOURS = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', '8'))
-    JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(os.environ.get('JWT_REFRESH_TOKEN_EXPIRES_DAYS', '7'))
+    # Auth JWT (flask-jwt-extended)
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'change-me-in-production')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(
+        seconds=int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES', '28800'))   # 8h
+    )
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(
+        seconds=int(os.environ.get('JWT_REFRESH_TOKEN_EXPIRES', '604800'))  # 7d
+    )
+    JWT_COOKIE_SECURE = os.environ.get('FLASK_DEBUG', 'True').lower() != 'true'
+    JWT_COOKIE_CSRF_PROTECT = False
+    JWT_REFRESH_COOKIE_PATH = '/api/auth/refresh'
+
+    # Admin inicial (per init_system.py)
+    ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', '')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
+
+    # Azure Communication Services
+    ACS_CONNECTION_STRING = os.environ.get('ACS_CONNECTION_STRING', '')
+    ACS_SENDER_ADDRESS = os.environ.get('ACS_SENDER_ADDRESS', 'donotreply@mirofish.local')
+    ACS_INVITATION_TTL_HOURS = int(os.environ.get('ACS_INVITATION_TTL_HOURS', '48'))
+    ACS_RESET_PASSWORD_TTL_HOURS = int(os.environ.get('ACS_RESET_PASSWORD_TTL_HOURS', '1'))
 
     @classmethod
     def get_graph_config_errors(cls) -> list:
