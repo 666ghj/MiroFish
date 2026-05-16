@@ -22,12 +22,22 @@ PROJECT_NAME="mirofish"               # prefix per a tots els recursos Azure
 
 # ── Secrets de l'aplicació ────────────────────────────────────────────────────
 
-# Contrasenya de l'usuari "demo" per fer login a l'app
-DEMO_PASSWORD="<contrasenya-segura>"
+# ── Auth JWT ──────────────────────────────────────────────────────────────────
+# Genera JWT_SECRET_KEY amb: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET_KEY="<clau-secreta-jwt>"
+JWT_ACCESS_TOKEN_EXPIRES=28800        # 8h en segons
+JWT_REFRESH_TOKEN_EXPIRES=604800      # 7d en segons
 
-# Flask SECRET_KEY per signar tokens JWT
-# Genera-la amb: python -c "import secrets; print(secrets.token_hex(32))"
-SECRET_KEY="<flask-secret-key>"
+# ── Admin inicial (per flask init-system) ─────────────────────────────────────
+ADMIN_EMAIL="admin@example.com"
+ADMIN_PASSWORD="<contrasenya-segura>"
+
+# ── Azure Communication Services (emails d'invitació i reset) ────────────────
+# ACS és opcional en dev: els links apareixeran als logs si ACS_CONNECTION_STRING és buit
+ACS_CONNECTION_STRING=""
+ACS_SENDER_ADDRESS="donotreply@example.com"
+ACS_INVITATION_TTL_HOURS=48
+ACS_RESET_PASSWORD_TTL_HOURS=1
 
 # ── LLM principal (OpenAI-compatible) ─────────────────────────────────────────
 LLM_API_KEY="<la-teva-llm-api-key>"

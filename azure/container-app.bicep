@@ -37,10 +37,6 @@ param acrUsername string
 @secure()
 param acrPassword string
 
-@description('Contrasenya de l\'usuari demo')
-@secure()
-param demoPassword string
-
 @description('Clau de l\'API LLM principal (OpenAI-compatible)')
 @secure()
 param llmApiKey string
@@ -57,9 +53,17 @@ param zepApiKey string = ''
 @secure()
 param neo4jPassword string = ''
 
-@description('SECRET_KEY de Flask per a JWT (python -c "import secrets; print(secrets.token_hex(32))")')
+@description('JWT Secret Key per a flask-jwt-extended')
 @secure()
-param secretKey string
+param jwtSecretKey string
+
+@description('Contrasenya de l\'admin inicial (per flask init-system)')
+@secure()
+param adminPassword string
+
+@description('Connection string Azure Communication Services (opcional)')
+@secure()
+param acsConnectionString string = ''
 
 @description('Connection string del Storage Account per a Azure Files (output d\'infra.bicep)')
 @secure()
@@ -71,6 +75,24 @@ param databaseUrl string = ''
 
 @description('Nom del Storage Account (output d\'infra.bicep)')
 param storageAccountName string = ''
+
+@description('Email de l\'admin inicial')
+param adminEmail string = ''
+
+@description('Adreça remitent ACS')
+param acsSenderAddress string = ''
+
+@description('TTL invitació en hores')
+param acsInvitationTtlHours string = '48'
+
+@description('TTL reset password en hores')
+param acsResetPasswordTtlHours string = '1'
+
+@description('Expiració access token JWT en segons')
+param jwtAccessTokenExpires string = '28800'
+
+@description('Expiració refresh token JWT en segons')
+param jwtRefreshTokenExpires string = '604800'
 
 // ─── Paràmetres LLM principal ─────────────────────────────────────────────────
 
@@ -149,10 +171,10 @@ param reportAgentTemperature string = '0.5'
 
 // ─── Secrets i env vars condicionals (Azure rebutja secrets amb valor buit) ───
 var mandatorySecrets = [
-  { name: 'acr-password',  value: acrPassword }
-  { name: 'demo-password', value: demoPassword }
-  { name: 'llm-api-key',   value: llmApiKey }
-  { name: 'secret-key',    value: secretKey }
+  { name: 'acr-password',   value: acrPassword }
+  { name: 'jwt-secret-key', value: jwtSecretKey }
+  { name: 'admin-password', value: adminPassword }
+  { name: 'llm-api-key',    value: llmApiKey }
 ]
 var optionalSecrets = concat(
   empty(llmBoostApiKey)        ? [] : [{ name: 'llm-boost-api-key',        value: llmBoostApiKey }],
@@ -161,14 +183,21 @@ var optionalSecrets = concat(
   empty(zepApiKey)             ? [] : [{ name: 'zep-api-key',              value: zepApiKey }],
   empty(neo4jPassword)         ? [] : [{ name: 'neo4j-password',           value: neo4jPassword }],
   empty(storageConnectionString) ? [] : [{ name: 'storage-connection-string', value: storageConnectionString }],
-  empty(databaseUrl)           ? [] : [{ name: 'database-url',             value: databaseUrl }]
+  empty(databaseUrl)           ? [] : [{ name: 'database-url',             value: databaseUrl }],
+  empty(acsConnectionString)   ? [] : [{ name: 'acs-connection-string',    value: acsConnectionString }]
 )
 var allSecrets = concat(mandatorySecrets, optionalSecrets)
 
 var mandatoryEnv = [
-  { name: 'DEMO_PASSWORD', secretRef: 'demo-password' }
+  { name: 'JWT_SECRET_KEY',               secretRef: 'jwt-secret-key' }
+  { name: 'ADMIN_EMAIL',                  value: adminEmail }
+  { name: 'ADMIN_PASSWORD',               secretRef: 'admin-password' }
+  { name: 'JWT_ACCESS_TOKEN_EXPIRES',     value: jwtAccessTokenExpires }
+  { name: 'JWT_REFRESH_TOKEN_EXPIRES',    value: jwtRefreshTokenExpires }
+  { name: 'ACS_SENDER_ADDRESS',           value: acsSenderAddress }
+  { name: 'ACS_INVITATION_TTL_HOURS',     value: acsInvitationTtlHours }
+  { name: 'ACS_RESET_PASSWORD_TTL_HOURS', value: acsResetPasswordTtlHours }
   { name: 'LLM_API_KEY',   secretRef: 'llm-api-key' }
-  { name: 'SECRET_KEY',    secretRef: 'secret-key' }
   { name: 'LLM_BASE_URL',          value: llmBaseUrl }
   { name: 'LLM_MODEL_NAME',        value: llmModelName }
   { name: 'LLM_PROVIDER',          value: llmProvider }
@@ -199,7 +228,8 @@ var optionalEnv = concat(
   empty(zepApiKey)               ? [] : [{ name: 'ZEP_API_KEY',                    secretRef: 'zep-api-key' }],
   empty(neo4jPassword)           ? [] : [{ name: 'NEO4J_PASSWORD',                 secretRef: 'neo4j-password' }],
   empty(storageConnectionString) ? [] : [{ name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }],
-  empty(databaseUrl)             ? [] : [{ name: 'DATABASE_URL',                   secretRef: 'database-url' }]
+  empty(databaseUrl)             ? [] : [{ name: 'DATABASE_URL',                   secretRef: 'database-url' }],
+  empty(acsConnectionString)     ? [] : [{ name: 'ACS_CONNECTION_STRING',          secretRef: 'acs-connection-string' }]
 )
 var allEnv = concat(mandatoryEnv, optionalEnv)
 
@@ -266,7 +296,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'uploads'
           storageType: 'AzureFile'
           storageName: 'uploads'
-          mountOptions: 'nobrl,cache=strict,nosharesock,actimeo=30'
+          mountOptions: 'nobrl,cache=strict,nosharesock'
         }
       ]
 

@@ -29,7 +29,8 @@ source "$CONFIG_FILE"
 # ── Validar variables obligatòries ───────────────────────────────────────────
 REQUIRED_VARS=(
   AZURE_SUBSCRIPTION_ID RESOURCE_GROUP PROJECT_NAME
-  DEMO_PASSWORD SECRET_KEY LLM_API_KEY LLM_BASE_URL LLM_MODEL_NAME
+  JWT_SECRET_KEY ADMIN_EMAIL ADMIN_PASSWORD
+  LLM_API_KEY LLM_BASE_URL LLM_MODEL_NAME
   DATABASE_URL STORAGE_CONNECTION_STRING
 )
 # Validate graph backend config
@@ -41,6 +42,9 @@ fi
 if [[ "$GRAPH_BACKEND" == "graphiti" && -z "${NEO4J_PASSWORD:-}" ]]; then
   echo "ERROR: NEO4J_PASSWORD is required when GRAPH_BACKEND=graphiti"
   exit 1
+fi
+if [[ -z "${ACS_CONNECTION_STRING:-}" ]]; then
+  echo "AVÍS: ACS_CONNECTION_STRING no configurat — emails d'invitació es mostraran als logs"
 fi
 for var in "${REQUIRED_VARS[@]}"; do
   if [[ -z "${!var:-}" ]]; then
@@ -133,7 +137,15 @@ DEPLOY_OUTPUT=$(az deployment group create \
       acrLoginServer="$ACR_LOGIN_SERVER" \
       acrUsername="$ACR_USERNAME" \
       acrPassword="$ACR_PASSWORD" \
-      demoPassword="$DEMO_PASSWORD" \
+      jwtSecretKey="$JWT_SECRET_KEY" \
+      adminEmail="$ADMIN_EMAIL" \
+      adminPassword="$ADMIN_PASSWORD" \
+      acsConnectionString="${ACS_CONNECTION_STRING:-}" \
+      acsSenderAddress="${ACS_SENDER_ADDRESS:-}" \
+      acsInvitationTtlHours="${ACS_INVITATION_TTL_HOURS:-48}" \
+      acsResetPasswordTtlHours="${ACS_RESET_PASSWORD_TTL_HOURS:-1}" \
+      jwtAccessTokenExpires="${JWT_ACCESS_TOKEN_EXPIRES:-28800}" \
+      jwtRefreshTokenExpires="${JWT_REFRESH_TOKEN_EXPIRES:-604800}" \
       llmApiKey="$LLM_API_KEY" \
       llmBoostApiKey="${LLM_BOOST_API_KEY:-}" \
       llmProvider="${LLM_PROVIDER:-}" \
@@ -143,7 +155,6 @@ DEPLOY_OUTPUT=$(az deployment group create \
       neo4jUser="${NEO4J_USER:-neo4j}" \
       neo4jDatabase="${NEO4J_DATABASE:-neo4j}" \
       graphBackend="${GRAPH_BACKEND:-zep}" \
-      secretKey="$SECRET_KEY" \
       llmBaseUrl="$LLM_BASE_URL" \
       llmModelName="$LLM_MODEL_NAME" \
       llmBoostBaseUrl="${LLM_BOOST_BASE_URL:-}" \
