@@ -17,6 +17,7 @@ from ..utils.logger import get_logger
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
+from ..utils.locale import t
 
 logger = get_logger('mirofish.simulation')
 
@@ -270,12 +271,12 @@ class SimulationManager:
             
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
-                progress_callback("reading", 0, "正在连接Zep图谱...")
+                progress_callback("reading", 0, t('progress.connectingZepGraph'))
             
             reader = ZepEntityReader()
             
             if progress_callback:
-                progress_callback("reading", 30, "正在读取节点数据...")
+                progress_callback("reading", 30, t('progress.readingNodeData'))
             
             filtered = reader.filter_defined_entities(
                 graph_id=state.graph_id,
@@ -288,8 +289,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "reading", 100, 
-                    f"完成，共 {filtered.filtered_count} 个实体",
+                    "reading", 100,
+                    t('progress.readingComplete', count=filtered.filtered_count),
                     current=filtered.filtered_count,
                     total=filtered.filtered_count
                 )
@@ -305,8 +306,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 0, 
-                    "开始生成...",
+                    "generating_profiles", 0,
+                    t('progress.startGenerating'),
                     current=0,
                     total=total_entities
                 )
@@ -351,8 +352,8 @@ class SimulationManager:
             # Reddit 已经在生成过程中实时保存了，这里再保存一次确保完整性
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 95, 
-                    "保存Profile文件...",
+                    "generating_profiles", 95,
+                    t('progress.savingProfiles'),
                     current=total_entities,
                     total=total_entities
                 )
@@ -374,8 +375,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 100, 
-                    f"完成，共 {len(profiles)} 个Profile",
+                    "generating_profiles", 100,
+                    t('progress.profilesComplete', count=len(profiles)),
                     current=len(profiles),
                     total=len(profiles)
                 )
@@ -383,8 +384,8 @@ class SimulationManager:
             # ========== 阶段3: LLM智能生成模拟配置 ==========
             if progress_callback:
                 progress_callback(
-                    "generating_config", 0, 
-                    "正在分析模拟需求...",
+                    "generating_config", 0,
+                    t('progress.analyzingRequirements'),
                     current=0,
                     total=3
                 )
@@ -393,8 +394,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_config", 30, 
-                    "正在调用LLM生成配置...",
+                    "generating_config", 30,
+                    t('progress.callingLLMConfig'),
                     current=1,
                     total=3
                 )
@@ -412,8 +413,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_config", 70, 
-                    "正在保存配置文件...",
+                    "generating_config", 70,
+                    t('progress.savingConfigFiles'),
                     current=2,
                     total=3
                 )
@@ -428,8 +429,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_config", 100, 
-                    "配置生成完成",
+                    "generating_config", 100,
+                    t('progress.configComplete'),
                     current=3,
                     total=3
                 )

@@ -20,6 +20,7 @@ from queue import Queue
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.locale import get_locale, set_locale
 from .zep_graph_memory_updater import ZepGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
@@ -455,10 +456,13 @@ class SimulationRunner:
             cls._processes[simulation_id] = process
             cls._save_run_state(state)
             
+            # Capture locale before spawning monitor thread
+            current_locale = get_locale()
+
             # 启动监控线程
             monitor_thread = threading.Thread(
                 target=cls._monitor_simulation,
-                args=(simulation_id,),
+                args=(simulation_id, current_locale),
                 daemon=True
             )
             monitor_thread.start()
@@ -475,8 +479,9 @@ class SimulationRunner:
         return state
     
     @classmethod
-    def _monitor_simulation(cls, simulation_id: str):
+    def _monitor_simulation(cls, simulation_id: str, locale: str = 'zh'):
         """监控模拟进程，解析动作日志"""
+        set_locale(locale)
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         
         # 新的日志结构：分平台的动作日志

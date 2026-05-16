@@ -9,9 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.13.2",
+    "axios": "^1.14.0",
     "d3": "^7.9.0",
     "vue": "^3.5.24",
+    "vue-i18n": "^11.3.0",
     "vue-router": "^4.6.3"
   },
   "devDependencies": {

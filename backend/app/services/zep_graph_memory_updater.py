@@ -16,6 +16,7 @@ from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.locale import get_locale, set_locale
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
 
@@ -275,10 +276,14 @@ class ZepGraphMemoryUpdater:
         """启动后台工作线程"""
         if self._running:
             return
-        
+
+        # Capture locale before spawning background thread
+        current_locale = get_locale()
+
         self._running = True
         self._worker_thread = threading.Thread(
             target=self._worker_loop,
+            args=(current_locale,),
             daemon=True,
             name=f"ZepMemoryUpdater-{self.graph_id[:8]}"
         )
@@ -356,8 +361,9 @@ class ZepGraphMemoryUpdater:
         
         self.add_activity(activity)
     
-    def _worker_loop(self):
+    def _worker_loop(self, locale: str = 'zh'):
         """后台工作循环 - 按平台批量发送活动到Zep"""
+        set_locale(locale)
         while self._running or not self._activity_queue.empty():
             try:
                 # 尝试从队列获取活动（超时1秒）

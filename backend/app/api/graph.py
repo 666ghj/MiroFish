@@ -15,6 +15,7 @@ from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
+from ..utils.locale import t, get_locale, set_locale
 from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 
@@ -42,9 +43,9 @@ def get_project(project_id: str):
     if not project:
         return jsonify({
             "success": False,
-            "error": f"项目不存在: {project_id}"
+            "error": t('api.projectNotFound', id=project_id)
         }), 404
-    
+
     return jsonify({
         "success": True,
         "data": project.to_dict()
@@ -76,12 +77,12 @@ def delete_project(project_id: str):
     if not success:
         return jsonify({
             "success": False,
-            "error": f"项目不存在或删除失败: {project_id}"
+            "error": t('api.projectDeleteFailed', id=project_id)
         }), 404
-    
+
     return jsonify({
         "success": True,
-        "message": f"项目已删除: {project_id}"
+        "message": t('api.projectDeleted', id=project_id)
     })
 
 
@@ -95,9 +96,9 @@ def reset_project(project_id: str):
     if not project:
         return jsonify({
             "success": False,
-            "error": f"项目不存在: {project_id}"
+            "error": t('api.projectNotFound', id=project_id)
         }), 404
-    
+
     # 重置到本体已生成状态
     if project.ontology:
         project.status = ProjectStatus.ONTOLOGY_GENERATED
@@ -111,7 +112,7 @@ def reset_project(project_id: str):
     
     return jsonify({
         "success": True,
-        "message": f"项目已重置: {project_id}",
+        "message": t('api.projectReset', id=project_id),
         "data": project.to_dict()
     })
 
@@ -160,7 +161,7 @@ def generate_ontology():
         if not simulation_requirement:
             return jsonify({
                 "success": False,
-                "error": "请提供模拟需求描述 (simulation_requirement)"
+                "error": t('api.requireSimulationRequirement')
             }), 400
         
         # 获取上传的文件
@@ -168,7 +169,7 @@ def generate_ontology():
         if not uploaded_files or all(not f.filename for f in uploaded_files):
             return jsonify({
                 "success": False,
-                "error": "请至少上传一个文档文件"
+                "error": t('api.requireFileUpload')
             }), 400
         
         # 创建项目
@@ -203,7 +204,7 @@ def generate_ontology():
             ProjectManager.delete_project(project.project_id)
             return jsonify({
                 "success": False,
-                "error": "没有成功处理任何文档，请检查文件格式"
+                "error": t('api.noDocProcessed')
             }), 400
         
         # 保存提取的文本
@@ -285,12 +286,12 @@ def build_graph():
         # 检查配置
         errors = []
         if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY未配置")
+            errors.append(t('api.zepApiKeyMissing'))
         if errors:
             logger.error(f"配置错误: {errors}")
             return jsonify({
                 "success": False,
-                "error": "配置错误: " + "; ".join(errors)
+                "error": t('api.configError', details="; ".join(errors))
             }), 500
         
         # 解析请求
@@ -301,7 +302,7 @@ def build_graph():
         if not project_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 project_id"
+                "error": t('api.requireProjectId')
             }), 400
         
         # 获取项目
@@ -309,22 +310,22 @@ def build_graph():
         if not project:
             return jsonify({
                 "success": False,
-                "error": f"项目不存在: {project_id}"
+                "error": t('api.projectNotFound', id=project_id)
             }), 404
-        
+
         # 检查项目状态
         force = data.get('force', False)  # 强制重新构建
         
         if project.status == ProjectStatus.CREATED:
             return jsonify({
                 "success": False,
-                "error": "项目尚未生成本体，请先调用 /ontology/generate"
+                "error": t('api.ontologyNotGenerated')
             }), 400
         
         if project.status == ProjectStatus.GRAPH_BUILDING and not force:
             return jsonify({
                 "success": False,
-                "error": "图谱正在构建中，请勿重复提交。如需强制重建，请添加 force: true",
+                "error": t('api.graphBuilding'),
                 "task_id": project.graph_build_task_id
             }), 400
         
@@ -349,7 +350,7 @@ def build_graph():
         if not text:
             return jsonify({
                 "success": False,
-                "error": "未找到提取的文本内容"
+                "error": t('api.textNotFound')
             }), 400
         
         # 获取本体
@@ -357,7 +358,7 @@ def build_graph():
         if not ontology:
             return jsonify({
                 "success": False,
-                "error": "未找到本体定义"
+                "error": t('api.ontologyNotFound')
             }), 400
         
         # 创建异步任务
@@ -370,15 +371,19 @@ def build_graph():
         project.graph_build_task_id = task_id
         ProjectManager.save_project(project)
         
+        # Capture locale before spawning background thread
+        current_locale = get_locale()
+
         # 启动后台任务
         def build_task():
+            set_locale(current_locale)
             build_logger = get_logger('mirofish.build')
             try:
                 build_logger.info(f"[{task_id}] 开始构建图谱...")
                 task_manager.update_task(
                     task_id, 
                     status=TaskStatus.PROCESSING,
-                    message="初始化图谱构建服务..."
+                    message=t('progress.initGraphService')
                 )
                 
                 # 创建图谱构建服务
@@ -387,7 +392,7 @@ def build_graph():
                 # 分块
                 task_manager.update_task(
                     task_id,
-                    message="文本分块中...",
+                    message=t('progress.textChunking'),
                     progress=5
                 )
                 chunks = TextProcessor.split_text(
@@ -400,7 +405,7 @@ def build_graph():
                 # 创建图谱
                 task_manager.update_task(
                     task_id,
-                    message="创建Zep图谱...",
+                    message=t('progress.creatingZepGraph'),
                     progress=10
                 )
                 graph_id = builder.create_graph(name=graph_name)
@@ -412,7 +417,7 @@ def build_graph():
                 # 设置本体
                 task_manager.update_task(
                     task_id,
-                    message="设置本体定义...",
+                    message=t('progress.settingOntology'),
                     progress=15
                 )
                 builder.set_ontology(graph_id, ontology)
@@ -428,7 +433,7 @@ def build_graph():
                 
                 task_manager.update_task(
                     task_id,
-                    message=f"开始添加 {total_chunks} 个文本块...",
+                    message=t('progress.addingChunks', count=total_chunks),
                     progress=15
                 )
                 
@@ -442,7 +447,7 @@ def build_graph():
                 # 等待Zep处理完成（查询每个episode的processed状态）
                 task_manager.update_task(
                     task_id,
-                    message="等待Zep处理数据...",
+                    message=t('progress.waitingZepProcess'),
                     progress=55
                 )
                 
@@ -459,7 +464,7 @@ def build_graph():
                 # 获取图谱数据
                 task_manager.update_task(
                     task_id,
-                    message="获取图谱数据...",
+                    message=t('progress.fetchingGraphData'),
                     progress=95
                 )
                 graph_data = builder.get_graph_data(graph_id)
@@ -476,7 +481,7 @@ def build_graph():
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.COMPLETED,
-                    message="图谱构建完成",
+                    message=t('progress.graphBuildComplete'),
                     progress=100,
                     result={
                         "project_id": project_id,
@@ -499,7 +504,7 @@ def build_graph():
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
-                    message=f"构建失败: {str(e)}",
+                    message=t('progress.buildFailed', error=str(e)),
                     error=traceback.format_exc()
                 )
         
@@ -512,7 +517,7 @@ def build_graph():
             "data": {
                 "project_id": project_id,
                 "task_id": task_id,
-                "message": "图谱构建任务已启动，请通过 /task/{task_id} 查询进度"
+                "message": t('api.graphBuildStarted', taskId=task_id)
             }
         })
         
@@ -536,7 +541,7 @@ def get_task(task_id: str):
     if not task:
         return jsonify({
             "success": False,
-            "error": f"任务不存在: {task_id}"
+            "error": t('api.taskNotFound', id=task_id)
         }), 404
     
     return jsonify({
@@ -570,7 +575,7 @@ def get_graph_data(graph_id: str):
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": t('api.zepApiKeyMissing')
             }), 500
         
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
@@ -598,7 +603,7 @@ def delete_graph(graph_id: str):
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": t('api.zepApiKeyMissing')
             }), 500
         
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
@@ -606,7 +611,7 @@ def delete_graph(graph_id: str):
         
         return jsonify({
             "success": True,
-            "message": f"图谱已删除: {graph_id}"
+            "message": t('api.graphDeleted', id=graph_id)
         })
         
     except Exception as e:

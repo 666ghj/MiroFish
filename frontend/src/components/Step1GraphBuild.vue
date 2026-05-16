@@ -6,25 +6,25 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">01</span>
-            <span class="step-title">本体生成</span>
+            <span class="step-title">{{ $t('step1.ontologyGeneration') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 0" class="badge success">已完成</span>
-            <span v-else-if="currentPhase === 0" class="badge processing">生成中</span>
-            <span v-else class="badge pending">等待</span>
+            <span v-if="currentPhase > 0" class="badge success">{{ $t('step1.ontologyCompleted') }}</span>
+            <span v-else-if="currentPhase === 0" class="badge processing">{{ $t('step1.ontologyGenerating') }}</span>
+            <span v-else class="badge pending">{{ $t('step1.ontologyPending') }}</span>
           </div>
         </div>
         
         <div class="card-content">
           <p class="api-note">POST /api/graph/ontology/generate</p>
           <p class="description">
-            LLM分析文档内容与模拟需求，提取出现实种子，自动生成合适的本体结构
+            {{ $t('step1.ontologyDesc') }}
           </p>
 
           <!-- Loading / Progress -->
           <div v-if="currentPhase === 0 && ontologyProgress" class="progress-section">
             <div class="spinner-sm"></div>
-            <span>{{ ontologyProgress.message || '正在分析文档...' }}</span>
+            <span>{{ ontologyProgress.message || $t('step1.analyzingDocs') }}</span>
           </div>
 
           <!-- Detail Overlay -->
@@ -110,34 +110,34 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">02</span>
-            <span class="step-title">GraphRAG构建</span>
+            <span class="step-title">{{ $t('step1.graphRagBuild') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 1" class="badge success">已完成</span>
+            <span v-if="currentPhase > 1" class="badge success">{{ $t('step1.ontologyCompleted') }}</span>
             <span v-else-if="currentPhase === 1" class="badge processing">{{ buildProgress?.progress || 0 }}%</span>
-            <span v-else class="badge pending">等待</span>
+            <span v-else class="badge pending">{{ $t('step1.ontologyPending') }}</span>
           </div>
         </div>
 
         <div class="card-content">
           <p class="api-note">POST /api/graph/build</p>
           <p class="description">
-            基于生成的本体，将文档自动分块后调用 Zep 构建知识图谱，提取实体和关系，并形成时序记忆与社区摘要
+            {{ $t('step1.graphRagDesc') }}
           </p>
           
           <!-- Stats Cards -->
           <div class="stats-grid">
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.nodes }}</span>
-              <span class="stat-label">实体节点</span>
+              <span class="stat-label">{{ $t('step1.entityNodes') }}</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.edges }}</span>
-              <span class="stat-label">关系边</span>
+              <span class="stat-label">{{ $t('step1.relationEdges') }}</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.types }}</span>
-              <span class="stat-label">SCHEMA类型</span>
+              <span class="stat-label">{{ $t('step1.schemaTypes') }}</span>
             </div>
           </div>
         </div>
@@ -148,23 +148,23 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
-            <span class="step-title">构建完成</span>
+            <span class="step-title">{{ $t('step1.buildComplete') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase >= 2" class="badge accent">进行中</span>
+            <span v-if="currentPhase >= 2" class="badge accent">{{ $t('step1.inProgress') }}</span>
           </div>
         </div>
         
         <div class="card-content">
           <p class="api-note">POST /api/simulation/create</p>
-          <p class="description">图谱构建已完成，请进入下一步进行模拟环境搭建</p>
+          <p class="description">{{ $t('step1.buildCompleteDesc') }}</p>
           <button 
             class="action-btn" 
             :disabled="currentPhase < 2 || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
             <span v-if="creatingSimulation" class="spinner-sm"></span>
-            {{ creatingSimulation ? '创建中...' : '进入环境搭建 ➝' }}
+            {{ creatingSimulation ? $t('step1.creating') : $t('step1.enterEnvSetup') + ' ➝' }}
           </button>
         </div>
       </div>
@@ -189,9 +189,11 @@
 <script setup>
 import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { createSimulation } from '../api/simulation'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const props = defineProps({
   currentPhase: { type: Number, default: 0 },
@@ -233,11 +235,11 @@ const handleEnterEnvSetup = async () => {
       })
     } else {
       console.error('创建模拟失败:', res.error)
-      alert('创建模拟失败: ' + (res.error || '未知错误'))
+      alert(t('step1.createSimulationFailed', { error: res.error || t('common.unknownError') }))
     }
   } catch (err) {
     console.error('创建模拟异常:', err)
-    alert('创建模拟异常: ' + err.message)
+    alert(t('step1.createSimulationException', { error: err.message }))
   } finally {
     creatingSimulation.value = false
   }

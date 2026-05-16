@@ -20,6 +20,7 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.locale import get_language_instruction, t
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.simulation_config')
@@ -292,17 +293,17 @@ class SimulationConfigGenerator:
         reasoning_parts = []
         
         # ========== 步骤1: 生成时间配置 ==========
-        report_progress(1, "生成时间配置...")
+        report_progress(1, t('progress.generatingTimeConfig'))
         num_entities = len(entities)
         time_config_result = self._generate_time_config(context, num_entities)
         time_config = self._parse_time_config(time_config_result, num_entities)
-        reasoning_parts.append(f"时间配置: {time_config_result.get('reasoning', '成功')}")
+        reasoning_parts.append(f"{t('progress.timeConfigLabel')}: {time_config_result.get('reasoning', t('common.success'))}")
         
         # ========== 步骤2: 生成事件配置 ==========
-        report_progress(2, "生成事件配置和热点话题...")
+        report_progress(2, t('progress.generatingEventConfig'))
         event_config_result = self._generate_event_config(context, simulation_requirement, entities)
         event_config = self._parse_event_config(event_config_result)
-        reasoning_parts.append(f"事件配置: {event_config_result.get('reasoning', '成功')}")
+        reasoning_parts.append(f"{t('progress.eventConfigLabel')}: {event_config_result.get('reasoning', t('common.success'))}")
         
         # ========== 步骤3-N: 分批生成Agent配置 ==========
         all_agent_configs = []
@@ -313,7 +314,7 @@ class SimulationConfigGenerator:
             
             report_progress(
                 3 + batch_idx,
-                f"生成Agent配置 ({start_idx + 1}-{end_idx}/{len(entities)})..."
+                t('progress.generatingAgentConfig', start=start_idx + 1, end=end_idx, total=len(entities))
             )
             
             batch_configs = self._generate_agent_configs_batch(
@@ -324,16 +325,16 @@ class SimulationConfigGenerator:
             )
             all_agent_configs.extend(batch_configs)
         
-        reasoning_parts.append(f"Agent配置: 成功生成 {len(all_agent_configs)} 个")
+        reasoning_parts.append(t('progress.agentConfigResult', count=len(all_agent_configs)))
         
         # ========== 为初始帖子分配发布者 Agent ==========
         logger.info("为初始帖子分配合适的发布者 Agent...")
         event_config = self._assign_initial_post_agents(event_config, all_agent_configs)
         assigned_count = len([p for p in event_config.initial_posts if p.get("poster_agent_id") is not None])
-        reasoning_parts.append(f"初始帖子分配: {assigned_count} 个帖子已分配发布者")
+        reasoning_parts.append(t('progress.postAssignResult', count=assigned_count))
         
         # ========== 最后一步: 生成平台配置 ==========
-        report_progress(total_steps, "生成平台配置...")
+        report_progress(total_steps, t('progress.generatingPlatformConfig'))
         twitter_config = None
         reddit_config = None
         
@@ -547,7 +548,7 @@ class SimulationConfigGenerator:
 请生成时间配置JSON。
 
 ### 基本原则（仅供参考，需根据具体事件和参与群体灵活调整）：
-- 用户群体为中国人，需符合北京时间作息习惯
+- 请根据模拟场景推断目标用户群体所在时区和作息习惯，以下为东八区(UTC+8)的参考示例
 - 凌晨0-5点几乎无人活动（活跃度系数0.05）
 - 早上6-8点逐渐活跃（活跃度系数0.4）
 - 工作时间9-18点中等活跃（活跃度系数0.7）
@@ -584,8 +585,9 @@ class SimulationConfigGenerator:
 - work_hours (int数组): 工作时段
 - reasoning (string): 简要说明为什么这样配置"""
 
-        system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合中国人作息习惯。"
-        
+        system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合模拟场景中目标用户群体的作息习惯。"
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
         except Exception as e:
@@ -701,7 +703,8 @@ class SimulationConfigGenerator:
 }}"""
 
         system_prompt = "你是舆论分析专家。返回纯JSON格式。注意 poster_type 必须精确匹配可用实体类型。"
-        
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'poster_type' field value MUST be in English PascalCase exactly matching the available entity types. Only 'content', 'narrative_direction', 'hot_topics' and 'reasoning' fields should use the specified language."
+
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
         except Exception as e:
@@ -838,7 +841,7 @@ class SimulationConfigGenerator:
 
 ## 任务
 为每个实体生成活动配置，注意：
-- **时间符合中国人作息**：凌晨0-5点几乎不活动，晚间19-22点最活跃
+- **时间符合目标用户群体作息**：以下为参考（东八区），请根据模拟场景调整
 - **官方机构**（University/GovernmentAgency）：活跃度低(0.1-0.3)，工作时间(9-17)活动，响应慢(60-240分钟)，影响力高(2.5-3.0)
 - **媒体**（MediaOutlet）：活跃度中(0.4-0.6)，全天活动(8-23)，响应快(5-30分钟)，影响力高(2.0-2.5)
 - **个人**（Student/Person/Alumni）：活跃度高(0.6-0.9)，主要晚间活动(18-23)，响应快(1-15分钟)，影响力低(0.8-1.2)
@@ -863,8 +866,9 @@ class SimulationConfigGenerator:
     ]
 }}"""
 
-        system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合中国人作息习惯。"
-        
+        system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合模拟场景中目标用户群体的作息习惯。"
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'stance' field value MUST be one of the English strings: 'supportive', 'opposing', 'neutral', 'observer'. All JSON field names and numeric values must remain unchanged. Only natural language text fields should use the specified language."
+
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)
             llm_configs = {cfg["agent_id"]: cfg for cfg in result.get("agent_configs", [])}
