@@ -1064,6 +1064,42 @@ class ReportAgent:
     # 合法的工具名称集合，用于裸 JSON 兜底解析时校验
     VALID_TOOL_NAMES = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
 
+    def _sanitize_section_content(self, content: str, section_title: str = "") -> str:
+        """
+        Bereinigt einen LLM-Output, der als Section-Content geschrieben werden soll.
+
+        Wenn der Content NUR aus einem unausgeführten tool_call besteht
+        (z.B. `{"name":"quick_search","parameters":{...}}`), wäre das nutzlos im
+        finalen Report — siehe github.com/666ghj/MiroFish#599.
+
+        Returns: bereinigter Content. Bei reinem tool_call-Leak: Fallback-Hinweis.
+        """
+        if not content:
+            return content
+        cleaned = re.sub(r'<tool_call>.*?</tool_call>', '', content, flags=re.DOTALL)
+        cleaned = re.sub(r'\[TOOL_CALL\].*?\)', '', cleaned)
+        cleaned = cleaned.strip()
+        if not cleaned:
+            return f"_(Keine Inhalte verfügbar für: {section_title})_" if section_title else "_(Keine Inhalte)_"
+        # Detect: ist der ganze Content ein einzelnes tool_call JSON?
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                tool_name = parsed.get("name") or parsed.get("tool")
+                if tool_name and tool_name in self.VALID_TOOL_NAMES:
+                    logger.warning(
+                        "Section '%s' content is raw tool_call (tool=%s) — replaced with fallback",
+                        section_title, tool_name
+                    )
+                    return (
+                        f"_(Hinweis: Für diesen Abschnitt konnte das Tool `{tool_name}` "
+                        f"innerhalb der Iterations-Limits nicht ausgeführt werden. "
+                        f"Bitte Report neu generieren oder Modell-Konfiguration prüfen.)_"
+                    )
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return cleaned
+
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
         """
         从LLM响应中解析工具调用
@@ -1390,6 +1426,7 @@ class ReportAgent:
 
                 # 正常结束
                 final_answer = response.split("Final Answer:")[-1].strip()
+                final_answer = self._sanitize_section_content(final_answer, section.title)
                 logger.info(t('report.sectionGenDone', title=section.title, count=tool_calls_count))
 
                 if self.report_logger:
@@ -1488,7 +1525,7 @@ class ReportAgent:
             # 工具调用已足够，LLM 输出了内容但没带 "Final Answer:" 前缀
             # 直接将这段内容作为最终答案，不再空转
             logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
-            final_answer = response.strip()
+            final_answer = self._sanitize_section_content(response.strip(), section.title)
 
             if self.report_logger:
                 self.report_logger.log_section_content(
@@ -1517,6 +1554,8 @@ class ReportAgent:
             final_answer = response.split("Final Answer:")[-1].strip()
         else:
             final_answer = response
+        # Sanitize: kein raw tool_call JSON als Content schreiben (Bug #599)
+        final_answer = self._sanitize_section_content(final_answer, section.title)
         
         # 记录章节内容生成完成日志
         if self.report_logger:
@@ -1809,16 +1848,33 @@ class ReportAgent:
 
         # 构建消息
         messages = [{"role": "system", "content": system_prompt}]
-        
-        # 添加历史对话
-        for h in chat_history[-10:]:  # 限制历史长度
-            messages.append(h)
-        
+
+        # 添加历史对话— defensiv: nur {role, content}, keine Duplikate der aktuellen Frage
+        # Fix für github.com/666ghj/MiroFish#577 (Chat wiederholt erste Antwort):
+        # Wenn das Frontend versehentlich die aktuelle User-Nachricht im chat_history mitschickt,
+        # würde der LLM die Frage als "schon gestellt" sehen und die alte Antwort wiederholen.
+        for h in chat_history[-10:]:
+            if not isinstance(h, dict):
+                continue
+            role = h.get("role")
+            content = h.get("content")
+            if role not in ("user", "assistant") or not content:
+                continue
+            # Skip falls dies bereits die aktuelle User-Frage ist
+            if role == "user" and content.strip() == message.strip():
+                continue
+            messages.append({"role": role, "content": content})
+
         # 添加用户消息
         messages.append({
-            "role": "user", 
+            "role": "user",
             "content": message
         })
+
+        logger.debug(
+            "report_agent.chat: total_messages=%d history_len=%d current_msg_len=%d",
+            len(messages), len(chat_history), len(message)
+        )
         
         # ReACT循环（简化版）
         tool_calls_made = []

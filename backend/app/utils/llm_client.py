@@ -5,10 +5,119 @@ LLM客户端封装
 
 import json
 import re
+import logging
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_llm_json(response: str) -> Dict[str, Any]:
+    """
+    Robuster JSON-Parser für LLM-Outputs.
+
+    LLMs (besonders qwen, gemma, ollama-Modelle) hängen oft Trailing-Text
+    nach dem JSON an, auch mit response_format=json_object. Außerdem werden
+    JSON-Blöcke häufig in ```json ... ``` Markdown-Fences gewrappt.
+
+    Strategie:
+    1. Markdown-Fences entfernen
+    2. json.loads (strict, schnellster Weg)
+    3. raw_decode (parsed Prefix, ignoriert Trailing-Text)
+    4. Balanced-Brace-Extraktion (sucht erste vollständige {...} Struktur)
+    5. Strip Control-Chars + Retry
+    Bei allen Fehlern: ValueError mit hilfreichem Snippet.
+
+    Fixes:
+    - github.com/666ghj/MiroFish#624 ("Unexpected non-whitespace character after JSON at position N")
+    - github.com/666ghj/MiroFish#622 (duplikat)
+    - github.com/666ghj/MiroFish#601 (500 error on ontology/generate mit qwen-plus/ollama)
+    """
+    if not response or not response.strip():
+        raise ValueError("LLM lieferte leere Antwort")
+
+    # 1. Strip Markdown-Fences
+    cleaned = response.strip()
+    cleaned = re.sub(r'^```(?:json|JSON)?\s*\n?', '', cleaned)
+    cleaned = re.sub(r'\n?```\s*$', '', cleaned)
+    cleaned = cleaned.strip()
+
+    # 2. Schneller Pfad: vollständiges JSON
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e_strict:
+        first_error = e_strict
+
+    # 3. raw_decode — parsed JSON-Prefix, ignoriert Trailing-Text
+    try:
+        decoder = json.JSONDecoder()
+        obj, end_idx = decoder.raw_decode(cleaned)
+        trailing = cleaned[end_idx:].strip()
+        if trailing:
+            logger.warning(
+                "LLM appended trailing text after JSON (%d chars), ignored. Preview: %s",
+                len(trailing), trailing[:120]
+            )
+        if isinstance(obj, dict):
+            return obj
+        if isinstance(obj, list):
+            # Wrap in dict für Konsistenz mit chat_json-Erwartung
+            return {"items": obj}
+    except json.JSONDecodeError:
+        pass
+
+    # 4. Balanced-Brace-Extraktion: find first complete {...}
+    start = cleaned.find('{')
+    if start >= 0:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(cleaned)):
+            ch = cleaned[i]
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start:i + 1]
+                    try:
+                        result = json.loads(candidate)
+                        logger.warning(
+                            "Extracted JSON from messy LLM output (%d chars before, %d after)",
+                            start, len(cleaned) - (i + 1)
+                        )
+                        return result
+                    except json.JSONDecodeError:
+                        break
+
+    # 5. Letzter Versuch: control chars entfernen + retry
+    sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', cleaned)
+    if sanitized != cleaned:
+        try:
+            return json.loads(sanitized)
+        except json.JSONDecodeError:
+            pass
+
+    # Alle Strategien fehlgeschlagen — sprechende Fehlermeldung
+    snippet = cleaned[:200] + ('...' if len(cleaned) > 200 else '')
+    raise ValueError(
+        f"LLM返回的JSON格式无效 (alle Parse-Strategien fehlgeschlagen): "
+        f"first_error={first_error.msg} at pos {first_error.pos}. "
+        f"Response-Preview: {snippet}"
+    )
 
 
 class LLMClient:
@@ -90,14 +199,5 @@ class LLMClient:
             max_tokens=max_tokens,
             response_format={"type": "json_object"}
         )
-        # 清理markdown代码块标记
-        cleaned_response = response.strip()
-        cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
-        cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
-        cleaned_response = cleaned_response.strip()
-
-        try:
-            return json.loads(cleaned_response)
-        except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
+        return _parse_llm_json(response)
 
