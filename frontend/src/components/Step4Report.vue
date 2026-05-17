@@ -105,6 +105,15 @@
             </div>
           </div>
 
+          <div v-if="rateLimitNotice" class="retry-notice">
+            <div class="retry-notice__icon">⟳</div>
+            <div class="retry-notice__body">
+              <div class="retry-notice__title">External API rate limit detected</div>
+              <div class="retry-notice__text">{{ rateLimitNotice.message }}</div>
+            </div>
+            <button class="retry-notice__dismiss" @click="dismissRetryNotice">Dismiss</button>
+          </div>
+
           <div class="workflow-steps" v-if="workflowSteps.length > 0">
             <div
               v-for="(step, sidx) in workflowSteps"
@@ -418,6 +427,8 @@ const agentLogs = ref([])
 const consoleLogs = ref([])
 const agentLogLine = ref(0)
 const consoleLogLine = ref(0)
+const rateLimitNotice = ref(null)
+let rateLimitNoticeTimer = null
 const reportOutline = ref(null)
 const currentSectionIndex = ref(null)
 const generatedSections = ref({})
@@ -2017,6 +2028,52 @@ const getLogLevelClass = (log) => {
   return ''
 }
 
+const clearRetryNoticeTimer = () => {
+  if (rateLimitNoticeTimer) {
+    clearTimeout(rateLimitNoticeTimer)
+    rateLimitNoticeTimer = null
+  }
+}
+
+const dismissRetryNotice = () => {
+  rateLimitNotice.value = null
+  clearRetryNoticeTimer()
+}
+
+const setRetryNotice = (message, retrySeconds = null) => {
+  rateLimitNotice.value = {
+    message,
+    retrySeconds
+  }
+
+  clearRetryNoticeTimer()
+  if (retrySeconds && retrySeconds > 0) {
+    rateLimitNoticeTimer = setTimeout(() => {
+      rateLimitNotice.value = null
+      rateLimitNoticeTimer = null
+    }, Math.min(retrySeconds * 1000 + 1000, 120000))
+  }
+}
+
+const maybeHandleRetryNotice = (logLine) => {
+  if (!logLine) return
+
+  const text = String(logLine)
+  const rateLimitMatch = text.match(/rate limit hit.*retrying in ([\d.]+)s/i)
+  if (rateLimitMatch) {
+    const retrySeconds = Number.parseFloat(rateLimitMatch[1])
+    const retryText = Number.isFinite(retrySeconds)
+      ? `Zep is rate limited. The system will retry automatically in about ${retrySeconds.toFixed(1)} seconds.`
+      : 'Zep is rate limited. The system will retry automatically.'
+    setRetryNotice(retryText, Number.isFinite(retrySeconds) ? retrySeconds : null)
+    return
+  }
+
+  if (text.includes('Rate limit exceeded for FREE plan') || text.includes('429')) {
+    setRetryNotice('Zep is rate limited. The system will retry automatically.', null)
+  }
+}
+
 // Polling
 let agentLogTimer = null
 let consoleLogTimer = null
@@ -2055,6 +2112,7 @@ const fetchAgentLog = async () => {
           if (log.action === 'report_complete') {
             isComplete.value = true
             currentSectionIndex.value = null  // 确保清除 loading 状态
+            dismissRetryNotice()
             emit('update-status', 'completed')
             stopPolling()
             // 滚动逻辑统一在循环结束后的 nextTick 中处理
@@ -2141,6 +2199,8 @@ const fetchConsoleLog = async () => {
       if (newLogs.length > 0) {
         consoleLogs.value.push(...newLogs)
         consoleLogLine.value = res.data.from_line + newLogs.length
+
+        newLogs.forEach((log) => maybeHandleRetryNotice(log))
         
         nextTick(() => {
           if (logContent.value) {
@@ -2185,6 +2245,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPolling()
+  clearRetryNoticeTimer()
 })
 
 watch(() => props.reportId, (newId) => {
@@ -2193,6 +2254,7 @@ watch(() => props.reportId, (newId) => {
     consoleLogs.value = []
     agentLogLine.value = 0
     consoleLogLine.value = 0
+    dismissRetryNotice()
     reportOutline.value = null
     currentSectionIndex.value = null
     generatedSections.value = {}
@@ -2287,6 +2349,64 @@ watch(() => props.reportId, (newId) => {
   font-weight: 600;
   color: #6B7280;
   flex-shrink: 0;
+}
+
+.retry-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  border: 1px solid #F59E0B;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #92400E;
+}
+
+.retry-notice__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 158, 11, 0.18);
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.retry-notice__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.retry-notice__title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.retry-notice__text {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #B45309;
+}
+
+.retry-notice__dismiss {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #92400E;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.retry-notice__dismiss:hover {
+  background: rgba(245, 158, 11, 0.24);
 }
 
 /* Panel header status variants */

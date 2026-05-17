@@ -7,10 +7,12 @@ Zep 的 node/edge 列表接口使用 UUID cursor 分页，
 from __future__ import annotations
 
 import time
+import re
 from collections.abc import Callable
 from typing import Any
 
 from zep_cloud import InternalServerError
+from zep_cloud.core.api_error import ApiError
 from zep_cloud.client import Zep
 
 from .logger import get_logger
@@ -19,8 +21,57 @@ logger = get_logger('mirofish.zep_paging')
 
 _DEFAULT_PAGE_SIZE = 100
 _MAX_NODES = 2000
-_DEFAULT_MAX_RETRIES = 3
+_DEFAULT_MAX_RETRIES = 5
 _DEFAULT_RETRY_DELAY = 2.0  # seconds, doubles each retry
+_MAX_RETRY_DELAY = 60.0
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    status_code = getattr(error, "status_code", None)
+    if status_code == 429:
+        return True
+
+    body = getattr(error, "body", None)
+    if isinstance(body, str) and "rate limit" in body.lower():
+        return True
+
+    text = str(error).lower()
+    return "status_code: 429" in text or "rate limit" in text or "too many requests" in text
+
+
+def _parse_retry_after(error: Exception) -> float | None:
+    headers = getattr(error, "headers", None)
+    if isinstance(headers, dict):
+        retry_after = headers.get("retry-after") or headers.get("Retry-After")
+        if retry_after:
+            try:
+                return max(float(retry_after), 0.0)
+            except (TypeError, ValueError):
+                pass
+
+        reset = headers.get("x-ratelimit-reset") or headers.get("X-RateLimit-Reset")
+        if reset:
+            try:
+                reset_seconds = float(reset)
+                if reset_seconds > 1_000_000_000:
+                    # Some providers return a unix timestamp instead of a delta.
+                    wait_seconds = reset_seconds - time.time()
+                else:
+                    wait_seconds = reset_seconds
+                if wait_seconds > 0:
+                    return wait_seconds
+            except (TypeError, ValueError):
+                pass
+
+    text = str(error)
+    match = re.search(r"retry-after['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    if match:
+        try:
+            return max(float(match.group(1)), 0.0)
+        except (TypeError, ValueError):
+            pass
+
+    return None
 
 
 def _fetch_page_with_retry(
@@ -41,14 +92,33 @@ def _fetch_page_with_retry(
     for attempt in range(max_retries):
         try:
             return api_call(*args, **kwargs)
-        except (ConnectionError, TimeoutError, OSError, InternalServerError) as e:
+        except (ConnectionError, TimeoutError, OSError, InternalServerError, ApiError) as e:
             last_exception = e
             if attempt < max_retries - 1:
-                logger.warning(
-                    f"Zep {page_description} attempt {attempt + 1} failed: {str(e)[:100]}, retrying in {delay:.1f}s..."
-                )
+                if _is_rate_limit_error(e):
+                    retry_after = _parse_retry_after(e)
+                    if retry_after is not None:
+                        delay = min(max(retry_after, retry_delay), _MAX_RETRY_DELAY)
+                    else:
+                        delay = min(max(delay, retry_delay), _MAX_RETRY_DELAY)
+                else:
+                    delay = min(delay, _MAX_RETRY_DELAY)
+
+                if _is_rate_limit_error(e):
+                    logger.warning(
+                        f"Zep {page_description} rate limit hit (attempt {attempt + 1}/{max_retries}); "
+                        f"retrying in {delay:.1f}s..."
+                    )
+                else:
+                    logger.warning(
+                        f"Zep {page_description} attempt {attempt + 1} failed: {str(e)[:100]}, retrying in {delay:.1f}s..."
+                    )
                 time.sleep(delay)
-                delay *= 2
+                if _is_rate_limit_error(e):
+                    # Respect server-advised retry delays; keep the same delay or back off slightly.
+                    delay = min(delay * 1.25, _MAX_RETRY_DELAY)
+                else:
+                    delay = min(delay * 2, _MAX_RETRY_DELAY)
             else:
                 logger.error(f"Zep {page_description} failed after {max_retries} attempts: {str(e)}")
 
