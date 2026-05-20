@@ -424,17 +424,36 @@ class ZepToolsService:
     MAX_RETRIES = 3
     RETRY_DELAY = 2.0
     
-    def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
+    def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None, simulation_id: Optional[str] = None):
         self.api_key = Config.ZEP_API_KEY if api_key is None else api_key
+        self.simulation_id = simulation_id
+        
+        # 实验性记忆服务
+        self.exp_memory = None
+        if Config.USE_EXPERIMENTAL_MEMORY and simulation_id:
+            from .experimental_memory import ExperimentalMemoryService
+            self.exp_memory = ExperimentalMemoryService(simulation_id)
+            logger.info(f"实验性记忆已在 ZepToolsService 中启用: simulation_id={simulation_id}")
+
+        # 如果没有启用实验性记忆，或者仍需要图谱后端，则验证配置
         errors = Config.get_graph_backend_config_errors(api_key=self.api_key)
-        if errors:
+        if errors and not self.exp_memory:
             raise ValueError("; ".join(errors))
         
-        self.backend = get_graph_backend(api_key=self.api_key)
+        try:
+            self.backend = get_graph_backend(api_key=self.api_key)
+        except Exception as e:
+            if self.exp_memory:
+                logger.warning(f"无法初始化图谱后端 (将仅使用实验性记忆): {e}")
+                self.backend = None
+            else:
+                raise e
+
         # LLM客户端用于InsightForge生成子问题
         self._llm_client = llm_client
         self._search_embedder_client = None
         self._search_reranker_client = None
+            
         logger.info("ZepToolsService 初始化完成")
     
     @property
@@ -979,6 +998,26 @@ class ZepToolsService:
         当前实现会优先召回边，再按配置补充节点摘要，避免只拿到零散 fact
         或在 OpenZep 上完全退化到本地关键词搜索。
         """
+        # 实验性记忆逻辑 (Spike S1)
+        if self.exp_memory:
+            logger.info(f"使用实验性记忆进行搜索: query={query[:50]}...")
+            exp_results = self.exp_memory.retrieve(query, k=limit)
+            
+            facts = exp_results["archival_memory"]
+            core = exp_results["core_memory"]
+            
+            # 将 Core Memory 也转化为 facts 供后续使用
+            core_fact = f"[CORE MEMORY] Persona: {core.get('persona', 'N/A')}. Objectives: {', '.join(core.get('objectives', []))}"
+            facts.insert(0, core_fact)
+            
+            return SearchResult(
+                facts=facts,
+                edges=[], # 实验性记忆暂不支持边
+                nodes=[], # 实验性记忆暂不支持节点
+                query=query,
+                total_count=len(facts)
+            )
+
         logger.info(f"图谱搜索: graph_id={graph_id}, query={query[:50]}...")
 
         query_normalized = self._normalize_text(query)

@@ -228,15 +228,17 @@ class ZepGraphMemoryUpdater:
     MAX_RETRIES = 3
     RETRY_DELAY = 2  # 秒
     
-    def __init__(self, graph_id: str, api_key: Optional[str] = None):
+    def __init__(self, graph_id: str, api_key: Optional[str] = None, simulation_id: Optional[str] = None):
         """
         初始化更新器
         
         Args:
             graph_id: Zep图谱ID
             api_key: Zep API Key（可选，默认从配置读取）
+            simulation_id: 模拟ID（用于实验性记忆）
         """
         self.graph_id = graph_id
+        self.simulation_id = simulation_id
         self.api_key = Config.ZEP_API_KEY if api_key is None else api_key
         
         errors = Config.get_graph_backend_config_errors(api_key=self.api_key)
@@ -244,6 +246,13 @@ class ZepGraphMemoryUpdater:
             raise ValueError("; ".join(errors))
         
         self.backend = get_graph_backend(api_key=self.api_key)
+        
+        # 实验性记忆服务
+        self.exp_memory = None
+        if Config.USE_EXPERIMENTAL_MEMORY and simulation_id:
+            from .experimental_memory import ExperimentalMemoryService
+            self.exp_memory = ExperimentalMemoryService(simulation_id)
+            logger.info(f"实验性记忆已启用: simulation_id={simulation_id}")
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -416,6 +425,21 @@ class ZepGraphMemoryUpdater:
                     data=combined_text
                 )
                 
+                # 同时保存到实验性记忆
+                if self.exp_memory:
+                    exp_activities = []
+                    for activity in activities:
+                        exp_activities.append({
+                            "text": activity.to_episode_text(),
+                            "metadata": {
+                                "platform": activity.platform,
+                                "agent_id": activity.agent_id,
+                                "round": activity.round_num,
+                                "action": activity.action_type
+                            }
+                        })
+                    self.exp_memory.add_memories(exp_activities)
+                
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)
@@ -502,7 +526,7 @@ class ZepGraphMemoryManager:
             if simulation_id in cls._updaters:
                 cls._updaters[simulation_id].stop()
             
-            updater = ZepGraphMemoryUpdater(graph_id)
+            updater = ZepGraphMemoryUpdater(graph_id, simulation_id=simulation_id)
             updater.start()
             cls._updaters[simulation_id] = updater
             

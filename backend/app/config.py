@@ -109,6 +109,10 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
+    
+    # Experimental Memory (Spike S1)
+    USE_EXPERIMENTAL_MEMORY = os.environ.get('USE_EXPERIMENTAL_MEMORY', 'False').lower() == 'true'
+    DATA_DIR = os.path.join(os.path.dirname(__file__), '../data')
 
     @classmethod
     def use_openzep(cls):
