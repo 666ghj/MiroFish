@@ -32,6 +32,11 @@ dependencies = [
     # 工具库
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
+    "PyYAML>=6.0",
+    "scikit-learn>=1.4",
+    "scipy>=1.12",
+    "numpy>=1.26",
+    "pandas>=2.1",
 ]
 
 [project.optional-dependencies]
