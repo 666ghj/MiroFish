@@ -7,7 +7,7 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import yaml
 from app.models.interview import QSortResponse
-from app.services.interviews.base import StakeholderInterviewer, PersonaRecord
+from app.services.interviews.base import StakeholderInterviewer, PersonaRecord, coerce_int
 from app.services.interviews.instrument_loader import InstrumentValidationError
 
 
@@ -64,16 +64,23 @@ class DiversitySubagent:
         dist = self.instrument["distribution"]
         target = {b: n for b, n in zip(range(-3, 4), dist)}
         got: dict[int, int] = {}
-        for v in placements.values():
-            if not isinstance(v, int) or not -3 <= v <= 3:
+        coerced_p: dict[str, int] = {}
+        for k, v in placements.items():
+            iv = coerce_int(v)
+            if iv is None or not -3 <= iv <= 3:
                 return None
-            got[v] = got.get(v, 0) + 1
+            coerced_p[k] = iv
+            got[iv] = got.get(iv, 0) + 1
         if got != target:
             return None
+        coerced_a: dict[str, int] = {}
         for a in self.instrument["likert_axes"]:
-            v = axes.get(a["axis_id"])
-            if not isinstance(v, int) or not 1 <= v <= 7:
+            iv = coerce_int(axes.get(a["axis_id"]))
+            if iv is None or not 1 <= iv <= 7:
                 return None
+            coerced_a[a["axis_id"]] = iv
+        raw["placements"] = coerced_p
+        raw["likert_axes"] = coerced_a
         return raw
 
     def administer(self, persona: PersonaRecord) -> QSortResponse:

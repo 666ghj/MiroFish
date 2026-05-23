@@ -56,3 +56,29 @@ def test_convergence_metrics():
     conv = convergence_metrics(r2, r3)
     assert "t1" in conv
     assert conv["t1"]["delta_iqr_importance"] is not None
+
+
+def test_delphi_r2_accepts_string_ratings():
+    """Delphi R2/R3 ratings should accept stringified importance/plausibility ints."""
+    from app.services.interviews.base import PersonaRecord, MemoryDigest
+    from app.services.interviews.delphi import DelphiSubagent
+    from pathlib import Path as _P
+
+    class _Mem:
+        def get_digest(self, agent_id, max_chars=2000):
+            return MemoryDigest(text="x", available=True)
+
+    class _StringLLM:
+        def chat_json(self, messages, temperature=0.0, max_tokens=None, **kw):
+            return {"ratings": {
+                "t1": {"importance": "4", "plausibility": "3"},
+                "t2": {"importance": "5", "plausibility": "2"},
+            }}
+
+    inst = _P(__file__).resolve().parents[2] / "scripts" / "instruments" / "delphi_v1.yaml"
+    sub = DelphiSubagent(llm=_StringLLM(), memory=_Mem(), instrument_path=inst)
+    persona = PersonaRecord(agent_id=1, name="A", persona="p")
+    themes = [{"theme_id": "t1", "label": "T1"}, {"theme_id": "t2", "label": "T2"}]
+    resp = sub.administer_round2(persona, themes)
+    assert resp.ratings["t1"]["importance"] == 4
+    assert isinstance(resp.ratings["t1"]["importance"], int)

@@ -55,3 +55,37 @@ def test_longitudinal_aggregate_delta():
     assert agg["per_item"]["stk_1"]["mean_delta"] == 1.0
     assert agg["per_item"]["gov_1"]["mean_delta"] == 0.0
     assert agg["n_paired"] == 5
+
+
+def test_longitudinal_accepts_string_likert_values():
+    """Real LLMs sometimes return Likert values as JSON strings ('3' not 3).
+    The validator should coerce them rather than fail the agent."""
+    from app.models.interview import InterviewPhase
+    from app.services.interviews.base import PersonaRecord, MemoryDigest
+    from app.services.interviews.longitudinal import LongitudinalSubagent
+    from pathlib import Path as _P
+
+    class _Mem:
+        def get_digest(self, agent_id, max_chars=2000):
+            return MemoryDigest(text="x", available=True)
+
+    class _StringLLM:
+        def chat_json(self, messages, temperature=0.0, max_tokens=None, **kw):
+            return {
+                "responses": {  # all strings, not ints
+                    "stk_1": "4", "stk_2": "3", "stk_3": "5",
+                    "gov_1": "3", "gov_2": "4", "gov_3": "2",
+                    "mkt_1": "5", "mkt_2": "3", "mkt_3": "4",
+                    "clm_1": "2", "clm_2": "4", "clm_3": "5",
+                },
+                "confidence": {},
+                "open_comment": "stringified",
+            }
+
+    inst = _P(__file__).resolve().parents[2] / "scripts" / "instruments" / "longitudinal_v1.yaml"
+    sub = LongitudinalSubagent(llm=_StringLLM(), memory=_Mem(), instrument_path=inst)
+    persona = PersonaRecord(agent_id=99, name="A", persona="p")
+    resp = sub.administer(persona, phase=InterviewPhase.T0)
+    assert resp.agent_id == 99
+    assert resp.responses["stk_1"] == 4
+    assert isinstance(resp.responses["stk_1"], int)

@@ -6,7 +6,7 @@ from typing import Optional
 from app.models.interview import (
     LikertInstrument, LikertResponse, InterviewPhase,
 )
-from app.services.interviews.base import StakeholderInterviewer, PersonaRecord
+from app.services.interviews.base import StakeholderInterviewer, PersonaRecord, coerce_int
 from app.services.interviews.instrument_loader import load_likert_instrument
 
 
@@ -44,9 +44,13 @@ class LongitudinalSubagent:
         required = {it.item_id for it in self.instrument.items}
         if not required.issubset(resp.keys()):
             return None
+        coerced: dict[str, int] = {}
         for k, v in resp.items():
-            if not isinstance(v, int) or not 1 <= v <= 5:
+            iv = coerce_int(v)
+            if iv is None or not 1 <= iv <= 5:
                 return None
+            coerced[k] = iv
+        raw["responses"] = coerced
         return raw
 
     def administer(self, persona: PersonaRecord, phase: InterviewPhase) -> LikertResponse:

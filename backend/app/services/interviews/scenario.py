@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 import yaml
 from app.models.interview import ScenarioRating, ScenarioResponse
-from app.services.interviews.base import StakeholderInterviewer, PersonaRecord
+from app.services.interviews.base import StakeholderInterviewer, PersonaRecord, coerce_int
 
 class ScenarioSubagent:
     def __init__(self, llm, memory, instrument_path: Path, language: str = "de"):
@@ -44,10 +44,12 @@ class ScenarioSubagent:
         sids = {s["scenario_id"] for s in self.instrument["scenarios"]}
         ratings = raw.get("ratings", {})
         if set(ratings.keys()) != sids: return None
-        for v in ratings.values():
+        for sid, v in ratings.items():
             if not isinstance(v, dict): return None
             for k in ("desirability", "plausibility", "impact_on_my_group", "fairness"):
-                if not isinstance(v.get(k), int) or not 1 <= v[k] <= 7: return None
+                iv = coerce_int(v.get(k))
+                if iv is None or not 1 <= iv <= 7: return None
+                v[k] = iv
             if not isinstance(v.get("if_woke_up_response", ""), str): return None
         return raw
 

@@ -22,6 +22,28 @@ class MemoryProvider(Protocol):
     def get_digest(self, agent_id: int, max_chars: int = 2000) -> MemoryDigest: ...
 
 
+def coerce_int(value: Any) -> Optional[int]:
+    """Coerce LLM-returned Likert values into ints.
+
+    Real LLMs frequently return numeric Likert responses as JSON strings
+    (e.g. "3" instead of 3). Returns the int if value is an int or a string
+    that round-trips through int(); otherwise None. Bools are rejected so
+    True/False aren't accepted as 1/0.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if s and s.lstrip("-").isdigit():
+            try:
+                return int(s)
+            except ValueError:
+                return None
+    return None
+
+
 class SchemaValidationFailure(ValueError):
     def __init__(self, agent_id: int, attempts: list[dict]):
         super().__init__(f"agent {agent_id}: schema violation after retry")

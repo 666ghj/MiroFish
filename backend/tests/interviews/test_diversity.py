@@ -46,3 +46,33 @@ def test_typology_runs_pca_kmeans():
     assert len(result["clusters"]) == 3
     assert "pca" in result
     assert len(result["pca"]["components"]) >= 2
+
+
+def test_diversity_accepts_string_likert_values():
+    """Diversity placements + axes should accept stringified ints."""
+    from app.services.interviews.base import PersonaRecord, MemoryDigest
+    from app.services.interviews.diversity import DiversitySubagent
+    from pathlib import Path as _P
+
+    class _Mem:
+        def get_digest(self, agent_id, max_chars=2000):
+            return MemoryDigest(text="x", available=True)
+
+    buckets = [-3]*2 + [-2]*3 + [-1]*4 + [0]*6 + [1]*4 + [2]*3 + [3]*2
+
+    class _StringLLM:
+        def chat_json(self, messages, temperature=0.0, max_tokens=None, **kw):
+            return {
+                "placements": {f"st_{i+1:02d}": str(buckets[i]) for i in range(24)},
+                "likert_axes": {a: "4" for a in (
+                    "ax_pres_extr","ax_loc_eu","ax_sci_trad",
+                    "ax_ind_col","ax_short_long","ax_mkt_reg")},
+            }
+
+    inst = _P(__file__).resolve().parents[2] / "scripts" / "instruments" / "diversity_v1.yaml"
+    sub = DiversitySubagent(llm=_StringLLM(), memory=_Mem(), instrument_path=inst)
+    persona = PersonaRecord(agent_id=7, name="A", persona="p")
+    resp = sub.administer(persona)
+    assert isinstance(resp.placements["st_01"], int)
+    assert isinstance(resp.likert_axes["ax_pres_extr"], int)
+    assert resp.likert_axes["ax_pres_extr"] == 4

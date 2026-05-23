@@ -7,7 +7,7 @@ import yaml
 from app.models.interview import (
     DelphiOpenResponse, DelphiRatingResponse,
 )
-from app.services.interviews.base import StakeholderInterviewer, PersonaRecord
+from app.services.interviews.base import StakeholderInterviewer, PersonaRecord, coerce_int
 
 
 class DelphiSubagent:
@@ -66,8 +66,12 @@ class DelphiSubagent:
             if set(ratings.keys()) != set(theme_ids): return None
             for tid, r in ratings.items():
                 if not isinstance(r, dict): return None
+                coerced: dict[str, int] = {}
                 for key in ("importance", "plausibility"):
-                    if not isinstance(r.get(key), int) or not 1 <= r[key] <= 5: return None
+                    iv = coerce_int(r.get(key))
+                    if iv is None or not 1 <= iv <= 5: return None
+                    coerced[key] = iv
+                ratings[tid] = coerced
             return raw
         return v
 
@@ -110,10 +114,14 @@ class DelphiSubagent:
             if not isinstance(raw, dict): return None
             ratings = raw.get("ratings", {})
             if set(ratings.keys()) != set(theme_ids): return None
-            for r in ratings.values():
+            for tid, r in ratings.items():
                 if not isinstance(r, dict): return None
+                coerced: dict[str, int] = {}
                 for key in ("importance", "plausibility"):
-                    if not isinstance(r.get(key), int) or not 1 <= r[key] <= 5: return None
+                    iv = coerce_int(r.get(key))
+                    if iv is None or not 1 <= iv <= 5: return None
+                    coerced[key] = iv
+                ratings[tid] = coerced
             return raw
 
         raw = self.interviewer.ask_in_character(persona, user_prompt=prompt,

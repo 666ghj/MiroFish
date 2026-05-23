@@ -2,7 +2,35 @@ import json
 import pytest
 from app.services.interviews.base import (
     StakeholderInterviewer, MemoryDigest, PersonaRecord, SchemaValidationFailure,
+    coerce_int,
 )
+
+
+def test_coerce_int_accepts_real_int():
+    assert coerce_int(3) == 3
+    assert coerce_int(-2) == -2
+    assert coerce_int(0) == 0
+
+
+def test_coerce_int_accepts_numeric_strings():
+    assert coerce_int("3") == 3
+    assert coerce_int(" 4 ") == 4
+    assert coerce_int("-2") == -2
+
+
+def test_coerce_int_rejects_non_numeric():
+    assert coerce_int("3.5") is None
+    assert coerce_int("abc") is None
+    assert coerce_int(None) is None
+    assert coerce_int([3]) is None
+    assert coerce_int(3.5) is None
+
+
+def test_coerce_int_rejects_bool():
+    """True/False should NOT silently coerce to 1/0 even though Python says they're ints."""
+    assert coerce_int(True) is None
+    assert coerce_int(False) is None
+
 
 class _FakeLLM:
     def __init__(self, responses):
