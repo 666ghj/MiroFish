@@ -661,5 +661,18 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "interview": {
+    "title": "利益相关者访谈",
+    "subtitle": "对模拟利益相关者群体进行的四项独立调查。",
+    "runAll": "运行所有模拟后访谈",
+    "downloadCsv": "下载 CSV",
+    "tab": {
+      "longitudinal": "纵向分析 (Δ)",
+      "diversity": "多样性",
+      "delphi": "德尔菲法",
+      "scenario": "情景分析",
+      "synthesis": "综合分析"
+    }
   }
 }

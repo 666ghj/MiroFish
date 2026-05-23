@@ -661,5 +661,18 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "interview": {
+    "title": "Stakeholder interviews",
+    "subtitle": "Four independent surveys of the simulated stakeholder population.",
+    "runAll": "Run all post-simulation interviews",
+    "downloadCsv": "Download CSV",
+    "tab": {
+      "longitudinal": "Longitudinal (Δ)",
+      "diversity": "Diversity",
+      "delphi": "Delphi",
+      "scenario": "Scenarios",
+      "synthesis": "Synthesis"
+    }
   }
 }

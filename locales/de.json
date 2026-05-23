@@ -1,0 +1,15 @@
+{
+  "interview": {
+    "title": "Stakeholder-Interviews",
+    "subtitle": "Vier unabhängige Befragungen der simulierten Stakeholder-Population.",
+    "runAll": "Alle Post-Simulations-Interviews starten",
+    "downloadCsv": "CSV herunterladen",
+    "tab": {
+      "longitudinal": "Längsschnitt (Δ)",
+      "diversity": "Diversität",
+      "delphi": "Delphi",
+      "scenario": "Szenarien",
+      "synthesis": "Synthese"
+    }
+  }
+}
