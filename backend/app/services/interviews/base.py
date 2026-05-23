@@ -22,6 +22,13 @@ class MemoryProvider(Protocol):
     def get_digest(self, agent_id: int, max_chars: int = 2000) -> MemoryDigest: ...
 
 
+class SchemaValidationFailure(ValueError):
+    def __init__(self, agent_id: int, attempts: list[dict]):
+        super().__init__(f"agent {agent_id}: schema violation after retry")
+        self.agent_id = agent_id
+        self.attempts = attempts
+
+
 class StakeholderInterviewer:
     def __init__(self, llm, memory: MemoryProvider, language: str = "de"):
         self.llm = llm
@@ -55,18 +62,24 @@ class StakeholderInterviewer:
             {"role": "system", "content": self._system_prompt(persona, digest, schema_hint)},
             {"role": "user", "content": user_prompt},
         ]
-        out = self.llm.chat_json(messages=messages, temperature=temperature, max_tokens=max_tokens)
+        first = self.llm.chat_json(messages=messages, temperature=temperature, max_tokens=max_tokens)
         if validate is not None:
-            validated = validate(out)
+            validated = validate(first)
             if validated is not None:
                 return validated
-            messages.append({"role": "assistant", "content": str(out)})
+            messages.append({"role": "assistant", "content": str(first)})
             messages.append({"role": "user", "content":
                 "Your previous response did not match the required schema. "
                 f"Return ONLY valid JSON matching: {schema_hint}"})
-            out = self.llm.chat_json(messages=messages, temperature=0.0, max_tokens=max_tokens)
-            validated = validate(out)
+            second = self.llm.chat_json(messages=messages, temperature=0.0, max_tokens=max_tokens)
+            validated = validate(second)
             if validated is None:
-                raise ValueError(f"agent {persona.agent_id}: schema violation after retry")
+                raise SchemaValidationFailure(
+                    persona.agent_id,
+                    attempts=[
+                        {"attempt": 1, "raw": first, "schema_hint": schema_hint},
+                        {"attempt": 2, "raw": second, "schema_hint": schema_hint},
+                    ],
+                )
             return validated
-        return out
+        return first

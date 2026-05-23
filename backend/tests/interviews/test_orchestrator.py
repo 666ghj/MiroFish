@@ -62,3 +62,34 @@ def test_partial_failure_does_not_kill_run(tmp_path):
     result = orch.run_pre()
     assert result["longitudinal"]["n_responded"] < 4
     assert result["longitudinal"]["n_failed"] > 0
+
+
+def test_schema_failure_audit_captures_raw_llm_output(tmp_path):
+    """When an agent's LLM output fails the schema validator twice, the audit log
+    should preserve both raw outputs so we can debug what the model actually said."""
+    bad_response = {"wrong": "shape, no responses key"}
+    class _BadLLM:
+        def chat_json(self, messages, temperature=0.0, max_tokens=None, **kw):
+            return bad_response  # always fails Longitudinal validator
+    orch = InterviewOrchestrator(
+        llm=_BadLLM(), memory=_Mem(), personas=_Personas(1),
+        instrument_dir=INST_DIR, store_root=tmp_path, sim_id="sim3",
+        zep_writer=_NoopZep(), max_workers=1,
+    )
+    result = orch.run_pre()
+    assert result["longitudinal"]["n_responded"] == 0
+    assert result["longitudinal"]["n_failed"] == 1
+
+    import json as _j
+    run_dir = Path(result["longitudinal"]["run_dir"])
+    audit_path = run_dir / "audit.jsonl"
+    lines = audit_path.read_text(encoding="utf-8").splitlines()
+    assert lines, "audit.jsonl should not be empty"
+    entry = _j.loads(lines[0])
+    assert entry["event"] == "schema_validation_failure"
+    assert entry["agent_id"] == 0
+    detail = entry["detail"]
+    assert detail["label"] == "longitudinal_T0"
+    assert len(detail["attempts"]) == 2
+    assert detail["attempts"][0]["raw"] == bad_response
+    assert detail["attempts"][1]["raw"] == bad_response

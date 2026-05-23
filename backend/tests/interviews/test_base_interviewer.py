@@ -1,6 +1,8 @@
 import json
 import pytest
-from app.services.interviews.base import StakeholderInterviewer, MemoryDigest, PersonaRecord
+from app.services.interviews.base import (
+    StakeholderInterviewer, MemoryDigest, PersonaRecord, SchemaValidationFailure,
+)
 
 class _FakeLLM:
     def __init__(self, responses):
@@ -45,3 +47,22 @@ def test_two_failures_raise():
     with pytest.raises(ValueError):
         interviewer.ask_in_character(persona, user_prompt="Q?", schema_hint="x",
                                      validate=lambda d: d if "responses" in d else None)
+
+
+def test_schema_failure_captures_both_raw_attempts():
+    bad1 = {"oops": "no responses key"}
+    bad2 = {"still": "wrong shape"}
+    llm = _FakeLLM([bad1, bad2])
+    mem = _FakeMemory()
+    interviewer = StakeholderInterviewer(llm=llm, memory=mem)
+    persona = PersonaRecord(agent_id=42, name="A", persona="p")
+    with pytest.raises(SchemaValidationFailure) as exc_info:
+        interviewer.ask_in_character(persona, user_prompt="Q?", schema_hint="x",
+                                     validate=lambda d: d if "responses" in d else None)
+    err = exc_info.value
+    assert err.agent_id == 42
+    assert len(err.attempts) == 2
+    assert err.attempts[0]["raw"] == bad1
+    assert err.attempts[1]["raw"] == bad2
+    assert err.attempts[0]["attempt"] == 1
+    assert err.attempts[1]["attempt"] == 2

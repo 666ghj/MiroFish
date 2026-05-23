@@ -49,10 +49,16 @@ class InterviewStore:
         (run_dir / name).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def audit(self, run_dir: Path, agent_id: int | None, event: str, detail: str = "") -> None:
+    def audit(
+        self,
+        run_dir: Path,
+        agent_id: int | None,
+        event: str,
+        detail: str | dict = "",
+    ) -> None:
         entry = {"ts": time.time(), "agent_id": agent_id, "event": event, "detail": detail}
         with (run_dir / "audit.jsonl").open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
 
     def mark_latest(self, run_dir: Path) -> None:
         pointer = run_dir.parent / "latest.json"

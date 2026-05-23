@@ -6,7 +6,7 @@ from app.models.interview import (
     InterviewPhase, SubagentKind, LikertResponse, QSortResponse,
     DelphiOpenResponse, DelphiRatingResponse, ScenarioResponse,
 )
-from app.services.interviews.base import PersonaRecord
+from app.services.interviews.base import PersonaRecord, SchemaValidationFailure
 from app.services.interviews.longitudinal import LongitudinalSubagent, run_aggregate as longitudinal_aggregate
 from app.services.interviews.diversity import DiversitySubagent, run_typology
 from app.services.interviews.delphi import (
@@ -58,6 +58,11 @@ class InterviewOrchestrator:
                     out = fut.result()
                     ok.append(out)
                     self.store.append_response(run_dir, out)
+                except SchemaValidationFailure as e:
+                    failed.append(p.agent_id)
+                    self.store.audit(run_dir, agent_id=p.agent_id,
+                                     event="schema_validation_failure",
+                                     detail={"label": audit_label, "attempts": e.attempts})
                 except Exception as e:
                     failed.append(p.agent_id)
                     self.store.audit(run_dir, agent_id=p.agent_id,
