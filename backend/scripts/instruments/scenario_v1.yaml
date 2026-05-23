@@ -1,0 +1,51 @@
+name: scenario_v1
+version: "1.0"
+language_default: de
+scenarios:
+  - scenario_id: S1
+    label_de: "Erholung 2040"
+    label_en: "Recovery 2040"
+    description_de: |
+      Bis 2040 haben sich Dorsch- und Heringsbestände in der westlichen Ostsee
+      deutlich erholt. MSC-Zertifizierung ist branchenweit Standard. Die kleine
+      Küstenfischerei hat sich stabilisiert; die Politik gilt als erfolgreich.
+    description_en: |
+      By 2040, Western Baltic cod and herring stocks have substantially recovered.
+      MSC certification is industry-wide standard. Small-scale coastal fisheries
+      have stabilised; policy is regarded as successful.
+  - scenario_id: S2
+    label_de: "Kollaps 2040"
+    label_en: "Collapse 2040"
+    description_de: |
+      Bis 2040 sind Dorsch- und Heringsbestände zusammengebrochen. Die Flotte
+      ist halbiert, Aquakultur dominiert den Markt, Häfen veröden.
+    description_en: |
+      By 2040, cod and herring stocks have collapsed. The fleet is halved,
+      aquaculture dominates the market, harbour towns decline.
+  - scenario_id: S3
+    label_de: "Festung Europa 2040"
+    label_en: "Fortress Europe 2040"
+    description_de: |
+      Bis 2040 verfolgt die EU eine protektionistische Politik mit hohen Importzöllen,
+      Meeresschutzgebiete bedecken 30% der Ostsee, Sportfischerei ist stark eingeschränkt.
+    description_en: |
+      By 2040, the EU pursues a protectionist policy with high import tariffs,
+      MPAs cover 30% of the Baltic, recreational fishing is strongly curtailed.
+  - scenario_id: S4
+    label_de: "Privatisierung 2040"
+    label_en: "Privatisation 2040"
+    description_de: |
+      Bis 2040 sind Fangrechte als handelbare Quoten (ITQs) etabliert. Die Branche
+      hat sich konsolidiert; nur große, kapitalstarke Unternehmen sind übrig.
+    description_en: |
+      By 2040, fishing rights are tradable quotas (ITQs). The industry has
+      consolidated; only large, well-capitalised firms remain.
+dimensions:
+  - {dimension_id: desirability, scale: 7,
+     de: "Wie wünschenswert ist dieses Szenario?", en: "How desirable is this scenario?"}
+  - {dimension_id: plausibility, scale: 7,
+     de: "Wie plausibel ist dieses Szenario?",   en: "How plausible is this scenario?"}
+  - {dimension_id: impact_on_my_group, scale: 7,
+     de: "Wie stark trifft es Ihre Gruppe?",     en: "How strongly does it affect your group?"}
+  - {dimension_id: fairness, scale: 7,
+     de: "Wie fair ist dieses Szenario?",        en: "How fair is this scenario?"}
