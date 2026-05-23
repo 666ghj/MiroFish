@@ -62,6 +62,12 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
+
+    # Interview subsystem
+    INTERVIEW_MAX_TOKENS_PER_RUN = int(os.environ.get("INTERVIEW_MAX_TOKENS_PER_RUN", 15_000_000))
+    INTERVIEW_MAX_WORKERS = int(os.environ.get("INTERVIEW_MAX_WORKERS", 8))
+    INTERVIEW_DEFAULT_LANGUAGE = os.environ.get("INTERVIEW_DEFAULT_LANGUAGE", "de")
+    LLM_STUB_MODE = os.environ.get("LLM_STUB_MODE", "false").lower() == "true"
     
     @classmethod
     def validate(cls):
