@@ -115,30 +115,33 @@ class SimulationState:
 class SimulationManager:
     """
     模拟管理器
-    
+
     核心功能：
     1. 从Zep图谱读取实体并过滤
     2. 生成OASIS Agent Profile
     3. 使用LLM智能生成模拟配置参数
     4. 准备预设脚本所需的所有文件
     """
-    
+
     # 模拟数据存储目录
     SIMULATION_DATA_DIR = os.path.join(
-        os.path.dirname(__file__), 
+        os.path.dirname(__file__),
         '../../uploads/simulations'
     )
-    
+
+    # Class-level hook registries so callbacks survive across instances.
+    # The Flask API endpoints construct fresh `SimulationManager()` instances per request,
+    # while lifecycle hooks are registered once at app startup — storing the lists on the
+    # instance would silently drop those hooks on every request.
+    _on_ready_hooks: list = []
+    _on_completed_hooks: list = []
+
     def __init__(self):
         # 确保目录存在
         os.makedirs(self.SIMULATION_DATA_DIR, exist_ok=True)
 
         # 内存中的模拟状态缓存
         self._simulations: Dict[str, SimulationState] = {}
-
-        # Lifecycle hook registries
-        self._on_ready_hooks: list = []
-        self._on_completed_hooks: list = []
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
@@ -196,20 +199,30 @@ class SimulationManager:
         return state
     
     # ------------------------------------------------------------------
-    # Lifecycle hook registration
+    # Lifecycle hook registration (class-level — see class docstring)
     # ------------------------------------------------------------------
 
-    def register_on_ready(self, fn) -> None:
-        """Register a callback invoked when a simulation transitions to READY."""
-        self._on_ready_hooks.append(fn)
+    @classmethod
+    def register_on_ready(cls, fn) -> None:
+        """Register a callback invoked when a simulation transitions to READY.
 
-    def register_on_completed(self, fn) -> None:
-        """Register a callback invoked when a simulation transitions to COMPLETED."""
-        self._on_completed_hooks.append(fn)
+        Class-level so hooks registered at app startup remain visible to every
+        SimulationManager() instance constructed later (e.g. per-request in Flask).
+        """
+        cls._on_ready_hooks.append(fn)
+
+    @classmethod
+    def register_on_completed(cls, fn) -> None:
+        """Register a callback invoked when a simulation transitions to COMPLETED.
+
+        Class-level so hooks registered at app startup remain visible to every
+        SimulationManager() instance constructed later (e.g. per-request in Flask).
+        """
+        cls._on_completed_hooks.append(fn)
 
     def _notify_on_ready(self, state: "SimulationState") -> None:
         """Invoke all on_ready hooks; exceptions are isolated per hook."""
-        for fn in list(self._on_ready_hooks):
+        for fn in list(type(self)._on_ready_hooks):
             try:
                 fn(state)
             except Exception as e:
@@ -217,7 +230,7 @@ class SimulationManager:
 
     def _notify_on_completed(self, state: "SimulationState") -> None:
         """Invoke all on_completed hooks; exceptions are isolated per hook."""
-        for fn in list(self._on_completed_hooks):
+        for fn in list(type(self)._on_completed_hooks):
             try:
                 fn(state)
             except Exception as e:

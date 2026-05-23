@@ -1090,11 +1090,13 @@ class OasisProfileGenerator:
         
         with open(file_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            
-            # 写入OASIS要求的表头
-            headers = ['user_id', 'name', 'username', 'user_char', 'description']
+
+            # 写入表头：OASIS要求的5列 + 额外的source_entity_uuid列（反向链接到Zep实体）。
+            # OASIS按列名读取，额外的列不会影响其行为，但允许下游（面试子系统等）
+            # 重建 agent_id -> Zep entity uuid 的映射。
+            headers = ['user_id', 'name', 'username', 'user_char', 'description', 'source_entity_uuid']
             writer.writerow(headers)
-            
+
             # 写入数据行
             for idx, profile in enumerate(profiles):
                 # user_char: 完整人设（bio + persona），用于LLM系统提示
@@ -1103,16 +1105,17 @@ class OasisProfileGenerator:
                     user_char = f"{profile.bio} {profile.persona}"
                 # 处理换行符（CSV中用空格替代）
                 user_char = user_char.replace('\n', ' ').replace('\r', ' ')
-                
+
                 # description: 简短简介，用于外部显示
                 description = profile.bio.replace('\n', ' ').replace('\r', ' ')
-                
+
                 row = [
                     idx,                    # user_id: 从0开始的顺序ID
                     profile.name,           # name: 真实姓名
                     profile.user_name,      # username: 用户名
                     user_char,              # user_char: 完整人设（内部LLM使用）
-                    description             # description: 简短简介（外部显示）
+                    description,            # description: 简短简介（外部显示）
+                    profile.source_entity_uuid or "",  # source_entity_uuid: Zep实体UUID
                 ]
                 writer.writerow(row)
         
@@ -1184,12 +1187,18 @@ class OasisProfileGenerator:
                 item["profession"] = profile.profession
             if profile.interested_topics:
                 item["interested_topics"] = profile.interested_topics
-            
+            # source_entity_uuid: 反向链接到Zep实体，下游（面试子系统等）需要此映射以
+            # 在Zep图谱中查找Agent的上下文。仅在存在时写入。
+            if profile.source_entity_uuid:
+                item["source_entity_uuid"] = profile.source_entity_uuid
+            if profile.source_entity_type:
+                item["source_entity_type"] = profile.source_entity_type
+
             data.append(item)
-        
+
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        
+
         logger.info(f"已保存 {len(profiles)} 个Reddit Profile到 {file_path} (JSON格式，包含user_id字段)")
     
     # 保留旧方法名作为别名，保持向后兼容

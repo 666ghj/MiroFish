@@ -48,16 +48,17 @@ def create_app(config_class=Config):
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
 
-    # Install interview lifecycle hooks on a singleton SimulationManager.
-    # The singleton's _notify_on_completed is also wired into SimulationRunner
-    # so that the runner's monitor thread fires the completed hooks when a
-    # simulation process exits successfully.
+    # Install interview lifecycle hooks on the SimulationManager class.
+    # Hooks are stored on the class itself (not on a particular instance), so
+    # any fresh `SimulationManager()` constructed later (e.g. per request in
+    # the Flask API) will see them.  We still bridge `_notify_on_completed`
+    # into SimulationRunner via a transient instance so the runner's monitor
+    # thread fires the completed hooks when a simulation process exits.
     from .services.simulation_manager import SimulationManager
     from .services.interviews.lifecycle import install_hooks
 
-    _simulation_manager_singleton = SimulationManager()
-    install_hooks(_simulation_manager_singleton)
-    SimulationRunner.register_on_completed(_simulation_manager_singleton._notify_on_completed)
+    install_hooks(SimulationManager)
+    SimulationRunner.register_on_completed(SimulationManager()._notify_on_completed)
     if should_log_startup:
         logger.info("已安装面试生命周期钩子")
     

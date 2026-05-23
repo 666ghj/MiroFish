@@ -12,8 +12,30 @@ from app.services.interview_orchestrator import InterviewOrchestrator
 from app.services.interview_synthesizer import InterviewSynthesizer
 from app.services.interviews.storage import InterviewStore
 from app.utils.llm_client import LLMClient
+from app.utils.logger import get_logger
 
 from . import interview_bp
+
+logger = get_logger(__name__)
+
+
+class _NullUpdater:
+    """No-op stand-in for ``ZepGraphMemoryUpdater`` used when Zep is unavailable.
+
+    Exposes ``add_text_episode`` so ``InterviewZepWriter._emit`` succeeds silently —
+    the interview pipeline still produces local artefacts; Zep just isn't updated.
+    """
+
+    def add_text_episode(self, graph_id, text):  # noqa: ARG002 - matches real API
+        return None
+
+
+class _NullMemory:
+    """Fallback memory provider that always reports unavailable digests."""
+
+    def get_digest(self, agent_id, max_chars=2000):  # noqa: ARG002 - matches Protocol
+        from app.services.interviews.base import MemoryDigest
+        return MemoryDigest(text="[memory unavailable]", available=False)
 
 _TASKS: dict[str, dict] = {}
 _LOCK = threading.Lock()
@@ -25,30 +47,72 @@ def _uploads_root() -> Path:
     return Path(getattr(Config, "UPLOADS_DIR", "uploads"))
 
 
+def _load_graph_id(sim_id: str) -> str:
+    """Read the Zep ``graph_id`` for a simulation from its persisted state.
+
+    The graph_id is written by ``SimulationManager`` into
+    ``uploads/simulations/{sim_id}/state.json``.  Returns ``""`` if the state
+    file is missing or unreadable — callers should treat empty graph_id as
+    "Zep unavailable" and fall back to the null memory/writer path.
+    """
+    try:
+        from app.services.simulation_manager import SimulationManager
+        state = SimulationManager().get_simulation(sim_id)
+        if state and state.graph_id:
+            return state.graph_id
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"_load_graph_id({sim_id}) failed: {e!r}")
+    return ""
+
+
 def _build_orchestrator(sim_id: str) -> InterviewOrchestrator:
     sim_dir = _uploads_root() / "simulations" / sim_id
     reddit = sim_dir / "reddit_profiles.json"
     twitter = sim_dir / "twitter_profiles.csv"
-    personas = FileSystemPersonaProvider(reddit_path=reddit if reddit.exists() else None,
-                                         twitter_path=twitter if twitter.exists() else None)
-    # Zep memory + writer: best-effort; in stub/test mode the writer no-ops on exceptions
-    class _NullUpdater:
-        def add_text_episode(self, *a, **kw): return None
-    try:
-        from app.services.zep_entity_reader import ZepEntityReader
-        from app.services.zep_graph_memory_updater import ZepGraphMemoryUpdater
-        graph_id = (sim_dir / "graph_id.txt").read_text().strip() if (sim_dir / "graph_id.txt").exists() else ""
-        reader = ZepEntityReader()
-        updater = ZepGraphMemoryUpdater()
-        memory = ZepMemoryProvider(reader, graph_id=graph_id)
-        zep_writer = InterviewZepWriter(memory_updater=updater, graph_id=graph_id)
-    except Exception:
-        class _Mem:
-            def get_digest(self, agent_id, max_chars=2000):
-                from app.services.interviews.base import MemoryDigest
-                return MemoryDigest(text="[memory unavailable]", available=False)
-        memory = _Mem()
+    personas = FileSystemPersonaProvider(
+        reddit_path=reddit if reddit.exists() else None,
+        twitter_path=twitter if twitter.exists() else None,
+    )
+    # Build agent_id -> Zep entity uuid map from the persisted profile files.
+    agent_to_entity = personas.agent_to_entity()
+
+    # Resolve the graph_id from the simulation's persisted state — NOT from a
+    # ``graph_id.txt`` (nothing in the codebase writes such a file).
+    graph_id = _load_graph_id(sim_id)
+
+    memory: object
+    zep_writer: InterviewZepWriter
+    if not graph_id:
+        logger.warning(
+            f"interview: no graph_id for sim {sim_id} — Zep memory/writer disabled "
+            "(simulation state missing or graph_id empty)"
+        )
+        memory = _NullMemory()
         zep_writer = InterviewZepWriter(memory_updater=_NullUpdater(), graph_id="")
+    else:
+        try:
+            from app.services.zep_entity_reader import ZepEntityReader
+            from app.services.zep_graph_memory_updater import ZepGraphMemoryUpdater
+
+            reader = ZepEntityReader()
+            updater = ZepGraphMemoryUpdater(graph_id=graph_id)
+            memory = ZepMemoryProvider(
+                reader, graph_id=graph_id, agent_to_entity=agent_to_entity
+            )
+            zep_writer = InterviewZepWriter(memory_updater=updater, graph_id=graph_id)
+            if not agent_to_entity:
+                logger.warning(
+                    f"interview: empty agent_to_entity map for sim {sim_id} — "
+                    "memory digests will be unavailable. Check that profile files "
+                    "include `source_entity_uuid`."
+                )
+        except Exception as e:
+            logger.warning(
+                f"interview: Zep init failed for sim {sim_id} ({e!r}); "
+                "falling back to null memory/writer"
+            )
+            memory = _NullMemory()
+            zep_writer = InterviewZepWriter(memory_updater=_NullUpdater(), graph_id="")
     llm = LLMClient(api_key=Config.LLM_API_KEY, base_url=Config.LLM_BASE_URL,
                     model=Config.LLM_MODEL_NAME)
     return InterviewOrchestrator(

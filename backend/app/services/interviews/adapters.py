@@ -54,6 +54,49 @@ class FileSystemPersonaProvider:
         twitter = [p for p in self._load_twitter() if p.agent_id not in seen]
         return reddit + twitter
 
+    def agent_to_entity(self) -> dict[int, str]:
+        """Build the ``{agent_id: zep_entity_uuid}`` map from the persisted profile files.
+
+        Both writers (``oasis_profile_generator._save_reddit_json`` and
+        ``_save_twitter_csv``) emit ``source_entity_uuid`` per agent.  Reddit takes
+        precedence; rows with a missing/blank uuid are skipped.
+        Returns an empty dict if neither file is present or no row has the field.
+        """
+        mapping: dict[int, str] = {}
+
+        # Reddit JSON
+        if self.reddit_path and self.reddit_path.exists():
+            try:
+                rows = json.loads(self.reddit_path.read_text(encoding="utf-8"))
+                for row in rows:
+                    uid = row.get("user_id")
+                    uuid_ = row.get("source_entity_uuid")
+                    if uid is None or not uuid_:
+                        continue
+                    mapping[int(uid)] = str(uuid_)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+
+        # Twitter CSV (only fills agents not already mapped)
+        if self.twitter_path and self.twitter_path.exists():
+            try:
+                with self.twitter_path.open("r", encoding="utf-8", newline="") as f:
+                    for row in csv.DictReader(f):
+                        uid = row.get("user_id")
+                        uuid_ = row.get("source_entity_uuid")
+                        if not uid or not uuid_:
+                            continue
+                        try:
+                            uid_int = int(uid)
+                        except (TypeError, ValueError):
+                            continue
+                        if uid_int not in mapping:
+                            mapping[uid_int] = str(uuid_)
+            except OSError:
+                pass
+
+        return mapping
+
 
 class ZepMemoryProvider:
     """Builds a bounded memory digest per agent from Zep entity context.

@@ -5,10 +5,12 @@ from app.models.interview import (
 )
 
 class InterviewZepWriter:
-    """Mirrors `ZepGraphMemoryUpdater.add_activity` usage but for interview episodes.
+    """Writes interview episodes (per-agent responses, aggregates) to a Zep graph.
 
-    The real `ZepGraphMemoryUpdater` may expose `add_activity` (preferred) or a lower-level
-    text-episode method; this writer adapts to either via duck typing.
+    Expects ``memory_updater`` to expose ``add_text_episode(graph_id, text)`` — that
+    is the method the real ``ZepGraphMemoryUpdater`` provides for synchronous text
+    writes outside the agent-activity batch pipeline.  A no-op shim with the same
+    method is acceptable for tests and stub mode.
     """
     def __init__(self, memory_updater, graph_id: str):
         self.updater = memory_updater
@@ -17,10 +19,11 @@ class InterviewZepWriter:
     def _emit(self, text: str) -> None:
         if hasattr(self.updater, "add_text_episode"):
             self.updater.add_text_episode(self.graph_id, text)
-        elif hasattr(self.updater, "add_activity"):
-            self.updater.add_activity({"graph_id": self.graph_id, "text": text})
         else:
-            raise RuntimeError("memory_updater has neither add_text_episode nor add_activity")
+            raise RuntimeError(
+                "memory_updater is missing add_text_episode(graph_id, text); "
+                "InterviewZepWriter requires the explicit text-episode API."
+            )
 
     def _summarize_likert(self, r: LikertResponse) -> str:
         mean_v = sum(r.responses.values()) / max(len(r.responses), 1)

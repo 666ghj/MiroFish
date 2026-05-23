@@ -337,6 +337,44 @@ class ZepGraphMemoryUpdater:
         self._total_activities += 1
         logger.debug(f"添加活动到Zep队列: {activity.agent_name} - {activity.action_type}")
     
+    def add_text_episode(self, graph_id: str, text: str) -> None:
+        """
+        直接将一段文本写入Zep图谱（同步发送，不经过批量队列）
+
+        用于面试子系统（InterviewZepWriter）等需要立即写入、不属于
+        agent活动流水线的场景。绕过 _send_batch_activities 的批量逻辑，
+        但仍带重试。
+
+        Args:
+            graph_id: 目标图谱ID（允许覆盖 self.graph_id，便于多图场景）
+            text: 要发送的文本内容
+        """
+        if not text:
+            return
+        target_graph_id = graph_id or self.graph_id
+        if not target_graph_id:
+            logger.warning("add_text_episode 调用时未指定graph_id，跳过")
+            return
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                self.client.graph.add(
+                    graph_id=target_graph_id,
+                    type="text",
+                    data=text,
+                )
+                self._total_sent += 1
+                self._total_items_sent += 1
+                logger.debug(f"add_text_episode 发送成功 (graph={target_graph_id}, len={len(text)})")
+                return
+            except Exception as e:
+                if attempt < self.MAX_RETRIES - 1:
+                    logger.warning(f"add_text_episode 失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    time.sleep(self.RETRY_DELAY * (attempt + 1))
+                else:
+                    logger.error(f"add_text_episode 失败，已重试{self.MAX_RETRIES}次: {e}")
+                    self._failed_count += 1
+
     def add_activity_from_dict(self, data: Dict[str, Any], platform: str):
         """
         从字典数据添加活动
