@@ -32,6 +32,31 @@ class LLMClient:
             base_url=self.base_url
         )
     
+    def _stub_key(self, messages: list[dict]) -> str:
+        user_msg = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        sys_msg = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        # Allow callers to embed an explicit stub_key=... token
+        for chunk in user_msg.split():
+            if chunk.startswith("stub_key="):
+                return chunk[len("stub_key="):]
+        import hashlib
+        return hashlib.sha256((sys_msg + "|" + user_msg).encode("utf-8")).hexdigest()[:12]
+
+    def _stub_response(self, messages: list[dict]) -> str:
+        import json as _json
+        return _json.dumps(self._stub_response_json(messages), ensure_ascii=False)
+
+    def _stub_response_json(self, messages: list[dict]) -> dict:
+        key = self._stub_key(messages)
+        # Deterministic centered Likert + plausible open text
+        digit = sum(ord(c) for c in key) % 5 + 1
+        return {
+            "stub_key": key,
+            "responses": {"item_001": digit, "item_002": digit, "item_003": (digit % 5) + 1},
+            "confidence": {"item_001": 0.7, "item_002": 0.7, "item_003": 0.6},
+            "open_comment": f"stub:{key}",
+        }
+
     def chat(
         self,
         messages: List[Dict[str, str]],
@@ -41,16 +66,20 @@ class LLMClient:
     ) -> str:
         """
         发送聊天请求
-        
+
         Args:
             messages: 消息列表
             temperature: 温度参数
             max_tokens: 最大token数
             response_format: 响应格式（如JSON模式）
-            
+
         Returns:
             模型响应文本
         """
+        from app.config import Config
+        if getattr(Config, "LLM_STUB_MODE", False):
+            return self._stub_response(messages)
+
         kwargs = {
             "model": self.model,
             "messages": messages,
@@ -75,15 +104,19 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """
         发送聊天请求并返回JSON
-        
+
         Args:
             messages: 消息列表
             temperature: 温度参数
             max_tokens: 最大token数
-            
+
         Returns:
             解析后的JSON对象
         """
+        from app.config import Config
+        if getattr(Config, "LLM_STUB_MODE", False):
+            return self._stub_response_json(messages)
+
         response = self.chat(
             messages=messages,
             temperature=temperature,
