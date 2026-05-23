@@ -1,0 +1,47 @@
+name: longitudinal_v1
+version: "1.0"
+language_default: de
+items:
+  # Stock status & recovery
+  - {item_id: stk_1, family: stocks, scale: 5,
+     de: "Der westliche Dorschbestand wird sich bis 2035 erholen.",
+     en: "The Western Baltic cod stock will recover by 2035."}
+  - {item_id: stk_2, family: stocks, scale: 5,
+     de: "Der Heringsbestand in der westlichen Ostsee ist nicht mehr zu retten.",
+     en: "The Western Baltic herring stock can no longer be saved.",
+     reverse_coded: true}
+  - {item_id: stk_3, family: stocks, scale: 5,
+     de: "Wissenschaftliche Bestandsschätzungen sind generell zuverlässig.",
+     en: "Scientific stock assessments are generally reliable."}
+  # Governance & CFP
+  - {item_id: gov_1, family: governance, scale: 5,
+     de: "Die Gemeinsame Fischereipolitik der EU scheitert beim Schutz der Ostseefische.",
+     en: "The EU Common Fisheries Policy fails to protect Baltic fish.",
+     reverse_coded: true}
+  - {item_id: gov_2, family: governance, scale: 5,
+     de: "Entscheidungen über Fangquoten sollten stärker lokal getroffen werden.",
+     en: "Decisions on catch quotas should be taken more locally."}
+  - {item_id: gov_3, family: governance, scale: 5,
+     de: "Die deutsche Bundesregierung handelt entschlossen bei Fischereifragen.",
+     en: "The German federal government acts decisively on fisheries issues."}
+  # Market & MSC
+  - {item_id: mkt_1, family: market, scale: 5,
+     de: "Nur MSC-zertifizierter Fisch sollte verkauft werden dürfen.",
+     en: "Only MSC-certified fish should be allowed for sale."}
+  - {item_id: mkt_2, family: market, scale: 5,
+     de: "Importierter Fisch verdrängt die deutsche Kleinfischerei.",
+     en: "Imported fish displaces German small-scale fisheries."}
+  - {item_id: mkt_3, family: market, scale: 5,
+     de: "Verbraucher zahlen gerne mehr für nachhaltigen Ostseefisch.",
+     en: "Consumers gladly pay more for sustainable Baltic fish."}
+  # Climate & adaptation
+  - {item_id: clm_1, family: climate, scale: 5,
+     de: "Der Klimawandel macht traditionelle Ostseefischerei unmöglich.",
+     en: "Climate change makes traditional Baltic fisheries impossible.",
+     reverse_coded: true}
+  - {item_id: clm_2, family: climate, scale: 5,
+     de: "Aquakultur ist die Zukunft der deutschen Fischwirtschaft.",
+     en: "Aquaculture is the future of the German fishing industry."}
+  - {item_id: clm_3, family: climate, scale: 5,
+     de: "Die Fischerei muss sich grundlegend an neue Arten anpassen.",
+     en: "Fisheries must fundamentally adapt to new species."}
