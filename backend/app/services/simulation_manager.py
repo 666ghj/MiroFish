@@ -132,9 +132,13 @@ class SimulationManager:
     def __init__(self):
         # 确保目录存在
         os.makedirs(self.SIMULATION_DATA_DIR, exist_ok=True)
-        
+
         # 内存中的模拟状态缓存
         self._simulations: Dict[str, SimulationState] = {}
+
+        # Lifecycle hook registries
+        self._on_ready_hooks: list = []
+        self._on_completed_hooks: list = []
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
@@ -191,6 +195,36 @@ class SimulationManager:
         self._simulations[simulation_id] = state
         return state
     
+    # ------------------------------------------------------------------
+    # Lifecycle hook registration
+    # ------------------------------------------------------------------
+
+    def register_on_ready(self, fn) -> None:
+        """Register a callback invoked when a simulation transitions to READY."""
+        self._on_ready_hooks.append(fn)
+
+    def register_on_completed(self, fn) -> None:
+        """Register a callback invoked when a simulation transitions to COMPLETED."""
+        self._on_completed_hooks.append(fn)
+
+    def _notify_on_ready(self, state: "SimulationState") -> None:
+        """Invoke all on_ready hooks; exceptions are isolated per hook."""
+        for fn in list(self._on_ready_hooks):
+            try:
+                fn(state)
+            except Exception as e:
+                logger.warning(f"on_ready hook failed: {e!r}")
+
+    def _notify_on_completed(self, state: "SimulationState") -> None:
+        """Invoke all on_completed hooks; exceptions are isolated per hook."""
+        for fn in list(self._on_completed_hooks):
+            try:
+                fn(state)
+            except Exception as e:
+                logger.warning(f"on_completed hook failed: {e!r}")
+
+    # ------------------------------------------------------------------
+
     def create_simulation(
         self,
         project_id: str,
@@ -441,7 +475,8 @@ class SimulationManager:
             # 更新状态
             state.status = SimulationStatus.READY
             self._save_simulation_state(state)
-            
+            self._notify_on_ready(state)
+
             logger.info(f"模拟准备完成: {simulation_id}, "
                        f"entities={state.entities_count}, profiles={state.profiles_count}")
             
