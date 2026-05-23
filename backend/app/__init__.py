@@ -47,6 +47,19 @@ def create_app(config_class=Config):
     SimulationRunner.register_cleanup()
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
+
+    # Install interview lifecycle hooks on a singleton SimulationManager.
+    # The singleton's _notify_on_completed is also wired into SimulationRunner
+    # so that the runner's monitor thread fires the completed hooks when a
+    # simulation process exits successfully.
+    from .services.simulation_manager import SimulationManager
+    from .services.interviews.lifecycle import install_hooks
+
+    _simulation_manager_singleton = SimulationManager()
+    install_hooks(_simulation_manager_singleton)
+    SimulationRunner.register_on_completed(_simulation_manager_singleton._notify_on_completed)
+    if should_log_startup:
+        logger.info("已安装面试生命周期钩子")
     
     # 请求日志中间件
     @app.before_request

@@ -226,7 +226,29 @@ class SimulationRunner:
     
     # 图谱记忆更新配置
     _graph_memory_enabled: Dict[str, bool] = {}  # simulation_id -> enabled
-    
+
+    # Completion callbacks registered from outside (e.g. SimulationManager lifecycle hooks).
+    # Each callable receives the SimulationRunState that just transitioned to COMPLETED.
+    _on_completed_callbacks: list = []
+
+    @classmethod
+    def register_on_completed(cls, fn) -> None:
+        """Register a callback invoked when a simulation transitions to COMPLETED.
+
+        The callback receives the SimulationRunState instance.  It is called from
+        the monitor daemon thread, so keep it short or hand off to another thread.
+        """
+        cls._on_completed_callbacks.append(fn)
+
+    @classmethod
+    def _fire_on_completed(cls, state: SimulationRunState) -> None:
+        """Invoke all registered on_completed callbacks; exceptions are isolated."""
+        for fn in list(cls._on_completed_callbacks):
+            try:
+                fn(state)
+            except Exception as e:
+                logger.warning(f"on_completed callback failed: {e!r}")
+
     @classmethod
     def get_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """获取运行状态"""
@@ -528,6 +550,7 @@ class SimulationRunner:
                 state.runner_status = RunnerStatus.COMPLETED
                 state.completed_at = datetime.now().isoformat()
                 logger.info(f"模拟完成: {simulation_id}")
+                cls._fire_on_completed(state)
             else:
                 state.runner_status = RunnerStatus.FAILED
                 # 从主日志文件读取错误信息
@@ -638,6 +661,7 @@ class SimulationRunner:
                                         state.runner_status = RunnerStatus.COMPLETED
                                         state.completed_at = datetime.now().isoformat()
                                         logger.info(f"所有平台模拟已完成: {state.simulation_id}")
+                                        cls._fire_on_completed(state)
                                 
                                 # 更新轮次信息（从 round_end 事件）
                                 elif event_type == "round_end":
