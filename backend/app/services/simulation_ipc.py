@@ -137,7 +137,7 @@ class SimulationIPCClient:
             TimeoutError: Lỗi quá thời gian chờ phản hồi
         """
         command_id = str(uuid.uuid4())
-        command = IPCCommand(
+        command = s(
             command_id=command_id,
             command_type=command_type,
             args=args

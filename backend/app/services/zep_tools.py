@@ -1109,23 +1109,41 @@ class ZepToolsService:
         Giúp phân rã một câu hỏi lớn / phức tạp thành nhiều câu hỏi nhỏ lẻ 
         có thể query độc lập trên cơ sở dữ liệu.
         """
-        system_prompt = """You are a professional problem analysis expert. Your task is to break down a complex query into multiple sub-queries that can be independently observed in the simulated world.
+#         system_prompt = """You are a professional problem analysis expert. Your task is to decompose a complex problem into multiple sub-questions that can be independently observed within a simulated world.
 
-Requirements:
-1. Each sub-query should be specific enough to find concrete Agent behaviors or events.
-2. Sub-queries should cover different dimensions of the original query (Who, What, Why, How, When, Where).
-3. Sub-queries must relate to the simulation context.
-4. Return exactly in JSON format: {"sub_queries": ["sub_query 1", "sub_query 2", ...]}"""
+# Requirements:
+# 1. Each sub-question should be specific enough to identify relevant Agent behaviors or events within the simulation.
+# 2. Sub-questions should cover different dimensions of the original problem (e.g., Who, What, Why, How, When, Where).
+# 3. Sub-questions must be relevant to the simulation scenario.
+# 4. Return in JSON format: {"sub_queries": ["Sub-question 1", "Sub-question 2", ...]}"""
 
-        user_prompt = f"""Simulation background:
+#         user_prompt = f"""Simulation Requirement Background:
+# {simulation_requirement}
+
+# {f"Report context: {report_context[:500]}" if report_context else ""}
+
+# Please decompose the following question into {max_queries} sub-questions:
+# {query}
+
+# Return the list of sub-questions in JSON format."""
+
+        system_prompt = """Bạn là một chuyên gia phân tích vấn đề chuyên nghiệp. Nhiệm vụ của bạn là chia nhỏ một vấn đề phức tạp thành nhiều câu hỏi phụ có thể quan sát độc lập trong thế giới mô phỏng.
+
+Yêu cầu:
+1. Mỗi câu hỏi phụ phải đủ cụ thể để có thể tìm thấy các hành vi của Agent hoặc các sự kiện liên quan trong thế giới mô phỏng.
+2. Các câu hỏi phụ nên bao quát các khía cạnh khác nhau của vấn đề gốc (Ví dụ: Ai, Cái gì, Tại sao, Như thế nào, Khi nào, Ở đâu).
+3. Các câu hỏi phụ phải liên quan đến kịch bản mô phỏng.
+4. Trả về định dạng JSON: {"sub_queries": ["Câu hỏi phụ 1", "Câu hỏi phụ 2", ...]}"""
+
+        user_prompt = f"""Bối cảnh yêu cầu mô phỏng:
 {simulation_requirement}
 
-{f"Report context: {report_context[:500]}" if report_context else ""}
+{f"Ngữ cảnh báo cáo: {report_context[:500]}" if report_context else ""}
 
-Please break down the following query into {max_queries} sub-queries:
+Hãy chia nhỏ vấn đề sau đây thành {max_queries} các câu hỏi phụ:
 {query}
 
-Return the JSON format."""
+Trả về danh sách các câu hỏi phụ dưới định dạng JSON."""
 
         try:
             response = self.llm.chat_json(
@@ -1358,16 +1376,28 @@ Return the JSON format."""
         combined_prompt = "\n".join([f"{i+1}. {q}" for i, q in enumerate(result.interview_questions)])
         
         # Thêm các prefix tối ưu hoá, ràng buộc format câu trả lời của Agent
+        # INTERVIEW_PROMPT_PREFIX = (
+        #     "You are currently being interviewed. Please combine your persona, "
+        #     "all past memories, and actions to answer the following questions directly in plain text.\n"
+        #     "Response Requirements:\n"
+        #     "1. Answer directly using natural language; do not call any tools.\n"
+        #     "2. Do not return JSON format or tool-call formats.\n"
+        #     "3. Do not use Markdown headers (e.g., #, ##, ###).\n"
+        #     "4. Answer questions one by one according to their numbers. Each answer must start with 'Question X:' (where X is the question number).\n"
+        #     "5. Use a blank line to separate the answers for each question.\n"
+        #     "6. Answers must have substantive content; provide at least 2-3 sentences for each question.\n\n"
+        # )
+
         INTERVIEW_PROMPT_PREFIX = (
-            "You are being interviewed. Please combine your profile, all your past memories and actions, "
-            "and directly answer the following questions in pure text.\n"
-            "Reply requirements:\n"
-            "1. Answer directly in natural language, do not call any tools.\n"
-            "2. Do not return JSON format or tool call formats.\n"
-            "3. Do not use Markdown headers (like #, ##, ###).\n"
-            "4. Answer questions one by one according to their numbers, start each answer with 'Question X:' (X is the number).\n"
-            "5. Separate each answer with a blank line.\n"
-            "6. Answers must have substance, at least 2-3 sentences per question.\n\n"
+            "Bạn đang tham gia một buổi phỏng vấn. Hãy kết hợp nhân vật (persona), "
+            "tất cả ký ức và hành động trong quá khứ của bạn để trả lời trực tiếp các câu hỏi dưới đây bằng văn bản thuần túy.\n"
+            "Yêu cầu phản hồi:\n"
+            "1. Trả lời trực tiếp bằng ngôn ngữ tự nhiên, không gọi bất kỳ công cụ nào.\n"
+            "2. Không trả về định dạng JSON hoặc định dạng gọi công cụ.\n"
+            "3. Không sử dụng tiêu đề Markdown (như #, ##, ###).\n"
+            "4. Trả lời từng câu một theo số thứ tự, mỗi câu trả lời bắt đầu bằng 'Câu hỏi X:' (X là số thứ tự câu hỏi).\n"
+            "5. Sử dụng một dòng trống để phân tách giữa các câu trả lời.\n"
+            "6. Câu trả lời phải có nội dung thực tế, mỗi câu hỏi cần trả lời ít nhất 2-3 câu văn.\n\n"
         )
         optimized_prompt = f"{INTERVIEW_PROMPT_PREFIX}{combined_prompt}"
         
@@ -1389,7 +1419,7 @@ Return the JSON format."""
                 simulation_id=simulation_id,
                 interviews=interviews_request,
                 platform=None,  # Không định dạng nền tảng -> Dual platform call
-                timeout=180.0   # Tăng timeout do phải chờ API trên 2 platforms xử lý
+                timeout= 800 # Tăng timeout do phải chờ API trên 2 platforms xử lý
             )
             
             logger.info(f"Interview API returned: {api_result.get('interviews_count', 0)} results, success={api_result.get('success')}")
@@ -1585,31 +1615,56 @@ Return the JSON format."""
                 "interested_topics": profile.get("interested_topics", [])
             }
             agent_summaries.append(summary)
-        
-        system_prompt = """You are a professional interview planning expert. Your task is to select the most suitable target agents for an interview based on requirements.
 
-Selection criteria:
-1. Agent identity/profession is related to the interview topic.
-2. Agent might hold unique or valuable opinions.
-3. Select diverse perspectives (e.g., supporters, opponents, neutrals, professionals, etc.).
-4. Prioritize characters directly related to the event.
+            system_prompt = """Bạn là một chuyên gia lập kế hoạch phỏng vấn chuyên nghiệp. Nhiệm vụ của bạn là dựa trên yêu cầu phỏng vấn để chọn ra những đối tượng phù hợp nhất từ danh sách các Agent mô phỏng.
 
-Return in JSON format:
+Tiêu chí lựa chọn:
+1. Danh tính/Nghề nghiệp của Agent phải liên quan đến chủ đề phỏng vấn.
+2. Agent có khả năng nắm giữ những quan điểm độc đáo hoặc có giá trị.
+3. Lựa chọn các góc nhìn đa dạng (Ví dụ: bên ủng hộ, bên phản đối, bên trung lập, chuyên gia, v.v.).
+4. Ưu tiên các nhân vật có liên quan trực tiếp đến sự kiện.
+
+Trả về định dạng JSON:
 {
-    "selected_indices": [array of selected agent indices],
-    "reasoning": "explanation for the selection"
+    "selected_indices": [Danh sách chỉ mục của các Agent được chọn],
+    "reasoning": "Giải thích lý do lựa chọn"
 }"""
 
-        user_prompt = f"""Interview requirements:
+        user_prompt = f"""Yêu cầu phỏng vấn:
 {interview_requirement}
 
-Simulation background:
+Bối cảnh mô phỏng:
 {simulation_requirement if simulation_requirement else "Not provided"}
 
-Available Agents (total {len(agent_summaries)}):
+Danh sách các Agent có thể chọn (Tổng cộng {len(agent_summaries)}):
 {json.dumps(agent_summaries, ensure_ascii=False, indent=2)}
 
-Please select up to {max_agents} most suitable agents for the interview and explain your reasoning."""
+Hãy chọn tối đa {max_agents} Agent phù hợp nhất để phỏng vấn và giải thích lý do lựa chọn của bạn."""
+        
+#         system_prompt = """You are a professional interview planning expert. Your task is to select the most suitable subjects for an interview from a list of simulated Agents based on the interview requirements.
+
+# Selection Criteria:
+# 1. The Agent's identity/profession must be relevant to the interview topic.
+# 2. The Agent is likely to hold a unique or valuable perspective.
+# 3. Select diverse perspectives (e.g., supporters, opponents, neutral parties, professionals, etc.).
+# 4. Prioritize characters directly related to the event.
+
+# Return in JSON format:
+# {
+#     "selected_indices": [List of indices of selected Agents],
+#     "reasoning": "Explanation for the selection"
+# }"""
+
+#         user_prompt = f"""Interview Requirements:
+# {interview_requirement}
+
+# Simulation Background:
+# {simulation_requirement if simulation_requirement else "Not provided"}
+
+# List of selectable Agents (Total {len(agent_summaries)}):
+# {json.dumps(agent_summaries, ensure_ascii=False, indent=2)}
+
+# Please select a maximum of {max_agents} most suitable Agents for the interview and explain the reasons for your selection."""
 
         try:
             response = self.llm.chat_json(
@@ -1649,27 +1704,47 @@ Please select up to {max_agents} most suitable agents for the interview and expl
         """Sử dụng LLM để sinh ra các câu chất vấn hợp với tính chất sự việc"""
         
         agent_roles = [a.get("profession", "Unknown") for a in selected_agents]
+
+#         system_prompt = """You are a professional journalist/interviewer. Based on the interview requirements, generate 3-5 in-depth interview questions.
+
+# Question Requirements:
+# 1. Open-ended questions that encourage detailed answers.
+# 2. Questions that may elicit different answers from different roles.
+# 3. Cover multiple dimensions such as facts, opinions, and feelings.
+# 4. Use natural language, sounding like a real-life interview.
+# 5. Keep each question under 50 words, concise and clear.
+# 6. Ask the questions directly; do not include background explanations or prefixes.
+
+# Return in JSON format: {"questions": ["Question 1", "Question 2", ...]}"""
+
+#         user_prompt = f"""Interview Requirements: {interview_requirement}
+
+# Simulation Background: {simulation_requirement if simulation_requirement else "Not provided"}
+
+# Interviewee Roles: {', '.join(agent_roles)}
+
+# Please generate 3-5 interview questions."""
         
-        system_prompt = """You are a professional journalist/interviewer. Generate 3-5 deep interview questions based on requirements.
+        system_prompt = """Bạn là một nhà báo/người phỏng vấn chuyên nghiệp. Dựa trên yêu cầu phỏng vấn, hãy tạo từ 3-5 câu hỏi phỏng vấn chuyên sâu.
 
-Question requirements:
-1. Open-ended questions, encourage detailed answers.
-2. Formulated so different roles might have different answers.
-3. Cover multiple dimensions like facts, opinions, feelings, etc.
-4. Natural language, sounds like a real interview.
-5. Keep each question within 50 words, concise and clear.
-6. Ask directly, do not include background explanations or prefixes.
+Yêu cầu đối với câu hỏi:
+1. Câu hỏi mở, khuyến khích câu trả lời chi tiết.
+2. Các câu hỏi có thể nhận được những câu trả lời khác nhau tùy theo từng vai trò.
+3. Bao quát nhiều khía cạnh như sự thật, quan điểm và cảm xúc.
+4. Ngôn ngữ tự nhiên, giống như một buổi phỏng vấn thực tế.
+5. Mỗi câu hỏi khống chế dưới 50 chữ, ngắn gọn và súc tích.
+6. Đặt câu hỏi trực tiếp, không bao gồm giải thích bối cảnh hoặc tiền tố.
 
-Return in JSON format: {"questions": ["question 1", "question 2", ...]}"""
+Trả về định dạng JSON: {"questions": ["Câu hỏi 1", "Câu hỏi 2", ...]}"""
 
-        user_prompt = f"""Interview requirements: {interview_requirement}
+        user_prompt = f"""Yêu cầu phỏng vấn: {interview_requirement}
 
-Simulation background: {simulation_requirement if simulation_requirement else "Not provided"}
+Bối cảnh mô phỏng: {simulation_requirement if simulation_requirement else "Not provided"}
 
-Interviewee roles: {', '.join(agent_roles)}
+Vai trò của đối tượng phỏng vấn: {', '.join(agent_roles)}
 
-Please generate 3-5 interview questions."""
-
+Hãy tạo từ 3-5 câu hỏi phỏng vấn."""
+        
         try:
             response = self.llm.chat_json(
                 messages=[
@@ -1703,29 +1778,52 @@ Please generate 3-5 interview questions."""
         interview_texts = []
         for interview in interviews:
             interview_texts.append(f"【{interview.agent_name}（{interview.agent_role}）】\n{interview.response[:500]}")
+
+#         system_prompt = """You are a professional news editor. Please generate an interview summary based on the responses from multiple interviewees.
+
+# Summary Requirements:
+# 1. Synthesize the main viewpoints from all parties.
+# 2. Identify areas of consensus and divergence among the viewpoints.
+# 3. Highlight valuable quotes.
+# 4. Maintain objectivity and neutrality, without favoring any side.
+# 5. Limit the summary to 1000 words.
+
+# Formatting Constraints (MUST be followed):
+# - Use plain text paragraphs, separated by blank lines.
+# - Do not use Markdown headers (e.g., #, ##, ###).
+# - Do not use horizontal rules (e.g., ---, ***).
+# - Use Vietnamese quotation marks 「」 when quoting the interviewees' original words.
+# - You may use **bold** to highlight keywords, but do not use any other Markdown syntax."""
+
+#         user_prompt = f"""Interview Topic: {interview_requirement}
+
+# Interview Content:
+# {"\n\n".join(interview_texts)}
+
+# Please generate the interview summary."""
         
-        system_prompt = """You are a professional news editor. Please generate an interview summary based on the answers from multiple interviewees.
+        system_prompt = """Bạn là một biên tập viên tin tức chuyên nghiệp. Hãy tạo một bản tóm tắt phỏng vấn dựa trên câu trả lời từ nhiều đối tượng được phỏng vấn.
 
-Summary requirements:
-1. Extract main viewpoints from all parties.
-2. Point out consensus and disagreements among opinions.
-3. Highlight valuable quotes.
-4. Objective and neutral, do not favor any side.
-5. Keep it within 1000 words.
+Yêu cầu tóm tắt:
+1. Đúc kết các quan điểm chính của các bên.
+2. Chỉ ra những điểm đồng thuận và khác biệt trong các quan điểm.
+3. Làm nổi bật các câu trích dẫn có giá trị.
+4. Đảm bảo tính khách quan và trung lập, không thiên vị bất kỳ bên nào.
+5. Giới hạn trong khoảng 1000 chữ.
 
-Formatting constraints (Must obey):
-- Use plain text paragraphs, separate different sections with blank lines.
-- Do not use Markdown headers (like #, ##, ###).
-- Do not use dividers (like ---, ***).
-- Use normal quotes when citing interviewee actions/words.
-- You can use **bold** to mark keywords, but no other Markdown syntax."""
+Ràng buộc định dạng (BẮT BUỘC tuân thủ):
+- Sử dụng các đoạn văn bản thuần túy, phân tách các phần bằng dòng trống.
+- Không sử dụng tiêu đề Markdown (như #, ##, ###).
+- Không sử dụng đường kẻ phân cách (như ---, ***).
+- Sử dụng dấu ngoặc kép kiểu Việt Nam 「」 khi trích dẫn nguyên văn lời của người được phỏng vấn.
+- Có thể sử dụng dấu **in đậm** cho các từ khóa, nhưng không sử dụng bất kỳ cú pháp Markdown nào khác."""
 
-        user_prompt = f"""Interview topic: {interview_requirement}
+        user_prompt = f"""Chủ đề phỏng vấn: {interview_requirement}
 
-Interview content:
+Nội dung phỏng vấn:
 {"\n\n".join(interview_texts)}
 
-Please generate the interview summary."""
+Hãy tạo bản tóm tắt phỏng vấn."""
 
         try:
             summary = self.llm.chat(
@@ -1734,7 +1832,7 @@ Please generate the interview summary."""
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3,
-                max_tokens=800
+                max_tokens=4096
             )
             return summary
             
