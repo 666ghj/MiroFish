@@ -1741,7 +1741,7 @@ Trả về định dạng JSON: {"questions": ["Câu hỏi 1", "Câu hỏi 2", .
 
 Bối cảnh mô phỏng: {simulation_requirement if simulation_requirement else "Not provided"}
 
-Vai trò của đối tượng phỏng vấ: {', '.join(agent_roles)}
+Vai trò của đối tượng phỏng vấn: {', '.join(agent_roles)}
 
 Hãy tạo từ 3-5 câu hỏi phỏng vấn."""
         

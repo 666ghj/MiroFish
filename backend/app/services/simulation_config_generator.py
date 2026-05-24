@@ -1,13 +1,26 @@
 """
-Trình tạo tạo ra cấu hình Simulation tự động
-Sử dụng LLM theo yêu cầu mô phỏng, nội dung tài liệu và thông tin đồ thị để tự động thiết lập chi tiết các tham số
-Tất cả đều tự động mà không cần can thiệp thủ công tạo tham số
+Trình tạo cấu hình Simulation tự động bằng LLM
 
-Áp dụng chiến lược tạo từng bước để tránh lỗi do cố gắng tạo nội dung quá dài cùng một lúc:
-1. Tạo cấu hình thời gian
-2. Tạo cấu hình các Event
-3. Tạo cấu hình cho các Agent theo đợt
-4. Tạo cấu hình nền tảng
+Vị trí trong pipeline:
+─────────────────────────────────────────────────────────────────────────────
+  simulation_manager.prepare_simulation()  [Giai đoạn 3 — bước cuối cùng]
+      └─ SimulationConfigGenerator.generate_config()
+              ├─ _generate_time_config()      [LLM → bao nhiêu giờ, giờ nào cao điểm]
+              ├─ _generate_event_config()     [LLM → hot topics, initial posts]
+              ├─ _generate_agent_configs_batch() × N  [LLM → hành vi từng agent]
+              └─ _assign_initial_post_agents()  [ghép poster_type → agent_id]
+─────────────────────────────────────────────────────────────────────────────
+
+Input:  List[EntityNode] từ ZepEntityReader + document_text + simulation_requirement
+Output: SimulationParameters → ghi ra simulation_config.json
+        (File này sau đó được đọc bởi run_parallel_simulation.py khi OASIS chạy)
+
+Chiến lược LLM chia từng bước:
+  Thay vì gửi toàn bộ dữ liệu 1 lần (dễ bị token limit), chia thành 4 bước nhỏ:
+  1. Time config  — context cắt còn 10,000 ký tự 
+  2. Event config — context cắt còn 8,000 ký tự
+  3. Agent configs — chia batch 15 agent/lần (N batch)
+  4. Platform config — hardcoded (không cần LLM)
 """
 
 import json
@@ -25,7 +38,17 @@ from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.simulation_config')
 
-# Cấu hình thời gian thói quen Trung Quốc (Theo giờ Bắc Kinh)
+
+# ==============================================================================
+# HẰNG SỐ: CHINA_TIMEZONE_CONFIG — Mẫu hoạt động theo múi giờ UTC+7
+# ==============================================================================
+# Lưu ý tên biến: được kế thừa từ codebase OASIS gốc của Trung Quốc (UTC+8).
+# Thực tế trong MiroFish, hệ thống đã chuyển sang dùng múi giờ Việt Nam (UTC+7) —
+# các prompt LLM đều chỉ định "người Việt Nam / giờ Hà Nội".
+# Biến này hiện chỉ dùng để tham khảo/documentation, KHÔNG được import trực tiếp
+# vào các hàm tạo config (logic thực tế nằm trong prompt LLM và rule fallback).
+# ==============================================================================
+
 CHINA_TIMEZONE_CONFIG = {
     # Khung giờ khuya (Hầu như không có hoạt động)
     "dead_hours": [0, 1, 2, 3, 4, 5],
@@ -48,133 +71,220 @@ CHINA_TIMEZONE_CONFIG = {
 }
 
 
+# ==============================================================================
+# DATACLASS: AgentActivityConfig — Cấu hình hành vi của một agent trong OASIS
+# ==============================================================================
+# Mỗi AgentActivityConfig tương ứng với 1 EntityNode đã được map thành agent.
+# OASIS đọc các field này để quyết định:
+#   - Agent này có "thức dậy" trong round này không? (activity_level)
+#   - Nếu thức, nó làm gì? (posts_per_hour, comments_per_hour, stance)
+#   - Bài của nó được bao nhiêu agent khác nhìn thấy? (influence_weight)
+# ==============================================================================
+
 @dataclass
 class AgentActivityConfig:
     """Cấu hình hoạt động cho một Agent"""
-    agent_id: int
-    entity_uuid: str
-    entity_name: str
-    entity_type: str
-    
-    # Mức độ hoạt động (0.0-1.0)
-    activity_level: float = 0.5  # Hoạt động tổng thể
-    
-    # Tần suất phát ngôn (Số lần comment dự kiến mỗi giờ)
+
+    # --- Định danh ---
+    agent_id: int          # Phải khớp với user_id trong reddit_profiles.json / twitter_profiles.csv
+    entity_uuid: str       # UUID trong Zep — dùng để trace ngược lại nguồn gốc
+    entity_name: str       # Tên hiển thị (ví dụ: "Trần Văn An")
+    entity_type: str       # Loại entity (ví dụ: "Student", "MediaOutlet")
+
+    # --- Mức độ hoạt động tổng thể ---
+    # 0.0 = không bao giờ hoạt động; 1.0 = luôn hoạt động mỗi round
+    # OASIS dùng giá trị này nhân với activity_multiplier của giờ hiện tại
+    # để tính xác suất agent được chọn trong round.
+    activity_level: float = 0.5
+
+    # --- Tần suất phát ngôn ---
+    # Số lần trung bình agent đăng bài mới / bình luận trong 1 giờ mô phỏng
     posts_per_hour: float = 1.0
     comments_per_hour: float = 2.0
-    
-    # Khoảng thời gian hoạt động (Hệ 24 giờ, 0-23)
+
+    # --- Khoảng thời gian hoạt động (hệ 24 giờ, 0–23) ---
+    # Agent chỉ có thể được kích hoạt trong các giờ này.
+    # Ví dụ: student=[8,9,10,18,19,20,21,22,23], university=[9,10,...,17]
     active_hours: List[int] = field(default_factory=lambda: list(range(8, 23)))
-    
-    # Tốc độ phản hồi (Độ trễ phản ứng với sự kiện nóng, đơn vị: phút mô phỏng)
+
+    # --- Tốc độ phản hồi ---
+    # Độ trễ (phút mô phỏng) trước khi agent phản ứng với sự kiện nóng.
+    # Nhỏ = phản ứng nhanh (sinh viên: 1-15 phút)
+    # Lớn = phản ứng chậm (cơ quan chính phủ: 60-240 phút)
     response_delay_min: int = 5
     response_delay_max: int = 60
-    
-    # Khuynh hướng cảm xúc (-1.0 đến 1.0, từ tiêu cực đến tích cực)
+
+    # --- Khuynh hướng cảm xúc ---
+    # -1.0 = rất tiêu cực (phản đối mạnh mẽ)
+    #  0.0 = trung lập
+    # +1.0 = rất tích cực (ủng hộ nhiệt tình)
     sentiment_bias: float = 0.0
-    
-    # Lập trường (Thái độ đối với chủ đề cụ thể)
-    stance: str = "neutral"  # supportive, opposing, neutral, observer
-    
-    # Trọng số ảnh hưởng (Xác định mức độ bài đăng được Agent khác nhìn thấy)
+
+    # --- Lập trường với chủ đề mô phỏng ---
+    # "supportive": ủng hộ quyết định/sự kiện được mô phỏng
+    # "opposing": phản đối
+    # "neutral": không rõ ràng, phân tích khách quan
+    # "observer": chỉ theo dõi, ít tham gia tranh luận
+    stance: str = "neutral"
+
+    # --- Trọng số ảnh hưởng ---
+    # Mức độ bài đăng của agent này xuất hiện trên "timeline" của agent khác.
+    # Cao = lan rộng hơn (mediaoutlet: 2.5, university: 3.0)
+    # Thấp = ít người thấy (student: 0.8)
     influence_weight: float = 1.0
 
 
-@dataclass  
+# ==============================================================================
+# DATACLASS: TimeSimulationConfig — Cấu hình thời gian và nhịp hoạt động
+# ==============================================================================
+# Định nghĩa "lịch sinh hoạt" của thế giới mô phỏng:
+#   - Tổng độ dài mô phỏng (total_simulation_hours)
+#   - Mỗi round đại diện cho bao nhiêu phút thực (minutes_per_round)
+#   - Khung giờ nào sẽ có nhiều hay ít agent hoạt động (peak/off_peak/morning/work)
+#
+# OASIS đọc các multiplier để tính số agent active mỗi round:
+#   active_count = random(min, max) × multiplier[current_hour]
+# ==============================================================================
+
+@dataclass
 class TimeSimulationConfig:
-    """Cấu hình thời gian mô phỏng (Dựa trên thói quen sinh hoạt của người Trung)"""
-    # Tổng thời gian mô phỏng (Giờ)
-    total_simulation_hours: int = 72  # Mặc định là chạy mô phỏng 72 tiếng (3 ngày)
-    
-    # Số phút đại diện cho mỗi vòng - Mặc định 60 phút (1 giờ), đẩy nhanh thời gian
+    """Cấu hình thời gian mô phỏng"""
+
+    # Tổng số giờ mô phỏng — 72 giờ = 3 ngày thực
+    # (Với minutes_per_round=60, tổng số round = 72)
+    total_simulation_hours: int = 72
+
+    # Mỗi round đại diện cho bao nhiêu phút trong thế giới thực
+    # 60 = mỗi round là 1 giờ (khuyến nghị để cân bằng tốc độ vs độ chi tiết)
     minutes_per_round: int = 60
-    
-    # Phạm vi số lượng Agent kích hoạt mỗi giờ
+
+    # Số agent được kích hoạt mỗi giờ — LLM chọn giá trị trong [min, max]
+    # dựa trên quy mô simulation (số entity)
     agents_per_hour_min: int = 5
     agents_per_hour_max: int = 20
-    
-    # Giờ cao điểm (19-22 giờ tối, thời gian sôi động nhất)
+
+    # Khung giờ cao điểm: 19-22 giờ — đông nhất, nhân với 1.5
     peak_hours: List[int] = field(default_factory=lambda: [19, 20, 21, 22])
     peak_activity_multiplier: float = 1.5
-    
-    # Khung giờ chết (0-5 giờ, hầu như không ai on)
+
+    # Khung giờ chết: 0-5 giờ sáng — gần như không ai online, nhân với 0.05
     off_peak_hours: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4, 5])
-    off_peak_activity_multiplier: float = 0.05  # Rạng sáng gần như bằng không
-    
-    # Khung giờ buổi sáng
+    off_peak_activity_multiplier: float = 0.05
+
+    # Buổi sáng: 6-8 giờ — hoạt động tăng dần, nhân với 0.4
     morning_hours: List[int] = field(default_factory=lambda: [6, 7, 8])
     morning_activity_multiplier: float = 0.4
-    
-    # Khung giờ làm việc
+
+    # Giờ làm việc: 9-18 giờ — hoạt động ổn định, nhân với 0.7
     work_hours: List[int] = field(default_factory=lambda: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18])
     work_activity_multiplier: float = 0.7
 
 
+# ==============================================================================
+# DATACLASS: EventConfig — Cấu hình "ngòi nổ" khởi động cuộc mô phỏng
+# ==============================================================================
+# initial_posts là các bài đăng đầu tiên được post ngay khi simulation bắt đầu.
+# Chúng tạo ra "sự kiện kích hoạt" để các agent khác phản ứng.
+#
+# Sau khi LLM sinh initial_posts (có poster_type), hàm _assign_initial_post_agents()
+# sẽ map poster_type → agent_id thực để OASIS biết agent nào post bài đó.
+# ==============================================================================
+
 @dataclass
 class EventConfig:
-    """Cấu hình sự kiện cho Simulation"""
-    # Các bài Post/Sự kiện khởi đầu (Bắt đầu ngay khi chạy mô phỏng)
+    """Cấu hình sự kiện cho Simulation gồm initial_posts, scheduled_events, hot_topics, narrative_direction"""
+
+    # Bài đăng khởi đầu — post ngay round 1, tạo "tin nóng" để agent phản ứng
+    # Mỗi phần tử: {"content": "...", "poster_type": "MediaOutlet", "poster_agent_id": 12}
+    # poster_agent_id được gán sau bởi _assign_initial_post_agents()
     initial_posts: List[Dict[str, Any]] = field(default_factory=list)
-    
-    # Các sự kiện được lập lịch vào các thời điểm nhất định
+
+    # Sự kiện lập lịch — chưa được implement, dành cho tính năng tương lai
     scheduled_events: List[Dict[str, Any]] = field(default_factory=list)
-    
-    # Từ khóa dành cho các chủ đề đang hot (Hot topics)
+
+    # Từ khóa chủ đề nóng — OASIS dùng để tăng khả năng agent chú ý đến chủ đề này
+    # Ví dụ: ["học phí", "biểu tình", "giáo dục"]
     hot_topics: List[str] = field(default_factory=list)
-    
-    # Hướng dẫn dư luận / Đường lối thảo luận
+
+    # Hướng dẫn tổng quan diễn biến dư luận — LLM viết ra để định hướng
+    # Ví dụ: "Thông báo tăng học phí → sinh viên phản đối → leo thang thành phong trào..."
     narrative_direction: str = ""
 
 
+# ==============================================================================
+# DATACLASS: PlatformConfig — Cấu hình riêng cho từng nền tảng mạng xã hội
+# ==============================================================================
+# Twitter và Reddit có thuật toán feed khác nhau → cần cấu hình riêng.
+# Các giá trị này được OASIS dùng khi quyết định bài nào hiển thị trên timeline agent.
+#
+# recency_weight + popularity_weight + relevance_weight = 1.0 (không bắt buộc, nhưng
+# nên cộng lại = 1 để tránh scale lệch)
+# ==============================================================================
+
 @dataclass
 class PlatformConfig:
-    """Cấu hình đặc thù dành riêng cho các nền tảng"""
-    platform: str  # twitter or reddit
-    
-    # Trọng số cho các thuật toán đề xuất
-    recency_weight: float = 0.4  # Độ mới của bài
-    popularity_weight: float = 0.3  # Mức độ phổ biến truyền miệng
-    relevance_weight: float = 0.3  # Mức độ quan tâm / tương quan
-    
-    # Ngưỡng lan truyền virus (Cần bao nhiêu tương tác để nội dung bắt đầu phát tán mạnh)
+    """Cấu hình đặc thù dành riêng cho các nền tảng gồm platform, recency_weight, popularity_weight, relevance_weight, viral_threshold và echo_chamber_strength"""
+    platform: str  # "twitter" hoặc "reddit"
+
+    # Ba trọng số trong thuật toán đề xuất nội dung:
+    recency_weight: float = 0.4    # Ưu tiên bài mới (Twitter: cao hơn Reddit)
+    popularity_weight: float = 0.3  # Ưu tiên bài nhiều like/repost
+    relevance_weight: float = 0.3   # Ưu tiên bài liên quan đến sở thích agent
+
+    # Ngưỡng lan truyền "viral":
+    # Twitter: 10 — dễ lan hơn (retweet lan nhanh)
+    # Reddit:  15 — khó lan hơn (cần nhiều upvote hơn)
+    # Khi bài đạt ngưỡng này, OASIS tăng xác suất nó xuất hiện trên feed của nhiều agent
     viral_threshold: int = 10
-    
-    # Độ mạnh của hiệu ứng lan truyền trong nhóm chung chí hướng (buồng phản âm)
+
+    # Hiệu ứng "buồng phản âm" (echo chamber):
+    # 0.0 = không có — agent thấy đa chiều
+    # 1.0 = tối đa — agent chỉ thấy bài cùng quan điểm
+    # Reddit thường cao hơn (0.6) vì cơ chế subreddit tạo bong bóng thông tin
     echo_chamber_strength: float = 0.5
 
 
+# ==============================================================================
+# DATACLASS: SimulationParameters — Object tổng hợp toàn bộ cấu hình simulation
+# ==============================================================================
+# Đây là output cuối cùng của SimulationConfigGenerator.generate_config().
+# Nó được serialize thành simulation_config.json — file trung tâm mà:
+#   1. Flask đọc để điền metadata vào state.json
+#   2. OASIS scripts đọc để khởi tạo môi trường và chạy simulation
+#
+# to_json() đảm bảo Unicode (tiếng Việt) không bị escape thành \uXXXX
+# ==============================================================================
+
 @dataclass
 class SimulationParameters:
-    """完整的模拟参数配置"""
-    # 基础信息
+    """Bộ tham số cấu hình đầy đủ cho một lượt Simulation"""
+
+    # --- Định danh (bắt buộc khi tạo object) ---
     simulation_id: str
     project_id: str
     graph_id: str
-    simulation_requirement: str
-    
-    # Cấu hình thời gian
+    simulation_requirement: str  # Yêu cầu gốc từ người dùng — được lưu để traceback
+
+    # --- Các cấu hình con (có default để tạo object không cần truyền hết) ---
     time_config: TimeSimulationConfig = field(default_factory=TimeSimulationConfig)
-    
-    # Danh sách cấu hình Agent
     agent_configs: List[AgentActivityConfig] = field(default_factory=list)
-    
-    # Cấu hình Event
     event_config: EventConfig = field(default_factory=EventConfig)
-    
-    # Cấu hình nền tảng
+
+    # None nếu platform tương ứng bị tắt (enable_twitter=False / enable_reddit=False)
     twitter_config: Optional[PlatformConfig] = None
     reddit_config: Optional[PlatformConfig] = None
-    
-    # Cấu hình LLM
-    llm_model: str = ""
-    llm_base_url: str = ""
-    
-    # Dữ liệu metadata khi tạo
+
+    # --- Metadata LLM ---
+    llm_model: str = ""     # Tên model đã dùng để gen (dùng để debug khi chất lượng kém)
+    llm_base_url: str = ""  # Base URL API (có thể là OpenAI, Azure, local...)
+
+    # --- Metadata tạo ---
     generated_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    generation_reasoning: str = ""  # Giải thích suy luận từ LLM
-    
+    # Chuỗi reasoning nối từ tất cả các bước: "Time config: ...|Event config: ...|Agent: ..."
+    generation_reasoning: str = ""
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert sang định dạng Dictionary"""
+        """Serialize toàn bộ object thành dict — dùng để truyền nội bộ."""
         time_dict = asdict(self.time_config)
         return {
             "simulation_id": self.simulation_id,
@@ -191,37 +301,61 @@ class SimulationParameters:
             "generated_at": self.generated_at,
             "generation_reasoning": self.generation_reasoning,
         }
-    
+
     def to_json(self, indent: int = 2) -> str:
-        """Convert sang định dạng chuỗi JSON"""
+        """Serialize thành chuỗi JSON — ensure_ascii=False để giữ nguyên tiếng Việt."""
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
 
+
+# ==============================================================================
+# CLASS: SimulationConfigGenerator — Trình điều phối sinh config bằng LLM
+# ==============================================================================
+# Được gọi bởi: SimulationManager.prepare_simulation() ở Giai đoạn 3.
+# Input đến từ: ZepEntityReader.filter_defined_entities() (danh sách EntityNode)
+#
+# Sơ đồ luồng gọi LLM trong generate_config():
+#
+#   generate_config()
+#     │
+#     ├── Bước 1: _generate_time_config()         ← 1 LLM call
+#     │       └── _parse_time_config()             ← validate + parse
+#     │
+#     ├── Bước 2: _generate_event_config()         ← 1 LLM call
+#     │       └── _parse_event_config()            ← parse đơn giản
+#     │
+#     ├── Bước 3..N: _generate_agent_configs_batch() ← 1 LLM call × N batch
+#     │       └── _generate_agent_config_by_rule() ← fallback nếu LLM fail/thiếu
+#     │
+#     ├── _assign_initial_post_agents()            ← không cần LLM, map bằng alias
+#     │
+#     └── Bước cuối: PlatformConfig hardcoded      ← không cần LLM
+#
+# Mỗi LLM call đi qua _call_llm_with_retry() với retry 3 lần, temperature giảm dần.
+# ==============================================================================
 
 class SimulationConfigGenerator:
     """
     Trình tạo cấu hình Simulation tự động bằng LLM
-    
+
     Sử dụng LLM phân tích yêu cầu mô phỏng, nội dung tài liệu, Entity từ đồ thị,
-    Tự động xây dựng các thông số cấu trúc tối ưu cho đợt Simulation
-    
-    Áp dụng chiến lược tạo từng bước:
+    tự động xây dựng các thông số cấu trúc tối ưu cho đợt Simulation.
+
+    Chiến lược chia từng bước (step-by-step generation):
     1. Tạo cấu hình thời gian và cấu hình Event (Nhẹ, chạy nhanh)
-    2. Phân nhỏ đợt tạo cấu hình cho Agent (Khoảng 10-20 agent mỗi đợt)
-    3. Tạo cấu hình nền tảng
+    2. Phân nhỏ đợt tạo cấu hình cho Agent (15 agent mỗi đợt)
+    3. Tạo cấu hình nền tảng (hardcoded, không cần LLM)
     """
-    
-    # Số lượng ký tự tối đa của bộ context
-    MAX_CONTEXT_LENGTH = 50000
-    # Số lượng Agent để gen cho một lần
-    AGENTS_PER_BATCH = 15
-    
-    # Số lượng ký tự giới hạn ở các bước để cắt chuỗi (Ký tự đoạn)
-    TIME_CONFIG_CONTEXT_LENGTH = 10000   # Cấu hình thời gian
-    EVENT_CONFIG_CONTEXT_LENGTH = 8000   # Cấu hình sự kiện
-    ENTITY_SUMMARY_LENGTH = 300          # Tóm tắt các thực thể
-    AGENT_SUMMARY_LENGTH = 300           # Tóm tắt cấu hình Agent
-    ENTITIES_PER_TYPE_DISPLAY = 20       # Lượng thực thể cho mổi loại để hiển thị
-    
+
+    MAX_CONTEXT_LENGTH = 50000    # Giới hạn tổng ngữ cảnh gửi cho LLM (ký tự)
+    AGENTS_PER_BATCH = 15         # Số agent xử lý mỗi lần gọi LLM (tránh token limit)
+
+    # Độ dài context cho từng bước — cắt ngắn để không waste token
+    TIME_CONFIG_CONTEXT_LENGTH = 10000   # Bước 1: chỉ cần biết chủ đề + entity types
+    EVENT_CONFIG_CONTEXT_LENGTH = 8000   # Bước 2: cần biết thêm về các entity điển hình
+    ENTITY_SUMMARY_LENGTH = 300          # Tóm tắt mỗi entity trong context
+    AGENT_SUMMARY_LENGTH = 300           # Tóm tắt entity trong prompt sinh agent config
+    ENTITIES_PER_TYPE_DISPLAY = 20       # Tối đa bao nhiêu entity/loại trong context
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -231,16 +365,17 @@ class SimulationConfigGenerator:
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY has not been configured")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
+        # Metadata runtime được inject vào mỗi LLM call để theo dõi cost/usage
         self._runtime_metadata: Dict[str, Any] = {}
-    
+
     def generate_config(
         self,
         simulation_id: str,
@@ -254,21 +389,30 @@ class SimulationConfigGenerator:
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
     ) -> SimulationParameters:
         """
-        Tạo cấu hình Simulation thông minh tự động hoàn chỉnh (Bằng tư duy chia từng bước)
-        
+        Pipeline sinh cấu hình simulation hoàn chỉnh theo từng bước.
+
+        Tổng quan luồng:
+        ┌───────────────────────────────────────────────────────────────┐
+        │ Bước 1: _generate_time_config()  → TimeSimulationConfig       │
+        │ Bước 2: _generate_event_config() → EventConfig + initial_posts│
+        │ Bước 3..N: _generate_agent_configs_batch() × ceil(N/15)       │
+        │ _assign_initial_post_agents()    → gán poster_agent_id        │
+        │ Bước cuối: PlatformConfig hardcoded                           │
+        └───────────────────────────────────────────────────────────────┘
+
         Args:
-            simulation_id: Nhận dạng quy trình chạy Simulation
-            project_id: Mã định danh dự án
-            graph_id: Đồ thị đồ thị
-            simulation_requirement: Yêu cầu của quá trình mô phỏng
-            document_text: Nội dung file tài liệu nguồn
-            entities: Danh sách các thực thể đã được lọc
-            enable_twitter: Cờ hiệu để bật Twitter
-            enable_reddit: Cờ hiệu để bật Reddit
-            progress_callback: Hàm callback lấy trạng thái tiến trình hiện tại (current_step, total_steps, message)
-            
+            simulation_id: ID của simulation (dùng để điền vào SimulationParameters)
+            project_id: ID project
+            graph_id: ID Zep Graph (dùng để điền metadata, không query thêm ở đây)
+            simulation_requirement: Yêu cầu người dùng (truyền thẳng vào LLM prompt)
+            document_text: Văn bản tài liệu gốc (làm ngữ cảnh nền tảng cho LLM)
+            entities: Danh sách EntityNode từ ZepEntityReader (đã lọc + enrich)
+            enable_twitter: True → sinh twitter_config
+            enable_reddit: True → sinh reddit_config
+            progress_callback: Hàm nhận (current_step, total_steps, message: str)
+
         Returns:
-            SimulationParameters: Bộ tổng cấu hình thông số đầy đủ
+            SimulationParameters đầy đủ — gọi .to_json() để ghi ra file.
         """
         logger.info(f"Start generating simulation configuration: simulation_id={simulation_id}, entity_count={len(entities)}")
         self._runtime_metadata = {
@@ -277,52 +421,57 @@ class SimulationConfigGenerator:
             "component": "simulation_config_generator",
             "phase": "prepare_simulation_config",
         }
-        
-        # Tính toán tổng số bước
+
+        # Tính tổng số bước để progress_callback hiển thị đúng phần trăm
+        # total_steps = 1 (time) + 1 (event) + N_batch (agents) + 1 (platform) = 3 + N_batch
         num_batches = math.ceil(len(entities) / self.AGENTS_PER_BATCH)
-        total_steps = 3 + num_batches  # Cấu hình tgian + Sự kiện + Nx(Agent Batch) + Nền tảng
+        total_steps = 3 + num_batches
         current_step = 0
-        
+
         def report_progress(step: int, message: str):
             nonlocal current_step
             current_step = step
             if progress_callback:
                 progress_callback(step, total_steps, message)
             logger.info(f"[{step}/{total_steps}] {message}")
-        
-        # 1. Xây dựng thông tin ngữ cảnh cơ bản
+
+        # Xây dựng context chung (tối đa 50,000 ký tự) dùng cho tất cả các bước
+        # Bao gồm: simulation_requirement + entity summary + document_text (phần còn lại)
         context = self._build_context(
             simulation_requirement=simulation_requirement,
             document_text=document_text,
             entities=entities
         )
-        
+
+        # Mảng tích lũy reasoning từ mỗi bước — nối lại cuối để lưu vào SimulationParameters
         reasoning_parts = []
-        
-        # ========== Bước 1: Tạo bộ cấu hình về Thời Gian ==========
+
+        # ========== Bước 1: Cấu hình Thời gian ==========
         report_progress(1, "Generating time configuration...")
         num_entities = len(entities)
         time_config_result = self._generate_time_config(context, num_entities)
         time_config = self._parse_time_config(time_config_result, num_entities)
         reasoning_parts.append(f"Time config reasoning: {time_config_result.get('reasoning', 'Success')}")
-        # ========== Bước 2: Tạo cấu hình Event ==========
+
+        # ========== Bước 2: Cấu hình Sự kiện ==========
         report_progress(2, "Generating event configuration and hot topics...")
         event_config_result = self._generate_event_config(context, simulation_requirement, entities)
         event_config = self._parse_event_config(event_config_result)
         reasoning_parts.append(f"Event config reasoning: {event_config_result.get('reasoning', 'Success')}")
-        
-        # ========== Bước 3-N: Chia thành các đợt để lấy cấu hình Agent ==========
+
+        # ========== Bước 3..N: Cấu hình Agent (chia batch) ==========
+        # Ví dụ: 47 entity → batch1(0-14) + batch2(15-29) + batch3(30-44) + batch4(45-46)
         all_agent_configs = []
         for batch_idx in range(num_batches):
             start_idx = batch_idx * self.AGENTS_PER_BATCH
             end_idx = min(start_idx + self.AGENTS_PER_BATCH, len(entities))
             batch_entities = entities[start_idx:end_idx]
-            
+
             report_progress(
                 3 + batch_idx,
                 f"Generating agent configuration ({start_idx + 1}-{end_idx}/{len(entities)})..."
             )
-            
+
             batch_configs = self._generate_agent_configs_batch(
                 context=context,
                 entities=batch_entities,
@@ -330,41 +479,43 @@ class SimulationConfigGenerator:
                 simulation_requirement=simulation_requirement
             )
             all_agent_configs.extend(batch_configs)
-        
+
         reasoning_parts.append(f"Agent config reasoning: Successfully generated {len(all_agent_configs)} agents")
-        
-        # ========== Tiến hành gán người (Agent) để đăng các bài Initial Post ==========
+
+        # ========== Gán agent cho initial posts ==========
+        # Sau khi có đủ all_agent_configs, map poster_type → agent_id thực
         logger.info("Assigning poster agents for initial posts...")
         event_config = self._assign_initial_post_agents(event_config, all_agent_configs)
         assigned_count = len([p for p in event_config.initial_posts if p.get("poster_agent_id") is not None])
         reasoning_parts.append(f"Initial post assignment: {assigned_count} posts have been assigned to publishers")
-        
-        # ========== Bước cuối: Thiết lập nền tảng ==========
+
+        # ========== Bước cuối: Platform Config (hardcoded) ==========
+        # Không cần LLM — các giá trị này là hằng số đã được tuning thực nghiệm
         report_progress(total_steps, "Generating platform configuration...")
         twitter_config = None
         reddit_config = None
-        
+
         if enable_twitter:
             twitter_config = PlatformConfig(
                 platform="twitter",
-                recency_weight=0.4,
+                recency_weight=0.4,    # Twitter ưu tiên bài mới hơn Reddit
                 popularity_weight=0.3,
                 relevance_weight=0.3,
-                viral_threshold=10,
+                viral_threshold=10,    # Dễ lan hơn Reddit
                 echo_chamber_strength=0.5
             )
-        
+
         if enable_reddit:
             reddit_config = PlatformConfig(
                 platform="reddit",
-                recency_weight=0.3,
-                popularity_weight=0.4,
+                recency_weight=0.3,    # Reddit cân bằng hơn giữa mới vs phổ biến
+                popularity_weight=0.4, # Reddit ưu tiên upvote hơn thời gian
                 relevance_weight=0.3,
-                viral_threshold=15,
-                echo_chamber_strength=0.6
+                viral_threshold=15,    # Ngưỡng cao hơn → khó "bùng" hơn Twitter
+                echo_chamber_strength=0.6  # Reddit có subreddit → buồng phản âm mạnh hơn
             )
-        
-        # Xây dựng các tham số cuối cùng kết thúc quy trình
+
+        # Gộp tất cả vào SimulationParameters
         params = SimulationParameters(
             simulation_id=simulation_id,
             project_id=project_id,
@@ -379,54 +530,69 @@ class SimulationConfigGenerator:
             llm_base_url=self.base_url,
             generation_reasoning=" | ".join(reasoning_parts)
         )
-        
+
         logger.info(f"Simulation configuration generation complete: {len(params.agent_configs)} agent configs created")
-        
+
         return params
-    
+
     def _build_context(
         self,
         simulation_requirement: str,
         document_text: str,
         entities: List[EntityNode]
     ) -> str:
-        """Thực hiện xây dựng nội dung Prompt Ngữ cảnh cho LLM, với độ dài có thể bị giới hạn"""
-        
-        # Tóm tắt lại Thực thể
+        """
+        Tổng hợp ngữ cảnh cho LLM — tối đa MAX_CONTEXT_LENGTH ký tự.
+
+        Ưu tiên (thứ tự giảm dần):
+        1. simulation_requirement — giữ nguyên 100%, không cắt
+        2. entity_summary — tóm tắt nhóm theo loại, tối đa ENTITIES_PER_TYPE_DISPLAY/loại
+        3. document_text — phần còn lại sau khi đã dùng cho 1+2
+
+        Document_text bị cắt cuối nếu tổng vượt quá 50,000 ký tự.
+        """
         entity_summary = self._summarize_entities(entities)
-        
-        # Xây dựng nội dung
+
         context_parts = [
             f"## Simulation Requirements\n{simulation_requirement}",
             f"\n## Entity Information ({len(entities)} entities)\n{entity_summary}",
         ]
-        
+
         current_length = sum(len(p) for p in context_parts)
-        remaining_length = self.MAX_CONTEXT_LENGTH - current_length - 500  # Dành sẵn 500 ký tự trống
-        
+        # Dành 500 ký tự buffer để tránh off-by-one khi LLM đếm token
+        remaining_length = self.MAX_CONTEXT_LENGTH - current_length - 500
+
         if remaining_length > 0 and document_text:
             doc_text = document_text[:remaining_length]
             if len(document_text) > remaining_length:
-                doc_text += "\n...(Document Truncated)"
+                doc_text += "\n...(Document Truncated)" # note: việc cắt bớt đi có bị ảnh hưởng gì nghiêm trọng không? nếu để full thì có tốn context không?
             context_parts.append(f"\n## Original Document Content\n{doc_text}")
-        
+
         return "\n".join(context_parts)
-    
+
     def _summarize_entities(self, entities: List[EntityNode]) -> str:
-        """Tạo chuỗi văn bản Tóm tắt cho các Thực thể"""
+        """
+        Tạo chuỗi tóm tắt entity theo nhóm loại — dùng trong _build_context().
+
+        Format output:
+        ### Student (5 entity)
+        - Trần Văn An: Sinh viên năm 3 ngành CNTT...
+        - Nguyễn Thị B: ...
+        ### University (2 entity)
+        - Đại học X: ...
+        """
         lines = []
-        
-        # Phân nhóm bằng Loại
+
+        # Nhóm entity theo loại để LLM dễ nắm phân phối nhân vật
         by_type: Dict[str, List[EntityNode]] = {}
         for e in entities:
             t = e.get_entity_type() or "Unknown"
             if t not in by_type:
                 by_type[t] = []
             by_type[t].append(e)
-        
+
         for entity_type, type_entities in by_type.items():
             lines.append(f"\n### {entity_type} ({len(type_entities)} entity)")
-            # Số lượng đã được thiết lập mặc định và Giới hạn chiều dài của bảng tóm tắt
             display_count = self.ENTITIES_PER_TYPE_DISPLAY
             summary_len = self.ENTITY_SUMMARY_LENGTH
             for e in type_entities[:display_count]:
@@ -434,16 +600,40 @@ class SimulationConfigGenerator:
                 lines.append(f"- {e.name}: {summary_preview}")
             if len(type_entities) > display_count:
                 lines.append(f"  ... and {len(type_entities) - display_count} more entities")
-        
+
         return "\n".join(lines)
-    
+
+        '''
+        ### Student (5 entity)
+        - Trần Văn An: Sinh viên năm 3 ngành CNTT tại Đại học X...
+        - Nguyễn Thị B: Sinh viên năm 2, hoạt động phong trào...
+
+        ### University (1 entity)
+        - Đại học X: Trường đại học công lập lớn tại Hà Nội...
+
+        ### MediaOutlet (2 entity)
+        - VnExpress: Báo điện tử lớn nhất Việt Nam...
+        '''
+
     def _call_llm_with_retry(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
-        """Tích hợp cơ chế retry mỗi lúc gọi Request LLM bị lỗi và Logic sửa lỗi JSON string"""
+        """
+        Gọi LLM và retry tối đa 3 lần với temperature giảm dần.
+
+        Chiến lược retry:
+          Attempt 1: temperature=0.7 (sáng tạo, đa dạng hơn)
+          Attempt 2: temperature=0.6 + sleep 2s (nếu attempt 1 fail)
+          Attempt 3: temperature=0.5 + sleep 4s (nếu attempt 2 fail)
+
+        Temperature giảm dần → output ổn định hơn, ít hallucination → dễ parse JSON hơn.
+        Nếu finish_reason="length" (bị cắt do token limit) → _fix_truncated_json() trước khi parse.
+        Nếu json.loads() lỗi → _try_fix_config_json() để cố sửa.
+        Nếu cả 3 lần đều fail → raise exception để caller dùng hardcode fallback.
+        """
         import re
-        
+
         max_attempts = 3
         last_error = None
-        
+
         for attempt in range(max_attempts):
             try:
                 response = create_tracked_chat_completion(
@@ -454,144 +644,138 @@ class SimulationConfigGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1),  # Giảm temperature cho mỗi lần retry
+                    temperature=0.7 - (attempt * 0.1),  # 0.7 → 0.6 → 0.5
                     metadata=self._runtime_metadata,
                 )
-                
+
                 content = response.choices[0].message.content
                 finish_reason = response.choices[0].finish_reason
-                
-                # Kiểm tra nội dung trã về xem có phải bị chặn vì thiếu token (Length vượt qua max) hay không
+
+                # Nếu bị cắt giữa chừng do max_tokens → thêm ngoặc đóng trước khi parse
                 if finish_reason == 'length':
                     logger.warning(f"LLM output was truncated (attempt {attempt+1})")
                     content = self._fix_truncated_json(content)
-                
-                # Phân tích nội dung JSON
+
                 try:
                     return json.loads(content)
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse JSON (attempt {attempt+1}): {str(e)[:80]}")
-                    
-                    # Tiến hành sửa chữa nội dung JSON nếu bị lỗi
+                    # Thử sửa JSON trước khi bỏ cuộc
                     fixed = self._try_fix_config_json(content)
                     if fixed:
                         return fixed
-                    
                     last_error = e
-                    
+
             except Exception as e:
                 logger.warning(f"Failed to call LLM (attempt {attempt+1}): {str(e)[:80]}")
                 last_error = e
                 import time
-                time.sleep(2 * (attempt + 1))
-        
+                time.sleep(2 * (attempt + 1))  # Sleep 2s → 4s → (không có attempt 3+)
+
         raise last_error or Exception("LLM connection completely failed")
-    
+
     def _fix_truncated_json(self, content: str) -> str:
-        """Đóng dấu ngoặc JSON một cách an toàn cho các string bị cắt ngang"""
+        """
+        Đóng các ngoặc JSON bị bỏ ngỏ khi LLM bị cắt giữa chừng.
+
+        Thuật toán:
+          1. Đếm số { chưa có } đóng tương ứng → thêm } vào cuối
+          2. Đếm số [ chưa có ] đóng tương ứng → thêm ] vào cuối
+          3. Nếu ký tự cuối là dở dang (không phải ",}]) → thêm " để đóng string
+
+        Ví dụ input bị cắt:
+          '{"agent_configs": [{"agent_id": 0, "stance": "oppos'
+        Sau fix:
+          '{"agent_configs": [{"agent_id": 0, "stance": "oppos"}]}'
+        """
         content = content.strip()
-        
-        # Đếm các dấu ngoặc mở bị bỏ sót chưa đóng
+
         open_braces = content.count('{') - content.count('}')
         open_brackets = content.count('[') - content.count(']')
-        
-        # Đảm bảo các thuộc tính string đã được bọc đủ dấu ngoặc kép
+
+        # Đóng string bị bỏ ngỏ trước khi đóng object/array
         if content and content[-1] not in '",}]':
             content += '"'
-        
-        # Thêm ngoặc đóng cho toàn bộ
+
         content += ']' * open_brackets
         content += '}' * open_braces
-        
+
         return content
-    
+
     def _try_fix_config_json(self, content: str) -> Optional[Dict[str, Any]]:
-        """Cố gắng khôi phục, chắp ghép lại file cấu trúc config JSON"""
+        """
+        Cố sửa JSON bị lỗi format bằng chuỗi bước:
+
+        Bước 1: Gọi _fix_truncated_json() (đóng bracket thiếu)
+        Bước 2: Regex tìm khối {...} lớn nhất trong chuỗi (loại bỏ text thừa trước/sau)
+        Bước 3: Clean newline trong string values (LLM hay nhét \n trong string JSON)
+        Bước 4: Thử json.loads() — nếu OK trả về luôn
+        Bước 5: Xóa control characters (0x00-0x1F, 0x7F-0x9F) gây lỗi parse
+        Bước 6: Chuẩn hóa whitespace thừa
+        Bước 7: Thử json.loads() lần nữa — nếu vẫn fail trả về None
+
+        Trả về None nếu không thể sửa → caller sẽ retry hoặc dùng fallback.
+        """
         import re
-        
-        # Điền những dấu ngoặc vào chuỗi bị cắt
+
         content = self._fix_truncated_json(content)
-        
-        # Regex ra đúng phần ruột nội dung JSON
+
         json_match = re.search(r'\{[\s\S]*\}', content)
         if json_match:
             json_str = json_match.group()
-            
-            # Loại bỏ các đoạn tab, ngắt line cho string
+
+            # Clean newline và whitespace thừa bên trong string values
             def fix_string(match):
                 s = match.group(0)
                 s = s.replace('\n', ' ').replace('\r', ' ')
                 s = re.sub(r'\s+', ' ', s)
                 return s
-            
+
             json_str = re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', fix_string, json_str)
-            
+
             try:
                 return json.loads(json_str)
             except:
-                # Tìm và xóa các control character
+                # Xóa control characters và thử lần nữa
                 json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', json_str)
                 json_str = re.sub(r'\s+', ' ', json_str)
                 try:
                     return json.loads(json_str)
                 except:
                     pass
-        
+
         return None
-    
+
+    # --------------------------------------------------------------------------
+    # BƯỚC 1: Sinh cấu hình Thời gian
+    # --------------------------------------------------------------------------
+
     def _generate_time_config(self, context: str, num_entities: int) -> Dict[str, Any]:
-        """Tạo cấu hình thời gian (Time config) cho các tiến trình"""
-        # Áp dụng nội dung ngữ cảnh đã được giới hạn chiều dài
+        """
+        Gọi LLM để sinh cấu hình thời gian mô phỏng.
+
+        LLM nhận context cắt còn TIME_CONFIG_CONTEXT_LENGTH (10,000 ký tự) và trả về:
+        {
+          "total_simulation_hours": 72,
+          "minutes_per_round": 60,
+          "agents_per_hour_min": 5,
+          "agents_per_hour_max": 30,
+          "peak_hours": [19, 20, 21, 22],
+          "off_peak_hours": [0, 1, 2, 3, 4, 5],
+          "morning_hours": [6, 7, 8],
+          "work_hours": [9, 10, ..., 18],
+          "reasoning": "Giải thích tại sao chọn các thông số này"
+        }
+
+        Ràng buộc gửi cho LLM:
+        - Người dùng là người Việt Nam → giờ Hà Nội (UTC+7)
+        - agents_per_hour tối đa = 90% số entity (max_agents_allowed = num_entities × 0.9)
+
+        Fallback (LLM fail): _get_default_time_config() — hardcoded defaults.
+        """
         context_truncated = context[:self.TIME_CONFIG_CONTEXT_LENGTH]
-        
-        # Cắt lấy số lượng Tối đa số lượng (Chiếm 80% từ số lượng lượng Agent thực thể)
         max_agents_allowed = max(1, int(num_entities * 0.9))
 
-#         prompt = f"""Based on the following simulation requirements, generate a time simulation configuration.
-
-# {context_truncated}
-
-# ## Task
-# Please generate a time configuration JSON.
-
-# ### General Principles (For reference only; adjust flexibly based on specific events and participant groups):
-# - The user group consists of Vietnamese people; must comply with Hanoi Time (CST) daily routines.
-# - 0:00–5:00 AM: Almost no activity (Activity Coefficient: 0.05).
-# - 6:00–8:00 AM: Gradual increase in activity (Activity Coefficient: 0.4).
-# - 9:00 AM–6:00 PM (Work hours): Moderate activity (Activity Coefficient: 0.7).
-# - 7:00 PM–10:00 PM: Peak period (Activity Coefficient: 1.5).
-# - After 11:00 PM: Activity declines (Activity Coefficient: 0.5).
-# - General Pattern: Low activity in the early morning, gradual increase in the morning, moderate during work hours, and peak in the evening.
-# - **Important:**: The example values below are for reference only. You need to adjust specific periods based on the nature of the event and characteristics of the participant group.
-#   - e.g., The peak for students might be 9:00 PM–11:00 PM; Media groups remain active all day; Official organizations only during work hours.
-#   - e.g., Breaking news may lead to discussions late at night; off_peak_hours can be shortened accordingly.
-
-# ### Return JSON Format (Do not use Markdown)
-
-# Example:
-# {{
-#     "total_simulation_hours": 72,
-#     "minutes_per_round": 60,
-#     "agents_per_hour_min": 5,
-#     "agents_per_hour_max": 50,
-#     "peak_hours": [19, 20, 21, 22],
-#     "off_peak_hours": [0, 1, 2, 3, 4, 5],
-#     "morning_hours": [6, 7, 8],
-#     "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-#     "reasoning": "Time configuration explanation for this specific event."
-# }}
-
-# Field Descriptions:
-# - total_simulation_hours (int): Total simulation duration, 24–168 hours. Short for breaking news, long for sustained topics.
-# - minutes_per_round (int): Duration per round, 30–120 minutes, suggested 60 minutes.
-# - agents_per_hour_min (int): Minimum activated agents per hour (Range: 1-{max_agents_allowed}).
-# - agents_per_hour_max (int): Maximum activated agents per hour (Range: 1-{max_agents_allowed}).
-# - peak_hours (int array): Peak hours, adjusted based on the participant group.
-# - off_peak_hours (int array): Off-peak hours, usually late night/early morning.
-# - morning_hours (int array): Morning hours.
-# - work_hours (int array): Working hours.
-# - reasoning (string): Brief explanation of why this configuration was chosen."""
-        
         prompt = f"""Dựa trên các yêu cầu mô phỏng dưới đây, hãy tạo cấu hình mô phỏng thời gian.
 
 {context_truncated}
@@ -615,7 +799,7 @@ Hãy tạo JSON cấu hình thời gian.
 
 Ví dụ Format như sau:
 {{
-    "total_simulation_hours": 72,                                                 
+    "total_simulation_hours": 72,
     "minutes_per_round": 60,
     "agents_per_hour_min": 5,
     "agents_per_hour_max": 50,
@@ -636,22 +820,27 @@ Mô tả các trường:
 - morning_hours (mảng int): Khung giờ buổi sáng.
 - work_hours (mảng int): Khung giờ làm việc.
 - reasoning (string): Giải thích ngắn gọn lý do tại sao cấu hình như vậy."""
-        
-        # system_prompt = "You are a social media simulation expert. Return in pure JSON format; time configurations must comply with Vietnamese daily routines."
 
         system_prompt = "Bạn là chuyên gia mô phỏng mạng xã hội. Trả về định dạng JSON thuần túy; cấu hình thời gian cần phù hợp với thói quen sinh hoạt của người Việt Nam."
-        
+
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
         except Exception as e:
             logger.warning(f"Failed to generate Time Config through LLM {e}. Returning the basic default rules...")
             return self._get_default_time_config(num_entities)
-    
+
     def _get_default_time_config(self, num_entities: int) -> Dict[str, Any]:
-        """Tạo sẵn file chuẩn nếu bị đơ để trả ra theo múi giờ chuẩn sinh hoạt China"""
+        """
+        Fallback hardcoded khi LLM fail hoàn toàn.
+
+        agents_per_hour được tính theo công thức:
+          min = num_entities // 15  (ví dụ: 47 entity → min=3)
+          max = num_entities // 5   (ví dụ: 47 entity → max=9)
+        Đảm bảo không vượt quá tổng số agent thực tế.
+        """
         return {
             "total_simulation_hours": 72,
-            "minutes_per_round": 60,  # 1 Hour / Vòng -> Rút ngắn Time
+            "minutes_per_round": 60,
             "agents_per_hour_min": max(1, num_entities // 15),
             "agents_per_hour_max": max(5, num_entities // 5),
             "peak_hours": [19, 20, 21, 22],
@@ -660,56 +849,87 @@ Mô tả các trường:
             "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
             "reasoning": "Defaults to Vietnamese users' daily routines and working hours (1 hour/round)"
         }
-    
+
     def _parse_time_config(self, result: Dict[str, Any], num_entities: int) -> TimeSimulationConfig:
-        """Phân tích nội dung được định hình của JSON qua hàm parse kiểm tra, Xác nhận nếu lượng agents_per_hour vượt ngưỡng giới hạn """
-        # Lấy giá trị chưa chỉnh sửa
+        """
+        Parse dict từ LLM thành TimeSimulationConfig, kèm validation.
+
+        Validation quan trọng: đảm bảo agents_per_hour không vượt tổng số agent thực tế.
+        Nếu LLM trả về agents_per_hour_max=100 nhưng chỉ có 47 entity,
+        OASIS sẽ cố chọn 100 agent nhưng không đủ → lỗi.
+
+        Logic điều chỉnh:
+          agents_per_hour_min > num_entities → reset về num_entities // 10
+          agents_per_hour_max > num_entities → reset về num_entities // 2
+          min >= max → reset min về max // 2
+        """
         agents_per_hour_min = result.get("agents_per_hour_min", max(1, num_entities // 15))
         agents_per_hour_max = result.get("agents_per_hour_max", max(5, num_entities // 5))
-        
-        # Tiến hành kiểm tra xác minh: Đảm bảo độ lớn không lớn hơn con số Total Agent
+
         if agents_per_hour_min > num_entities:
             logger.warning(f"agents_per_hour_min ({agents_per_hour_min}) exceeds total number of Agents ({num_entities}), corrected.")
             agents_per_hour_min = max(1, num_entities // 10)
-        
+
         if agents_per_hour_max > num_entities:
             logger.warning(f"agents_per_hour_max ({agents_per_hour_max}) exceeds total number of Agents ({num_entities}), corrected.")
             agents_per_hour_max = max(agents_per_hour_min + 1, num_entities // 2)
-        
-        # Đảm bảo min luôn luôn nhỏ hơn max
+
         if agents_per_hour_min >= agents_per_hour_max:
             agents_per_hour_min = max(1, agents_per_hour_max // 2)
             logger.warning(f"agents_per_hour_min >= max, modified to {agents_per_hour_min}")
-        
+
         return TimeSimulationConfig(
             total_simulation_hours=result.get("total_simulation_hours", 72),
-            minutes_per_round=result.get("minutes_per_round", 60),  # Mặc định mỗi vòng = 1 giờ
+            minutes_per_round=result.get("minutes_per_round", 60),
             agents_per_hour_min=agents_per_hour_min,
             agents_per_hour_max=agents_per_hour_max,
             peak_hours=result.get("peak_hours", [19, 20, 21, 22]),
             off_peak_hours=result.get("off_peak_hours", [0, 1, 2, 3, 4, 5]),
-            off_peak_activity_multiplier=0.05,  # Gần như 0 mạng sáng rạng sáng
+            off_peak_activity_multiplier=0.05,
             morning_hours=result.get("morning_hours", [6, 7, 8]),
             morning_activity_multiplier=0.4,
             work_hours=result.get("work_hours", list(range(9, 19))),
             work_activity_multiplier=0.7,
             peak_activity_multiplier=1.5
         )
-    
+
+    # --------------------------------------------------------------------------
+    # BƯỚC 2: Sinh cấu hình Sự kiện
+    # --------------------------------------------------------------------------
+
     def _generate_event_config(
-        self, 
-        context: str, 
+        self,
+        context: str,
         simulation_requirement: str,
         entities: List[EntityNode]
     ) -> Dict[str, Any]:
-        """Tạo ra cho các thông số Event config"""
-        
-        # Tự liệt kê các Loại có thể xuất hiện để LLM tham khảo
+        """
+        Gọi LLM để sinh các bài đăng khởi động và hướng phát triển dư luận.
+
+        Ràng buộc quan trọng gửi cho LLM: poster_type phải thuộc danh sách
+        entity types thực sự có trong simulation. LLM được cung cấp danh sách
+        type_examples (ví dụ điển hình của mỗi loại) để chọn đúng.
+
+        Ví dụ output:
+        {
+          "hot_topics": ["học phí", "biểu tình"],
+          "narrative_direction": "Thông báo tăng học phí → làn sóng phản đối...",
+          "initial_posts": [
+            {"content": "CHÍNH THỨC: Đại học X tăng học phí...", "poster_type": "University"},
+            {"content": "Không thể chấp nhận được! #HọcPhíTăng", "poster_type": "Student"}
+          ]
+        }
+
+        Sau bước này, _assign_initial_post_agents() sẽ gán poster_agent_id thực.
+        Fallback khi LLM fail: hot_topics=[], initial_posts=[] — simulation vẫn chạy
+        nhưng không có "ngòi nổ" → agent tự tạo bài đăng theo activity_level.
+        """
+        # Thu thập danh sách loại thực thể có thực để LLM chọn poster_type đúng
         entity_types_available = list(set(
             e.get_entity_type() or "Unknown" for e in entities
         ))
-        
-        # Ghi các Thực thể điển hình của mổi loại
+
+        # Ví dụ điển hình mỗi loại (tối đa 3) — giúp LLM biết tên thật của entity
         type_examples = {}
         for e in entities:
             etype = e.get_entity_type() or "Unknown"
@@ -717,46 +937,14 @@ Mô tả các trường:
                 type_examples[etype] = []
             if len(type_examples[etype]) < 3:
                 type_examples[etype].append(e.name)
-        
+
         type_info = "\n".join([
-            f"- {t}: {', '.join(examples)}" 
+            f"- {t}: {', '.join(examples)}"
             for t, examples in type_examples.items()
         ])
-        
-        # Có chặn để lấy chuỗi theo cấu hình chiều dài giới hạn
+
         context_truncated = context[:self.EVENT_CONFIG_CONTEXT_LENGTH]
 
-#         prompt = f"""Based on the following simulation requirements, generate an event configuration.
-
-# Simulation Requirements: {simulation_requirement}
-
-# {context_truncated}
-
-# ## Available Entity Types and Examples
-# {type_info}
-
-# ## Task 
-# Please generate an event configuration JSON:
-# - Extract key hot topic keywords.
-# - Describe the direction of public opinion development.
-# - Design initial post content; **each post must specify a poster_type (publisher type)**.
-
-# **IMPORTANT**: The poster_type must be selected from the "Available Entity Types" above so that initial posts can be assigned to the appropriate Agent for publishing.
-#   For example: Official statements should be posted by Official/University types, news by MediaOutlet, and student perspectives by Student.
-
-# Return in JSON format (no markdown):
-# {{
-#     "hot_topics": ["Keyword1", "Keyword2", ...],
-#     "narrative_direction": "<Description of the public opinion development path>",
-#     "initial_posts": [
-#         {{"content": "Post Content...", "poster_type": "Entity type (must be selected from available types)"}},
-#         ...
-#     ],
-#     "reasoning": "<Short Explanation>"
-# }}"""
-
-#         system_prompt = "You are a public opinion analysis expert. Return in pure JSON format. Ensure that poster_type exactly matches the available entity types."
-        
         prompt = f"""Dựa trên các yêu cầu mô phỏng sau đây, hãy tạo cấu hình sự kiện.
 
 Yêu cầu mô phỏng: {simulation_requirement}
@@ -787,7 +975,7 @@ Trả về định dạng JSON (không sử dụng markdown):
 }}"""
 
         system_prompt = "Bạn là chuyên gia phân tích dư luận. Trả về định dạng JSON thuần túy. Lưu ý rằng poster_type phải khớp chính xác với các loại thực thể khả dụng."
-        
+
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
         except Exception as e:
@@ -798,38 +986,56 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "initial_posts": [],
                 "reasoning": "Sử dụng Config mặc định do LLM lỗi"
             }
-    
+
     def _parse_event_config(self, result: Dict[str, Any]) -> EventConfig:
-        """Parse lấy các Thuộc Tính cấu hình Event"""
+        """Parse dict từ LLM thành EventConfig. Đơn giản — không có validation phức tạp."""
         return EventConfig(
             initial_posts=result.get("initial_posts", []),
-            scheduled_events=[],
+            scheduled_events=[],  # Chưa implement — dành cho tính năng tương lai
             hot_topics=result.get("hot_topics", []),
             narrative_direction=result.get("narrative_direction", "")
         )
-    
+
     def _assign_initial_post_agents(
         self,
         event_config: EventConfig,
         agent_configs: List[AgentActivityConfig]
     ) -> EventConfig:
         """
-        Khớp quyền Agent với loại Poster_type cho các Bài Post đầu
-        
-        So sánh cho phù hợp của mỗi post để phân bố Agent id tối ưu nhất
+        Gán agent_id thực cho mỗi initial_post dựa trên poster_type.
+
+        3 tầng matching (ưu tiên từ cao đến thấp):
+        ┌─────────────────────────────────────────────────────────────────┐
+        │ Tầng 1: Direct match                                            │
+        │   poster_type.lower() khớp chính xác key trong agents_by_type  │
+        │   Ví dụ: "student" → agents_by_type["student"][0]              │
+        ├─────────────────────────────────────────────────────────────────┤
+        │ Tầng 2: Alias match                                             │
+        │   poster_type nằm trong danh sách alias của một key             │
+        │   Ví dụ: "media" → alias của "mediaoutlet" → dùng mediaoutlet  │
+        │   Cho phép LLM dùng tên biến thể mà vẫn map được đúng          │
+        ├─────────────────────────────────────────────────────────────────┤
+        │ Tầng 3: Influence fallback                                      │
+        │   Không tìm được → lấy agent có influence_weight cao nhất      │
+        │   (Thường là mediaoutlet hoặc university)                       │
+        └─────────────────────────────────────────────────────────────────┘
+
+        Lưu ý used_indices: mỗi loại có counter riêng để tránh dùng cùng 1 agent
+        nhiều lần khi có nhiều post cùng poster_type.
+        Ví dụ: 3 post "Student" → agent 0, 1, 2 (thay vì 0, 0, 0).
         """
         if not event_config.initial_posts:
             return event_config
-        
-        # Build hệ thống agent index bằng kiểu loại
+
+        # Index agents theo loại để tra cứu nhanh
         agents_by_type: Dict[str, List[AgentActivityConfig]] = {}
         for agent in agent_configs:
             etype = agent.entity_type.lower()
             if etype not in agents_by_type:
                 agents_by_type[etype] = []
             agents_by_type[etype].append(agent)
-        
-        # Bảng Alias ánh xạ tương đương (Cho phép LLM sử dụng nhiều quy ước format khác nhau)
+
+        # Bảng alias — LLM đôi khi dùng tên khác nhau cho cùng một loại
         type_aliases = {
             "official": ["official", "university", "governmentagency", "government"],
             "university": ["university", "official"],
@@ -840,26 +1046,24 @@ Trả về định dạng JSON (không sử dụng markdown):
             "organization": ["organization", "ngo", "company", "group"],
             "person": ["person", "student", "alumni"],
         }
-        
-        # Ghi chú từng loại agent đã dùng index nào, tránh dùng lại cùng 1 agent lặp đi lặp lại
+
+        # Dùng round-robin trong mỗi loại (modulo len) để phân bổ đều
         used_indices: Dict[str, int] = {}
-        
+
         updated_posts = []
         for post in event_config.initial_posts:
             poster_type = post.get("poster_type", "").lower()
             content = post.get("content", "")
-            
-            # Khớp tìm agent phù hợp
             matched_agent_id = None
-            
-            # 1. Trùng khớp trực tiếp lấy luôn
+
+            # Tầng 1: Direct match
             if poster_type in agents_by_type:
                 agents = agents_by_type[poster_type]
                 idx = used_indices.get(poster_type, 0) % len(agents)
                 matched_agent_id = agents[idx].agent_id
                 used_indices[poster_type] = idx + 1
             else:
-                # 2. Sử dụng bí danh alias để khớp nếu dùng sai keyword
+                # Tầng 2: Alias match
                 for alias_key, aliases in type_aliases.items():
                     if poster_type in aliases or alias_key == poster_type:
                         for alias in aliases:
@@ -871,28 +1075,31 @@ Trả về định dạng JSON (không sử dụng markdown):
                                 break
                     if matched_agent_id is not None:
                         break
-            
-            # 3. Nếu xui xẻo vẫn không tìm thấy, lấy thẳng Agent có điểm Influence (Sức ảnh hưởng) cao nhất
+
+            # Tầng 3: Influence fallback
             if matched_agent_id is None:
                 logger.warning(f"Could not find matching Agent type '{poster_type}', assigning to highest influence Agent instead")
                 if agent_configs:
-                    # Sort ảnh hưởng giảm dần, lấy index [0]
                     sorted_agents = sorted(agent_configs, key=lambda a: a.influence_weight, reverse=True)
                     matched_agent_id = sorted_agents[0].agent_id
                 else:
                     matched_agent_id = 0
-            
+
             updated_posts.append({
                 "content": content,
                 "poster_type": post.get("poster_type", "Unknown"),
                 "poster_agent_id": matched_agent_id
             })
-            
+
             logger.info(f"Initial post assignment: poster_type='{poster_type}' -> agent_id={matched_agent_id}")
-        
+
         event_config.initial_posts = updated_posts
         return event_config
-    
+
+    # --------------------------------------------------------------------------
+    # BƯỚC 3..N: Sinh cấu hình Agent (chia batch)
+    # --------------------------------------------------------------------------
+
     def _generate_agent_configs_batch(
         self,
         context: str,
@@ -900,9 +1107,22 @@ Trả về định dạng JSON (không sử dụng markdown):
         start_idx: int,
         simulation_requirement: str
     ) -> List[AgentActivityConfig]:
-        """Chia đợt gửi lên gọi tạo Cấu hình mạng lưới Agents"""
-        
-        # Build các node Entity (Dựa trên cấu hình lượng chữ giới hạn)
+        """
+        Gọi LLM để sinh cấu hình hoạt động cho một batch agents (tối đa AGENTS_PER_BATCH=15).
+
+        Lý do chia batch: nếu có 50+ entity, gửi tất cả 1 lần sẽ vượt token limit
+        và LLM có xu hướng bỏ sót entity cuối. Chia 15 agent/lần đảm bảo đủ.
+
+        Mỗi entity trong batch được format thành:
+          {"agent_id": 5, "entity_name": "Trần Văn An", "entity_type": "Student", "summary": "..."}
+
+        LLM trả về dict với key "agent_configs": [...]
+        → extract theo agent_id, map vào AgentActivityConfig object.
+        → Nếu LLM bỏ sót agent nào → _generate_agent_config_by_rule() bù vào.
+
+        agent_id trong output phải khớp chính xác với start_idx + i
+        (để OASIS map đúng với user_id trong profile file).
+        """
         entity_list = []
         summary_len = self.AGENT_SUMMARY_LENGTH
         for i, e in enumerate(entities):
@@ -912,44 +1132,6 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "entity_type": e.get_entity_type() or "Unknown",
                 "summary": e.summary[:summary_len] if e.summary else ""
             })
-        
-#         prompt = f"""Based on the following information, generate social media activity configurations for each entity.
-
-# Simulation Requirements: {simulation_requirement}
-
-# ## Entity List
-# ```json
-# {json.dumps(entity_list, ensure_ascii=False, indent=2)}
-# ```
-
-# ## Task 
-# Generate activity configurations for each entity, noting:
-# - **Time aligns with Vietnamese daily routines**: Almost no activity between 0-5 AM; most active during 7-10 PM (19:00-22:00).
-# - **Official Institutions (University/GovernmentAgency)**: Low activity (0.1-0.3), active during work hours (9:00-17:00), slow response (60-240 mins), high influence (2.5-3.0).
-# - **Media (MediaOutlet)**: Medium activity (0.4-0.6), active all day (8:00-23:00), fast response (5-30 mins), high influence (2.0-2.5).
-# - **Individuals (Student/Person/Alumni)**: High activity (0.6-0.9), active mainly in the evening (18:00-23:00), fast response (1-15 mins), low influence (0.8-1.2).
-# - **Public Figures/Experts**: Medium activity (0.4-0.6), medium-high influence (1.5-2.0).
-
-# Return in JSON format (no markdown):
-# {{
-#     "agent_configs": [
-#         {{
-#             "agent_id": <Must match the input exactly>,
-#             "activity_level": <0.0-1.0>,
-#             "posts_per_hour": <Post frequency>,
-#             "comments_per_hour": <Comment frequency>,
-#             "active_hours": [<List of active hours, considering Vietnamese routines>],
-#             "response_delay_min": <Minimum response delay in minutes>,
-#             "response_delay_max": <Maximum response delay in minutes>,
-#             "sentiment_bias": <-1.0 to 1.0>,
-#             "stance": "<supportive/opposing/neutral/observer>",
-#             "influence_weight": <Influence weight>
-#         }},
-#         ...
-#     ]
-# }}"""
-
-#         system_prompt = "You are a social media behavior analysis expert. Return pure JSON. Configurations must comply with Vietnamese daily routines."
 
         prompt = f"""Dựa trên các thông tin sau đây, hãy tạo cấu hình hoạt động trên mạng xã hội cho từng thực thể.
 
@@ -988,24 +1170,25 @@ Trả về định dạng JSON (không sử dụng markdown):
 }}"""
 
         system_prompt = "Bạn là chuyên gia phân tích hành vi mạng xã hội. Trả về JSON thuần túy. Cấu hình phải phù hợp với thói quen sinh hoạt của người Việt Nam."
-        
+
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)
+            # Index theo agent_id để tra cứu O(1) khi fill vào từng entity
             llm_configs = {cfg["agent_id"]: cfg for cfg in result.get("agent_configs", [])}
         except Exception as e:
             logger.warning(f"Failed LLM generating Agent batch configs: {e}, falling back to default manual rules.")
             llm_configs = {}
-        
-        # Tạo object list cho AgentActivityConfig
+
+        # Tạo AgentActivityConfig cho mỗi entity trong batch
         configs = []
         for i, entity in enumerate(entities):
             agent_id = start_idx + i
             cfg = llm_configs.get(agent_id, {})
-            
-            # Gán Manual tự động nếu Bot LLM thiếu xót
+
+            # Nếu LLM bỏ sót agent này → dùng rule-based fallback
             if not cfg:
                 cfg = self._generate_agent_config_by_rule(entity)
-            
+
             config = AgentActivityConfig(
                 agent_id=agent_id,
                 entity_uuid=entity.uuid,
@@ -1022,20 +1205,35 @@ Trả về định dạng JSON (không sử dụng markdown):
                 influence_weight=cfg.get("influence_weight", 1.0)
             )
             configs.append(config)
-        
+
         return configs
-    
+
     def _generate_agent_config_by_rule(self, entity: EntityNode) -> Dict[str, Any]:
-        """Tự động gen cấu hình 1 người (agent) dựa trên bộ rule cứng có sẵn nếu gọi bot LLM bị fail (Luật theo múi giờ sinh học)"""
+        """
+        Sinh cấu hình agent bằng rule cứng khi LLM fail hoặc bỏ sót entity này.
+
+        Rule được xây dựng dựa trên hành vi thực tế trên mạng xã hội Việt Nam:
+
+        ┌──────────────────────┬──────────┬──────────────────┬───────────┬───────────┐
+        │ Loại entity          │ activity │ active_hours     │ delay(ph) │ influence │
+        ├──────────────────────┼──────────┼──────────────────┼───────────┼───────────┤
+        │ university/gov/ngo   │  0.2     │ 9-17 (hành chính)│  60-240   │   3.0     │
+        │ mediaoutlet          │  0.5     │ 7-23 (cả ngày)   │   5-30    │   2.5     │
+        │ professor/expert     │  0.4     │ 8-21             │  15-90    │   2.0     │
+        │ student              │  0.8     │ sáng + tối       │   1-15    │   0.8     │
+        │ alumni               │  0.6     │ trưa + tối       │   5-30    │   1.0     │
+        │ (default)            │  0.7     │ 9-23             │   2-20    │   1.0     │
+        └──────────────────────┴──────────┴──────────────────┴───────────┴───────────┘
+        """
         entity_type = (entity.get_entity_type() or "Unknown").lower()
-        
+
         if entity_type in ["university", "governmentagency", "ngo"]:
-            # Cơ quan chức năng Nhà nước / Doanh nghiệp: làm việc trong khung giờ chuẩn hành chính, trả lời ít nhưng nặng đô
+            # Cơ quan nhà nước/tổ chức: hoạt động giờ hành chính, phát ngôn ít nhưng ảnh hưởng lớn
             return {
                 "activity_level": 0.2,
                 "posts_per_hour": 0.1,
                 "comments_per_hour": 0.05,
-                "active_hours": list(range(9, 18)),  # 9:00-17:59
+                "active_hours": list(range(9, 18)),
                 "response_delay_min": 60,
                 "response_delay_max": 240,
                 "sentiment_bias": 0.0,
@@ -1043,12 +1241,12 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "influence_weight": 3.0
             }
         elif entity_type in ["mediaoutlet"]:
-            # Báo đài truyền thông: cả ngày đưa tin, ra bài lẹ giật tít, tốc độ cao
+            # Báo đài: hoạt động cả ngày, đưa tin nhanh, nhiều người theo dõi
             return {
                 "activity_level": 0.5,
                 "posts_per_hour": 0.8,
                 "comments_per_hour": 0.3,
-                "active_hours": list(range(7, 24)),  # 7:00-23:59
+                "active_hours": list(range(7, 24)),
                 "response_delay_min": 5,
                 "response_delay_max": 30,
                 "sentiment_bias": 0.0,
@@ -1056,12 +1254,12 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "influence_weight": 2.5
             }
         elif entity_type in ["professor", "expert", "official"]:
-            # Giáo sư đại học/Người phát biểu: Chỉ nói ban ngày và tối, ra bài ít
+            # Chuyên gia/giảng viên: phát biểu có chọn lọc, ban ngày và tối sớm
             return {
                 "activity_level": 0.4,
                 "posts_per_hour": 0.3,
                 "comments_per_hour": 0.5,
-                "active_hours": list(range(8, 22)),  # 8:00-21:59
+                "active_hours": list(range(8, 22)),
                 "response_delay_min": 15,
                 "response_delay_max": 90,
                 "sentiment_bias": 0.0,
@@ -1069,12 +1267,12 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "influence_weight": 2.0
             }
         elif entity_type in ["student"]:
-            # Tần suất cho lứa Sinh viên: hay ra bài / cãi nhau liên tục ban đêm rất nhiều
+            # Sinh viên: rất tích cực, đặc biệt buổi tối, phản ứng nhanh
             return {
                 "activity_level": 0.8,
                 "posts_per_hour": 0.6,
                 "comments_per_hour": 1.5,
-                "active_hours": [8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],  # Sáng + Đêm Tối
+                "active_hours": [8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],
                 "response_delay_min": 1,
                 "response_delay_max": 15,
                 "sentiment_bias": 0.0,
@@ -1082,12 +1280,12 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "influence_weight": 0.8
             }
         elif entity_type in ["alumni"]:
-            # Cựu sinh viên: Thường online đêm là chính
+            # Cựu sinh viên: online giờ nghỉ trưa + buổi tối sau giờ làm
             return {
                 "activity_level": 0.6,
                 "posts_per_hour": 0.4,
                 "comments_per_hour": 0.8,
-                "active_hours": [12, 13, 19, 20, 21, 22, 23],  # Giờ nghỉ trưa + Buổi tối
+                "active_hours": [12, 13, 19, 20, 21, 22, 23],
                 "response_delay_min": 5,
                 "response_delay_max": 30,
                 "sentiment_bias": 0.0,
@@ -1095,17 +1293,15 @@ Trả về định dạng JSON (không sử dụng markdown):
                 "influence_weight": 1.0
             }
         else:
-            # Thuộc cho số đông (Cư dân mạng / Người Qua Đường): Phấn khích về đêm
+            # Default — cư dân mạng thông thường: hoạt động ban ngày + tối
             return {
                 "activity_level": 0.7,
                 "posts_per_hour": 0.5,
                 "comments_per_hour": 1.2,
-                "active_hours": [9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],  # Ban Ngày rảnh + Buổi tối rảnh
+                "active_hours": [9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],
                 "response_delay_min": 2,
                 "response_delay_max": 20,
                 "sentiment_bias": 0.0,
                 "stance": "neutral",
                 "influence_weight": 1.0
             }
-    
-

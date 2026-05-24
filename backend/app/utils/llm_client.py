@@ -41,7 +41,7 @@ class LLMClient:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 16000,
         response_format: Optional[Dict] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:

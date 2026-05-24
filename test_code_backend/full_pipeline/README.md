@@ -100,6 +100,8 @@ Lưu lại đường dẫn `combined_file` để dùng ở bước tiếp theo.
 ```bash
 COMBINED_FILE="/home/anman/intern/MiroFish/test_code_backend/full_pipeline/data/articles_combined.md"  
 
+COMBINED_FILE="/home/anman/intern/MiroFish/data/news/2026-02/2026-02-03_oil-prices-add-gains-after-report-says_0178c4.md"  
+
 curl -s http://localhost:5001/api/graph/ontology/generate \
   -F "files=@${COMBINED_FILE};filename=articles.md" \
   -F "simulation_requirement=Analyze how these oil and financial market news articles affect investor sentiment and market dynamics. Predict how different market participants (traders, analysts, retail investors) will react and what the overall price trend will be." \
@@ -226,6 +228,38 @@ SIM_ID="sim_07ab325b3818"
 RESP=$(curl -s http://localhost:5001/api/report/generate \
   -H "Content-Type: application/json" \
   -d "{\"simulation_id\": \"$SIM_ID\"}")
+TASK_ID=$(echo "$RESP"   | jq -r '.data.task_id')
+REPORT_ID=$(echo "$RESP" | jq -r '.data.report_id')
+echo "task_id=$TASK_ID  report_id=$REPORT_ID"
+
+# 2. Poll đến khi completed (chạy lặp lại, ~5–15 phút)
+while true; do
+  R=$(curl -s http://localhost:5001/api/report/generate/status \
+    -H "Content-Type: application/json" \
+    -d "{\"task_id\": \"$TASK_ID\"}")
+  ST=$(echo "$R" | jq -r '.data.status')
+  PG=$(echo "$R" | jq -r '.data.progress')
+  echo "$ST ${PG}%"
+  [[ "$ST" == "completed" ]] && break
+  [[ "$ST" == "failed"    ]] && { echo "FAILED"; break; }
+  sleep 15
+done
+
+# 3. Download file Markdown
+curl -s http://localhost:5001/api/report/$REPORT_ID/download -o report.md
+echo "Saved to report.md"
+```
+
+Nếu sim đã có report rồi mà muốn chạy lại thì dùng như sau
+
+```bash
+SIM_ID="sim_xxxxxxxxxxxx"
+
+SIM_ID="sim_07ab325b3818"
+# 1. Bắt đầu generate → lấy task_id và report_id
+RESP=$(curl -s http://localhost:5001/api/report/generate \
+  -H "Content-Type: application/json" \
+  -d "{\"simulation_id\": \"$SIM_ID\", \"force_regenerate\": true}")
 TASK_ID=$(echo "$RESP"   | jq -r '.data.task_id')
 REPORT_ID=$(echo "$RESP" | jq -r '.data.report_id')
 echo "task_id=$TASK_ID  report_id=$REPORT_ID"
