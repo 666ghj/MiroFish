@@ -629,14 +629,17 @@ class OasisProfileGenerator:
 
     # --------------------------------------------------------------------------
     # PRIVATE: _is_individual_entity / _is_group_entity — Phân loại entity type
+    # [DEPRECATED] Không còn dùng để quyết định prompt — classification đã chuyển
+    # sang LLM trong _build_adaptive_persona_prompt(). Giữ lại để không break
+    # code ngoài nếu có caller khác.
     # --------------------------------------------------------------------------
 
     def _is_individual_entity(self, entity_type: str) -> bool:
-        """Trả về True nếu entity_type thuộc danh sách cá nhân (INDIVIDUAL_ENTITY_TYPES)."""
+        """[Deprecated] Dùng _build_adaptive_persona_prompt() thay thế."""
         return entity_type.lower() in self.INDIVIDUAL_ENTITY_TYPES
 
     def _is_group_entity(self, entity_type: str) -> bool:
-        """Trả về True nếu entity_type thuộc danh sách tổ chức (GROUP_ENTITY_TYPES)."""
+        """[Deprecated] Dùng _build_adaptive_persona_prompt() thay thế."""
         return entity_type.lower() in self.GROUP_ENTITY_TYPES
 
     # --------------------------------------------------------------------------
@@ -659,10 +662,9 @@ class OasisProfileGenerator:
         """
         Gọi LLM để sinh profile dict với bio, persona, age, gender, mbti, ...
 
-        Quyết định dùng prompt nào dựa vào entity_type:
-        - Cá nhân (student/person/...) → _build_individual_persona_prompt()
-        - Tổ chức (university/ngo/...) → _build_group_persona_prompt()
-        - Không xác định → cũng dùng group prompt
+        Classification individual/organization do LLM tự quyết định dựa vào toàn bộ
+        context (tên, loại, summary, Zep facts) thông qua _build_adaptive_persona_prompt().
+        LLM trả về field "entity_category" trong JSON để ghi lại quyết định đó.
 
         Retry logic:
         - Lần 1: temperature=0.7
@@ -674,16 +676,9 @@ class OasisProfileGenerator:
         Returns:
             Dict với ít nhất: {"bio": ..., "persona": ...}
         """
-        is_individual = self._is_individual_entity(entity_type)
-
-        if is_individual:
-            prompt = self._build_individual_persona_prompt(
-                entity_name, entity_type, entity_summary, entity_attributes, context
-            )
-        else:
-            prompt = self._build_group_persona_prompt(
-                entity_name, entity_type, entity_summary, entity_attributes, context
-            )
+        prompt = self._build_adaptive_persona_prompt(
+            entity_name, entity_type, entity_summary, entity_attributes, context
+        )
 
         max_attempts = 3
         last_error = None
@@ -694,7 +689,7 @@ class OasisProfileGenerator:
                     client=self.client,
                     model=self.model_name,
                     messages=[
-                        {"role": "system", "content": self._get_system_prompt(is_individual)},
+                        {"role": "system", "content": self._get_system_prompt()},
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},  # Force JSON output mode
@@ -860,23 +855,123 @@ class OasisProfileGenerator:
     # PRIVATE: _get_system_prompt — System prompt cho LLM
     # --------------------------------------------------------------------------
 
-    def _get_system_prompt(self, is_individual: bool) -> str:
+    def _get_system_prompt(self) -> str:
         """
-        Trả về system prompt chung cho LLM (hiện tại không phân biệt individual/group).
+        Trả về system prompt cho LLM.
         Nhấn mạnh: trả về JSON hợp lệ, không có newline thô trong string values.
+        Không phân biệt individual/group — classification do LLM tự xử lý trong prompt.
         """
-        base_prompt = "Bạn là chuyên gia tạo hồ sơ người dùng mạng xã hội. Hãy tạo các nhân vật chi tiết và chân thực phục vụ cho việc mô phỏng dư luận, nhằm tái hiện tối đa các tình huống thực tế hiện có. Phải trả về định dạng JSON hợp lệ; tất cả các giá trị chuỗi không được chứa ký tự xuống dòng chưa được xử lý (unescaped). Sử dụng tiếng Việt."
-        return base_prompt
+        return (
+            "Bạn là chuyên gia tạo hồ sơ người dùng mạng xã hội. "
+            "Hãy tạo các nhân vật chi tiết và chân thực phục vụ cho việc mô phỏng dư luận, "
+            "nhằm tái hiện tối đa các tình huống thực tế hiện có. "
+            "Phân tích kỹ thông tin thực thể để tự xác định đây là cá nhân hay tổ chức, "
+            "rồi sinh hồ sơ phù hợp. "
+            "Phải trả về định dạng JSON hợp lệ; "
+            "tất cả các giá trị chuỗi không được chứa ký tự xuống dòng chưa được xử lý (unescaped). "
+            "Sử dụng tiếng Việt."
+        )
+
+    # --------------------------------------------------------------------------
+    # PRIVATE: _build_adaptive_persona_prompt — Prompt thống nhất có LLM classification
+    # --------------------------------------------------------------------------
+    # Thay thế _build_individual_persona_prompt + _build_group_persona_prompt.
+    # LLM tự phán đoán individual/organization từ context rồi sinh profile phù hợp.
+    # Kết quả JSON chứa field "entity_category" ghi lại quyết định phân loại.
+    # --------------------------------------------------------------------------
+
+    def _build_adaptive_persona_prompt(
+        self,
+        entity_name: str,
+        entity_type: str,
+        entity_summary: str,
+        entity_attributes: Dict[str, Any],
+        context: str
+    ) -> str:
+        """
+        Tạo prompt thống nhất — LLM tự phân loại individual/organization rồi sinh profile.
+
+        Luồng trong prompt:
+          Bước 1: LLM đọc entity_name, entity_type, summary, attributes, Zep context
+          Bước 2: LLM phán đoán "individual" hay "organization"
+          Bước 3: LLM sinh JSON 9 fields với giá trị phù hợp theo phân loại đó:
+                  - individual → age thực, gender "male"/"female", persona góc nhìn cá nhân
+                  - organization → age=30, gender="other", persona góc nhìn tổ chức
+
+        Ưu điểm so với 2 prompt cũ:
+        - Không phụ thuộc hardcoded INDIVIDUAL_ENTITY_TYPES / GROUP_ENTITY_TYPES
+        - Hoạt động đúng với mọi domain (tài chính, giáo dục, chính trị...)
+        - LLM dùng full context (tên + summary + Zep facts) để classify chính xác hơn
+        """
+        attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "Không có"
+        context_str = context[:3000] if context else "Không có ngữ cảnh bổ sung"
+
+        return f"""Phân tích thực thể sau và tạo hồ sơ mạng xã hội phù hợp.
+
+Tên thực thể: {entity_name}
+Loại thực thể: {entity_type}
+Tóm tắt thực thể: {entity_summary}
+Thuộc tính thực thể: {attrs_str}
+
+Thông tin ngữ cảnh:
+{context_str}
+
+---
+
+BƯỚC 1 — PHÂN LOẠI THỰC THỂ:
+Dựa vào toàn bộ thông tin trên, xác định thực thể này thuộc loại nào:
+- "individual": một con người cụ thể (ví dụ: nhà đầu tư, sinh viên, nhà báo, chuyên gia, trader...)
+- "organization": tổ chức, công ty, quỹ, cơ quan, sàn giao dịch, trường học, nhóm...
+
+BƯỚC 2 — TẠO HỒ SƠ:
+Tạo JSON với các trường sau, điều chỉnh theo kết quả phân loại:
+
+1. entity_category: Kết quả phân loại ở Bước 1 — "individual" hoặc "organization"
+
+2. bio: Tiểu sử mạng xã hội ngắn gọn, tối đa 200 ký tự.
+
+3. persona: Mô tả nhân vật/tài khoản chi tiết (~2000 từ, văn bản thuần túy), bao gồm:
+   [Nếu individual]:
+   - Thông tin cơ bản (tuổi thực, nghề nghiệp, học vấn, nơi ở)
+   - Nền tảng nhân vật (trải nghiệm quan trọng, mối liên hệ với sự kiện, quan hệ xã hội)
+   - Đặc điểm tính cách (MBTI, tính cách cốt lõi, cách biểu đạt cảm xúc)
+   - Hành vi mạng xã hội (tần suất đăng bài, loại nội dung, phong cách tương tác)
+   - Lập trường quan điểm (thái độ với chủ đề, điều dễ gây kích động hoặc xúc động)
+   - Ký ức cá nhân (mối liên hệ với sự kiện, các hành động và phản ứng đã có)
+   [Nếu organization]:
+   - Thông tin tổ chức (tên chính thức, tính chất, bối cảnh thành lập, chức năng)
+   - Định vị tài khoản (đối tượng mục tiêu, chức năng cốt lõi trên MXH)
+   - Phong cách phát ngôn (đặc điểm ngôn ngữ, các chủ đề cấm kỵ)
+   - Lập trường chính thức (quan điểm về các chủ đề cốt lõi, cách xử lý tranh cãi)
+   - Ký ức tổ chức (mối liên hệ với sự kiện, các hành động và phản ứng đã có)
+
+4. age:
+   - Nếu individual: tuổi thực của người đó (số nguyên)
+   - Nếu organization: cố định là 30
+
+5. gender:
+   - Nếu individual: "male" hoặc "female"
+   - Nếu organization: "other"
+
+6. mbti: Loại MBTI (ví dụ: INTJ, ENFP...) mô tả tính cách cá nhân hoặc phong cách tổ chức
+
+7. country: Quốc gia bằng tiếng Việt (ví dụ: "Việt Nam", "Hoa Kỳ")
+
+8. profession: Nghề nghiệp (cá nhân) hoặc chức năng chính (tổ chức)
+
+9. interested_topics: Mảng các chủ đề quan tâm
+
+QUAN TRỌNG:
+- Tất cả giá trị phải là chuỗi hoặc số, không dùng ký tự xuống dòng trong string.
+- 'persona' phải là một đoạn văn bản mạch lạc, không dùng bullet points hay newline.
+- Sử dụng tiếng Việt (ngoại trừ 'gender' dùng tiếng Anh: "male", "female", hoặc "other").
+- Nội dung phải nhất quán với thông tin thực thể và ngữ cảnh được cung cấp.
+"""
 
     # --------------------------------------------------------------------------
     # PRIVATE: _build_individual_persona_prompt / _build_group_persona_prompt
-    # --------------------------------------------------------------------------
-    # Hai hàm này tạo user prompt gửi cho LLM.
-    # Cấu trúc gồm: thông tin entity + context + yêu cầu 8 fields JSON cụ thể.
-    #
-    # Điểm khác biệt chính:
-    # - Individual: persona ~2000 từ với ký ức cá nhân, tuổi thực, gender male/female
-    # - Group: persona ~2000 từ với ký ức tổ chức, age=30 cố định, gender="other"
+    # [DEPRECATED] Thay thế bởi _build_adaptive_persona_prompt().
+    # Giữ lại để không break code nếu có nơi nào gọi trực tiếp.
     # --------------------------------------------------------------------------
 
     def _build_individual_persona_prompt(
@@ -888,12 +983,11 @@ class OasisProfileGenerator:
         context: str
     ) -> str:
         """
-        Tạo user prompt cho entity CÁ NHÂN.
+        [Deprecated] Dùng _build_adaptive_persona_prompt() thay thế.
 
+        Tạo user prompt cho entity CÁ NHÂN — giữ lại để tương thích ngược.
         Yêu cầu LLM sinh JSON 8 fields:
         bio, persona, age (int), gender ("male"/"female"), mbti, country, profession, interested_topics
-
-        Context được cắt tối đa 3000 ký tự để tránh vượt context window của LLM.
         """
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "Không có"
         context_str = context[:3000] if context else "Không có ngữ cảnh bổ sung"
@@ -943,8 +1037,9 @@ QUAN TRỌNG:
         context: str
     ) -> str:
         """
-        Tạo user prompt cho entity TỔ CHỨC/NHÓM.
+        [Deprecated] Dùng _build_adaptive_persona_prompt() thay thế.
 
+        Tạo user prompt cho entity TỔ CHỨC/NHÓM — giữ lại để tương thích ngược.
         Khác biệt so với individual prompt:
         - age: cố định 30 (tuổi ảo cho tài khoản tổ chức)
         - gender: cố định "other"
@@ -981,7 +1076,7 @@ Vui lòng tạo JSON bao gồm các trường sau:
 7. profession: Mô tả chức năng của tổ chức
 8. interested_topics: Mảng các lĩnh vực quan tâm
 
-QUAN TRỌNG:
+QUAN TRỌNG: 
 - Tất cả giá trị các trường phải là chuỗi hoặc số, không cho phép giá trị null.
 - 'persona' phải là một đoạn mô tả văn bản mạch lạc, không sử dụng ký tự xuống dòng.
 - Sử dụng tiếng Việt (ngoại trừ trường 'gender' phải dùng chuỗi tiếng Anh "other").
