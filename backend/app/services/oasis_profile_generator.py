@@ -85,6 +85,7 @@ class OasisAgentProfile:
     # --- Metadata truy vết nguồn gốc ---
     source_entity_uuid: Optional[str] = None   # UUID của EntityNode gốc trong Zep
     source_entity_type: Optional[str] = None   # Loại entity (ví dụ: "Person", "Organization")
+    entity_category: Optional[str] = None      # Kết quả LLM classification: "individual" | "organization"
 
     created_at: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
 
@@ -176,6 +177,7 @@ class OasisAgentProfile:
             "interested_topics": self.interested_topics,
             "source_entity_uuid": self.source_entity_uuid,
             "source_entity_type": self.source_entity_type,
+            "entity_category": self.entity_category,
             "created_at": self.created_at,
         }
 
@@ -344,6 +346,7 @@ class OasisProfileGenerator:
             interested_topics=profile_data.get("interested_topics", []),
             source_entity_uuid=entity.uuid,
             source_entity_type=entity_type,
+            entity_category=profile_data.get("entity_category"),
         )
 
     # --------------------------------------------------------------------------
