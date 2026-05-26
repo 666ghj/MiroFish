@@ -32,9 +32,18 @@ class Config:
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
-    # Zep配置
+    # 图谱存储配置
+    # 默认优先使用 SQLite 本地存储；如果显式提供 ZEP_API_KEY，也可以继续走远端 Zep。
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
-    
+    GRAPH_STORAGE_BACKEND = os.environ.get(
+        'MIROFISH_GRAPH_STORAGE',
+        'sqlite' if not os.environ.get('ZEP_API_KEY') else 'zep'
+    ).strip().lower()
+    LOCAL_GRAPH_DB_PATH = os.environ.get(
+        'MIROFISH_GRAPH_DB_PATH',
+        os.path.join(os.path.dirname(__file__), '../uploads/local_graphs.sqlite3')
+    )
+
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
@@ -69,7 +78,6 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+        # 图谱存储现在默认可以使用 SQLite，本地模式下不再强制要求 ZEP_API_KEY。
         return errors
 

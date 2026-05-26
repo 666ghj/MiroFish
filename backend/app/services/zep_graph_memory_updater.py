@@ -17,6 +17,7 @@ from zep_cloud.client import Zep
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
+from .local_graph_store import LocalGraphStore
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
 
@@ -239,11 +240,13 @@ class ZepGraphMemoryUpdater:
         """
         self.graph_id = graph_id
         self.api_key = api_key or Config.ZEP_API_KEY
+        self.use_local_storage = Config.GRAPH_STORAGE_BACKEND == 'sqlite' or not self.api_key
+        self.local_store = LocalGraphStore() if self.use_local_storage else None
         
-        if not self.api_key:
+        if not self.use_local_storage and not self.api_key:
             raise ValueError("ZEP_API_KEY未配置")
         
-        self.client = Zep(api_key=self.api_key)
+        self.client = None if self.use_local_storage else Zep(api_key=self.api_key)
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -402,6 +405,21 @@ class ZepGraphMemoryUpdater:
             platform: 平台名称
         """
         if not activities:
+            return
+
+        if self.use_local_storage:
+            store = self.local_store
+            assert store is not None
+            combined_text = "\n".join(activity.to_episode_text() for activity in activities)
+            store.append_activity(self.graph_id, {
+                "platform": platform,
+                "activities": [activity.__dict__ for activity in activities],
+                "combined_text": combined_text,
+            })
+            self._total_sent += 1
+            self._total_items_sent += len(activities)
+            display_name = self._get_platform_display_name(platform)
+            logger.info(f"本地模式已记录 {len(activities)} 条{display_name}活动到 SQLite 图谱 {self.graph_id}")
             return
         
         # 将多条活动合并为一条文本，用换行分隔
