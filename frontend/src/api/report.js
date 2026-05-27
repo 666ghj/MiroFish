@@ -49,3 +49,13 @@ export const getReport = (reportId) => {
 export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
 }
+
+/**
+ * 下载报告（Markdown格式）
+ * 直接使用 window.open 触发浏览器下载
+ * @param {string} reportId
+ */
+export const downloadReport = (reportId) => {
+  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'
+  window.open(`${baseURL}/api/report/${reportId}/download`, '_blank')
+}

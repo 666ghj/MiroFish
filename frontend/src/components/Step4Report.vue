@@ -127,14 +127,24 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>{{ $t('step4.goToInteraction') }}</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <!-- Action Buttons - 在完成后显示 -->
+          <div v-if="isComplete" class="action-buttons">
+            <button class="download-btn" @click="downloadReport(reportId)">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>{{ $t('step4.downloadReport') || 'Download Report' }}</span>
+            </button>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>{{ $t('step4.goToInteraction') }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -393,7 +403,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, downloadReport } from '../api/report'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -3402,14 +3412,50 @@ watch(() => props.reportId, (newId) => {
   font-size: 14px;
 }
 
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 40px);
+  margin: 4px 20px 0 20px;
+}
+
+.download-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F2937;
+  background: #FFFFFF;
+  border: 2px solid #1F2937;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.download-btn:hover {
+  background: #F3F4F6;
+}
+
+.download-btn svg {
+  transition: transform 0.2s ease;
+}
+
+.download-btn:hover svg {
+  transform: translateY(2px);
+}
+
 .next-step-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: calc(100% - 40px);
-  margin: 4px 20px 0 20px;
-  padding: 14px 20px;
+  flex: 1;
+  padding: 14px 16px;
   font-size: 14px;
   font-weight: 600;
   color: #FFFFFF;
