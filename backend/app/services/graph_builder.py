@@ -284,12 +284,28 @@ class GraphBuilderService:
                 edge_definitions[name] = (edge_class, source_targets)
         
         # 调用Zep API设置本体
+        # Zep API 限制每批次最多10个实体/关系类型
+        BATCH_SIZE = 10
+        
         if entity_types or edge_definitions:
-            self.client.graph.set_ontology(
-                graph_ids=[graph_id],
-                entities=entity_types if entity_types else None,
-                edges=edge_definitions if edge_definitions else None,
+            entity_items = list(entity_types.items())
+            edge_items = list(edge_definitions.items())
+            
+            max_batches = max(
+                (len(entity_items) + BATCH_SIZE - 1) // BATCH_SIZE if entity_items else 0,
+                (len(edge_items) + BATCH_SIZE - 1) // BATCH_SIZE if edge_items else 0,
+                1,
             )
+            
+            for i in range(max_batches):
+                batch_entities = dict(entity_items[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]) if entity_items else None
+                batch_edges = dict(edge_items[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]) if edge_items else None
+                
+                self.client.graph.set_ontology(
+                    graph_ids=[graph_id],
+                    entities=batch_entities if batch_entities else None,
+                    edges=batch_edges if batch_edges else None,
+                )
     
     def add_text_batches(
         self,
