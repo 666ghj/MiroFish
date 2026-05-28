@@ -176,6 +176,17 @@ docker compose up -d
 
 > 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
 
+### 远程 / VPS 部署
+
+在远程服务器或 VPS 上部署时，前端默认使用 `http://localhost:5001` 调用 API，远程环境下会失效。请在构建前设置 `VITE_API_BASE_URL` 环境变量：
+
+```bash
+# 在 frontend/.env 中（或构建前设置环境变量）
+VITE_API_BASE_URL=https://your-domain.com:5001
+```
+
+这将告诉前端 Axios 客户端后端 API 的实际地址。如果不设置，前端将在用户浏览器中尝试连接 `localhost:5001`，这仅在前端和后端运行在同一台本地机器上时有效。
+
 ## 📬 更多交流
 
 <div align="center">

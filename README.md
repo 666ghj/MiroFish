@@ -176,6 +176,17 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+### Remote / VPS Deployment
+
+When deploying on a remote server or VPS, the frontend defaults to `http://localhost:5001` for API calls, which won't work remotely. Set the `VITE_API_BASE_URL` environment variable before building:
+
+```bash
+# In frontend/.env (or as an environment variable before build)
+VITE_API_BASE_URL=https://your-domain.com:5001
+```
+
+This tells the frontend Axios client where to reach the backend. Without it, the frontend will try to connect to `localhost:5001` inside the user's browser, which only works when both frontend and backend run on the same local machine.
+
 ## 📬 Join the Conversation
 
 <div align="center">
