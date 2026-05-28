@@ -732,6 +732,7 @@ SECTION_SYSTEM_PROMPT_TEMPLATE = """\
 
 ⚠️ 严格禁止：
 - 禁止在一次回复中同时包含工具调用和 Final Answer
+- 禁止自行编写 <tool_result> 内容。工具结果会由系统真实执行后返回。如果你在回复中包含 <tool_result> 块（无论是否包含内容），系统将自动将其从对话历史中删除，不会被视为真实工具执行结果。
 - 禁止自己编造工具返回结果（Observation），所有工具结果由系统注入
 - 每次回复最多调用一个工具
 
@@ -1218,6 +1219,14 @@ class ReportAgent:
                 ]
             )
     
+    @staticmethod
+    def _sanitize_tool_results(response: str) -> str:
+        """移除 LLM 自行编造的 <tool_result> 块，防止虚假内容污染消息历史。"""
+        cleaned = re.sub(r'<tool_result>.*?</tool_result>', '', response, flags=re.DOTALL)
+        if cleaned != response:
+            logger.warning("Stripped hallucinated <tool_result> block(s) from LLM response")
+        return cleaned
+
     def _generate_section_react(
         self, 
         section: ReportSection,
@@ -1307,6 +1316,10 @@ class ReportAgent:
                 temperature=0.5,
                 max_tokens=4096
             )
+
+            # 清洗：移除 LLM 自行编造的 <tool_result> 块（防止虚假内容污染消息历史）
+            if response:
+                response = self._sanitize_tool_results(response)
 
             # 检查 LLM 返回是否为 None（API 异常或内容为空）
             if response is None:
@@ -1829,8 +1842,11 @@ class ReportAgent:
                 messages=messages,
                 temperature=0.5
             )
-            
+            if response:
+                response = self._sanitize_tool_results(response)
+
             # 解析工具调用
+            tool_calls = self._parse_tool_calls(response)
             tool_calls = self._parse_tool_calls(response)
             
             if not tool_calls:
@@ -1869,7 +1885,9 @@ class ReportAgent:
             messages=messages,
             temperature=0.5
         )
-        
+        if final_response:
+            final_response = self._sanitize_tool_results(final_response)
+
         # 清理响应
         clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', final_response, flags=re.DOTALL)
         clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
