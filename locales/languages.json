@@ -1,0 +1,30 @@
+{
+  "zh": {
+    "label": "中文",
+    "llmInstruction": "请使用中文回答。"
+  },
+  "en": {
+    "label": "English",
+    "llmInstruction": "Please respond in English."
+  },
+  "es": {
+    "label": "Español",
+    "llmInstruction": "Por favor, responde en español."
+  },
+  "fr": {
+    "label": "Français",
+    "llmInstruction": "Veuillez répondre en français."
+  },
+  "pt": {
+    "label": "Português",
+    "llmInstruction": "Por favor, responda em português."
+  },
+  "ru": {
+    "label": "Русский",
+    "llmInstruction": "Пожалуйста, отвечайте на русском языке."
+  },
+  "de": {
+    "label": "Deutsch",
+    "llmInstruction": "Bitte antworten Sie auf Deutsch."
+  }
+}
