@@ -33,3 +33,4 @@ python-dotenv>=1.0.0
 
 # 数据验证
 pydantic>=2.0.0
+unstructured==0.18.18
