@@ -559,7 +559,7 @@ def list_tasks():
     
     return jsonify({
         "success": True,
-        "data": [t.to_dict() for t in tasks],
+        "data": tasks,  # list_tasks() already returns to_dict() results
         "count": len(tasks)
     })
 
