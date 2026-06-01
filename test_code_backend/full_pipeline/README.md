@@ -32,7 +32,7 @@ Chạy 7 bước tự động: ontology → graph → create sim → prepare sim
 
 ```bash
 # Từ project root
-cd /home/anman/intern/MiroFish
+cd /home/anman/intern/quynhht/MiroFish
 bash test_code_backend/full_pipeline/run.sh
 
 # Hoặc chỉ định config khác
@@ -181,9 +181,11 @@ SIM_ID="sim_xxxxxxxxxxxx"
 
 curl -s http://localhost:5001/api/simulation/start \
   -H "Content-Type: application/json" \
-  -d "{\"simulation_id\": \"$SIM_ID\", \"platform\": \"parallel\"}" \
+  -d "{\"simulation_id\": \"$SIM_ID\", \"platform\": \"parallel\", \"force\": true}" \
   | jq '{runner_status: .data.runner_status, total_rounds: .data.total_rounds}'
 ```
+
+thêm cờ `\"force\": true` nếu muốn chạy simulation của SIM_ID đó mà không phải chạy lại prepare simualtion
 
 ---
 
@@ -193,6 +195,7 @@ Chạy lệnh sau để tự động poll mỗi 30 giây, tự thoát khi simula
 
 ```bash
 SIM_ID="sim_xxxxxxxxxxxx"
+
 
 while true; do
   RESP=$(curl -s http://localhost:5001/api/simulation/$SIM_ID/run-status)
@@ -216,6 +219,16 @@ curl -s http://localhost:5001/api/simulation/$SIM_ID/run-status \
 curl -s "http://localhost:5001/api/simulation/$SIM_ID/actions?limit=20" | jq .
 ```
 
+Dừng simulation
+```bash
+SIM_ID="sim_0d2a9fa9936a"
+
+curl -s http://localhost:5001/api/simulation/stop \
+  -H "Content-Type: application/json" \
+  -d "{\"simulation_id\": \"$SIM_ID\"}" \
+  | jq '{success: .success, runner_status: .data.runner_status}'
+```
+
 ---
 
 ### Bước 8: Generate report
@@ -223,7 +236,6 @@ curl -s "http://localhost:5001/api/simulation/$SIM_ID/actions?limit=20" | jq .
 ```bash
 SIM_ID="sim_xxxxxxxxxxxx"
 
-SIM_ID="sim_07ab325b3818"
 # 1. Bắt đầu generate → lấy task_id và report_id
 RESP=$(curl -s http://localhost:5001/api/report/generate \
   -H "Content-Type: application/json" \
@@ -255,7 +267,6 @@ Nếu sim đã có report rồi mà muốn chạy lại thì dùng như sau
 ```bash
 SIM_ID="sim_xxxxxxxxxxxx"
 
-SIM_ID="sim_07ab325b3818"
 # 1. Bắt đầu generate → lấy task_id và report_id
 RESP=$(curl -s http://localhost:5001/api/report/generate \
   -H "Content-Type: application/json" \
