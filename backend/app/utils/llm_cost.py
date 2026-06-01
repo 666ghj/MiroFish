@@ -24,7 +24,7 @@ MODEL_COSTS_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
     "Qwen/Qwen3.5-27B": {"input": 0.5, "output": 3.0},
     "Qwen/Qwen3.6-27B": {"input": 0.5, "output": 3.0},
     "gemini-3-flash": {"input": 0.5, "output": 3.0},
-    "Qwen/Qwen3.6-27B-FP8   ": {"input": 0.5, "output": 3.0},
+    "Qwen/Qwen3.6-27B-FP8": {"input": 0.5, "output": 3.0},
 }
 
 
