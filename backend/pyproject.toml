@@ -2,7 +2,7 @@
 name = "mirofish-backend"
 version = "0.1.0"
 description = "MiroFish - A concise and general collective intelligence engine for prediction"
-requires-python = ">=3.11"
+requires-python = ">=3.11, <3.12"
 license = { text = "AGPL-3.0" }
 authors = [
     { name = "MiroFish Team" }
@@ -16,8 +16,8 @@ dependencies = [
     # Liên quan đến LLM
     "openai>=1.0.0",
     
-    # Zep Cloud
-    "zep-cloud==3.13.0",
+    # Graphiti (knowledge graph, thay thế Zep Cloud)
+    "graphiti-core>=0.3.0",
     
     # Mô phỏng mạng xã hội OASIS
     "camel-oasis==0.2.5",
@@ -53,3 +53,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+# camel-oasis pins neo4j==5.23.0 nhưng graphiti-core cần >=5.26.0.
+# Override buộc dùng 5.26.x — camel-oasis vẫn hoạt động được ở runtime.
+[tool.uv]
+override-dependencies = ["neo4j>=5.26.0"]

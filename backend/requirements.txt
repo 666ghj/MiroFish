@@ -13,8 +13,9 @@ flask-cors>=6.0.0
 # OpenAI SDK (thống nhất dùng định dạng OpenAI để gọi LLM)
 openai>=1.0.0
 
-# ============= Zep Cloud =============
-zep-cloud==3.13.0
+# ============= Graphiti (knowledge graph) =============
+graphiti-core>=0.3.0
+neo4j>=5.26.0
 
 # ============= Mô phỏng mạng xã hội OASIS =============
 # Khung mô phỏng mạng xã hội OASIS

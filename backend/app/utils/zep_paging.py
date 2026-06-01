@@ -1,89 +1,67 @@
-"""Tiện ích đọc phân trang cho Zep Graph.
+"""Tiện ích đọc phân trang cho Knowledge Graph (Graphiti + Neo4j backend).
 
-API danh sách node/edge của Zep dùng UUID cursor để phân trang,
-module này đóng gói logic tự động lật trang (kèm retry từng trang)
-và trả về đầy đủ danh sách cho bên gọi một cách trong suốt.
+Thay thế Zep SDK bằng graphiti_core:
+  - client.graph.node.get_by_graph_id  →  EntityNode.get_by_group_ids
+  - client.graph.edge.get_by_graph_id  →  EntityEdge.get_by_group_ids
+
+Callers truyền `driver` (GraphDriver) thay cho `client` (Zep) trước đây.
 """
 
 from __future__ import annotations
 
-import time
-from collections.abc import Callable
+import asyncio
 from typing import Any
 
-from zep_cloud import InternalServerError
-from zep_cloud.client import Zep
+from graphiti_core.driver.driver import GraphDriver
+from graphiti_core.edges import EntityEdge
+from graphiti_core.errors import GroupsEdgesNotFoundError
+from graphiti_core.nodes import EntityNode
 
 from .logger import get_logger
 
-logger = get_logger('mirofish.zep_paging')
+logger = get_logger('mirofish.graph_paging')
 
 _DEFAULT_PAGE_SIZE = 100
 _MAX_NODES = 2000
 _DEFAULT_MAX_RETRIES = 3
-_DEFAULT_RETRY_DELAY = 2.0  # seconds, doubles each retry
+_DEFAULT_RETRY_DELAY = 2.0
 
 
-def _fetch_page_with_retry(
-    api_call: Callable[..., list[Any]],
-    *args: Any,
-    max_retries: int = _DEFAULT_MAX_RETRIES,
-    retry_delay: float = _DEFAULT_RETRY_DELAY,
-    page_description: str = "page",
-    **kwargs: Any,
-) -> list[Any]:
-    """Yêu cầu 1 trang, retry với exponential backoff khi thất bại. Chỉ retry lỗi tạm thời mạng/IO."""
-    if max_retries < 1:
-        raise ValueError("max_retries must be >= 1")
-
-    last_exception: Exception | None = None
-    delay = retry_delay
-
-    for attempt in range(max_retries):
-        try:
-            return api_call(*args, **kwargs)
-        except (ConnectionError, TimeoutError, OSError, InternalServerError) as e:
-            last_exception = e
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Zep {page_description} attempt {attempt + 1} failed: {str(e)[:100]}, retrying in {delay:.1f}s..."
-                )
-                time.sleep(delay)
-                delay *= 2
-            else:
-                logger.error(f"Zep {page_description} failed after {max_retries} attempts: {str(e)}")
-
-    assert last_exception is not None
-    raise last_exception
-
-
-def fetch_all_nodes(
-    client: Zep,
+async def _fetch_all_nodes_async(
+    driver: GraphDriver,
     graph_id: str,
-    page_size: int = _DEFAULT_PAGE_SIZE,
-    max_items: int = _MAX_NODES,
-    max_retries: int = _DEFAULT_MAX_RETRIES,
-    retry_delay: float = _DEFAULT_RETRY_DELAY,
+    page_size: int,
+    max_items: int,
+    max_retries: int,
+    retry_delay: float,
 ) -> list[Any]:
-    """Lấy node theo trang, tối đa max_items mục (mặc định 2000). Mỗi trang đều có retry."""
     all_nodes: list[Any] = []
     cursor: str | None = None
     page_num = 0
 
     while True:
-        kwargs: dict[str, Any] = {"limit": page_size}
-        if cursor is not None:
-            kwargs["uuid_cursor"] = cursor
-
         page_num += 1
-        batch = _fetch_page_with_retry(
-            client.graph.node.get_by_graph_id,
-            graph_id,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
-            page_description=f"fetch nodes page {page_num} (graph={graph_id})",
-            **kwargs,
-        )
+        delay = retry_delay
+        batch: list[Any] = []
+
+        for attempt in range(max_retries):
+            try:
+                batch = await EntityNode.get_by_group_ids(
+                    driver,
+                    group_ids=[graph_id],
+                    limit=page_size,
+                    uuid_cursor=cursor,
+                )
+                break
+            except (ConnectionError, TimeoutError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"fetch nodes page {page_num} (graph={graph_id}) attempt {attempt + 1} failed: {str(e)[:100]}, retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.error(f"fetch nodes page {page_num} (graph={graph_id}) failed after {max_retries} attempts")
+                    raise
+
         if not batch:
             break
 
@@ -95,7 +73,7 @@ def fetch_all_nodes(
         if len(batch) < page_size:
             break
 
-        cursor = getattr(batch[-1], "uuid_", None) or getattr(batch[-1], "uuid", None)
+        cursor = getattr(batch[-1], "uuid", None)
         if cursor is None:
             logger.warning(f"Node missing uuid field, stopping pagination at {len(all_nodes)} nodes")
             break
@@ -103,32 +81,43 @@ def fetch_all_nodes(
     return all_nodes
 
 
-def fetch_all_edges(
-    client: Zep,
+async def _fetch_all_edges_async(
+    driver: GraphDriver,
     graph_id: str,
-    page_size: int = _DEFAULT_PAGE_SIZE,
-    max_retries: int = _DEFAULT_MAX_RETRIES,
-    retry_delay: float = _DEFAULT_RETRY_DELAY,
+    page_size: int,
+    max_retries: int,
+    retry_delay: float,
 ) -> list[Any]:
-    """Lấy toàn bộ edge theo trang, trả về đầy đủ danh sách. Mỗi trang đều có retry."""
     all_edges: list[Any] = []
     cursor: str | None = None
     page_num = 0
 
     while True:
-        kwargs: dict[str, Any] = {"limit": page_size}
-        if cursor is not None:
-            kwargs["uuid_cursor"] = cursor
-
         page_num += 1
-        batch = _fetch_page_with_retry(
-            client.graph.edge.get_by_graph_id,
-            graph_id,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
-            page_description=f"fetch edges page {page_num} (graph={graph_id})",
-            **kwargs,
-        )
+        delay = retry_delay
+        batch: list[Any] = []
+
+        for attempt in range(max_retries):
+            try:
+                batch = await EntityEdge.get_by_group_ids(
+                    driver,
+                    group_ids=[graph_id],
+                    limit=page_size,
+                    uuid_cursor=cursor,
+                )
+                break
+            except GroupsEdgesNotFoundError:
+                batch = []
+                break
+            except (ConnectionError, TimeoutError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"fetch edges page {page_num} (graph={graph_id}) attempt {attempt + 1} failed: {str(e)[:100]}, retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.error(f"fetch edges page {page_num} (graph={graph_id}) failed after {max_retries} attempts")
+                    raise
+
         if not batch:
             break
 
@@ -136,9 +125,32 @@ def fetch_all_edges(
         if len(batch) < page_size:
             break
 
-        cursor = getattr(batch[-1], "uuid_", None) or getattr(batch[-1], "uuid", None)
+        cursor = getattr(batch[-1], "uuid", None)
         if cursor is None:
             logger.warning(f"Edge missing uuid field, stopping pagination at {len(all_edges)} edges")
             break
 
     return all_edges
+
+
+def fetch_all_nodes(
+    driver: GraphDriver,
+    graph_id: str,
+    page_size: int = _DEFAULT_PAGE_SIZE,
+    max_items: int = _MAX_NODES,
+    max_retries: int = _DEFAULT_MAX_RETRIES,
+    retry_delay: float = _DEFAULT_RETRY_DELAY,
+) -> list[Any]:
+    """Lấy toàn bộ EntityNode theo group_id, tối đa max_items (mặc định 2000)."""
+    return asyncio.run(_fetch_all_nodes_async(driver, graph_id, page_size, max_items, max_retries, retry_delay))
+
+
+def fetch_all_edges(
+    driver: GraphDriver,
+    graph_id: str,
+    page_size: int = _DEFAULT_PAGE_SIZE,
+    max_retries: int = _DEFAULT_MAX_RETRIES,
+    retry_delay: float = _DEFAULT_RETRY_DELAY,
+) -> list[Any]:
+    """Lấy toàn bộ EntityEdge theo group_id."""
+    return asyncio.run(_fetch_all_edges_async(driver, graph_id, page_size, max_retries, retry_delay))
