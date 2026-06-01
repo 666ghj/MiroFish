@@ -309,7 +309,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - completed: đã chạy xong, nghĩa là đã chuẩn bị xong từ trước
         # - stopped: đã dừng, nghĩa là đã chuẩn bị xong từ trước
         # - failed: chạy thất bại (nhưng phần chuẩn bị đã hoàn tất)
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
+        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed", "paused"]
         
         if status in prepared_statuses and config_generated:
             # Lấy thông tin thống kê file
@@ -468,7 +468,7 @@ def prepare_simulation():
         
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
-        parallel_profile_count = data.get('parallel_profile_count', 5)
+        parallel_profile_count = data.get('parallel_profile_count', 20)
         
         # ========== Đồng bộ lấy số lượng thực thể (trước khi chạy tác vụ nền) ==========
         # Nhờ đó frontend có thể lấy ngay tổng số Agent dự kiến sau khi gọi prepare
