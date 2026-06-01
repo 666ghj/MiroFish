@@ -120,6 +120,8 @@ class OasisAgentProfile:
             profile["profession"] = self.profession
         if self.interested_topics:
             profile["interested_topics"] = self.interested_topics
+        if self.entity_category:
+            profile["entity_category"] = self.entity_category
 
         return profile
 
@@ -929,7 +931,7 @@ Dựa vào toàn bộ thông tin trên, xác định thực thể này thuộc l
 BƯỚC 2 — TẠO HỒ SƠ:
 Tạo JSON với các trường sau, điều chỉnh theo kết quả phân loại:
 
-1. entity_category: Kết quả phân loại ở Bước 1 — "individual" hoặc "organization"
+1. entity_category: "individual"/"organization"
 
 2. bio: Tiểu sử mạng xã hội ngắn gọn, tối đa 200 ký tự.
 
@@ -1547,7 +1549,7 @@ QUAN TRỌNG:
                 "user_id": profile.user_id if profile.user_id is not None else idx,
                 "username": profile.user_name,
                 "name": profile.name,
-                "bio": profile.bio[:150] if profile.bio else f"{profile.name}",  # Cap ở 150 ký tự
+                "bio": profile.bio if profile.bio else f"{profile.name}",
                 "persona": profile.persona or f"{profile.name} is a participant in social discussions.",
                 "karma": profile.karma if profile.karma else 1000,
                 "created_at": profile.created_at,
@@ -1562,6 +1564,8 @@ QUAN TRỌNG:
                 item["profession"] = profile.profession
             if profile.interested_topics:
                 item["interested_topics"] = profile.interested_topics
+            if profile.entity_category:
+                item["entity_category"] = profile.entity_category
 
             data.append(item)
 

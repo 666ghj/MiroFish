@@ -203,6 +203,9 @@ from llm_cost_patch import install_openai_cost_patch
 try:
     from camel.models import ModelFactory
     from camel.types import ModelPlatformType
+    from camel.memories import ChatHistoryMemory, ScoreBasedContextCreator
+    from camel.utils import OpenAITokenCounter
+    from camel.types import ModelType
     import oasis
     from oasis import (
         ActionType,
@@ -211,6 +214,8 @@ try:
         generate_twitter_agent_graph,
         generate_reddit_agent_graph
     )
+    from oasis.social_platform import Platform
+    from oasis.social_platform.channel import Channel
 except ImportError as e:
     print(f"Error: Missing dependency {e}")
     print("Please install first: pip install oasis-ai camel-ai")
@@ -1120,6 +1125,33 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     )
 
 
+def configure_agent_memory_limits(agent_graph, token_limit=150000, message_window_size=25):
+    """
+    Cấu hình giới hạn memory cho tất cả agent trong agent_graph.
+
+    OASIS tạo SocialAgent không truyền message_window_size hay token_limit
+    cho ChatAgent (CAMEL), khiến conversation history tăng vô hạn qua các round.
+    Khi context vượt quá giới hạn model (131072 tokens cho Qwen3.6-27B-FP8),
+    LLM API trả về BadRequestError và agent bị bỏ qua round đó.
+
+    Hàm này thay thế memory của mỗi agent bằng ChatHistoryMemory có:
+    - token_limit: giới hạn token context (ScoreBasedContextCreator sẽ cắt bớt
+      message cũ khi vượt, ưu tiên giữ message mới và system message)
+    - message_window_size: giới hạn số message giữ lại (tầng bảo vệ thứ hai)
+
+    ChatAgent.memory setter tự động gọi init_messages() để giữ system message.
+    """
+    configured_count = 0
+    for agent_id, agent in agent_graph.get_agents():
+        token_counter = OpenAITokenCounter(ModelType.GPT_4O_MINI)
+        context_creator = ScoreBasedContextCreator(token_counter, token_limit=token_limit)
+        new_memory = ChatHistoryMemory(context_creator, window_size=message_window_size)
+        agent.memory = new_memory
+        configured_count += 1
+
+    return configured_count
+
+
 def get_active_agents_for_round(
     env,
     config: Dict[str, Any],
@@ -1277,6 +1309,10 @@ async def run_twitter_simulation(
         available_actions=TWITTER_ACTIONS,
     )
 
+    # Cấu hình giới hạn memory để tránh context overflow (131072 token limit)
+    mem_count = configure_agent_memory_limits(result.agent_graph)
+    log_info(f"Configured memory limits for {mem_count} agents")
+
     # Xây dựng agent_names map — dùng cho log và enrich context
     agent_names = get_agent_names_from_config(config)
     for agent_id, agent in result.agent_graph.get_agents():
@@ -1289,11 +1325,19 @@ async def run_twitter_simulation(
     if os.path.exists(db_path):
         os.remove(db_path)
 
+    twitter_channel = Channel()
+    twitter_platform = Platform(
+        db_path=db_path,
+        channel=twitter_channel,
+        recsys_type="reddit",       # score-based, không load model embedding → nhanh hơn twhin-bert
+        refresh_rec_post_count=2,
+        max_rec_post_len=2,
+        following_post_count=3,
+    )
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
-        database_path=db_path,
-        semaphore=3,  # Tối đa 3 LLM call đồng thời trong cùng 1 round
+        platform=twitter_platform,
+        semaphore=20,
     )
 
     await result.env.reset()
@@ -1471,6 +1515,10 @@ async def run_reddit_simulation(
         available_actions=REDDIT_ACTIONS,
     )
 
+    # Cấu hình giới hạn memory để tránh context overflow (131072 token limit)
+    mem_count = configure_agent_memory_limits(result.agent_graph)
+    log_info(f"Configured memory limits for {mem_count} agents")
+
     agent_names = get_agent_names_from_config(config)
     for agent_id, agent in result.agent_graph.get_agents():
         if agent_id not in agent_names:
@@ -1484,7 +1532,7 @@ async def run_reddit_simulation(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
-        semaphore=3,
+        semaphore=20,
     )
 
     await result.env.reset()

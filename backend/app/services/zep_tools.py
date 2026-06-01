@@ -438,9 +438,6 @@ class ZepToolsService:
         if self._llm_client is None:
             self._llm_client = LLMClient(
                 component="zep_tools",
-                metadata={
-                    "phase": "zep_tools",
-                },
             )
         return self._llm_client
     
@@ -1151,13 +1148,14 @@ Trả về danh sách các câu hỏi phụ dưới định dạng JSON."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                metadata={"phase": "_generate_sub_queries"},
             )
-            
+
             sub_queries = response.get("sub_queries", [])
             # Ép kiểu để chắc chắn danh sách toàn kiểu string
             return [str(sq) for sq in sub_queries[:max_queries]]
-            
+
         except Exception as e:
             logger.warning(f"Failed to generate sub-queries: {str(e)}, using default sub-queries")
             # Hạ cấp (fallback): Trả về các biến thể chung chung của câu hỏi ban đầu
@@ -1672,9 +1670,10 @@ Hãy chọn tối đa {max_agents} Agent phù hợp nhất để phỏng vấn v
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                metadata={"phase": "_select_agents_for_interview"},
             )
-            
+
             selected_indices = response.get("selected_indices", [])[:max_agents]
             reasoning = response.get("reasoning", "Auto selected based on relevance")
             
@@ -1751,9 +1750,10 @@ Hãy tạo từ 3-5 câu hỏi phỏng vấn."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.5
+                temperature=0.5,
+                metadata={"phase": "_generate_interview_questions"},
             )
-            
+
             return response.get("questions", [f"What is your opinion on {interview_requirement}?"])
             
         except Exception as e:
@@ -1832,7 +1832,8 @@ Hãy tạo bản tóm tắt phỏng vấn."""
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3,
-                max_tokens=4096
+                max_tokens=4096,
+                metadata={"phase": "_generate_interview_summary"},
             )
             return summary
             
