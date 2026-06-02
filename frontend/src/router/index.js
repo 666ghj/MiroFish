@@ -5,6 +5,7 @@ import SimulationView from '../views/SimulationView.vue'
 import SimulationRunView from '../views/SimulationRunView.vue'
 import ReportView from '../views/ReportView.vue'
 import InteractionView from '../views/InteractionView.vue'
+import ChatView from '../views/ChatView.vue'
 
 const routes = [
   {
@@ -40,6 +41,12 @@ const routes = [
     path: '/interaction/:reportId',
     name: 'Interaction',
     component: InteractionView,
+    props: true
+  },
+  {
+    path: '/chat/:simulationId',
+    name: 'Chat',
+    component: ChatView,
     props: true
   }
 ]

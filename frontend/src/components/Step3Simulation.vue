@@ -91,7 +91,14 @@
       </div>
 
       <div class="action-controls">
-        <button 
+        <button
+          class="action-btn chat-btn"
+          :disabled="phase !== 2"
+          @click="router.push({ name: 'Chat', params: { simulationId: props.simulationId } })"
+        >
+          💬 Chat with Agents
+        </button>
+        <button
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
           @click="handleNextStep"
@@ -871,6 +878,14 @@ onUnmounted(() => {
   align-items: center;
 }
 
+/* Action Controls */
+.action-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* Action Button */
 .action-btn {
   display: inline-flex;
@@ -894,6 +909,16 @@ onUnmounted(() => {
 
 .action-btn.primary:hover:not(:disabled) {
   background: #333;
+}
+
+.action-btn.chat-btn {
+  background: #fff;
+  color: #000;
+  border: 1.5px solid #000;
+}
+
+.action-btn.chat-btn:hover:not(:disabled) {
+  background: #f5f5f5;
 }
 
 .action-btn:disabled {
