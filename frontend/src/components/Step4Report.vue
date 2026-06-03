@@ -862,7 +862,7 @@ const parseInterview = (text) => {
         const quotesText = quotesMatch[1]
         // Prioritize matching > "text" format
         let quoteMatches = quotesText.match(/> "([^"]+)"/g)
-        // Backtrack: Matches > "text" or > \u201Ctext\u201D (Chinese quotation marks)
+        // Backtrack: Matches > "text" or > \u201Ctext\u201D (Vietnamese quotation marks)
         if (!quoteMatches) {
           quoteMatches = quotesText.match(/> [\u201C""]([^\u201D""]+)[\u201D""]/g)
         }
@@ -2089,9 +2089,9 @@ const extractFinalContent = (response) => {
   }
   
   // Try to find the content after "Final Answer:"
-  const chineseFinalMatch = response.match(/Final Answer[:：]\s*\n*([\s\S]*)$/i)
-  if (chineseFinalMatch) {
-    return chineseFinalMatch[1].trim()
+  const vietnameseFinalMatch = response.match(/Final Answer[:：]\s*\n*([\s\S]*)$/i)
+  if (vietnameseFinalMatch) {
+    return vietnameseFinalMatch[1].trim()
   }
   
   // Nếu bắt đầu bằng ## hoặc # hoặc >, có thể là nội dung markdown trực tiếp

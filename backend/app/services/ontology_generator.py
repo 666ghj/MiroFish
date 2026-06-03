@@ -9,32 +9,145 @@ from ..utils.llm_client import LLMClient
 
 
 # System prompt dùng cho việc tự động sinh Ontology
-ONTOLOGY_SYSTEM_PROMPT = """Bạn là một chuyên gia thiết kế bản thể học (Ontology) cho Tri thức đồ thị (Knowledge Graph). Nhiệm vụ của bạn là phân tích nội dung văn bản được cung cấp và nhu cầu để thiết kế các loại thực thể (Entity) và loại mối quan hệ (Relationship) thiết kế phù hợp cho **Mô phỏng dư luận trên mạng xã hội**.
+# ONTOLOGY_SYSTEM_PROMPT = """You are a professional Knowledge Graph Ontology Design Expert. Your task is to analyze the given text content and simulation requirements to design entity types and relationship types suitable for **social media public opinion simulation**.
 
-**QUAN TRỌNG: Bạn BẮT BUỘC phải đầu ra một cấu trúc định dạng JSON hợp lệ, KHÔNG ĐƯỢC xuất thêm bất kỳ văn bản nào khác.**
+# **IMPORTANT: You must output valid JSON format data only. Do not include any other text.**
+
+# ## Core Task Background
+
+# We are building a social media public opinion simulation system. In this system:
+# - Each entity is an "account" or "subject" capable of speaking, interacting, and spreading information on social media.
+# - Entities influence, forward, comment on, and respond to each other.
+# - We need to simulate the reactions of all parties and the paths of information dissemination during public opinion events.
+
+# Therefore, **entities must be real-world subjects capable of speaking and interacting on social media**:
+
+# **CAN BE**:
+# - Specific individuals (public figures, parties involved, opinion leaders, experts, ordinary people).
+# - Companies and enterprises (including their official accounts).
+# - Organizations (universities, associations, NGOs, labor unions, etc.).
+# - Government departments and regulatory agencies.
+# - Media outlets (newspapers, TV stations, independent media, websites).
+# - Social media platforms themselves.
+# - Representatives of specific groups (e.g., alumni associations, fan clubs, rights protection groups).
+
+# **CANNOT BE**:
+# - Abstract concepts (e.g., "public opinion", "emotion", "trend").
+# - Themes/Topics (e.g., "academic integrity", "education reform").
+# - Viewpoints/Attitudes (e.g., "supporters", "opponents").
+
+# ## Output Format
+
+# Please output in JSON format with the following structure:
+
+# ```json
+# {
+#     "entity_types": [
+#         {
+#             "name": "Entity type name (English, PascalCase)",
+#             "description": "Short description (English, max 100 characters)",
+#             "attributes": [
+#                 {
+#                     "name": "Attribute name (English, snake_case)",
+#                     "type": "text",
+#                     "description": "Attribute description"
+#                 }
+#             ],
+#             "examples": ["Example Entity 1", "Example Entity 2"]
+#         }
+#     ],
+#     "edge_types": [
+#         {
+#             "name": "Relationship type name (English, UPPER_SNAKE_CASE)",
+#             "description": "Short description (English, max 100 characters)",
+#             "source_targets": [
+#                 {"source": "Source entity type", "target": "Target entity type"}
+#             ],
+#             "attributes": []
+#         }
+#     ],
+#     "analysis_summary": "Brief analysis of the text content (in Vietnamese)"
+# }
+# ```
+
+# ## Design Guidelines (Extremely Important!)
+
+# ### 1. Entity Type Design - Strict Compliance Required
+
+# **Quantity Requirement: Must be EXACTLY 10 entity types.**
+
+# **Hierarchy Requirements (Must include both specific types and fallback types):**
+
+# Your 10 entity types must include the following layers:
+
+# A. **Fallback Types (Required, place as the last 2 in the list)**:
+#    - `Person`: The fallback type for any individual natural person. Use this when a person does not fit into other specific person types.
+#    - `Organization`: The fallback type for any organization or institution. Use this when an organization does not fit into other specific organizational types.
+
+# B. **Specific Types (8 types, designed based on text content)**:
+#    - Design more specific types targeting the main roles appearing in the text.
+#    - Example: For academic events, use `Student`, `Professor`, `University`
+#    - VExample: For business events, use `Company`, `CEO`, `Employee`
+
+# **Why fallback types are needed:**
+# - Various people appear in texts (e.g., "primary school teacher", "passerby", "netizen").
+# - Without a specific match, they should be categorized under `Person`.
+# - Similarly, small organizations or temporary groups should fall under `Organization`.
+
+# **Specific Type Design Principles:**
+# - Identify high-frequency or critical roles from the text.
+# - Each specific type should have clear boundaries to avoid overlap.
+# - The description must clearly state the difference between this type and the fallback type.
+
+# ### 2. Relationship Type Design
+
+# - Quantity: 6-10 types.
+# - Relationships should reflect real-world connections in social media interactions.
+# - Ensure `source_targets` cover your defined entity types.
+
+# ### 3. Attribute Design
+
+# - 1-3 key attributes per entity type.
+# - **NOTE**: Do NOT use `name`, `uuid`, `group_id`, `created_at` or `summary` as attribute names (these are system reserved words).
+# - Recommended: `full_name`, `title`, `role`, `position`, `location`, `description, etc.
+
+# ## Entity Type References
+
+# - Individuals (Specific): Student, Professor, Journalist, Celebrity, Executive, Official, Lawyer, Doctor.
+# - Individuals (Fallback): Person.
+# - Organizations (Specific): University, Company, GovernmentAgency, MediaOutlet, Hospital, School, NGO.
+# - Organizations (Fallback): Organization.
+
+# ## Relationship Type References
+
+# WORKS_FOR, STUDIES_AT, AFFILIATED_WITH, REPRESENTS, REGULATES, REPORTS_ON, COMMENTS_ON, RESPONDS_TO, SUPPORTS, OPPOSES, COLLABORATES_WITH, COMPETES_WITH.
+# """
+
+ONTOLOGY_SYSTEM_PROMPT = """Bạn là một chuyên gia thiết kế Bản thể học (Ontology) cho Biểu đồ tri thức chuyên nghiệp. Nhiệm vụ của bạn là phân tích nội dung văn bản và yêu cầu mô phỏng được cung cấp để thiết kế các loại thực thể và loại quan hệ phù hợp cho việc **mô phỏng dư luận trên mạng xã hội**.
+
+**QUAN TRỌNG: Bạn phải xuất dữ liệu ở định dạng JSON hợp lệ, không xuất thêm bất kỳ nội dung nào khác.**
 
 ## Bối cảnh nhiệm vụ cốt lõi
+- Chúng tôi đang xây dựng một hệ thống mô phỏng dư luận mạng xã hội. Trong hệ thống này:
+- Mỗi thực thể là một "tài khoản" hoặc "chủ thể" có thể phát ngôn, tương tác và lan truyền thông tin trên mạng xã hội.
+- Các thực thể sẽ ảnh hưởng, chia sẻ, bình luận và phản hồi lẫn nhau.
+- Chúng tôi cần mô phỏng phản ứng của các bên và lộ trình lan truyền thông tin trong các sự kiện dư luận.
 
-Chúng tôi đang xây dựng một **hệ thống mô phỏng tin đồn và dư luận mạng xã hội**. Trong hệ thống này:
-- Mỗi thực thể là một "tài khoản" hoặc "chủ thể" có thể lên tiếng, tương tác và lan truyền thông tin trên mạng xã hội.
-- Các thực thể có thể gây ảnh hưởng, chuyển tiếp (retweet), bình luận hoặc phản hồi lẫn nhau.
-- Chúng tôi cần mô phỏng phản ứng của các bên và đường truyền thông tin trong các sự kiện dư luận.
-
-Do đó, **thực thể phải là các chủ thể có thật trong thế giới thực, có khả năng lên tiếng và tương tác trên mạng xã hội**:
+Do đó, **thực thể phải là những chủ thể tồn tại thực tế, có khả năng phát ngôn và tương tác trên mạng xã hội**:
 
 **CÓ THỂ LÀ**:
-- Cá nhân cụ thể (nhân vật của công chúng, các bên liên quan, KOL, chuyên gia / học giả, người bình thường)
-- Công ty, doanh nghiệp (bao gồm cả tài khoản chính thức của họ)
-- Tổ chức (trường đại học, hiệp hội, tổ chức phi chính phủ (NGO), công đoàn, v.v.)
-- Các cơ quan chính phủ, cơ quan quản lý
-- Tổ chức báo chí / truyền thông (báo đài, đài truyền hình, tự do truyền thông, trang web)
-- Bản thân nền tảng mạng xã hội
-- Đại diện nhóm cụ thể (như hội cựu sinh viên, fan group, nhóm bảo vệ quyền lợi, v.v.)
+- Cá nhân cụ thể (người công chúng, bên liên quan, người dẫn dắt dư luận, chuyên gia, người bình thường).
+- Công ty, doanh nghiệp (bao gồm cả tài khoản chính thức của họ).
+- Tổ chức (trường đại học, hiệp hội, NGO, công đoàn, v.v.).
+- Cơ quan chính phủ, cơ quan quản lý.
+- Cơ quan truyền thông (báo chí, đài truyền hình, tự truyền thông, trang web).
+- Bản thân nền tảng mạng xã hội.
+- Đại diện nhóm cụ thể (như hội cựu sinh viên, nhóm người hâm mộ, nhóm bảo vệ quyền lợi, v.v.).
 
-**KHÔNG ĐƯỢC LÀ**:
-- Khái niệm trừu tượng (như "dư luận", "cảm xúc", "xu hướng")
-- Chủ đề / đề tài (như "tính toàn vẹn học thuật", "cải cách giáo dục")
-- Quan điểm / thái độ (như "phe ủng hộ", "bên phản đối")
+**KHÔNG THỂ LÀ**:
+- Khái niệm trừu tượng (như "dư luận", "cảm xúc", "xu hướng").
+- Chủ đề/Vấn đề (như "liêm chính học thuật", "cải cách giáo dục").
+- Quan điểm/Thái độ (như "bên ủng hộ", "bên phản đối").
 
 ## Định dạng đầu ra
 
@@ -45,38 +158,38 @@ Hãy trả về dưới định dạng JSON, bao gồm cấu trúc sau:
     "entity_types": [
         {
             "name": "Tên loại thực thể (Tiếng Anh, PascalCase)",
-            "description": "Mô tả ngắn gọn (Tiếng Anh, tối đa 100 ký tự)",
+            "description": "Mô tả ngắn gọn (Tiếng Anh, không quá 100 ký tự)",
             "attributes": [
                 {
                     "name": "Tên thuộc tính (Tiếng Anh, snake_case)",
                     "type": "text",
-                    "description": "Mô tả của thuộc tính"
+                    "description": "Mô tả thuộc tính"
                 }
             ],
-            "examples": ["Ví dụ thực thể 1", "Ví dụ thực thể 2"]
+            "examples": ["Thực thể ví dụ 1", "Thực thể ví dụ 2"]
         }
     ],
     "edge_types": [
         {
             "name": "Tên loại quan hệ (Tiếng Anh, UPPER_SNAKE_CASE)",
-            "description": "Mô tả ngắn (Tiếng Anh, tối đa 100 ký tự)",
+            "description": "Mô tả ngắn gọn (Tiếng Anh, không quá 100 ký tự)",
             "source_targets": [
                 {"source": "Loại thực thể nguồn", "target": "Loại thực thể đích"}
             ],
             "attributes": []
         }
     ],
-    "analysis_summary": "Giải thích ngắn gọn phân tích của bạn về văn bản (Tiếng Việt)"
+    "analysis_summary": "Phân tích ngắn gọn nội dung văn bản (bằng tiếng Việt)"
 }
 ```
 
-## Hướng dẫn Thiết kế (CỰC KỲ QUAN TRỌNG!)
+## Hướng dẫn thiết kế (Cực kỳ quan trọng!)
 
-### 1. Thiết kế loại Thực thể (Entity Types) - Phải tuân thủ nghiêm ngặt
+### 1. Thiết kế loại thực thể - Phải tuân thủ nghiêm ngặt
 
-**Yêu cầu số lượng: Đúng 10 loại Thực thể.**
+**Yêu cầu số lượng: Phải có CHÍNH XÁC 10 loại thực thể.**
 
-**Yêu cầu về cấu trúc phân cấp (Phải có cả Loại cụ thể và Loại bao quát/fallback):**
+**Yêu cầu về cấu trúc phân cấp (Phải bao gồm cả loại cụ thể và loại dự phòng):**
 
 10 loại thực thể của bạn phải bao gồm cấp độ sau:
 
@@ -85,7 +198,7 @@ A. **Loại bao quát (Fallback Types) (BẮT BUỘC, phải nằm ở 2 vị tr
    - `Organization`: Là loại bao quát cho MỌI tổ chức. Đặc trưng cho các tổ chức nhỏ hoặc không phù hợp với các loại tổ chức cụ thể khác.
 
 B. **Loại cụ thể (8 loại, phụ thuộc vào nội dung văn bản)**:
-   - Thiết kế các loại cụ thể cho các vai chính được nhắc đến nhiều nhất trong văn bản.
+   - Thiết kế các loại cụ thể cho các vai trò chính được nhắc đến nhiều nhất trong văn bản.
    - Ví dụ: Nếu văn bản nói về scandal trường học, có thể có: `Student`, `Professor`, `University`
    - Ví dụ: Nếu văn bản là câu chuyện kinh doanh, có thể có: `Company`, `CEO`, `Employee`
 
@@ -95,9 +208,9 @@ B. **Loại cụ thể (8 loại, phụ thuộc vào nội dung văn bản)**:
 - Tương tự, tổ chức nhỏ bé hoặc nhóm học tập tạm thời nên thuộc `Organization`
 
 **Nguyên tắc cho các loại Cụ thể:**
-- Nhận dạng tần suất xuất hiện và sức ảnh hưởng tới cốt truyện để xây dựng loại thực thể.
+- Nhận diện các vai trò xuất hiện với tần suất cao hoặc quan trọng từ văn bản.
 - Mỗi loại nên có một ranh giới rõ ràng, không bị chồng chéo.
-- Thuộc tính mô tả (description) phải giải thích vì sao loại này tách biệt. 
+- Phần description phải giải thích rõ sự khác biệt giữa loại này và loại bao quát.
 
 ### 2. Thiết kế Cạnh/Quan hệ (Edge Types)
 
@@ -113,45 +226,14 @@ B. **Loại cụ thể (8 loại, phụ thuộc vào nội dung văn bản)**:
 
 ## Loại Thực thể tham khảo 
 
-**Loại cá nhân (Cụ thể):**
-- Student: Học sinh/Sinh viên
-- Professor: Giáo sư/Học giả
-- Journalist: Nhà báo/Phóng viên
-- Celebrity: Người nổi tiếng/Idol
-- Executive: Các giám đốc, CEO, cấp lãnh đạo
-- Official: Các vị công chức chính phủ
-- Lawyer: Luật sư
-- Doctor: Y sĩ/Bác sĩ
+- Nhóm cá nhân (Cụ thể): Student, Professor, Journalist, Celebrity, Executive, Official, Lawyer, Doctor.
+- Nhóm cá nhân (Bao quát): Person.
+- Nhóm tổ chức (Cụ thể): University, Company, GovernmentAgency, MediaOutlet, Hospital, School, NGO.
+- Nhóm tổ chức (Bao quát): Organization.
 
-**Loại cá nhân (Bao quát):**
-- Person: Là loại bao quát cho MỌI cá nhân tự nhiên nào không thuộc chi tiết ở trên.
+## Tham khảo loại quan hệ
 
-**Loại tổ chức (Cụ thể):**
-- University: Đại học hoặc học viện
-- Company: Doanh nghiệp hay Công ty, tập đoàn
-- GovernmentAgency: Cơ quan quản lý, các cơ quan ban ngành công quyền
-- MediaOutlet: Truyền thông hay Tạp chí, Đài tin tức
-- Hospital: Bệnh viện / Trung tâm y tế
-- School: Bậc tiểu/trung học
-- NGO: Các loại Tổ chức phi chính phủ hoặc từ thiện
-
-**Loại tổ chức (Bao quát):**
-- Organization: Là loại bao quát cho MỌI cơ cấu hợp tác không thuôc chi tiết tổ chức ở trên.
-
-## Loại Khái niệm Liên kết (Quan Hệ)
-
-- WORKS_FOR: Làm việc và ăn lương bởi tổ chức
-- STUDIES_AT: Đang học tại nhà trường
-- AFFILIATED_WITH: Liên quan, Trực thuộc vào đơn vị
-- REPRESENTS: Thể hiện tư cách hành động đại diện cho tập thể
-- REGULATES: Theo dõi, quản lý, thanh tra chính sách
-- REPORTS_ON: Tác nghiệp báo chí, có tin về hiện tượng 
-- COMMENTS_ON: Có phản hồi hoặc lên tiếng về tranh cãi
-- RESPONDS_TO: Hành động đáp trả
-- SUPPORTS: Theo phe ủng hộ điều luật
-- OPPOSES: Phản đối chính sách
-- COLLABORATES_WITH: Tham gia phối ứng xử lý sự cố. 
-- COMPETES_WITH: Quan hệ thù địch.
+WORKS_FOR, STUDIES_AT, AFFILIATED_WITH, REPRESENTS, REGULATES, REPORTS_ON, COMMENTS_ON, RESPONDS_TO, SUPPORTS, OPPOSES, COLLABORATES_WITH, COMPETES_WITH.
 """
 
 
@@ -204,8 +286,8 @@ class OntologyGenerator:
         
         return result
     
-    # Định mức giới hạn độ dài ký tự tối đa của đoạn văn bản có thể gửi cho LLM (5 vạn chữ)
-    MAX_TEXT_LENGTH_FOR_LLM = 80000
+    # Định mức giới hạn độ dài ký tự tối đa của đoạn văn bản có thể gửi cho LLM (10 vạn chữ)
+    MAX_TEXT_LENGTH_FOR_LLM = 100000
     
     def _build_user_message(
         self,
@@ -222,9 +304,36 @@ class OntologyGenerator:
         # Nếu vượt quá giới hạn tối đa, thực hiện cắt bớt (Việc này chỉ ảnh hưởng prompt gửi nhận diện Ontology, không ảnh hưởng thư viện Graph building ở sau)
         if len(combined_text) > self.MAX_TEXT_LENGTH_FOR_LLM:
             combined_text = combined_text[:self.MAX_TEXT_LENGTH_FOR_LLM]
-            combined_text += f"\n\n...(Văn bản gốc dài {original_length} chữ, đã chủ động cắt lấy {self.MAX_TEXT_LENGTH_FOR_LLM} chữ đầu tiên để phục vụ phân tích Ontology)..."
+            combined_text += f"\n\n...(Original text is {original_length} characters long; the first {self.MAX_TEXT_LENGTH_FOR_LLM} characters have been proactively truncated for Ontology analysis)..."
+
+#         message = f"""## Simulation Requirements
+
+# {simulation_requirement}
+
+# ## Document Content
+
+# {combined_text}
+# """
         
-        message = f"""## Nhu cầu mô phỏng
+#         if additional_context:
+#             message += f"""
+# ## Additional Context
+
+# {additional_context}
+# """
+        
+#         message += """
+# Based on the content above, please design entity types and relationship types suitable for social media public opinion simulation.
+
+# **Rules that MUST be followed**:
+# 1. You must output EXACTLY 10 entity types.
+# 2. The last 2 types must be fallback types: Person (individual fallback) and Organization (organization fallback).
+# 3. The first 8 types should be specific types designed based on the text content.
+# 4. All entity types must be real-world subjects capable of speaking/interacting; they cannot be abstract concepts.
+# 5. Attribute names cannot use reserved words like name, uuid, or group_id; use alternatives like full_name, org_name, etc.
+# """
+        
+        message = f"""## Yêu cầu mô phỏng
 
 {simulation_requirement}
 
@@ -241,14 +350,14 @@ class OntologyGenerator:
 """
         
         message += """
-Dựa vào các thông tin trên đây, hãy thiết kế các loại mô hình Thực Thể và Quan Hệ phù hợp để phục vụ việc mô phỏng dư luận trên mạng xã hội.
+Dựa trên các nội dung trên, hãy thiết kế các loại thực thể và loại quan hệ phù hợp cho việc mô phỏng dư luận xã hội.
 
-**Các quy tắc BẮT BUỘC tuân thủ**:
-1. Số lượng chính xác: Xuất phải CHUẨN XÁC 10 loại Thực thể
-2. 2 vị trí cuối cùng bắt buộc là từ Khoá phụ (Fallback): Person (Cho cá nhân) và Organization (Cho Tổ chức)
-3. 8 vị trí đầu tiên phải phân tích và suy luận dựa vào cấu trúc của chính văn bản truyền vào
-4. Tất cả các thực thể được liệt kê phải đóng vai trò là Chủ thể (nhân vật có thể lên tiếng ngoài đời thực), KHÔNG ĐƯỢC dùng làm khái niệm trừu tượng.
-5. Tên biến thuộc tính KHÔNG ĐƯỢC là name, uuid, group_id hay các biến số bảo lưu của hệ thống khác. Vui lòng chuyển thành full_name, org_name, v.v.
+**Các quy tắc BẮT BUỘC phải tuân thủ**:
+1. Phải xuất chính xác 10 loại thực thể.
+2. 2 loại cuối cùng phải là loại dự phòng: Person (Cá nhân dự phòng) và Organization (Tổ chức dự phòng).
+3. 8 loại đầu tiên là các loại cụ thể được thiết kế dựa trên nội dung văn bản.
+4. Tất cả các loại thực thể phải là những chủ thể có thể phát ngôn trong thực tế, không được là các khái niệm trừu tượng.
+5. Tên thuộc tính không được sử dụng các từ khóa hệ thống như name, uuid, group_id; hãy thay thế bằng full_name, org_name, v.v.
 """
         
         return message
@@ -355,15 +464,15 @@ Dựa vào các thông tin trên đây, hãy thiết kế các loại mô hình 
         """
         code_lines = [
             '"""',
-            'Các loại đối tượng (Thực thể) tuỳ chỉnh',
-            'Được khởi tạo tự động bởi công cụ MiroFish, ứng dụng vào việc chạy giả lập diễn biến dư luận',
+            'Custom Entity Type Definitions',
+            'Automatically generated by MiroFish for social media public opinion simulation',
             '"""',
             '',
             'from pydantic import Field',
             'from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel',
             '',
             '',
-            '# ============== Định nghĩa Tên Lớp Các thực thể (Entity) ==============',
+            '# ============== Entity Type Definitions ==============',
             '',
         ]
         
@@ -390,7 +499,7 @@ Dựa vào các thông tin trên đây, hãy thiết kế các loại mô hình 
             code_lines.append('')
             code_lines.append('')
         
-        code_lines.append('# ============== Định nghĩa Các Nhóm Quan Hệ/Hành Vi (Edge) ==============')
+        code_lines.append('# ============== Relationship Type Definitions ==============')
         code_lines.append('')
         
         # Khởi tạo các đoạn mã tạo lập Relationship (Edges)
@@ -419,7 +528,7 @@ Dựa vào các thông tin trên đây, hãy thiết kế các loại mô hình 
             code_lines.append('')
         
         # Tự động kết xuất ra dictionary mapping từ Tên Loại - sang class Object
-        code_lines.append('# ============== Các tuỳ chỉnh Map Cấu Hình ==============')
+        code_lines.append('# ============== Type Configuration ==============')
         code_lines.append('')
         code_lines.append('ENTITY_TYPES = {')
         for entity in ontology.get("entity_types", []):

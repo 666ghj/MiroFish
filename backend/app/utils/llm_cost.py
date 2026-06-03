@@ -22,8 +22,9 @@ from typing import Any, Dict, Optional
 
 MODEL_COSTS_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
     "Qwen/Qwen3.5-27B": {"input": 0.5, "output": 3.0},
+    "Qwen/Qwen3.6-27B": {"input": 0.5, "output": 3.0},
     "gemini-3-flash": {"input": 0.5, "output": 3.0},
-    "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.5},
+    "Qwen/Qwen3.6-27B-FP8": {"input": 0.5, "output": 3.0},
 }
 
 
@@ -173,8 +174,10 @@ def record_llm_cost(
     request_no = int(counter["requests"])
     cumulative_cost = _quantize_8(counter["total_cost"])
 
+    phase = metadata.get("phase")
+    component_label = f"{component}.{phase}" if phase else component
     line = (
-        f"[{timestamp}] [Request {request_no}] [{component}] "
+        f"[{timestamp}] [Request {request_no}] [{component_label}] "
         f"Called model: {model_name}, "
         f"input_tokens: {usage_dict['input_tokens']} | "
         f"output_tokens: {usage_dict['output_tokens']} | "

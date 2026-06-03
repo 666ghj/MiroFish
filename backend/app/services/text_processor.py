@@ -54,7 +54,7 @@ class TextProcessor:
         # Xoá các dòng trống liên tiếp (Chỉ giữ lại tối đa 2 lần xuống dòng liên tiếp)
         text = re.sub(r'\n{3,}', '\n\n', text)
         
-        # 移除行首行尾空白
+        # Loại bỏ khoảng trắng đầu và cuối
         lines = [line.strip() for line in text.split('\n')]
         text = '\n'.join(lines)
         

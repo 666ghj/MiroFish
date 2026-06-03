@@ -38,7 +38,7 @@ def test_profile_formats():
             age=25,
             gender="male",
             mbti="INTJ",
-            country="China",
+            country="Vietnam",
             profession="Student",
             interested_topics=["Technology", "Education"],
             source_entity_uuid="test-uuid-123",

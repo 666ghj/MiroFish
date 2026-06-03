@@ -176,7 +176,7 @@
                 <textarea
                   v-model="formData.simulationRequirement"
                   class="code-input"
-                  placeholder="// Describe your simulation or prediction request in natural language (e.g. If Wuhan University announces the revocation of disciplinary action against someone, what public opinion trends would emerge?)"
+                  placeholder="Describe your simulation or prediction request in natural language (e.g. If Wuhan University announces the revocation of disciplinary action against someone, what public opinion trends would emerge?)"
                   rows="6"
                   :disabled="loading"
                 ></textarea>
