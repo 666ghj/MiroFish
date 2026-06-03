@@ -135,15 +135,14 @@ ZEP_API_KEY=your_zep_api_key
 ```env
 LLM_API_KEY=your_minimax_api_key
 LLM_BASE_URL=https://api.minimax.io/v1
-LLM_MODEL_NAME=MiniMax-M2.7
+LLM_MODEL_NAME=MiniMax-M3
 ```
 
 | 模型 | 说明 |
 |------|------|
-| `MiniMax-M2.7` | 最新旗舰模型，增强推理与编码能力 |
+| `MiniMax-M3` | 最新旗舰模型，512K 上下文窗口，128K 最大输出，支持图片输入 |
+| `MiniMax-M2.7` | 上一代旗舰模型 |
 | `MiniMax-M2.7-highspeed` | M2.7 高速版，低延迟场景适用 |
-| `MiniMax-M2.5` | 旗舰模型，204K 上下文窗口 |
-| `MiniMax-M2.5-highspeed` | 同等性能，更快更敏捷 |
 
 国内用户可使用：`LLM_BASE_URL=https://api.minimaxi.com/v1`
 
