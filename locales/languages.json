@@ -26,5 +26,9 @@
   "de": {
     "label": "Deutsch",
     "llmInstruction": "Bitte antworten Sie auf Deutsch."
+  },
+  "id": {
+    "label": "Bahasa Indonesia",
+    "llmInstruction": "Silakan jawab dalam bahasa Indonesia."
   }
 }
