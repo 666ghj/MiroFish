@@ -176,6 +176,33 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+### Optional: CJK leak sanitization for non-Chinese reports
+
+When running simulations in non-Chinese locales (`en`, `es`, `fr`, `pt`, `ru`, `de`, `id`),
+the LLM may occasionally slip Chinese characters into persona quotes despite the
+language instruction (e.g. *"BI economist said: Purbaya过于倾向财政扩张..."*).
+
+MiroFish auto-detects and re-translates any leaked CJK runs after report
+generation, reusing the same `LLM_API_KEY` / `LLM_BASE_URL` as the rest of the
+backend. The sanitization adds ~3-10 seconds to report completion and is
+idempotent (re-runs are no-op when no CJK remains).
+
+**Configuration** (all optional, set in `.env`):
+
+```bash
+# Disable entirely (default: auto-enabled for non-zh locales)
+CJK_SANITIZE_ENABLED=0
+
+# Run sanitization only for specific locales (comma-separated)
+CJK_SANITIZE_LANGS=ja,ko
+
+# Maximum retry passes (default: 3)
+CJK_SANITIZE_MAX_PASSES=3
+```
+
+No action is needed for Chinese reports (`zh` / `zh-CN` / `zh-TW`) — sanitization
+is automatically skipped.
+
 ## 📬 Join the Conversation
 
 <div align="center">

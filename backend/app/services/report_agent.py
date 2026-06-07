@@ -19,6 +19,7 @@ from datetime import datetime
 from enum import Enum
 
 from ..config import Config
+from ..utils.cjk_sanitize import is_enabled as cjk_sanitize_enabled, sanitize_cjk_in_text
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
@@ -902,7 +903,15 @@ class ReportAgent:
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
-        
+        # Capture the request's locale so post-processing (e.g. CJK sanitization)
+        # can decide whether to run. Falls back to the current thread locale
+        # (set via set_locale() in the request handler) or 'zh' default.
+        try:
+            from ..utils.locale import get_locale
+            self.locale = get_locale()
+        except Exception:
+            self.locale = 'zh'
+
         self.llm = llm_client or LLMClient()
         self.zep_tools = zep_tools or ZepToolsService()
         
@@ -1707,7 +1716,41 @@ class ReportAgent:
             report.markdown_content = ReportManager.assemble_full_report(report_id, outline)
             report.status = ReportStatus.COMPLETED
             report.completed_at = datetime.now().isoformat()
-            
+
+            # Sanitize any CJK characters that leaked into the report despite
+            # the language instruction (LLMs sometimes slip Chinese idioms into
+            # otherwise fluent English quotes). No-op for Chinese reports or
+            # when CJK_SANITIZE_ENABLED is off. See backend/app/utils/cjk_sanitize.py.
+            if cjk_sanitize_enabled(getattr(self, 'locale', None)):
+                try:
+                    sanitized = sanitize_cjk_in_text(
+                        report.markdown_content,
+                        locale=getattr(self, 'locale', None),
+                    )
+                    if sanitized != report.markdown_content:
+                        report.markdown_content = sanitized
+                        # Persist the sanitized version to the on-disk file too
+                        # so subsequent /download and /chat calls see the cleaned
+                        # text.
+                        try:
+                            full_report_path = os.path.join(
+                                Config.UPLOAD_FOLDER, 'reports', report_id, 'full_report.md'
+                            )
+                            if os.path.exists(full_report_path):
+                                with open(full_report_path, 'w', encoding='utf-8') as f:
+                                    f.write(sanitized)
+                        except Exception as path_err:
+                            logger.warning(
+                                "cjk_sanitize: failed to rewrite report file: %s",
+                                path_err,
+                            )
+                except Exception as sanitize_err:
+                    # Sanitize failures must never break report delivery
+                    logger.warning(
+                        "cjk_sanitize: unexpected error, returning unsanitized report: %s",
+                        sanitize_err,
+                    )
+
             # 计算总耗时
             total_time_seconds = (datetime.now() - start_time).total_seconds()
             
