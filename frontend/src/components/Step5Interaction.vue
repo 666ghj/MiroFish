@@ -279,10 +279,11 @@
                     :key="citation.id"
                     class="citation-chip"
                     type="button"
+                    :data-citation-id="citation.anchor_id || citation.id"
                     :data-section-index="citation.section_index"
                     :data-agent-id="citation.agent_id ?? ''"
                     :title="citation.title"
-                    @click="jumpToCitation(citation)"
+                    @click.stop="jumpToCitation(citation)"
                   >
                     {{ citation.label }}
                   </button>
@@ -506,6 +507,37 @@ const citationTargetSection = (citation) => {
   return 1
 }
 
+const citationIdFromDataset = (target) => {
+  if (target.dataset.citationId) return target.dataset.citationId
+  if (target.dataset.agentId) return `A${String(Number(target.dataset.agentId)).padStart(2, '0')}`
+  if (target.dataset.sectionIndex) return `S${String(Number(target.dataset.sectionIndex)).padStart(2, '0')}`
+  return null
+}
+
+const clearCitationTargetHighlights = () => {
+  leftPanel.value
+    ?.querySelectorAll('.citation-target-highlight')
+    .forEach(el => el.classList.remove('citation-target-highlight'))
+}
+
+const highlightCitationTarget = (target) => {
+  clearCitationTargetHighlights()
+  if (!target) return
+
+  target.classList.add('citation-target-highlight')
+  if (target.matches('[data-citation-anchor^="A"]')) {
+    let sibling = target.nextElementSibling
+    let highlighted = 0
+    while (sibling && highlighted < 3 && !sibling.matches('[data-citation-anchor], .md-h4, .md-h3, .md-h2')) {
+      sibling.classList.add('citation-target-highlight')
+      sibling = sibling.nextElementSibling
+      highlighted++
+    }
+  }
+
+  window.setTimeout(() => clearCitationTargetHighlights(), 3200)
+}
+
 const jumpToSection = (sectionIndex) => {
   const index = Number(sectionIndex)
   if (!Number.isFinite(index) || index < 1) return
@@ -528,14 +560,46 @@ const jumpToSection = (sectionIndex) => {
 }
 
 const jumpToCitation = (citation) => {
-  jumpToSection(citationTargetSection(citation))
+  const sectionIndex = citationTargetSection(citation)
+  const citationId = citation.anchor_id || citation.id || (
+    citation.agent_id !== undefined
+      ? `A${String(Number(citation.agent_id)).padStart(2, '0')}`
+      : `S${String(sectionIndex).padStart(2, '0')}`
+  )
+
+  const zeroIndex = sectionIndex - 1
+  const newSet = new Set(collapsedSections.value)
+  newSet.delete(zeroIndex)
+  collapsedSections.value = newSet
+  currentSectionIndex.value = sectionIndex
+  highlightedSectionIndex.value = citationId?.startsWith('S') ? sectionIndex : null
+
+  requestAnimationFrame(() => {
+    const exactTarget = citationId
+      ? leftPanel.value?.querySelector(`[data-citation-anchor="${citationId}"]`)
+      : null
+    const fallbackTarget = leftPanel.value?.querySelector(`[data-section-index="${sectionIndex}"]`)
+    const target = exactTarget || fallbackTarget
+    target?.scrollIntoView({ behavior: 'smooth', block: exactTarget ? 'center' : 'start' })
+    highlightCitationTarget(exactTarget || (citationId?.startsWith('S') ? fallbackTarget : null))
+  })
+
+  if (citationId?.startsWith('S')) {
+    window.setTimeout(() => {
+      if (highlightedSectionIndex.value === sectionIndex) highlightedSectionIndex.value = null
+    }, 2200)
+  }
 }
 
 const handleCitationClick = (event) => {
-  const target = event.target?.closest?.('[data-section-index], [data-agent-id]')
+  const target = event.target?.closest?.('.citation-chip')
   if (!target) return
-  const sectionIndex = target.dataset.sectionIndex || (target.dataset.agentId ? 2 : 1)
-  jumpToSection(sectionIndex)
+  jumpToCitation({
+    id: citationIdFromDataset(target),
+    anchor_id: citationIdFromDataset(target),
+    section_index: target.dataset.sectionIndex || (target.dataset.agentId ? 2 : 1),
+    agent_id: target.dataset.agentId || undefined,
+  })
 }
 
 const selectChatTarget = (target) => {
@@ -620,11 +684,13 @@ const renderMarkdown = (content) => {
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
   html = html.replace(/\[\[(S|A)(\d{1,2})\]\]/g, (match, type, number) => {
     const value = String(Number(number)).padStart(2, '0')
+    const citationId = `${type}${value}`
     const sectionIndex = type === 'S' ? Number(number) : 2
     const agentId = type === 'A' ? Number(number) : ''
     const title = type === 'S' ? `跳转到报告第 ${value} 节` : `跳转到 Agent ${value} 问答证据`
-    return `<button type="button" class="citation-chip citation-inline" data-section-index="${sectionIndex}" data-agent-id="${agentId}" title="${title}">${type}${value}</button>`
+    return `<button type="button" class="citation-chip citation-inline" data-citation-id="${citationId}" data-section-index="${sectionIndex}" data-agent-id="${agentId}" title="${title}">${citationId}</button>`
   })
+  html = html.replace(/^#### (A\d{2})\s+(.+)$/gm, '<h5 class="md-h5 citation-anchor-heading" data-citation-anchor="$1">$1 $2</h5>')
   html = html.replace(/^#### (.+)$/gm, '<h5 class="md-h5">$1</h5>')
   html = html.replace(/^### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
   html = html.replace(/^## (.+)$/gm, '<h3 class="md-h3">$1</h3>')
@@ -1277,6 +1343,31 @@ watch(() => props.simulationId, (newId) => {
   color: #6B7280;
   font-style: italic;
   font-family: 'Times New Roman', Times, serif;
+}
+
+.generated-content :deep([data-citation-anchor]) {
+  scroll-margin-top: 36px;
+}
+
+.generated-content :deep(.citation-target-highlight) {
+  background: rgba(16, 185, 129, 0.10);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.24);
+}
+
+.generated-content :deep(.citation-anchor-heading.citation-target-highlight) {
+  display: block;
+  margin-left: -10px;
+  margin-right: -10px;
+  padding: 8px 10px;
+  border-radius: 8px 8px 0 0;
+}
+
+.generated-content :deep(.citation-target-highlight.md-quote),
+.generated-content :deep(.citation-target-highlight.md-p) {
+  margin-left: -10px;
+  margin-right: -10px;
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .generated-content :deep(.code-block) {
@@ -2711,5 +2802,10 @@ html[data-theme='dark'] .message-text .citation-chip:hover {
 html[data-theme='dark'] .report-section-item.is-citation-highlight {
   background: rgba(16, 185, 129, 0.14);
   box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.32), 0 12px 30px rgba(0, 0, 0, 0.24);
+}
+
+html[data-theme='dark'] .generated-content .citation-target-highlight {
+  background: rgba(52, 211, 153, 0.16);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.34);
 }
 </style>

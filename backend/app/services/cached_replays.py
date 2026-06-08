@@ -697,14 +697,14 @@ def _expanded_report_sections() -> List[tuple[str, str]]:
 
 def _chat_citations() -> List[Dict[str, Any]]:
     return [
-        {"id": "S01", "label": "S01", "title": "执行结论", "section_index": 1},
-        {"id": "S02", "label": "S02", "title": "Agent问答暴露的问题", "section_index": 2},
-        {"id": "S03", "label": "S03", "title": "商业机会", "section_index": 3},
-        {"id": "A01", "label": "A01", "title": "高净值客户A", "section_index": 2, "agent_id": 1},
-        {"id": "A08", "label": "A08", "title": "配偶共同决策人", "section_index": 2, "agent_id": 8},
-        {"id": "A10", "label": "A10", "title": "企业财务负责人", "section_index": 2, "agent_id": 10},
-        {"id": "A05", "label": "A05", "title": "风控合规经理", "section_index": 2, "agent_id": 5},
-        {"id": "A29", "label": "A29", "title": "销售管理看板", "section_index": 2, "agent_id": 29},
+        {"id": "S01", "anchor_id": "S01", "label": "S01", "title": "执行结论", "section_index": 1},
+        {"id": "S02", "anchor_id": "S02", "label": "S02", "title": "Agent问答暴露的问题", "section_index": 2},
+        {"id": "S03", "anchor_id": "S03", "label": "S03", "title": "商业机会", "section_index": 3},
+        {"id": "A01", "anchor_id": "A01", "label": "A01", "title": "高净值客户A｜核心客户", "section_index": 2, "agent_id": 1},
+        {"id": "A08", "anchor_id": "A08", "label": "A08", "title": "配偶共同决策人｜家庭安全垫", "section_index": 2, "agent_id": 8},
+        {"id": "A10", "anchor_id": "A10", "label": "A10", "title": "企业财务负责人｜资金分层", "section_index": 2, "agent_id": 10},
+        {"id": "A05", "anchor_id": "A05", "label": "A05", "title": "风控合规经理｜适当性与话术", "section_index": 2, "agent_id": 5},
+        {"id": "A29", "anchor_id": "A29", "label": "A29", "title": "销售管理看板｜管理层指标", "section_index": 2, "agent_id": 29},
     ]
 
 
