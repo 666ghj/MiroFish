@@ -274,21 +274,6 @@
                   <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
                 </div>
                 <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
-                <div v-if="msg.citations?.length" class="message-citations">
-                  <button
-                    v-for="citation in msg.citations"
-                    :key="citation.id"
-                    class="citation-chip"
-                    type="button"
-                    :data-citation-id="citationAnchorId(citation)"
-                    :data-section-index="citationSectionIndex(citation)"
-                    :data-agent-id="citationAgentId(citation)"
-                    :title="citation.title"
-                    @click.stop="jumpToCitation(citation)"
-                  >
-                    {{ citationLabel(citation) }}
-                  </button>
-                </div>
               </div>
             </div>
             <div v-if="isSending" class="chat-message assistant">
@@ -2291,20 +2276,18 @@ watch(() => props.simulationId, (newId) => {
   margin: 4px 0;
 }
 
-.message-citations {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
 .citation-chip,
 .message-text :deep(.citation-chip) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 34px;
+  height: 20px;
   min-height: 20px;
-  padding: 2px 7px;
+  max-height: 20px;
+  padding: 0 7px;
   border: 1px solid #D1D5DB;
   border-radius: 999px;
   background: #FFFFFF;
@@ -2312,14 +2295,16 @@ watch(() => props.simulationId, (newId) => {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 18px;
+  appearance: none;
   cursor: pointer;
   transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
 
 .message-text :deep(.citation-inline) {
+  display: inline-flex;
   margin: 0 2px;
-  vertical-align: 0.12em;
+  vertical-align: baseline;
 }
 
 .citation-chip:hover,
