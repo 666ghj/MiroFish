@@ -280,13 +280,13 @@
                     :key="citation.id"
                     class="citation-chip"
                     type="button"
-                    :data-citation-id="citation.anchor_id || citation.id"
-                    :data-section-index="citation.section_index"
-                    :data-agent-id="citation.agent_id ?? ''"
+                    :data-citation-id="citationAnchorId(citation)"
+                    :data-section-index="citationSectionIndex(citation)"
+                    :data-agent-id="citationAgentId(citation)"
                     :title="citation.title"
                     @click.stop="jumpToCitation(citation)"
                   >
-                    {{ citation.label }}
+                    {{ citationLabel(citation) }}
                   </button>
                 </div>
               </div>
@@ -524,8 +524,42 @@ const citationTargetSection = (citation) => {
   const raw = citation.section_index || citation.sectionIndex
   const parsed = Number(raw)
   if (Number.isFinite(parsed) && parsed > 0) return parsed
+  const anchor = citation.anchor || citation.anchor_id || citation.anchorId
+  const anchorMatch = typeof anchor === 'string' ? anchor.match(/^section-(\d+)$/) : null
+  if (anchorMatch) return Number(anchorMatch[1]) + 1
+  const id = citation.id || citation.anchor_id || citation.anchorId
+  const sectionMatch = typeof id === 'string' ? id.match(/^S(\d{1,2})$/i) : null
+  if (sectionMatch) return Number(sectionMatch[1])
   if (citation.agent_id !== undefined || citation.agentId !== undefined) return 2
+  const agentMatch = typeof id === 'string' ? id.match(/^A(\d{1,2})$/i) : null
+  if (agentMatch) return 2
   return 1
+}
+
+const citationAgentId = (citation) => {
+  if (!citation) return ''
+  if (citation.agent_id !== undefined && citation.agent_id !== null) return citation.agent_id
+  if (citation.agentId !== undefined && citation.agentId !== null) return citation.agentId
+  const id = citation.id || citation.anchor_id || citation.anchorId
+  const match = typeof id === 'string' ? id.match(/^A(\d{1,2})$/i) : null
+  return match ? Number(match[1]) : ''
+}
+
+const citationAnchorId = (citation) => {
+  if (!citation) return ''
+  const raw = citation.anchor_id || citation.anchorId || citation.id
+  if (raw) return String(raw).toUpperCase()
+  const agentId = citationAgentId(citation)
+  if (agentId !== '') return `A${String(Number(agentId)).padStart(2, '0')}`
+  return `S${String(citationTargetSection(citation)).padStart(2, '0')}`
+}
+
+const citationSectionIndex = (citation) => citationTargetSection(citation)
+
+const citationLabel = (citation) => {
+  const label = citation?.label || citation?.display_label || citation?.displayLabel
+  if (label) return label
+  return citationAnchorId(citation)
 }
 
 const citationIdFromDataset = (target) => {
@@ -582,11 +616,7 @@ const jumpToSection = (sectionIndex) => {
 
 const jumpToCitation = (citation) => {
   const sectionIndex = citationTargetSection(citation)
-  const citationId = citation.anchor_id || citation.id || (
-    citation.agent_id !== undefined
-      ? `A${String(Number(citation.agent_id)).padStart(2, '0')}`
-      : `S${String(sectionIndex).padStart(2, '0')}`
-  )
+  const citationId = citationAnchorId(citation)
 
   const zeroIndex = sectionIndex - 1
   const newSet = new Set(collapsedSections.value)
