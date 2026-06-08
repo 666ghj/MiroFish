@@ -287,7 +287,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   startSimulation,
@@ -314,6 +314,7 @@ const props = defineProps({
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
 
 const router = useRouter()
+const route = useRoute()
 
 // State
 const isGeneratingReport = ref(false)
@@ -325,6 +326,7 @@ const runStatus = ref({})
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
+const reviewMode = ref(false)
 
 // Computed
 // 按时间顺序显示动作（最新的在最后面，即底部）
@@ -368,6 +370,7 @@ const addLog = (msg) => {
 // 重置所有状态（用于重新启动模拟）
 const resetAllState = () => {
   phase.value = 0
+  reviewMode.value = false
   runStatus.value = {}
   allActions.value = []
   actionIds.value = new Set()
@@ -377,6 +380,50 @@ const resetAllState = () => {
   isStarting.value = false
   isStopping.value = false
   stopPolling()  // 停止之前可能存在的轮询
+}
+
+const hasCompletedRun = (data) => {
+  if (!data) return false
+  const totalRounds = Number(data.total_rounds || 0)
+  const currentRound = Number(data.current_round || 0)
+  return data.runner_status === 'completed' ||
+    data.runner_status === 'stopped' ||
+    (totalRounds > 0 && currentRound >= totalRounds)
+}
+
+const loadExistingRunForReview = async (statusData = null) => {
+  reviewMode.value = true
+  phase.value = 2
+  emit('update-status', 'completed')
+
+  if (statusData) {
+    runStatus.value = statusData
+  }
+
+  await fetchRunStatusDetail()
+  await fetchRunStatus()
+  addLog(`Replay mode: using completed dual-world result (${runStatus.value.total_rounds || props.maxRounds || '-'} rounds · ${runStatus.value.total_actions_count || allActions.value.length} actions).`)
+}
+
+const startOrReviewSimulation = async () => {
+  if (!props.simulationId) {
+    addLog(t('log.errorMissingSimId'))
+    return
+  }
+
+  if (route.query.rerun !== '1') {
+    try {
+      const statusRes = await getRunStatus(props.simulationId)
+      if (statusRes.success && hasCompletedRun(statusRes.data)) {
+        await loadExistingRunForReview(statusRes.data)
+        return
+      }
+    } catch (err) {
+      addLog(`Completed replay check failed, falling back to live start: ${err.message}`)
+    }
+  }
+
+  await doStartSimulation()
 }
 
 // 启动模拟
@@ -533,9 +580,10 @@ const fetchRunStatus = async () => {
       
       if (isCompleted || platformsCompleted) {
         if (platformsCompleted && !isCompleted) {
-          addLog(t('log.allPlatformsCompleted'))
+        addLog(t('log.allPlatformsCompleted'))
         }
         addLog(t('log.simCompleted'))
+        reviewMode.value = true
         phase.value = 2
         stopPolling()
         emit('update-status', 'completed')
@@ -710,7 +758,7 @@ watch(() => props.systemLogs?.length, () => {
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    startOrReviewSimulation()
   }
 })
 

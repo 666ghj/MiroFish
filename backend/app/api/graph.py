@@ -32,6 +32,21 @@ def allowed_file(filename: str) -> bool:
     return ext in Config.ALLOWED_EXTENSIONS
 
 
+def _derive_project_name(raw_name: str, uploaded_files) -> str:
+    """Use a readable project name when the client did not provide one."""
+    name = (raw_name or "").strip()
+    if name and name.lower() not in {"unnamed project", "untitled", "new project"}:
+        return name
+
+    filenames = [getattr(f, "filename", "") for f in (uploaded_files or []) if getattr(f, "filename", "")]
+    if filenames:
+        stem = os.path.splitext(os.path.basename(filenames[0]))[0].strip()
+        if stem:
+            return stem
+
+    return "Foresight 演示项目"
+
+
 def _prepare_graph_for_visualization(graph_data: dict) -> dict:
     """Keep graph visualization dense and readable by showing the top connected nodes."""
     if not isinstance(graph_data, dict):
@@ -205,24 +220,26 @@ def generate_ontology():
         
         # 获取参数
         simulation_requirement = request.form.get('simulation_requirement', '')
-        project_name = request.form.get('project_name', 'Unnamed Project')
+        raw_project_name = request.form.get('project_name', 'Unnamed Project')
         additional_context = request.form.get('additional_context', '')
 
         # token 追踪：标记当前 stage
         from ..utils import token_tracker
         token_tracker.set_stage("step1_ontology")
 
+        # 获取上传的文件
+        uploaded_files = request.files.getlist('files')
+        project_name = _derive_project_name(raw_project_name, uploaded_files)
+
         logger.debug(f"项目名称: {project_name}")
         logger.debug(f"模拟需求: {simulation_requirement[:100]}...")
-        
+
         if not simulation_requirement:
             return jsonify({
                 "success": False,
                 "error": t('api.requireSimulationRequirement')
             }), 400
-        
-        # 获取上传的文件
-        uploaded_files = request.files.getlist('files')
+
         if not uploaded_files or all(not f.filename for f in uploaded_files):
             return jsonify({
                 "success": False,

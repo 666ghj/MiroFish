@@ -38,6 +38,37 @@ logger = get_logger('foresight.api.simulation')
 INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
 
 
+def _runner_status_value(run_state) -> str:
+    if not run_state:
+        return ""
+    status = getattr(run_state, "runner_status", "")
+    return status.value if hasattr(status, "value") else str(status)
+
+
+def _has_completed_run(run_state) -> bool:
+    if not run_state:
+        return False
+    status = _runner_status_value(run_state)
+    total_rounds = int(getattr(run_state, "total_rounds", 0) or 0)
+    current_round = int(getattr(run_state, "current_round", 0) or 0)
+    return status in {"completed", "stopped"} or (total_rounds > 0 and current_round >= total_rounds)
+
+
+def _display_project_name(project) -> str:
+    if not project:
+        return "未命名项目"
+    name = (getattr(project, "name", "") or "").strip()
+    if name and name.lower() not in {"unnamed project", "untitled", "new project"}:
+        return name
+    files = getattr(project, "files", []) or []
+    if files:
+        filename = files[0].get("filename") or files[0].get("original_filename") or ""
+        stem = os.path.splitext(os.path.basename(filename))[0].strip()
+        if stem:
+            return stem
+    return "未命名项目"
+
+
 def optimize_interview_prompt(prompt: str) -> str:
     """
     优化Interview提问，添加前缀避免Agent调用工具
@@ -1063,9 +1094,13 @@ def get_simulation_history():
             run_state = SimulationRunner.get_run_state(sim.simulation_id)
             if run_state:
                 sim_dict["current_round"] = run_state.current_round
-                sim_dict["runner_status"] = run_state.runner_status.value
+                sim_dict["runner_status"] = _runner_status_value(run_state)
                 # 使用用户设置的 total_rounds，若无则使用推荐轮数
                 sim_dict["total_rounds"] = run_state.total_rounds if run_state.total_rounds > 0 else recommended_rounds
+                if _has_completed_run(run_state):
+                    sim_dict["status"] = "completed"
+                    sim_dict["current_round"] = sim_dict["total_rounds"]
+                    sim_dict["has_replay"] = True
             else:
                 sim_dict["current_round"] = 0
                 sim_dict["runner_status"] = "idle"
@@ -1074,11 +1109,13 @@ def get_simulation_history():
             # 获取关联项目的文件列表（最多3个）
             project = ProjectManager.get_project(sim.project_id)
             if project and hasattr(project, 'files') and project.files:
+                sim_dict["project_name"] = _display_project_name(project)
                 sim_dict["files"] = [
                     {"filename": f.get("filename", "未知文件")} 
                     for f in project.files[:3]
                 ]
             else:
+                sim_dict["project_name"] = sim_dict.get("project_name") or "未命名项目"
                 sim_dict["files"] = []
             
             # 获取关联的 report_id（查找该 simulation 最新的 report）
@@ -2279,7 +2316,7 @@ def get_simulation_replay(simulation_id: str):
             if project:
                 project_info = {
                     "project_id": project.project_id,
-                    "name": project.name,
+                    "name": _display_project_name(project),
                     "status": project.status.value if hasattr(project.status, 'value') else str(project.status),
                     "graph_id": project.graph_id,
                     "simulation_requirement": project.simulation_requirement,
@@ -2421,6 +2458,9 @@ def get_simulation_replay(simulation_id: str):
 
         # ---------- 6. Workflow 时间线 ----------
         status_str = state.status.value if hasattr(state.status, 'value') else str(state.status)
+        run_state = SimulationRunner.get_run_state(simulation_id)
+        if _has_completed_run(run_state):
+            status_str = "completed"
         workflow = [
             {
                 "step": 1,
