@@ -112,7 +112,7 @@
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
                 </svg>
-                <span>{{ selectedAgent ? selectedAgent.username : $t('step5.chatWithAgent') }}</span>
+                <span>{{ selectedAgent ? getAgentDisplayName(selectedAgent) : $t('step5.chatWithAgent') }}</span>
                 <svg class="dropdown-arrow" :class="{ open: showAgentDropdown }" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
@@ -125,10 +125,11 @@
                   class="dropdown-item"
                   @click="selectAgent(agent, idx)"
                 >
-                  <div class="agent-avatar">{{ (agent.username || 'A')[0] }}</div>
+                  <div class="agent-avatar">{{ getAgentInitial(agent) }}</div>
                   <div class="agent-info">
-                    <span class="agent-name">{{ agent.username }}</span>
-                    <span class="agent-role">{{ agent.profession || $t('step2.unknownProfession') }}</span>
+                    <span class="agent-name">{{ getAgentDisplayName(agent) }}</span>
+                    <span class="agent-role">{{ getAgentRoleLine(agent) }}</span>
+                    <span class="agent-code">{{ getAgentHandle(agent, idx) }} · {{ agent.role || agent.entity_name || agent.entity_type }}</span>
                   </div>
                 </div>
               </div>
@@ -221,12 +222,12 @@
           <!-- Agent Profile Card -->
           <div v-if="chatTarget === 'agent' && selectedAgent" class="agent-profile-card">
             <div class="profile-card-header">
-              <div class="profile-card-avatar">{{ (selectedAgent.username || 'A')[0] }}</div>
+              <div class="profile-card-avatar">{{ getAgentInitial(selectedAgent) }}</div>
               <div class="profile-card-info">
-                <div class="profile-card-name">{{ selectedAgent.username }}</div>
+                <div class="profile-card-name">{{ getAgentDisplayName(selectedAgent) }}</div>
                 <div class="profile-card-meta">
-                  <span v-if="selectedAgent.name" class="profile-card-handle">@{{ selectedAgent.name }}</span>
-                  <span class="profile-card-profession">{{ selectedAgent.profession || $t('step2.unknownProfession') }}</span>
+                  <span class="profile-card-handle">@{{ getAgentHandle(selectedAgent, selectedAgentIndex) }}</span>
+                  <span class="profile-card-profession">{{ getAgentRoleLine(selectedAgent) }}</span>
                 </div>
               </div>
               <button class="profile-card-toggle" @click="showFullProfile = !showFullProfile">
@@ -263,12 +264,12 @@
             >
               <div class="message-avatar">
                 <span v-if="msg.role === 'user'">U</span>
-                <span v-else>{{ msg.role === 'assistant' && chatTarget === 'report_agent' ? 'R' : (selectedAgent?.username?.[0] || 'A') }}</span>
+                <span v-else>{{ msg.role === 'assistant' && chatTarget === 'report_agent' ? 'R' : getAgentInitial(selectedAgent) }}</span>
               </div>
               <div class="message-content">
                 <div class="message-header">
                   <span class="sender-name">
-                    {{ msg.role === 'user' ? 'You' : (chatTarget === 'report_agent' ? 'Report Agent' : (selectedAgent?.username || 'Agent')) }}
+                    {{ msg.role === 'user' ? 'You' : (chatTarget === 'report_agent' ? 'Report Agent' : getAgentDisplayName(selectedAgent, 'Agent')) }}
                   </span>
                   <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
                 </div>
@@ -292,7 +293,7 @@
             </div>
             <div v-if="isSending" class="chat-message assistant">
               <div class="message-avatar">
-                <span>{{ chatTarget === 'report_agent' ? 'R' : (selectedAgent?.username?.[0] || 'A') }}</span>
+                <span>{{ chatTarget === 'report_agent' ? 'R' : getAgentInitial(selectedAgent) }}</span>
               </div>
               <div class="message-content">
                 <div class="typing-indicator">
@@ -349,10 +350,10 @@
                     :checked="selectedAgents.has(idx)"
                     @change="toggleAgentSelection(idx)"
                   >
-                  <div class="checkbox-avatar">{{ (agent.username || 'A')[0] }}</div>
+                  <div class="checkbox-avatar">{{ getAgentInitial(agent) }}</div>
                   <div class="checkbox-info">
-                    <span class="checkbox-name">{{ agent.username }}</span>
-                    <span class="checkbox-role">{{ agent.profession || $t('step2.unknownProfession') }}</span>
+                    <span class="checkbox-name">{{ getAgentDisplayName(agent) }}</span>
+                    <span class="checkbox-role">{{ getAgentRoleLine(agent) }}</span>
                   </div>
                   <div class="checkbox-indicator">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
@@ -468,6 +469,26 @@ const isSurveying = ref(false)
 // Report Data
 const reportOutline = ref(null)
 const generatedSections = ref({})
+
+const getAgentDisplayName = (agent, fallback = 'Agent') => {
+  return agent?.display_name || agent?.real_name || agent?.username || agent?.entity_name || agent?.name || fallback
+}
+
+const getAgentRoleLine = (agent) => {
+  return agent?.title || agent?.profession || agent?.role || agent?.entity_name || agent?.entity_type || t('step2.unknownProfession')
+}
+
+const getAgentHandle = (agent, idx = null) => {
+  if (agent?.handle) return agent.handle
+  if (typeof agent?.name === 'string' && /^A\d{2}$/.test(agent.name)) return agent.name
+  const id = agent?.agent_id ?? agent?.id ?? idx
+  if (id !== null && id !== undefined) return `A${String(id).padStart(2, '0')}`
+  return 'A--'
+}
+
+const getAgentInitial = (agent) => {
+  return (getAgentDisplayName(agent, 'A').trim()[0] || 'A').toUpperCase()
+}
 const collapsedSections = ref(new Set())
 const currentSectionIndex = ref(null)
 const highlightedSectionIndex = ref(null)
@@ -660,7 +681,7 @@ const selectAgent = (agent, idx) => {
   
   // 恢复该 Agent 的对话记录
   chatHistory.value = chatHistoryCache.value[`agent_${idx}`] || []
-  addLog(t('log.selectChatTarget', { name: agent.username }))
+  addLog(t('log.selectChatTarget', { name: getAgentDisplayName(agent) }))
 }
 
 const formatTime = (timestamp) => {
@@ -846,7 +867,7 @@ const sendToAgent = async (message) => {
     throw new Error(t('step5.selectAgentFirst'))
   }
   
-  addLog(t('log.sendToAgent', { name: selectedAgent.value.username, message: message.substring(0, 50) }))
+  addLog(t('log.sendToAgent', { name: getAgentDisplayName(selectedAgent.value), message: message.substring(0, 50) }))
   
   // Build prompt with chat history
   let prompt = message
@@ -896,7 +917,7 @@ const sendToAgent = async (message) => {
         content: responseContent,
         timestamp: new Date().toISOString()
       })
-      addLog(t('log.agentReplied', { name: selectedAgent.value.username }))
+      addLog(t('log.agentReplied', { name: getAgentDisplayName(selectedAgent.value) }))
     } else {
       throw new Error(t('step5.noResponse'))
     }
@@ -984,8 +1005,8 @@ const submitSurvey = async () => {
         
         surveyResultsList.push({
           agent_id: agentIdx,
-          agent_name: agent?.username || `Agent ${agentIdx}`,
-          profession: agent?.profession,
+          agent_name: getAgentDisplayName(agent, `Agent ${agentIdx}`),
+          profession: getAgentRoleLine(agent),
           question: surveyQuestion.value.trim(),
           answer: responseContent
         })
@@ -1987,7 +2008,8 @@ watch(() => props.simulationId, (newId) => {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 240px;
+  min-width: 360px;
+  max-width: min(460px, calc(100vw - 32px));
   background: #FFFFFF;
   border: 1px solid #E5E7EB;
   border-radius: 12px;
@@ -2067,6 +2089,14 @@ watch(() => props.simulationId, (newId) => {
 .agent-role {
   font-size: 11px;
   color: #9CA3AF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-code {
+  font-size: 10px;
+  color: #6B7280;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

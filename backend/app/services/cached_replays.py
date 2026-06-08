@@ -56,6 +56,84 @@ CASE_AGENTS = [
 ]
 
 
+CASE_AGENT_PERSONAS = {
+    0: {"display_name": "周明远", "title": "宁波银行宁波分行大客户经理", "organization": "宁波银行宁波分行", "persona_role": "银行客户经理", "age": 39, "mbti": "ENTJ"},
+    1: {"display_name": "陈启航", "title": "舟山精密制造企业董事长", "organization": "启航精密制造集团", "persona_role": "高净值客户 / 制造业企业主", "age": 56, "mbti": "ISTJ"},
+    2: {"display_name": "何婉清", "title": "宁波银行私人银行投资顾问", "organization": "宁波银行私人银行中心", "persona_role": "私行投资顾问", "age": 36, "mbti": "ENFJ"},
+    3: {"display_name": "林泽宇", "title": "科技主题基金投资经理", "organization": "华东科技成长基金", "persona_role": "科技基金经理", "age": 41, "mbti": "INTJ"},
+    4: {"display_name": "蒋亦辰", "title": "宁波银行固收产品经理", "organization": "宁波银行资产管理部", "persona_role": "固收产品经理", "age": 38, "mbti": "ISTJ"},
+    5: {"display_name": "郑雅宁", "title": "宁波银行财富合规风控经理", "organization": "宁波银行财富合规部", "persona_role": "风控合规经理", "age": 42, "mbti": "ISTJ"},
+    6: {"display_name": "罗景行", "title": "AI产业链首席研究员", "organization": "甬江产业研究院", "persona_role": "AI行业研究员", "age": 37, "mbti": "INTP"},
+    7: {"display_name": "顾澜", "title": "陈启航家族办公室顾问", "organization": "启航家族办公室", "persona_role": "家族办公室代表", "age": 45, "mbti": "INFJ"},
+    8: {"display_name": "沈雨薇", "title": "陈启航配偶 / 家庭共同决策人", "organization": "启航家庭资产委员会", "persona_role": "家庭共同决策人", "age": 53, "mbti": "ISFJ"},
+    9: {"display_name": "陈知远", "title": "家族企业数字化负责人", "organization": "启航精密制造集团", "persona_role": "二代继承人", "age": 31, "mbti": "ENTP"},
+    10: {"display_name": "赵立衡", "title": "舟山精密制造财务总监", "organization": "启航精密制造集团", "persona_role": "企业财务负责人", "age": 47, "mbti": "ISTJ"},
+    11: {"display_name": "孙若谷", "title": "宁波银行分行财富管理部负责人", "organization": "宁波银行宁波分行", "persona_role": "分行财富主管", "age": 44, "mbti": "ESTJ"},
+    12: {"display_name": "胡静姝", "title": "宁波银行总行产品准入经理", "organization": "宁波银行总行财富产品部", "persona_role": "总行产品准入经理", "age": 40, "mbti": "ISTJ"},
+    13: {"display_name": "唐可", "title": "宁波银行运营留痕专员", "organization": "宁波银行运营支持中心", "persona_role": "运营留痕专员", "age": 32, "mbti": "ISFJ"},
+    14: {"display_name": "许安澜", "title": "宁波银行私人银行客户服务经理", "organization": "宁波银行私人银行中心", "persona_role": "客户服务经理", "age": 34, "mbti": "ESFJ"},
+    15: {"display_name": "马承骁", "title": "量化对冲产品经理", "organization": "东方量化资产管理", "persona_role": "量化对冲产品经理", "age": 40, "mbti": "INTJ"},
+    16: {"display_name": "金若宁", "title": "黄金与多资产策略师", "organization": "甬江多资产研究中心", "persona_role": "多资产策略师", "age": 35, "mbti": "ENFP"},
+    17: {"display_name": "邵砚", "title": "半导体设备行业研究员", "organization": "华东证券研究所", "persona_role": "半导体研究员", "age": 34, "mbti": "INTP"},
+    18: {"display_name": "陆晨曦", "title": "云计算与企业软件研究员", "organization": "甬江产业研究院", "persona_role": "云计算研究员", "age": 33, "mbti": "ENTJ"},
+    19: {"display_name": "谢知衡", "title": "数据中心基础设施研究员", "organization": "长三角基础设施研究中心", "persona_role": "数据中心研究员", "age": 36, "mbti": "INTJ"},
+    20: {"display_name": "顾廷川", "title": "利率与信用策略师", "organization": "宁波银行金融市场部", "persona_role": "利率策略师", "age": 43, "mbti": "ISTJ"},
+    21: {"display_name": "方舒越", "title": "外汇与黄金策略师", "organization": "宁波银行金融市场部", "persona_role": "汇率策略师", "age": 37, "mbti": "ENTP"},
+    22: {"display_name": "俞博文", "title": "汽车零部件公司创始人", "organization": "博文汽车零部件", "persona_role": "同圈层高净值客户", "age": 54, "mbti": "ESTP"},
+    23: {"display_name": "戴敏", "title": "连锁药房股东 / 保守型高净值客户", "organization": "民安连锁药房", "persona_role": "保守型客户", "age": 58, "mbti": "ISFJ"},
+    24: {"display_name": "韩峥", "title": "互联网创业者 / 进取型高净值客户", "organization": "灵犀数据科技", "persona_role": "进取型客户", "age": 38, "mbti": "ENTP"},
+    25: {"display_name": "叶楚航", "title": "宁波商会副会长 / 客户朋友推荐人", "organization": "宁波青年企业家商会", "persona_role": "转介绍推荐人", "age": 49, "mbti": "ENFJ"},
+    26: {"display_name": "宋知夏", "title": "宁波银行合规质检员", "organization": "宁波银行财富合规部", "persona_role": "合规质检员", "age": 31, "mbti": "ISTJ"},
+    27: {"display_name": "魏清和", "title": "家族信托顾问", "organization": "甬信家族办公室服务中心", "persona_role": "家族信托顾问", "age": 46, "mbti": "INFJ"},
+    28: {"display_name": "乔若琳", "title": "保险金信托顾问", "organization": "甬诚保险经纪", "persona_role": "保险金信托顾问", "age": 39, "mbti": "ESFJ"},
+    29: {"display_name": "彭越", "title": "分行财富销售数据分析师", "organization": "宁波银行数据经营团队", "persona_role": "销售数据分析师", "age": 33, "mbti": "INTP"},
+}
+
+
+def _agent_persona(agent_id: int, fallback_name: str, fallback_role: str, fallback_bio: str) -> Dict[str, Any]:
+    persona = CASE_AGENT_PERSONAS.get(agent_id, {})
+    display_name = persona.get("display_name", fallback_name)
+    title = persona.get("title", fallback_role)
+    role_name = persona.get("persona_role", fallback_name)
+    organization = persona.get("organization", "宁波银行案例模拟世界")
+    return {
+        "display_name": display_name,
+        "title": title,
+        "organization": organization,
+        "persona_role": role_name,
+        "age": persona.get("age", 42),
+        "mbti": persona.get("mbti", "ISTJ"),
+        "bio": f"{display_name}，{title}，来自{organization}。{fallback_bio}",
+    }
+
+
+def _agent_profile_payload(agent_id: int, name: str, role: str, bio: str) -> Dict[str, Any]:
+    persona = _agent_persona(agent_id, name, role, bio)
+    agent_code = f"A{agent_id:02d}"
+    return {
+        "id": agent_id,
+        "agent_id": agent_id,
+        "name": agent_code,
+        "handle": agent_code,
+        "username": persona["display_name"],
+        "display_name": persona["display_name"],
+        "real_name": persona["display_name"],
+        "entity_name": name,
+        "entity_type": role,
+        "role": persona["persona_role"],
+        "title": persona["title"],
+        "profession": persona["title"],
+        "organization": persona["organization"],
+        "bio": persona["bio"],
+        "persona": f"{persona['display_name']}以“{persona['persona_role']}”身份参与本案例，围绕高净值客户AI理财组合推介讨论资产配置、风险边界、服务动作和销售转化。",
+        "interested_topics": ["科技理财", "AI产业链", "资产配置", "合规销售"],
+        "age": persona["age"],
+        "gender": "other",
+        "country": "CN",
+        "mbti": persona["mbti"],
+    }
+
+
 def _case_time(minutes: int = 0) -> str:
     return (datetime.fromisoformat(NB_CREATED_AT) + timedelta(minutes=minutes)).isoformat()
 
@@ -449,20 +527,7 @@ def get_cached_profiles(simulation_id: str, platform: str = "reddit") -> Optiona
 
     profiles = []
     for agent_id, name, role, bio in CASE_AGENTS:
-        profiles.append({
-            "id": agent_id,
-            "name": name,
-            "username": f"agent_{agent_id}",
-            "entity_type": role,
-            "profession": role,
-            "bio": bio,
-            "persona": f"{name}在本案例中围绕高净值客户AI理财组合推介参与讨论，关注资产配置、风险边界和销售转化。",
-            "interested_topics": ["科技理财", "AI产业链", "资产配置", "合规销售"],
-            "age": 42 if agent_id in (0, 2, 5, 6, 7) else 55,
-            "gender": "other",
-            "country": "CN",
-            "mbti": "ENTJ" if agent_id in (0, 2) else "ISTJ",
-        })
+        profiles.append(_agent_profile_payload(agent_id, name, role, bio))
     return profiles
 
 
@@ -472,13 +537,17 @@ def get_cached_config(simulation_id: str) -> Optional[Dict[str, Any]]:
 
     agent_configs = []
     for agent_id, name, role, _ in CASE_AGENTS:
+        persona = _agent_persona(agent_id, name, role, "")
         active_hours = list(range(9, 19)) if agent_id in (0, 2, 4, 5, 6, 11, 12, 13, 14, 26, 29) else list(range(10, 22))
         agent_configs.append({
             "agent_id": agent_id,
-            "name": name,
+            "name": persona["display_name"],
+            "display_name": persona["display_name"],
             "entity_name": name,
             "entity_type": role,
-            "role": role,
+            "role": persona["persona_role"],
+            "title": persona["title"],
+            "organization": persona["organization"],
             "active_time_period": "09:00-18:00" if active_hours[0] == 9 else "10:00-21:00",
             "active_hours": active_hours,
             "posts_per_hour": 0.7 if agent_id in (0, 2, 6, 11, 29) else 0.35,
@@ -1277,9 +1346,12 @@ def get_cached_infographic(report_id: str) -> Optional[Dict[str, Any]]:
             by_type[action_type] = by_type.get(action_type, 0) + 1
             by_platform[platform][action_type] = by_platform[platform].get(action_type, 0) + 1
             agent = next((a for a in CASE_AGENTS if a[0] == agent_id), CASE_AGENTS[0])
+            persona = _agent_persona(agent_id, agent[1], agent[2], agent[3])
             bucket = agent_counts.setdefault(agent_id, {
                 "agent_id": agent_id,
-                "agent_name": agent[1],
+                "agent_name": persona["display_name"],
+                "agent_title": persona["title"],
+                "entity_name": agent[1],
                 "total_actions": 0,
             })
             bucket["total_actions"] += 1
@@ -1391,12 +1463,15 @@ ROUND_ACTIONS = [
 
 def _action(agent_id: int, round_num: int, action_type: str, content: str, timestamp: str, platform: str = "reddit") -> Dict[str, Any]:
     agent = next((a for a in CASE_AGENTS if a[0] == agent_id), CASE_AGENTS[0])
+    persona = _agent_persona(agent_id, agent[1], agent[2], agent[3])
     return {
         "round_num": round_num,
         "timestamp": timestamp,
         "platform": platform,
         "agent_id": agent_id,
-        "agent_name": agent[1],
+        "agent_name": persona["display_name"],
+        "agent_title": persona["title"],
+        "entity_name": agent[1],
         "action_type": action_type,
         "action_args": {
             "content": content,
@@ -1522,14 +1597,7 @@ def get_cached_replay(simulation_id: str) -> Optional[Dict[str, Any]]:
             "agent_configs_count": len(CASE_AGENTS),
         },
         "agents": [
-            {
-                "id": agent_id,
-                "name": name,
-                "username": f"agent_{agent_id}",
-                "profession": role,
-                "bio": bio,
-                "interested_topics": ["科技理财", "AI产业链", "资产配置", "合规销售"],
-            }
+            _agent_profile_payload(agent_id, name, role, bio)
             for agent_id, name, role, bio in CASE_AGENTS
         ],
         "rounds": rounds,
