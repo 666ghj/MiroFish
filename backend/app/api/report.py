@@ -14,6 +14,14 @@ from ..services.report_agent import ReportAgent
 from ..services.report_data import ReportManager, ReportStatus
 from ..services.simulation_analytics import SimulationAnalyticsService
 from ..services.simulation_manager import SimulationManager
+from ..services.cached_replays import (
+    get_cached_console_log,
+    get_cached_infographic,
+    get_cached_report,
+    get_cached_report_by_simulation,
+    get_cached_report_chat,
+    get_cached_report_logs,
+)
 from ..models.project import ProjectManager
 from ..models.task import TaskManager, TaskStatus
 from ..utils.logger import get_logger
@@ -300,6 +308,13 @@ def get_report(report_id: str):
         }
     """
     try:
+        cached = get_cached_report(report_id)
+        if cached:
+            return jsonify({
+                "success": True,
+                "data": cached
+            })
+
         report = ReportManager.get_report(report_id)
         
         if not report:
@@ -337,6 +352,14 @@ def get_report_by_simulation(simulation_id: str):
         }
     """
     try:
+        cached = get_cached_report_by_simulation(simulation_id)
+        if cached:
+            return jsonify({
+                "success": True,
+                "data": cached,
+                "has_report": True
+            })
+
         report = ReportManager.get_report_by_simulation(simulation_id)
         
         if not report:
@@ -520,6 +543,17 @@ def chat_with_report_agent():
                 "success": False,
                 "error": t('api.requireMessage')
             }), 400
+
+        cached_chat = get_cached_report_chat(
+            simulation_id=simulation_id,
+            message=message,
+            chat_history=chat_history,
+        )
+        if cached_chat:
+            return jsonify({
+                "success": True,
+                "data": cached_chat,
+            })
         
         # 获取模拟和项目信息
         manager = SimulationManager()
@@ -730,6 +764,19 @@ def check_report_status(simulation_id: str):
         }
     """
     try:
+        cached = get_cached_report_by_simulation(simulation_id)
+        if cached:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "simulation_id": simulation_id,
+                    "has_report": True,
+                    "report_status": "completed",
+                    "report_id": cached["report_id"],
+                    "interview_unlocked": True
+                }
+            })
+
         report = ReportManager.get_report_by_simulation(simulation_id)
         
         has_report = report is not None
@@ -803,6 +850,12 @@ def get_agent_log(report_id: str):
     """
     try:
         from_line = request.args.get('from_line', 0, type=int)
+        cached_log = get_cached_report_logs(report_id, from_line=from_line)
+        if cached_log:
+            return jsonify({
+                "success": True,
+                "data": cached_log
+            })
         
         log_data = ReportManager.get_agent_log(report_id, from_line=from_line)
         
@@ -835,6 +888,16 @@ def stream_agent_log(report_id: str):
         }
     """
     try:
+        cached_log = get_cached_report_logs(report_id, from_line=0)
+        if cached_log:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "logs": cached_log["logs"],
+                    "count": len(cached_log["logs"])
+                }
+            })
+
         logs = ReportManager.get_agent_log_stream(report_id)
         
         return jsonify({
@@ -885,6 +948,12 @@ def get_console_log(report_id: str):
     """
     try:
         from_line = request.args.get('from_line', 0, type=int)
+        cached_log = get_cached_console_log(report_id, from_line=from_line)
+        if cached_log:
+            return jsonify({
+                "success": True,
+                "data": cached_log
+            })
         
         log_data = ReportManager.get_console_log(report_id, from_line=from_line)
         
@@ -1037,6 +1106,10 @@ def get_report_infographic(report_id: str):
     优先从报告文件夹读取缓存数据，如无则实时计算。
     """
     try:
+        cached = get_cached_infographic(report_id)
+        if cached:
+            return jsonify({"success": True, "data": cached})
+
         cached = ReportManager.get_infographic(report_id)
         if cached:
             return jsonify({"success": True, "data": cached})

@@ -15,6 +15,17 @@ from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.cached_replays import (
+    NB_HNW_AI_CASE_ID,
+    get_cached_config,
+    get_cached_config_realtime,
+    get_cached_history_items,
+    get_cached_profiles,
+    get_cached_replay,
+    get_cached_run_detail,
+    get_cached_run_status,
+    get_cached_simulation,
+)
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..models.project import ProjectManager
@@ -269,7 +280,6 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         "state.json",
         "simulation_config.json",
         "reddit_profiles.json",
-        "twitter_profiles.csv"
     ]
     
     # 检查文件是否存在
@@ -417,6 +427,27 @@ def prepare_simulation():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
+
+        cached_state = get_cached_simulation(simulation_id)
+        if cached_state:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "simulation_id": simulation_id,
+                    "status": "ready",
+                    "message": t('api.alreadyPrepared'),
+                    "already_prepared": True,
+                    "prepare_info": {
+                        "status": "completed",
+                        "entities_count": cached_state.get("entities_count", 0),
+                        "profiles_count": cached_state.get("profiles_count", 0),
+                        "entity_types": cached_state.get("entity_types", []),
+                        "config_generated": True,
+                        "created_at": cached_state.get("created_at"),
+                        "updated_at": cached_state.get("updated_at"),
+                    }
+                }
+            })
         
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
@@ -500,6 +531,7 @@ def prepare_simulation():
                 defined_entity_types=entity_types_list,
                 enrich_with_edges=False  # 不获取边信息，加快速度
             )
+            filtered_preview = manager._cap_entities_for_live_demo(filtered_preview)
             # 保存实体数量到状态（供前端立即获取）
             state.entities_count = filtered_preview.filtered_count
             state.entity_types = list(filtered_preview.entity_types)
@@ -840,6 +872,13 @@ def get_prepare_status():
 def get_simulation(simulation_id: str):
     """获取模拟状态"""
     try:
+        cached_state = get_cached_simulation(simulation_id)
+        if cached_state:
+            return jsonify({
+                "success": True,
+                "data": cached_state
+            })
+
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         
@@ -996,6 +1035,7 @@ def get_simulation_history():
         limit = request.args.get('limit', 20, type=int)
         
         manager = SimulationManager()
+        cached_history_items = get_cached_history_items()
         simulations = manager.list_simulations()[:limit]
         
         # 增强模拟数据，只从 Simulation 文件读取
@@ -1055,15 +1095,63 @@ def get_simulation_history():
                 sim_dict["created_date"] = ""
             
             enriched_simulations.append(sim_dict)
+
+        existing_ids = {item.get("simulation_id") for item in enriched_simulations}
+        visible_cached_items = [
+            item for item in cached_history_items
+            if item.get("simulation_id") not in existing_ids
+        ]
+        history_items = (visible_cached_items + enriched_simulations)[:limit]
         
         return jsonify({
             "success": True,
-            "data": enriched_simulations,
-            "count": len(enriched_simulations)
+            "data": history_items,
+            "count": len(history_items)
         })
         
     except Exception as e:
         logger.error(f"获取历史模拟失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/<simulation_id>', methods=['DELETE'])
+def delete_simulation(simulation_id: str):
+    """删除一个历史模拟结果。缓存演示案例不允许删除。"""
+    try:
+        if simulation_id == NB_HNW_AI_CASE_ID:
+            return jsonify({
+                "success": False,
+                "error": "缓存演示案例不能删除"
+            }), 403
+
+        manager = SimulationManager()
+        deleted = manager.delete_simulation(simulation_id)
+        if not deleted:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "simulation_id": simulation_id,
+                "deleted": True
+            }
+        })
+
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+
+    except Exception as e:
+        logger.error(f"删除模拟失败: {simulation_id}, error={str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -1081,6 +1169,16 @@ def get_simulation_profiles(simulation_id: str):
     """
     try:
         platform = request.args.get('platform', 'reddit')
+        cached_profiles = get_cached_profiles(simulation_id, platform=platform)
+        if cached_profiles is not None:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "platform": platform,
+                    "count": len(cached_profiles),
+                    "profiles": cached_profiles
+                }
+            })
         
         manager = SimulationManager()
         profiles = manager.get_profiles(simulation_id, platform=platform)
@@ -1143,6 +1241,21 @@ def get_simulation_profiles_realtime(simulation_id: str):
     
     try:
         platform = request.args.get('platform', 'reddit')
+        cached_profiles = get_cached_profiles(simulation_id, platform=platform)
+        if cached_profiles is not None:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "simulation_id": simulation_id,
+                    "platform": platform,
+                    "count": len(cached_profiles),
+                    "total_expected": len(cached_profiles),
+                    "is_generating": False,
+                    "file_exists": True,
+                    "file_modified_at": "2026-06-04T09:50:00",
+                    "profiles": cached_profiles
+                }
+            })
         
         # 获取模拟目录
         sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
@@ -1247,6 +1360,13 @@ def get_simulation_config_realtime(simulation_id: str):
     from datetime import datetime
     
     try:
+        cached_config = get_cached_config_realtime(simulation_id)
+        if cached_config:
+            return jsonify({
+                "success": True,
+                "data": cached_config
+            })
+
         # 获取模拟目录
         sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
         
@@ -1352,6 +1472,13 @@ def get_simulation_config(simulation_id: str):
         - generation_reasoning: LLM的配置推理说明
     """
     try:
+        cached_config = get_cached_config(simulation_id)
+        if cached_config:
+            return jsonify({
+                "success": True,
+                "data": cached_config
+            })
+
         manager = SimulationManager()
         config = manager.get_simulation_config(simulation_id)
         
@@ -1491,6 +1618,7 @@ def generate_profiles():
             defined_entity_types=entity_types,
             enrich_with_edges=True
         )
+        filtered = SimulationManager._cap_entities_for_live_demo(filtered)
         
         if filtered.filtered_count == 0:
             return jsonify({
@@ -1582,6 +1710,17 @@ def start_simulation():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
+
+        cached_status = get_cached_run_status(simulation_id)
+        if cached_status:
+            response_data = dict(cached_status)
+            response_data["force_restarted"] = bool(data.get('force', False))
+            response_data["graph_memory_update_enabled"] = False
+            response_data["demo_safe_mode"] = True
+            return jsonify({
+                "success": True,
+                "data": response_data
+            })
 
         platform = data.get('platform', 'parallel')
         max_rounds = data.get('max_rounds')  # 可选：最大模拟轮数
@@ -1813,6 +1952,13 @@ def get_run_status(simulation_id: str):
         }
     """
     try:
+        cached_status = get_cached_run_status(simulation_id)
+        if cached_status:
+            return jsonify({
+                "success": True,
+                "data": cached_status
+            })
+
         run_state = SimulationRunner.get_run_state(simulation_id)
         
         if not run_state:
@@ -1882,8 +2028,15 @@ def get_run_status_detail(simulation_id: str):
         }
     """
     try:
-        run_state = SimulationRunner.get_run_state(simulation_id)
         platform_filter = request.args.get('platform')
+        cached_detail = get_cached_run_detail(simulation_id, platform_filter=platform_filter)
+        if cached_detail:
+            return jsonify({
+                "success": True,
+                "data": cached_detail
+            })
+
+        run_state = SimulationRunner.get_run_state(simulation_id)
         
         if not run_state:
             return jsonify({
@@ -2102,6 +2255,13 @@ def get_simulation_replay(simulation_id: str):
     用途：前端 /simulation/:id/replay 路由，播放整个模拟过程
     """
     try:
+        cached = get_cached_replay(simulation_id)
+        if cached:
+            return jsonify({
+                "success": True,
+                "data": cached
+            })
+
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         if not state:

@@ -31,9 +31,14 @@ set -euo pipefail
 SSH_KEY="/Users/liyizhouai/Desktop/openclaw/船长/liyizhouAI.pem"
 SSH_HOST="ubuntu@124.223.92.72"
 REMOTE_BACKEND="/opt/foresight/backend"
+REMOTE_FRONTEND="/opt/foresight/frontend"
 API_HEALTH_URL="https://api.foresight.yizhou.chat/health"
 PROD_URL="https://foresight.yizhou.chat"
 COS_BUCKET="foresight-1317962478"
+FRONTEND_API_BASE_URL="${VITE_API_BASE_URL:-https://api.foresight.yizhou.chat}"
+FRONTEND_DEMO_PASSWORD="${VITE_DEMO_PASSWORD:-}"
+FRONTEND_DEPLOY_TARGET="${FRONTEND_DEPLOY_TARGET:-server}"
+CDN_ORIGIN_IP="${CDN_ORIGIN_IP:-124.223.92.72}"
 
 # 定位项目根目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -100,10 +105,16 @@ preflight() {
   ok "SSH 可达 $SSH_HOST"
 
   if $DEPLOY_FRONTEND; then
-    command -v coscmd >/dev/null 2>&1 || fail "coscmd 未安装 (pip install coscmd)"
-    ok "coscmd 可用"
-    [[ -f ~/.cos.conf ]] || fail "~/.cos.conf 不存在"
-    ok "~/.cos.conf 存在"
+    if [[ "$FRONTEND_DEPLOY_TARGET" == "cos" ]]; then
+      command -v coscmd >/dev/null 2>&1 || fail "coscmd 未安装 (pip install coscmd)"
+      ok "coscmd 可用"
+      [[ -f ~/.cos.conf ]] || fail "~/.cos.conf 不存在"
+      ok "~/.cos.conf 存在"
+    elif [[ "$FRONTEND_DEPLOY_TARGET" == "server" ]]; then
+      ok "前端部署目标: server ($SSH_HOST:$REMOTE_FRONTEND)"
+    else
+      fail "未知 FRONTEND_DEPLOY_TARGET: $FRONTEND_DEPLOY_TARGET (支持 server/cos)"
+    fi
     command -v tccli >/dev/null 2>&1 || warn "tccli 未安装，跳过 CDN 自动刷新"
   fi
 
@@ -186,7 +197,7 @@ restart_flask() {
 
   log "启动新 Flask..."
   ssh -i "$SSH_KEY" "$SSH_HOST" '
-    sudo -u ubuntu bash -c "cd /opt/foresight/backend && nohup ./.venv-311/bin/python run.py --host 0.0.0.0 >> logs/server.log 2>&1 < /dev/null & disown"
+    sudo -u ubuntu bash -lc "cd /opt/foresight/backend && setsid ./.venv-311/bin/python run.py --host 0.0.0.0 >> logs/server.log 2>&1 < /dev/null &"
   '
   sleep 4
 
@@ -214,14 +225,41 @@ deploy_frontend() {
   if $DRY_RUN; then
     warn "dry-run: 跳过 vite build"
   else
-    ( cd "$LOCAL_FRONTEND" && npx vite build 2>&1 | tail -10 ) \
+    ( cd "$LOCAL_FRONTEND" && \
+      VITE_API_BASE_URL="$FRONTEND_API_BASE_URL" \
+      VITE_DEMO_PASSWORD="$FRONTEND_DEMO_PASSWORD" \
+      npx vite build 2>&1 | tail -10 ) \
       || fail "vite build 失败"
   fi
   ok "构建完成"
 
-  log "coscmd upload dist/ → cos://$COS_BUCKET/"
-  maybe bash -c "cd '$LOCAL_FRONTEND' && coscmd upload -r dist/ / --ignore .DS_Store" 2>&1 | tail -15
-  ok "已上传到 COS"
+  if [[ "$FRONTEND_DEPLOY_TARGET" == "server" ]]; then
+    log "rsync frontend/dist → $SSH_HOST:$REMOTE_FRONTEND"
+    maybe rsync -az --delete \
+      --exclude '.DS_Store' \
+      -e "ssh -i $SSH_KEY" \
+      "$LOCAL_FRONTEND/dist/" \
+      "$SSH_HOST:/tmp/foresight-frontend-dist/"
+
+    maybe ssh -i "$SSH_KEY" "$SSH_HOST" \
+      "sudo mkdir -p '$REMOTE_FRONTEND' && sudo rsync -az --delete /tmp/foresight-frontend-dist/ '$REMOTE_FRONTEND'/ && sudo chown -R www-data:www-data '$REMOTE_FRONTEND'"
+    ok "已上传到云服务器静态目录"
+
+    if command -v tccli >/dev/null 2>&1 && ! $DRY_RUN; then
+      log "确认 CDN 回源为云服务器..."
+      tccli cdn UpdateDomainConfig --cli-unfold-argument \
+        --Domain "${PROD_URL#https://}" \
+        --Origin.Origins "$CDN_ORIGIN_IP" \
+        --Origin.OriginType ip \
+        --Origin.ServerName "${PROD_URL#https://}" \
+        --Origin.OriginPullProtocol http >/dev/null
+      ok "CDN 回源: $CDN_ORIGIN_IP"
+    fi
+  else
+    log "coscmd upload dist/ → cos://$COS_BUCKET/"
+    maybe bash -c "cd '$LOCAL_FRONTEND' && coscmd upload -r dist/ / --ignore .DS_Store" 2>&1 | tail -15
+    ok "已上传到 COS"
+  fi
 
   # CDN 刷新 (可选)
   if command -v tccli >/dev/null 2>&1; then

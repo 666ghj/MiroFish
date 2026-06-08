@@ -684,8 +684,8 @@ let lastLoggedProfileCount = 0
 let lastLoggedConfigStage = ''
 
 // 模拟轮数配置
-const useCustomRounds = ref(false) // 默认使用自动配置轮数
-const customMaxRounds = ref(40)   // 默认推荐40轮
+const useCustomRounds = ref(true) // 现场演示默认使用稳定小轮数
+const customMaxRounds = ref(8)    // 避免 OASIS 子进程在低内存环境长时间运行
 
 // Watch stage to update phase
 watch(currentStage, (newStage) => {
@@ -797,8 +797,8 @@ const startPrepareSimulation = async () => {
   try {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
-      use_llm_for_profiles: true,
-      parallel_profile_count: 5
+      use_llm_for_profiles: false,
+      parallel_profile_count: 2
     })
     
     if (res.success && res.data) {

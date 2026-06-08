@@ -53,7 +53,8 @@
         <div class="hero-right">
           <!-- Logo 区域 -->
           <div class="logo-container">
-            <img src="../assets/logo/foresight_logo.jpeg" alt="Foresight 先见之明 Logo" class="hero-logo" />
+            <img src="../assets/logo/foresight_logo.jpeg" alt="Foresight 先见之明 Logo" class="hero-logo hero-logo-light" />
+            <img src="../assets/logo/foresight_logo_dark.png" alt="Foresight 先见之明 Logo" class="hero-logo hero-logo-dark" />
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">
@@ -544,6 +545,18 @@ const startSimulation = () => {
 .hero-logo {
   max-width: 500px; /* 调整logo大小 */
   width: 100%;
+}
+
+.hero-logo-dark {
+  display: none !important;
+}
+
+:global(html[data-theme='dark']) .hero-logo-light {
+  display: none !important;
+}
+
+:global(html[data-theme='dark']) .hero-logo-dark {
+  display: block !important;
 }
 
 .scroll-down-btn {

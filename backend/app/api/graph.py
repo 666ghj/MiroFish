@@ -18,6 +18,7 @@ from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
+from ..services.cached_replays import get_cached_graph, get_cached_project
 
 # 获取日志器
 logger = get_logger('foresight.api')
@@ -31,6 +32,51 @@ def allowed_file(filename: str) -> bool:
     return ext in Config.ALLOWED_EXTENSIONS
 
 
+def _prepare_graph_for_visualization(graph_data: dict) -> dict:
+    """Keep graph visualization dense and readable by showing the top connected nodes."""
+    if not isinstance(graph_data, dict):
+        return graph_data
+    if graph_data.get("fallback_source") == "cached_demo_graph":
+        return graph_data
+    nodes = graph_data.get("nodes") or []
+    edges = graph_data.get("edges") or []
+    max_nodes = max(1, Config.GRAPH_VISUAL_MAX_NODES)
+    if len(nodes) <= max_nodes:
+        return graph_data
+
+    degree = {n.get("uuid"): 0 for n in nodes}
+    for edge in edges:
+        src = edge.get("source_node_uuid")
+        tgt = edge.get("target_node_uuid")
+        if src in degree:
+            degree[src] += 1
+        if tgt in degree:
+            degree[tgt] += 1
+
+    def node_score(node):
+        labels = node.get("labels") or []
+        type_bonus = 1 if any(label not in ("Entity", "Node", "__Entity__") for label in labels) else 0
+        return (degree.get(node.get("uuid"), 0), type_bonus, node.get("name") or "")
+
+    selected_nodes = sorted(nodes, key=node_score, reverse=True)[:max_nodes]
+    selected_ids = {n.get("uuid") for n in selected_nodes}
+    selected_edges = [
+        edge for edge in edges
+        if edge.get("source_node_uuid") in selected_ids and edge.get("target_node_uuid") in selected_ids
+    ]
+
+    result = dict(graph_data)
+    result["raw_node_count"] = graph_data.get("node_count", len(nodes))
+    result["raw_edge_count"] = graph_data.get("edge_count", len(edges))
+    result["nodes"] = selected_nodes
+    result["edges"] = selected_edges
+    result["node_count"] = len(selected_nodes)
+    result["edge_count"] = len(selected_edges)
+    result["visualization_limited"] = True
+    result["visualization_max_nodes"] = max_nodes
+    return result
+
+
 # ============== 项目管理接口 ==============
 
 @graph_bp.route('/project/<project_id>', methods=['GET'])
@@ -38,6 +84,13 @@ def get_project(project_id: str):
     """
     获取项目详情
     """
+    cached = get_cached_project(project_id)
+    if cached:
+        return jsonify({
+            "success": True,
+            "data": cached
+        })
+
     project = ProjectManager.get_project(project_id)
     
     if not project:
@@ -478,6 +531,8 @@ def build_graph():
                         f"[{task_id}] CustomGraphBuilder 完成: "
                         f"entities={build_stats.get('entities_count')}, "
                         f"edges={build_stats.get('edges_count')}, "
+                        f"snapshot_nodes={build_stats.get('snapshot_node_count')}, "
+                        f"snapshot_edges={build_stats.get('snapshot_edge_count')}, "
                         f"chunks={build_stats.get('chunks_processed')}/{build_stats.get('total_chunks')}, "
                         f"failed={build_stats.get('chunks_failed')}"
                     )
@@ -491,7 +546,17 @@ def build_graph():
                     message=t('progress.fetchingGraphData'),
                     progress=95
                 )
-                graph_data = builder.get_graph_data(graph_id)
+                snapshot_graph_data = build_stats.get("graph_data") or {}
+                ProjectManager.save_graph_snapshot(project_id, snapshot_graph_data)
+                try:
+                    graph_data = builder.get_graph_data(graph_id)
+                    ProjectManager.save_graph_snapshot(project_id, graph_data)
+                except Exception as e:
+                    build_logger.warning(
+                        f"[{task_id}] Neo4j 图谱读取失败，使用本地 snapshot: "
+                        f"{type(e).__name__}: {str(e)[:200]}"
+                    )
+                    graph_data = snapshot_graph_data
                 
                 # 更新项目状态
                 project.status = ProjectStatus.GRAPH_COMPLETED
@@ -596,6 +661,13 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
+        cached = get_cached_graph(graph_id)
+        if cached:
+            return jsonify({
+                "success": True,
+                "data": _prepare_graph_for_visualization(cached)
+            })
+
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
@@ -603,7 +675,17 @@ def get_graph_data(graph_id: str):
             }), 500
         
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
-        graph_data = builder.get_graph_data(graph_id)
+        try:
+            graph_data = builder.get_graph_data(graph_id)
+        except Exception as e:
+            project = ProjectManager.get_project_by_graph_id(graph_id)
+            graph_data = ProjectManager.get_graph_snapshot(project.project_id) if project else None
+            if not graph_data:
+                raise
+            graph_data["fallback_source"] = "local_graph_snapshot"
+            graph_data["fallback_reason"] = f"{type(e).__name__}: {str(e)[:200]}"
+
+        graph_data = _prepare_graph_for_visualization(graph_data)
         
         return jsonify({
             "success": True,

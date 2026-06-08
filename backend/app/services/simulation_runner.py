@@ -12,6 +12,7 @@ import threading
 import subprocess
 import signal
 import atexit
+import importlib
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -384,6 +385,8 @@ class SimulationRunner:
         else:
             cls._graph_memory_enabled[simulation_id] = False
         
+        use_demo_runner = cls._should_use_demo_runner()
+
         # 确定运行哪个脚本（脚本位于 backend/scripts/ 目录）
         if platform == "twitter":
             script_name = "run_twitter_simulation.py"
@@ -395,6 +398,10 @@ class SimulationRunner:
             script_name = "run_parallel_simulation.py"
             state.twitter_running = True
             state.reddit_running = True
+
+        if use_demo_runner:
+            logger.warning("OASIS 不可用或已启用现场演示 runner，切换为轻量仿真脚本")
+            script_name = "run_demo_simulation.py"
         
         script_path = os.path.join(cls.SCRIPTS_DIR, script_name)
         
@@ -422,6 +429,9 @@ class SimulationRunner:
             # 如果指定了最大轮数，添加到命令行参数
             if max_rounds is not None and max_rounds > 0:
                 cmd.extend(["--max-rounds", str(max_rounds)])
+
+            if use_demo_runner:
+                cmd.extend(["--platform", platform])
             
             # 创建主日志文件，避免 stdout/stderr 管道缓冲区满导致进程阻塞
             main_log_path = os.path.join(sim_dir, "simulation.log")
@@ -477,6 +487,22 @@ class SimulationRunner:
             raise
         
         return state
+
+    @classmethod
+    def _should_use_demo_runner(cls) -> bool:
+        """Return True when the live demo should avoid importing OASIS/Torch."""
+        mode = os.environ.get("FORESIGHT_DEMO_RUNNER", "auto").strip().lower()
+        if mode in {"1", "true", "yes", "on"}:
+            return True
+        if mode in {"0", "false", "no", "off"}:
+            return False
+
+        try:
+            importlib.import_module("oasis")
+            return False
+        except Exception as e:
+            logger.warning(f"OASIS 自检失败，启用现场演示 runner: {type(e).__name__}: {str(e)[:200]}")
+            return True
     
     @classmethod
     def _monitor_simulation(cls, simulation_id: str, locale: str = 'zh'):
@@ -1719,4 +1745,3 @@ class SimulationRunner:
             results = results[:limit]
         
         return results
-

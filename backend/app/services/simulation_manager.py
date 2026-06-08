@@ -189,6 +189,32 @@ class SimulationManager:
         
         # 内存中的模拟状态缓存
         self._simulations: Dict[str, SimulationState] = {}
+
+    @staticmethod
+    def _cap_entities_for_live_demo(filtered: FilteredEntities) -> FilteredEntities:
+        """Limit generated Agents while keeping the most connected graph nodes."""
+        max_agents = max(1, Config.SIMULATION_MAX_AGENTS)
+        if len(filtered.entities) <= max_agents:
+            return filtered
+
+        def entity_score(entity: Any) -> tuple:
+            degree = len(getattr(entity, "related_edges", []) or []) + len(getattr(entity, "related_nodes", []) or [])
+            summary_bonus = 1 if getattr(entity, "summary", "") else 0
+            type_bonus = 1 if entity.get_entity_type() and entity.get_entity_type() != "Entity" else 0
+            return (degree, type_bonus, summary_bonus, entity.name or "")
+
+        selected = sorted(filtered.entities, key=entity_score, reverse=True)[:max_agents]
+        entity_types = {e.get_entity_type() or "Entity" for e in selected}
+        logger.info(
+            f"现场 Agent 上限生效: {len(filtered.entities)} -> {len(selected)} "
+            f"(SIMULATION_MAX_AGENTS={max_agents})"
+        )
+        return FilteredEntities(
+            entities=selected,
+            entity_types=entity_types,
+            total_count=filtered.total_count,
+            filtered_count=len(selected),
+        )
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
@@ -340,6 +366,7 @@ class SimulationManager:
                 defined_entity_types=defined_entity_types,
                 enrich_with_edges=True
             )
+            filtered = self._cap_entities_for_live_demo(filtered)
             
             state.entities_count = filtered.filtered_count
             state.entity_types = list(filtered.entity_types)
@@ -369,8 +396,9 @@ class SimulationManager:
                     total=total_entities
                 )
             
-            # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
-            generator = OasisProfileGenerator(graph_id=state.graph_id)
+            # 非 LLM 演示模式不做 Graphiti 检索，避免远端 Neo4j 不可用拖慢现场。
+            profile_graph_id = state.graph_id if use_llm_for_profiles else None
+            generator = OasisProfileGenerator(graph_id=profile_graph_id)
             
             def profile_progress(current, total, msg):
                 if progress_callback:
@@ -397,7 +425,7 @@ class SimulationManager:
                 entities=filtered.entities,
                 use_llm=use_llm_for_profiles,
                 progress_callback=profile_progress,
-                graph_id=state.graph_id,  # 传入graph_id用于Zep检索
+                graph_id=profile_graph_id,  # 传入graph_id用于Zep检索
                 parallel_count=parallel_profile_count,  # 并行生成数量
                 realtime_output_path=realtime_output_path,  # 实时保存路径
                 output_platform=realtime_platform,  # 输出格式
@@ -546,6 +574,27 @@ class SimulationManager:
                         simulations.append(state)
         
         return simulations
+
+    def delete_simulation(self, simulation_id: str) -> bool:
+        """删除模拟数据目录，用于清理历史列表中的模拟结果"""
+        if not simulation_id or simulation_id != os.path.basename(simulation_id):
+            raise ValueError(f"非法模拟ID: {simulation_id}")
+
+        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        state = self._load_simulation_state(simulation_id) if os.path.exists(sim_dir) else None
+
+        if state and state.status in {SimulationStatus.PREPARING, SimulationStatus.RUNNING}:
+            raise ValueError(f"模拟仍在运行或准备中，不能删除: {simulation_id}")
+
+        self._simulations.pop(simulation_id, None)
+        self.clear_accelerate(simulation_id)
+
+        if not os.path.exists(sim_dir):
+            return False
+
+        shutil.rmtree(sim_dir)
+        logger.info(f"已删除模拟数据: {simulation_id}")
+        return True
     
     def get_profiles(self, simulation_id: str, platform: str = "reddit") -> List[Dict[str, Any]]:
         """获取模拟的Agent Profile"""

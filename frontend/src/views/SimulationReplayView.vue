@@ -8,7 +8,7 @@
           <div class="title-main">Foresight's Sandbox</div>
           <div class="title-sub">
             <span v-if="currentAction">
-              Foresight is running
+              Foresight is {{ isSimLive ? 'running' : 'replaying' }}
               <span class="platform-tag" :class="currentAction.platform">
                 {{ currentAction.platform === 'twitter' ? 'Twitter' : 'Reddit' }}
               </span>
@@ -289,6 +289,7 @@ const isPlaying = ref(false)
 const speed = ref(1)
 const feedListRef = ref(null)
 const analystMode = ref(false)
+const initializedViewMode = ref(false)
 
 // 自动轮询：如果 sim 还在 running，每 10s 重新拉数据
 let pollTimer = null
@@ -437,8 +438,13 @@ async function loadReplay(silent = false) {
       const wasAtLive = currentActionIndex.value >= prevLen - 1
       replayData.value = res.data
       const newLen = allActions.value.length
-      // 初次加载或之前处于 live 状态时，自动跳到最新
-      if (!silent || wasAtLive) {
+
+      if (!silent && !initializedViewMode.value && res.data?.aggregate?.cached_case) {
+        analystMode.value = true
+        currentActionIndex.value = 0
+        initializedViewMode.value = true
+      } else if (!silent || wasAtLive) {
+        // 初次加载或之前处于 live 状态时，自动跳到最新
         currentActionIndex.value = Math.max(0, newLen - 1)
       }
       loadError.value = null
@@ -510,6 +516,11 @@ watch(speed, () => {
 })
 
 onMounted(() => {
+  if (simulationId === 'sim_nb_hnw_ai_case' && route.query.mode !== 'process') {
+    router.replace({ name: 'Report', params: { reportId: 'report_nb_hnw_ai_case' } })
+    return
+  }
+
   loadReplay(false).then(() => startPolling())
 })
 

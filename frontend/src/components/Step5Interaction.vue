@@ -22,7 +22,9 @@
               v-for="(section, idx) in reportOutline.sections" 
               :key="idx"
               class="report-section-item"
+              :data-section-index="idx + 1"
               :class="{ 
+                'is-citation-highlight': highlightedSectionIndex === idx + 1,
                 'is-active': currentSectionIndex === idx + 1,
                 'is-completed': isSectionCompleted(idx + 1),
                 'is-pending': !isSectionCompleted(idx + 1) && currentSectionIndex !== idx + 1
@@ -242,7 +244,7 @@
           </div>
 
           <!-- Chat Messages -->
-          <div class="chat-messages" ref="chatMessages">
+          <div class="chat-messages" ref="chatMessages" @click="handleCitationClick">
             <div v-if="chatHistory.length === 0" class="chat-empty">
               <div class="empty-icon">
                 <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -271,6 +273,20 @@
                   <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
                 </div>
                 <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                <div v-if="msg.citations?.length" class="message-citations">
+                  <button
+                    v-for="citation in msg.citations"
+                    :key="citation.id"
+                    class="citation-chip"
+                    type="button"
+                    :data-section-index="citation.section_index"
+                    :data-agent-id="citation.agent_id ?? ''"
+                    :title="citation.title"
+                    @click="jumpToCitation(citation)"
+                  >
+                    {{ citation.label }}
+                  </button>
+                </div>
               </div>
             </div>
             <div v-if="isSending" class="chat-message assistant">
@@ -453,6 +469,7 @@ const reportOutline = ref(null)
 const generatedSections = ref({})
 const collapsedSections = ref(new Set())
 const currentSectionIndex = ref(null)
+const highlightedSectionIndex = ref(null)
 const profiles = ref([])
 
 // Helper Methods
@@ -478,6 +495,47 @@ const toggleSectionCollapse = (idx) => {
     newSet.add(idx)
   }
   collapsedSections.value = newSet
+}
+
+const citationTargetSection = (citation) => {
+  if (!citation) return 1
+  const raw = citation.section_index || citation.sectionIndex
+  const parsed = Number(raw)
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  if (citation.agent_id !== undefined || citation.agentId !== undefined) return 2
+  return 1
+}
+
+const jumpToSection = (sectionIndex) => {
+  const index = Number(sectionIndex)
+  if (!Number.isFinite(index) || index < 1) return
+
+  const zeroIndex = index - 1
+  const newSet = new Set(collapsedSections.value)
+  newSet.delete(zeroIndex)
+  collapsedSections.value = newSet
+  currentSectionIndex.value = index
+  highlightedSectionIndex.value = index
+
+  requestAnimationFrame(() => {
+    const target = leftPanel.value?.querySelector(`[data-section-index="${index}"]`)
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+
+  window.setTimeout(() => {
+    if (highlightedSectionIndex.value === index) highlightedSectionIndex.value = null
+  }, 2200)
+}
+
+const jumpToCitation = (citation) => {
+  jumpToSection(citationTargetSection(citation))
+}
+
+const handleCitationClick = (event) => {
+  const target = event.target?.closest?.('[data-section-index], [data-agent-id]')
+  if (!target) return
+  const sectionIndex = target.dataset.sectionIndex || (target.dataset.agentId ? 2 : 1)
+  jumpToSection(sectionIndex)
 }
 
 const selectChatTarget = (target) => {
@@ -560,6 +618,13 @@ const renderMarkdown = (content) => {
   let processedContent = content.replace(/^##\s+.+\n+/, '')
   let html = processedContent.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+  html = html.replace(/\[\[(S|A)(\d{1,2})\]\]/g, (match, type, number) => {
+    const value = String(Number(number)).padStart(2, '0')
+    const sectionIndex = type === 'S' ? Number(number) : 2
+    const agentId = type === 'A' ? Number(number) : ''
+    const title = type === 'S' ? `跳转到报告第 ${value} 节` : `跳转到 Agent ${value} 问答证据`
+    return `<button type="button" class="citation-chip citation-inline" data-section-index="${sectionIndex}" data-agent-id="${agentId}" title="${title}">${type}${value}</button>`
+  })
   html = html.replace(/^#### (.+)$/gm, '<h5 class="md-h5">$1</h5>')
   html = html.replace(/^### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
   html = html.replace(/^## (.+)$/gm, '<h3 class="md-h3">$1</h3>')
@@ -701,6 +766,7 @@ const sendToReportAgent = async (message) => {
     chatHistory.value.push({
       role: 'assistant',
       content: res.data.response || res.data.answer || t('step5.noResponse'),
+      citations: res.data.citations || [],
       timestamp: new Date().toISOString()
     })
     addLog(t('log.reportAgentReplied'))
@@ -1089,6 +1155,13 @@ watch(() => props.simulationId, (newId) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border-radius: 10px;
+  transition: background-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.report-section-item.is-citation-highlight {
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.26), 0 12px 30px rgba(16, 185, 129, 0.12);
 }
 
 .section-header-row {
@@ -2067,6 +2140,45 @@ watch(() => props.simulationId, (newId) => {
   margin: 4px 0;
 }
 
+.message-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.citation-chip,
+.message-text :deep(.citation-chip) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid #D1D5DB;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #111827;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.message-text :deep(.citation-inline) {
+  margin: 0 2px;
+  vertical-align: 0.12em;
+}
+
+.citation-chip:hover,
+.message-text :deep(.citation-chip:hover) {
+  background: #ECFDF5;
+  border-color: #10B981;
+  color: #047857;
+  transform: translateY(-1px);
+}
+
 /* Typing Indicator */
 .typing-indicator {
   display: flex;
@@ -2580,5 +2692,24 @@ watch(() => props.simulationId, (newId) => {
 /* English locale: smaller report title */
 html[lang="en"] .report-header-block .main-title {
   font-size: 28px;
+}
+
+html[data-theme='dark'] .citation-chip,
+html[data-theme='dark'] .message-text .citation-chip {
+  background: #111827;
+  border-color: #374151;
+  color: #F9FAFB;
+}
+
+html[data-theme='dark'] .citation-chip:hover,
+html[data-theme='dark'] .message-text .citation-chip:hover {
+  background: #064E3B;
+  border-color: #34D399;
+  color: #D1FAE5;
+}
+
+html[data-theme='dark'] .report-section-item.is-citation-highlight {
+  background: rgba(16, 185, 129, 0.14);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.32), 0 12px 30px rgba(0, 0, 0, 0.24);
 }
 </style>

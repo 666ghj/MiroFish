@@ -31,6 +31,8 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    LLM_TIMEOUT_SECONDS = float(os.environ.get('LLM_TIMEOUT_SECONDS', '12'))
+    LLM_MAX_RETRIES = int(os.environ.get('LLM_MAX_RETRIES', '0'))
     
     # Neo4j / Graphiti 配置
     NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
@@ -62,6 +64,8 @@ class Config:
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
     OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+    SIMULATION_MAX_AGENTS = int(os.environ.get('SIMULATION_MAX_AGENTS', '30'))
+    GRAPH_VISUAL_MAX_NODES = int(os.environ.get('GRAPH_VISUAL_MAX_NODES', '30'))
     
     # OASIS平台可用动作配置
     OASIS_TWITTER_ACTIONS = [
@@ -87,4 +91,3 @@ class Config:
         if not cls.NEO4J_PASSWORD:
             errors.append("NEO4J_PASSWORD 未配置")
         return errors
-

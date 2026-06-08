@@ -1,6 +1,31 @@
 <template>
   <div class="app-shell">
-    <Teleport to="#theme-toggle-anchor" v-if="anchorReady">
+    <div v-if="!isAuthed" class="demo-login">
+      <form class="demo-login__panel" @submit.prevent="submitPassword">
+        <div class="demo-login__brand">
+          <span class="brand-mark">
+            <span class="brand-mark-en">FORESIGHT</span>
+            <span class="brand-mark-sep"></span>
+            <span class="brand-mark-zh">先见之明</span>
+          </span>
+        </div>
+        <h1>AI DEMO 预览</h1>
+        <p>请输入演示密码进入现场回溯系统。</p>
+        <input
+          v-model="authInput"
+          class="demo-login__input"
+          type="password"
+          autocomplete="current-password"
+          placeholder="演示密码"
+          autofocus
+        />
+        <button class="demo-login__button" type="submit">进入演示</button>
+        <p v-if="authError" class="demo-login__error">{{ authError }}</p>
+      </form>
+    </div>
+
+    <template v-else>
+      <Teleport to="#theme-toggle-anchor" v-if="anchorReady">
       <button
         class="theme-toggle"
         :class="`theme-toggle--${theme}`"
@@ -42,9 +67,10 @@
           <path d="M20.3 14.3A8.9 8.9 0 0 1 9.7 3.7a9.1 9.1 0 1 0 10.6 10.6Z" />
         </svg>
       </button>
-    </Teleport>
+      </Teleport>
 
-    <router-view />
+      <router-view />
+    </template>
   </div>
 </template>
 
@@ -54,8 +80,13 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const THEME_STORAGE_KEY = 'foresight-ui-theme'
+const AUTH_STORAGE_KEY = 'foresight-demo-auth'
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || ''
 const theme = ref('light')
 const anchorReady = ref(false)
+const authInput = ref('')
+const authError = ref('')
+const isAuthed = ref(!DEMO_PASSWORD)
 
 const applyTheme = (nextTheme) => {
   document.documentElement.setAttribute('data-theme', nextTheme)
@@ -71,7 +102,23 @@ const checkAnchor = () => {
   anchorReady.value = !!document.getElementById('theme-toggle-anchor')
 }
 
+const submitPassword = () => {
+  if (!DEMO_PASSWORD || authInput.value === DEMO_PASSWORD) {
+    window.localStorage.setItem(AUTH_STORAGE_KEY, 'ok')
+    authError.value = ''
+    isAuthed.value = true
+    nextTick(checkAnchor)
+    return
+  }
+
+  authError.value = '密码不正确，请重新输入'
+}
+
 onMounted(() => {
+  if (DEMO_PASSWORD && window.localStorage.getItem(AUTH_STORAGE_KEY) === 'ok') {
+    isAuthed.value = true
+  }
+
   const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
   if (savedTheme === 'dark' || savedTheme === 'light') {
     theme.value = savedTheme
@@ -162,6 +209,110 @@ html[data-theme='dark'] #app {
 
 .app-shell {
   position: relative;
+}
+
+.demo-login {
+  min-height: 100vh;
+  padding: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, rgba(16, 19, 33, 0.06), rgba(16, 19, 33, 0)),
+    var(--ui-bg);
+}
+
+.demo-login__panel {
+  width: min(420px, 100%);
+  padding: 34px 32px 30px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-strong);
+  box-shadow: var(--ui-shadow);
+}
+
+.demo-login__brand {
+  margin-bottom: 22px;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+.demo-login h1 {
+  margin-bottom: 10px;
+  color: var(--ui-text);
+  font-size: 28px;
+  line-height: 1.18;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.demo-login p {
+  color: var(--ui-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.demo-login__input {
+  width: 100%;
+  height: 46px;
+  margin-top: 24px;
+  padding: 0 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font: inherit;
+}
+
+.demo-login__input:focus {
+  border-color: rgba(86, 126, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(86, 126, 255, 0.14);
+}
+
+.demo-login__input::placeholder {
+  color: var(--ui-muted);
+}
+
+.demo-login__button {
+  width: 100%;
+  height: 46px;
+  margin-top: 14px;
+  border: none;
+  border-radius: 6px;
+  background: #101321;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.demo-login__button:hover {
+  background: #232838;
+}
+
+.demo-login__error {
+  margin-top: 12px;
+  color: #c93f3f !important;
+}
+
+html[data-theme='dark'] .demo-login {
+  background:
+    linear-gradient(135deg, rgba(86, 126, 255, 0.12), rgba(86, 126, 255, 0)),
+    #000000;
+}
+
+html[data-theme='dark'] .demo-login__button {
+  background: #f4f7ff;
+  color: #05070d;
+}
+
+html[data-theme='dark'] .demo-login__button:hover {
+  background: #dfe7ff;
+}
+
+html[data-theme='dark'] .demo-login__error {
+  color: #ff8f8f !important;
 }
 
 .brand-mark {
@@ -707,6 +858,176 @@ html[data-theme='dark'][data-theme='dark'] .main-content-area {
 html[data-theme='dark'][data-theme='dark'] .panel-wrapper.left,
 html[data-theme='dark'][data-theme='dark'] .panel-wrapper.right {
   max-width: none !important;
+}
+
+/* Dark mode color polish: keep layout intact, only fix light surfaces and unreadable text */
+html[data-theme='dark'][data-theme='dark'] .home-container,
+html[data-theme='dark'][data-theme='dark'] .dashboard-section,
+html[data-theme='dark'][data-theme='dark'] .history-database {
+  background: #000000 !important;
+  color: #edf2ff !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .main-title,
+html[data-theme='dark'][data-theme='dark'] .highlight-bold,
+html[data-theme='dark'][data-theme='dark'] .slogan-text,
+html[data-theme='dark'][data-theme='dark'] .metric-value,
+html[data-theme='dark'][data-theme='dark'] .step-title,
+html[data-theme='dark'][data-theme='dark'] .upload-title,
+html[data-theme='dark'][data-theme='dark'] .console-label,
+html[data-theme='dark'][data-theme='dark'] .file-name,
+html[data-theme='dark'][data-theme='dark'] .card-title,
+html[data-theme='dark'][data-theme='dark'] .modal-id,
+html[data-theme='dark'][data-theme='dark'] .report-id,
+html[data-theme='dark'][data-theme='dark'] .report-section-item.is-active .section-title,
+html[data-theme='dark'][data-theme='dark'] .report-section-item.is-completed .section-title {
+  color: #f4f7fb !important;
+  -webkit-text-fill-color: #f4f7fb !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .gradient-text {
+  background: linear-gradient(90deg, #ffffff 0%, #a8b0c2 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .hero-desc,
+html[data-theme='dark'][data-theme='dark'] .section-desc,
+html[data-theme='dark'][data-theme='dark'] .step-desc,
+html[data-theme='dark'][data-theme='dark'] .metric-label,
+html[data-theme='dark'][data-theme='dark'] .version-text,
+html[data-theme='dark'][data-theme='dark'] .console-header,
+html[data-theme='dark'][data-theme='dark'] .console-meta,
+html[data-theme='dark'][data-theme='dark'] .upload-hint,
+html[data-theme='dark'][data-theme='dark'] .model-badge,
+html[data-theme='dark'][data-theme='dark'] .card-desc,
+html[data-theme='dark'][data-theme='dark'] .card-id,
+html[data-theme='dark'][data-theme='dark'] .card-footer,
+html[data-theme='dark'][data-theme='dark'] .modal-label,
+html[data-theme='dark'][data-theme='dark'] .modal-create-time,
+html[data-theme='dark'][data-theme='dark'] .sub-title,
+html[data-theme='dark'][data-theme='dark'] .section-number {
+  color: #a5adbd !important;
+  -webkit-text-fill-color: #a5adbd !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .highlight-code,
+html[data-theme='dark'][data-theme='dark'] .metric-card,
+html[data-theme='dark'][data-theme='dark'] .steps-container,
+html[data-theme='dark'][data-theme='dark'] .console-box,
+html[data-theme='dark'][data-theme='dark'] .input-wrapper,
+html[data-theme='dark'][data-theme='dark'] .upload-zone,
+html[data-theme='dark'][data-theme='dark'] .file-item,
+html[data-theme='dark'][data-theme='dark'] .project-card,
+html[data-theme='dark'][data-theme='dark'] .card-files-wrapper,
+html[data-theme='dark'][data-theme='dark'] .modal-content,
+html[data-theme='dark'][data-theme='dark'] .modal-header,
+html[data-theme='dark'][data-theme='dark'] .modal-requirement,
+html[data-theme='dark'][data-theme='dark'] .report-style,
+html[data-theme='dark'][data-theme='dark'] .section-header-row.clickable:hover,
+html[data-theme='dark'][data-theme='dark'] .tools-card,
+html[data-theme='dark'][data-theme='dark'] .chat-message,
+html[data-theme='dark'][data-theme='dark'] .message-content,
+html[data-theme='dark'][data-theme='dark'] .agent-dropdown,
+html[data-theme='dark'][data-theme='dark'] .agent-option {
+  background: #111111 !important;
+  background-image: none !important;
+  color: #edf2ff !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .upload-zone:hover,
+html[data-theme='dark'][data-theme='dark'] .upload-zone.drag-over,
+html[data-theme='dark'][data-theme='dark'] .project-card:hover,
+html[data-theme='dark'][data-theme='dark'] .file-item:hover,
+html[data-theme='dark'][data-theme='dark'] .agent-option:hover,
+html[data-theme='dark'][data-theme='dark'] .modal-close:hover {
+  background: #181818 !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .upload-icon,
+html[data-theme='dark'][data-theme='dark'] .files-more,
+html[data-theme='dark'][data-theme='dark'] .files-empty,
+html[data-theme='dark'][data-theme='dark'] .modal-progress,
+html[data-theme='dark'][data-theme='dark'] .modal-close,
+html[data-theme='dark'][data-theme='dark'] .report-tag {
+  background: #1a1a1a !important;
+  color: #d8deeb !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .code-input,
+html[data-theme='dark'][data-theme='dark'] .code-input::placeholder,
+html[data-theme='dark'][data-theme='dark'] textarea::placeholder,
+html[data-theme='dark'][data-theme='dark'] input::placeholder {
+  color: #c4cad6 !important;
+  -webkit-text-fill-color: #c4cad6 !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .start-engine-btn:disabled {
+  background: #202020 !important;
+  color: #8f96a3 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  -webkit-text-fill-color: #8f96a3 !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .start-engine-btn:not(:disabled) {
+  background: #f4f7fb !important;
+  color: #050505 !important;
+  border-color: #f4f7fb !important;
+  -webkit-text-fill-color: #050505 !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .console-divider::before,
+html[data-theme='dark'][data-theme='dark'] .console-divider::after,
+html[data-theme='dark'][data-theme='dark'] .header-divider,
+html[data-theme='dark'][data-theme='dark'] .section-line,
+html[data-theme='dark'][data-theme='dark'] .card-footer,
+html[data-theme='dark'][data-theme='dark'] .card-header,
+html[data-theme='dark'][data-theme='dark'] .modal-header {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .console-divider span,
+html[data-theme='dark'][data-theme='dark'] .section-title {
+  background: #000000 !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .grid-pattern {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px) !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .gradient-overlay {
+  background:
+    linear-gradient(to right, rgba(0, 0, 0, 0.9) 0%, transparent 15%, transparent 85%, rgba(0, 0, 0, 0.9) 100%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.82) 0%, transparent 20%, transparent 80%, rgba(0, 0, 0, 0.82) 100%) !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .hero-logo-light {
+  display: none !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .hero-logo-dark {
+  display: block !important;
+}
+
+html[data-theme='light'] .hero-logo-dark,
+html:not([data-theme='dark']) .hero-logo-dark {
+  display: none !important;
+}
+
+html[data-theme='dark'][data-theme='dark'] .corner-mark.top-left-only {
+  border-top-color: rgba(255, 255, 255, 0.35) !important;
+  border-left-color: rgba(255, 255, 255, 0.35) !important;
 }
 
 @media (max-width: 768px) {

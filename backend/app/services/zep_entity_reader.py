@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
 from ..config import Config
+from ..models.project import ProjectManager
 from ..utils.logger import get_logger
 from .graphiti_client import GraphitiClient
 
@@ -47,6 +48,11 @@ class EntityNode:
             if label not in ["Entity", "Node"]:
                 return label
         return None
+
+    @property
+    def entity_type(self) -> Optional[str]:
+        """兼容需要属性访问的模拟配置生成器。"""
+        return self.get_entity_type()
 
 
 @dataclass
@@ -131,7 +137,17 @@ class ZepEntityReader:
         """
         logger.info(f"获取图谱 {graph_id} 的所有节点...")
 
-        nodes = self.client.get_all_nodes(graph_id)
+        try:
+            nodes = self.client.get_all_nodes(graph_id)
+        except Exception as e:
+            snapshot = self._get_snapshot(graph_id)
+            if snapshot:
+                logger.warning(
+                    f"Graphiti 节点读取失败，使用本地 snapshot: "
+                    f"{type(e).__name__}: {str(e)[:150]}"
+                )
+                return snapshot.get("nodes", [])
+            raise
 
         nodes_data = []
         for node in nodes:
@@ -158,7 +174,17 @@ class ZepEntityReader:
         """
         logger.info(f"获取图谱 {graph_id} 的所有边...")
 
-        edges = self.client.get_all_edges(graph_id)
+        try:
+            edges = self.client.get_all_edges(graph_id)
+        except Exception as e:
+            snapshot = self._get_snapshot(graph_id)
+            if snapshot:
+                logger.warning(
+                    f"Graphiti 边读取失败，使用本地 snapshot: "
+                    f"{type(e).__name__}: {str(e)[:150]}"
+                )
+                return snapshot.get("edges", [])
+            raise
 
         edges_data = []
         for edge in edges:
@@ -173,6 +199,12 @@ class ZepEntityReader:
 
         logger.info(f"共获取 {len(edges_data)} 条边")
         return edges_data
+
+    def _get_snapshot(self, graph_id: str) -> Optional[Dict[str, Any]]:
+        project = ProjectManager.get_project_by_graph_id(graph_id)
+        if not project:
+            return None
+        return ProjectManager.get_graph_snapshot(project.project_id)
     
     def get_node_edges(self, node_uuid: str) -> List[Dict[str, Any]]:
         """
@@ -426,5 +458,3 @@ class ZepEntityReader:
             enrich_with_edges=enrich_with_edges
         )
         return result.entities
-
-

@@ -295,7 +295,7 @@ import {
   getRunStatus,
   getRunStatusDetail
 } from '../api/simulation'
-import { generateReport } from '../api/report'
+import { getReportBySimulation } from '../api/report'
 
 const { t } = useI18n()
 
@@ -399,15 +399,17 @@ const doStartSimulation = async () => {
       simulation_id: props.simulationId,
       platform: 'parallel',
       force: true,  // 强制重新开始
-      enable_graph_memory_update: true  // 开启动态图谱更新
+      max_rounds: props.maxRounds || 8,
+      enable_graph_memory_update: false  // 现场演示优先保证 OASIS 子进程稳定
     }
     
     if (props.maxRounds) {
-      params.max_rounds = props.maxRounds
       addLog(t('log.setMaxRounds', { rounds: props.maxRounds }))
+    } else {
+      addLog(t('log.setMaxRounds', { rounds: params.max_rounds }))
     }
     
-    addLog(t('log.graphMemoryUpdateEnabled'))
+    addLog('Demo safe mode: dual-world replay, graph memory update disabled.')
     
     const res = await startSimulation(params)
     
@@ -420,6 +422,12 @@ const doStartSimulation = async () => {
       
       phase.value = 1
       runStatus.value = res.data
+      if (res.data.demo_safe_mode) {
+        addLog('Cached dual-world simulation loaded: Info Plaza + Topic Community.')
+      }
+
+      await fetchRunStatusDetail()
+      await fetchRunStatus()
       
       startStatusPolling()
       startDetailPolling()
@@ -465,6 +473,7 @@ const handleStopSimulation = async () => {
 // 轮询状态
 let statusTimer = null
 let detailTimer = null
+let autoAdvanceTimer = null
 
 const startStatusPolling = () => {
   statusTimer = setInterval(fetchRunStatus, 2000)
@@ -482,6 +491,10 @@ const stopPolling = () => {
   if (detailTimer) {
     clearInterval(detailTimer)
     detailTimer = null
+  }
+  if (autoAdvanceTimer) {
+    clearTimeout(autoAdvanceTimer)
+    autoAdvanceTimer = null
   }
 }
 
@@ -527,10 +540,16 @@ const fetchRunStatus = async () => {
         stopPolling()
         emit('update-status', 'completed')
 
-        // 模拟完成后自动触发报告生成
-        setTimeout(() => {
+        const completionDelay = data.cached_case ? 9000 : 1500
+        if (data.cached_case) {
+          addLog(`Cached dual-world result locked: 30 agents · ${data.total_rounds || props.maxRounds || 8} rounds · ${data.total_actions_count || allActions.value.length} actions.`)
+          addLog('Interactive report will open after a short inspection window.')
+        }
+
+        // 模拟完成后自动进入报告页；缓存案例保留现场观察时间
+        autoAdvanceTimer = setTimeout(() => {
           handleNextStep()
-        }, 1500)
+        }, completionDelay)
       }
     }
   } catch (err) {
@@ -658,27 +677,23 @@ const handleNextStep = async () => {
   }
   
   isGeneratingReport.value = true
-  addLog(t('log.startingReportGen'))
-  
+  addLog('Opening cached interactive HTML report; live ReportAgent generation is skipped for demo stability.')
+
   try {
-    const res = await generateReport({
-      simulation_id: props.simulationId,
-      force_regenerate: true
-    })
-    
-    if (res.success && res.data) {
-      const reportId = res.data.report_id
-      addLog(t('log.reportGenTaskStarted', { reportId }))
-      
-      // 跳转到报告页面
+    const reportRes = await getReportBySimulation(props.simulationId)
+    const reportId = reportRes?.data?.report_id
+    if (reportRes.success && reportId) {
       router.push({ name: 'Report', params: { reportId } })
-    } else {
-      addLog(t('log.reportGenFailed', { error: res.error || t('common.unknownError') }))
-      isGeneratingReport.value = false
+      return
     }
   } catch (err) {
-    addLog(t('log.reportGenException', { error: err.message }))
-    isGeneratingReport.value = false
+    addLog(`Cached report lookup failed: ${err.message}`)
+  }
+
+  if (props.simulationId === 'sim_nb_hnw_ai_case') {
+    router.push({ name: 'Report', params: { reportId: 'report_nb_hnw_ai_case' } })
+  } else {
+    router.push({ name: 'SimulationReplay', params: { simulationId: props.simulationId }, query: { mode: 'process' } })
   }
 }
 

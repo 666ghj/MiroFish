@@ -128,6 +128,11 @@ class ProjectManager:
     def _get_project_text_path(cls, project_id: str) -> str:
         """获取项目提取文本存储路径"""
         return os.path.join(cls._get_project_dir(project_id), 'extracted_text.txt')
+
+    @classmethod
+    def _get_graph_snapshot_path(cls, project_id: str) -> str:
+        """获取本地图谱快照路径"""
+        return os.path.join(cls._get_project_dir(project_id), 'graph_snapshot.json')
     
     @classmethod
     def create_project(cls, name: str = "Unnamed Project") -> Project:
@@ -193,6 +198,32 @@ class ProjectManager:
             data = json.load(f)
         
         return Project.from_dict(data)
+
+    @classmethod
+    def get_project_by_graph_id(cls, graph_id: str) -> Optional[Project]:
+        """通过 graph_id 查找项目"""
+        cls._ensure_projects_dir()
+        for project_id in os.listdir(cls.PROJECTS_DIR):
+            project = cls.get_project(project_id)
+            if project and project.graph_id == graph_id:
+                return project
+        return None
+
+    @classmethod
+    def save_graph_snapshot(cls, project_id: str, graph_data: Dict[str, Any]) -> None:
+        """保存本地图谱快照，供 Neo4j 不可用时演示回退"""
+        snapshot_path = cls._get_graph_snapshot_path(project_id)
+        with open(snapshot_path, 'w', encoding='utf-8') as f:
+            json.dump(graph_data, f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def get_graph_snapshot(cls, project_id: str) -> Optional[Dict[str, Any]]:
+        """读取本地图谱快照"""
+        snapshot_path = cls._get_graph_snapshot_path(project_id)
+        if not os.path.exists(snapshot_path):
+            return None
+        with open(snapshot_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
     
     @classmethod
     def list_projects(cls, limit: int = 50) -> List[Project]:
@@ -302,4 +333,3 @@ class ProjectManager:
             for f in os.listdir(files_dir) 
             if os.path.isfile(os.path.join(files_dir, f))
         ]
-

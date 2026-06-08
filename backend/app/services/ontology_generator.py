@@ -238,21 +238,90 @@ class OntologyGenerator:
             )
         except Exception as primary_err:
             if not self._fallback_llm:
-                raise
-            logger.warning(
-                f"主 LLM (GLM) 生成本体失败，降级到 Qwen 32B fallback: "
-                f"{type(primary_err).__name__}: {str(primary_err)[:200]}"
-            )
-            result = self._fallback_llm.chat_json(
-                messages=messages,
-                temperature=0.3,
-                max_tokens=ontology_max_tokens
-            )
+                logger.warning(
+                    f"主 LLM 生成本体失败，使用现场演示默认本体: "
+                    f"{type(primary_err).__name__}: {str(primary_err)[:200]}"
+                )
+                result = self._default_business_ontology(simulation_requirement)
+            else:
+                logger.warning(
+                    f"主 LLM (GLM) 生成本体失败，降级到 Qwen 32B fallback: "
+                    f"{type(primary_err).__name__}: {str(primary_err)[:200]}"
+                )
+                try:
+                    result = self._fallback_llm.chat_json(
+                        messages=messages,
+                        temperature=0.3,
+                        max_tokens=ontology_max_tokens
+                    )
+                except Exception as fallback_err:
+                    logger.warning(
+                        f"fallback LLM 生成本体失败，使用现场演示默认本体: "
+                        f"{type(fallback_err).__name__}: {str(fallback_err)[:200]}"
+                    )
+                    result = self._default_business_ontology(simulation_requirement)
         
         # 验证和后处理
         result = self._validate_and_process(result)
         
         return result
+
+    @staticmethod
+    def _default_business_ontology(simulation_requirement: str) -> Dict[str, Any]:
+        """现场演示兜底本体：外部 LLM 超时也能继续构建可展示图谱。"""
+        entity_types = [
+            ("ManufacturingCompany", "Company producing industrial or AI infrastructure equipment.", "org_name"),
+            ("DataCenterOperator", "Organization operating data centers or computing facilities.", "org_name"),
+            ("EnergyEquipmentCompany", "Company providing power, grid, cooling, or energy equipment.", "org_name"),
+            ("Bank", "Financial institution providing credit, settlement, and advisory services.", "org_name"),
+            ("BankRelationshipManager", "Bank staff member responsible for enterprise customer coverage.", "full_name"),
+            ("EnterpriseOwner", "Business owner or executive making financing decisions.", "full_name"),
+            ("GovernmentAgency", "Public agency regulating industry, energy, finance, or subsidies.", "org_name"),
+            ("MediaOutlet", "Media or information channel shaping public market perception.", "org_name"),
+            ("Person", "Any individual person not fitting other specific person types.", "full_name"),
+            ("Organization", "Any organization not fitting other specific organization types.", "org_name"),
+        ]
+        edge_types = [
+            ("SUPPLIES_TO", "Supplier relationship between companies."),
+            ("FINANCES", "Bank or investor provides financing to an organization."),
+            ("SERVES", "Bank or service provider serves an enterprise customer."),
+            ("REGULATES", "Agency regulates an organization or activity."),
+            ("PARTNERS_WITH", "Organizations collaborate on a business opportunity."),
+            ("AFFECTS", "One organization or event materially affects another."),
+            ("REPORTS_ON", "Media reports on a company, sector, or event."),
+            ("MANAGES", "Person manages or represents an organization."),
+        ]
+        return {
+            "entity_types": [
+                {
+                    "name": name,
+                    "description": description,
+                    "attributes": [
+                        {"name": attr, "type": "text", "description": f"Display name for {name}"},
+                        {"name": "role", "type": "text", "description": "Role in the business scenario"},
+                    ],
+                    "examples": [],
+                }
+                for name, description, attr in entity_types
+            ],
+            "edge_types": [
+                {
+                    "name": name,
+                    "description": description,
+                    "source_targets": [
+                        {"source": "Organization", "target": "Organization"},
+                        {"source": "Bank", "target": "ManufacturingCompany"},
+                        {"source": "Person", "target": "Organization"},
+                    ],
+                    "attributes": [],
+                }
+                for name, description in edge_types
+            ],
+            "analysis_summary": (
+                "Fallback ontology for live demo. External LLM ontology generation was unavailable; "
+                f"scenario requirement: {simulation_requirement[:200]}"
+            ),
+        }
     
     # 传给 LLM 的文本最大长度（2.8万字）
     # Qwen 32768 token 窗口：system prompt ~2K tokens + 响应 ~4K tokens
@@ -534,4 +603,3 @@ class OntologyGenerator:
         code_lines.append('}')
         
         return '\n'.join(code_lines)
-

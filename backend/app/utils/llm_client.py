@@ -16,7 +16,7 @@ from ..config import Config
 logger = logging.getLogger('foresight.llm_client')
 
 # 重试配置（针对 429 / 5xx / 超时 / 连接错误）
-_MAX_RETRIES = 8
+_MAX_RETRIES = Config.LLM_MAX_RETRIES
 _BASE_BACKOFF = 2.0  # 首次重试等 2s
 _MAX_BACKOFF = 60.0  # 单次最多等 60s
 
@@ -48,7 +48,8 @@ class LLMClient:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        timeout: Optional[float] = None
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
@@ -59,7 +60,9 @@ class LLMClient:
         
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            timeout=timeout or Config.LLM_TIMEOUT_SECONDS,
+            max_retries=0,
         )
     
     def chat(
@@ -274,4 +277,3 @@ class LLMClient:
                 pass
 
         return None
-

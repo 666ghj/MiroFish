@@ -23,15 +23,29 @@
         v-for="(project, index) in projects" 
         :key="project.simulation_id"
         class="project-card"
-        :class="{ expanded: isExpanded, hovering: hoveringCard === index }"
+        :class="{ expanded: isExpanded, hovering: hoveringCard === index, 'cached-replay-card': project.is_cached_case }"
         :style="getCardStyle(index)"
         @mouseenter="hoveringCard = index"
         @mouseleave="hoveringCard = null"
         @click="navigateToProject(project)"
       >
+        <button
+          v-if="canDeleteProject(project)"
+          class="card-delete"
+          type="button"
+          :aria-label="$t('history.deleteAction')"
+          :title="$t('history.deleteAction')"
+          @click.stop="openDeleteConfirm(project)"
+        >
+          ×
+        </button>
+
         <!-- 卡片头部：simulation_id 和 功能可用状态 -->
         <div class="card-header">
-          <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
+          <div class="card-id-wrap">
+            <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
+            <span v-if="project.is_cached_case" class="cache-badge">{{ project.cached_label || $t('history.cachedReplay') }}</span>
+          </div>
           <div class="card-status-icons">
             <span 
               class="status-icon" 
@@ -47,6 +61,11 @@
               :class="{ available: project.report_id, unavailable: !project.report_id }"
               :title="$t('history.analysisReport')"
             >◆</span>
+            <span
+              class="status-icon"
+              :class="{ available: hasReplay(project), unavailable: !hasReplay(project) }"
+              :title="$t('history.viewReplay')"
+            >▶</span>
           </div>
         </div>
 
@@ -152,8 +171,17 @@
 
             <!-- 导航按钮 -->
             <div class="modal-actions">
-              <button 
-                class="modal-btn btn-project" 
+              <button
+                class="modal-btn btn-replay"
+                @click="goToReplay"
+                :disabled="!hasReplay(selectedProject)"
+              >
+                <span class="btn-step">Replay</span>
+                <span class="btn-icon">▶</span>
+                <span class="btn-text">{{ $t('history.viewReplay') }}</span>
+              </button>
+              <button
+                class="modal-btn btn-project"
                 @click="goToProject"
                 :disabled="!selectedProject.project_id"
               >
@@ -187,6 +215,38 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 删除确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="deleteCandidate" class="confirm-overlay" @click.self="closeDeleteConfirm">
+          <div class="confirm-content">
+            <div class="confirm-kicker">{{ $t('history.deleteKicker') }}</div>
+            <h3 class="confirm-title">{{ $t('history.deleteTitle') }}</h3>
+            <p class="confirm-desc">
+              {{ $t('history.deleteDescription', { id: formatSimulationId(deleteCandidate.simulation_id) }) }}
+            </p>
+            <div class="confirm-preview">
+              {{ getDeletePreview(deleteCandidate) }}
+            </div>
+            <p v-if="deleteError" class="confirm-error">{{ deleteError }}</p>
+            <div class="confirm-actions">
+              <button class="confirm-btn confirm-btn-secondary" type="button" @click="closeDeleteConfirm">
+                {{ $t('history.deleteCancel') }}
+              </button>
+              <button
+                class="confirm-btn confirm-btn-danger"
+                type="button"
+                :disabled="deleteLoading"
+                @click="confirmDelete"
+              >
+                {{ deleteLoading ? $t('history.deleting') : $t('history.deleteConfirm') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -194,7 +254,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getSimulationHistory } from '../api/simulation'
+import { deleteSimulation, getSimulationHistory } from '../api/simulation'
 
 const router = useRouter()
 const route = useRoute()
@@ -207,6 +267,9 @@ const isExpanded = ref(false)
 const hoveringCard = ref(null)
 const historyContainer = ref(null)
 const selectedProject = ref(null)  // 当前选中的项目（用于弹窗）
+const deleteCandidate = ref(null)
+const deleteLoading = ref(false)
+const deleteError = ref('')
 let observer = null
 let isAnimating = false  // 动画锁，防止闪烁
 let expandDebounceTimer = null  // 防抖定时器
@@ -241,6 +304,7 @@ const containerStyle = computed(() => {
 // 获取卡片样式
 const getCardStyle = (index) => {
   const total = projects.value.length
+  const isCachedCase = !!projects.value[index]?.is_cached_case
   
   if (isExpanded.value) {
     // 展开态：网格布局
@@ -264,7 +328,7 @@ const getCardStyle = (index) => {
 
     return {
       transform: `translate(${x}px, ${y}px) rotate(0deg) scale(1)`,
-      zIndex: 100 + index,
+      zIndex: isCachedCase ? 1000 : 100 + index,
       opacity: 1,
       transition: transition
     }
@@ -283,7 +347,7 @@ const getCardStyle = (index) => {
     
     return {
       transform: `translate(${x}px, ${y}px) rotate(${r}deg) scale(${s})`,
-      zIndex: 10 + index,
+      zIndex: isCachedCase ? 1000 : 10 + index,
       opacity: 1,
       transition: transition
     }
@@ -393,9 +457,54 @@ const truncateFilename = (filename, maxLength) => {
   return truncatedName + ext
 }
 
+const hasReplay = (simulation) => {
+  return Boolean(simulation?.has_replay || simulation?.simulation_id)
+}
+
+const canDeleteProject = (simulation) => {
+  return Boolean(simulation?.simulation_id && !simulation?.is_cached_case)
+}
+
+const getDeletePreview = (simulation) => {
+  const title = getSimulationTitle(simulation?.simulation_requirement)
+  return title || formatSimulationId(simulation?.simulation_id)
+}
+
 // 打开项目详情弹窗
 const navigateToProject = (simulation) => {
   selectedProject.value = simulation
+}
+
+const openDeleteConfirm = (simulation) => {
+  if (!canDeleteProject(simulation)) return
+  deleteCandidate.value = simulation
+  deleteError.value = ''
+}
+
+const closeDeleteConfirm = () => {
+  if (deleteLoading.value) return
+  deleteCandidate.value = null
+  deleteError.value = ''
+}
+
+const confirmDelete = async () => {
+  if (!deleteCandidate.value?.simulation_id) return
+
+  try {
+    deleteLoading.value = true
+    deleteError.value = ''
+    const simulationId = deleteCandidate.value.simulation_id
+    await deleteSimulation(simulationId)
+    projects.value = projects.value.filter((project) => project.simulation_id !== simulationId)
+    if (selectedProject.value?.simulation_id === simulationId) {
+      selectedProject.value = null
+    }
+    deleteCandidate.value = null
+  } catch (error) {
+    deleteError.value = error?.message || t('history.deleteFailed')
+  } finally {
+    deleteLoading.value = false
+  }
 }
 
 // 关闭弹窗
@@ -419,6 +528,17 @@ const goToSimulation = () => {
   if (selectedProject.value?.simulation_id) {
     router.push({
       name: 'Simulation',
+      params: { simulationId: selectedProject.value.simulation_id }
+    })
+    closeModal()
+  }
+}
+
+// 导航到真实页面回放（逐页查看已完成效果）
+const goToReplay = () => {
+  if (selectedProject.value?.simulation_id) {
+    router.push({
+      name: 'SimulationReplay',
       params: { simulationId: selectedProject.value.simulation_id }
     })
     closeModal()
@@ -687,6 +807,40 @@ onUnmounted(() => {
   z-index: 1000 !important;
 }
 
+.card-delete {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #6B7280;
+  font-size: 14px;
+  line-height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.18s ease, transform 0.18s ease, color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  z-index: 4;
+}
+
+.project-card:hover .card-delete,
+.project-card.hovering .card-delete {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card-delete:hover {
+  border-color: rgba(185, 28, 28, 0.42);
+  background: #FEF2F2;
+  color: #B91C1C;
+}
+
 /* 卡片头部 */
 .card-header {
   display: flex;
@@ -703,6 +857,33 @@ onUnmounted(() => {
   color: #6B7280;
   letter-spacing: 0.5px;
   font-weight: 500;
+}
+
+.card-id-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.cache-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid rgba(17, 24, 39, 0.14);
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.cached-replay-card {
+  border-color: rgba(17, 24, 39, 0.32);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
 }
 
 /* 功能状态图标组 */
@@ -726,6 +907,7 @@ onUnmounted(() => {
 .status-icon:nth-child(1).available { color: #3B82F6; } /* 图谱构建 - 蓝色 */
 .status-icon:nth-child(2).available { color: #F59E0B; } /* 环境搭建 - 橙色 */
 .status-icon:nth-child(3).available { color: #10B981; } /* 分析报告 - 绿色 */
+.status-icon:nth-child(4).available { color: #111827; } /* 页面回放 - 黑色 */
 
 .status-icon.unavailable {
   color: #D1D5DB;
@@ -1258,13 +1440,14 @@ onUnmounted(() => {
 /* 导航按钮 */
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 20px 32px;
   background: #FFFFFF;
 }
 
 .modal-btn {
-  flex: 1;
+  flex: 1 1 112px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1317,6 +1500,7 @@ onUnmounted(() => {
 .modal-btn.btn-project .btn-icon { color: #3B82F6; }
 .modal-btn.btn-simulation .btn-icon { color: #F59E0B; }
 .modal-btn.btn-report .btn-icon { color: #10B981; }
+.modal-btn.btn-replay .btn-icon { color: #111827; }
 
 .modal-btn:hover:not(:disabled) .btn-text {
   color: #111827;
@@ -1338,5 +1522,171 @@ onUnmounted(() => {
   letter-spacing: 0.3px;
   text-align: center;
   line-height: 1.5;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(5px);
+}
+
+.confirm-content {
+  width: min(420px, 100%);
+  padding: 26px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #FFFFFF;
+  box-shadow: 0 22px 48px rgba(17, 24, 39, 0.16);
+}
+
+.confirm-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: #9CA3AF;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.confirm-title {
+  margin: 0 0 10px;
+  color: #111827;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.confirm-desc {
+  margin: 0;
+  color: #4B5563;
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+
+.confirm-preview {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #F3F4F6;
+  border-radius: 6px;
+  background: #F9FAFB;
+  color: #374151;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.confirm-error {
+  margin-top: 12px;
+  color: #B91C1C;
+  font-size: 0.78rem;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.confirm-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.confirm-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.confirm-btn-secondary {
+  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  color: #4B5563;
+}
+
+.confirm-btn-secondary:hover {
+  border-color: #9CA3AF;
+  color: #111827;
+}
+
+.confirm-btn-danger {
+  border: 1px solid #B91C1C;
+  background: #B91C1C;
+  color: #FFFFFF;
+}
+
+.confirm-btn-danger:hover:not(:disabled) {
+  border-color: #991B1B;
+  background: #991B1B;
+}
+
+:global(html[data-theme='dark']) .cache-badge {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #f4f7fb;
+  color: #050505;
+}
+
+:global(html[data-theme='dark']) .cached-replay-card {
+  border-color: rgba(244, 247, 251, 0.34);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
+}
+
+:global(html[data-theme='dark']) .card-delete {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(17, 17, 17, 0.92);
+  color: #C8D1E2;
+}
+
+:global(html[data-theme='dark']) .card-delete:hover {
+  border-color: rgba(255, 143, 143, 0.48);
+  background: rgba(127, 29, 29, 0.72);
+  color: #FFE4E6;
+}
+
+:global(html[data-theme='dark']) .confirm-content {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #111111;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.5);
+}
+
+:global(html[data-theme='dark']) .confirm-title {
+  color: #F4F7FB;
+}
+
+:global(html[data-theme='dark']) .confirm-desc {
+  color: #C8D1E2;
+}
+
+:global(html[data-theme='dark']) .confirm-preview {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #1A1A1A;
+  color: #E7ECF6;
+}
+
+:global(html[data-theme='dark']) .confirm-btn-secondary {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: #111111;
+  color: #C8D1E2;
+}
+
+:global(html[data-theme='dark']) .confirm-btn-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #FFFFFF;
+}
+
+:global(html[data-theme='dark']) .status-icon:nth-child(4).available,
+:global(html[data-theme='dark']) .modal-btn.btn-replay .btn-icon {
+  color: #f4f7fb;
 }
 </style>
