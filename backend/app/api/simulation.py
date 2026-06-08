@@ -7,6 +7,7 @@ import os
 import json
 import csv
 import traceback
+from typing import Dict
 from flask import request, jsonify, send_file
 
 from . import simulation_bp
@@ -22,6 +23,7 @@ from ..services.cached_replays import (
     get_cached_history_items,
     get_cached_profiles,
     get_cached_replay,
+    get_cached_report_by_simulation,
     get_cached_run_detail,
     get_cached_run_status,
     get_cached_simulation,
@@ -983,6 +985,10 @@ def _get_report_id_for_simulation(simulation_id: str) -> str:
     """
     import json
     from datetime import datetime
+
+    cached_report = get_cached_report_by_simulation(simulation_id)
+    if cached_report:
+        return cached_report.get("report_id")
     
     # reports 目录路径：backend/uploads/reports
     # __file__ 是 app/api/simulation.py，需要向上两级到 backend/
@@ -2229,13 +2235,13 @@ def get_simulation_timeline(simulation_id: str):
         }), 500
 
 
-def _find_latest_simulation_start(sim_dir: str) -> str:
+def _find_latest_simulation_starts(sim_dir: str) -> Dict[str, str]:
     """
-    扫描 twitter/actions.jsonl 和 reddit/actions.jsonl，找出最近一次 simulation_start 事件的时间戳。
+    扫描 twitter/actions.jsonl 和 reddit/actions.jsonl，找出各平台最近一次 simulation_start 时间戳。
     用于过滤掉历史 run 残留的 actions（jsonl 是 append-only，多次 run 会累积）。
-    返回 ISO 格式时间戳字符串，找不到则返回空串。
+    返回 {platform: ISO 时间戳}，找不到则不包含该平台。
     """
-    latest = ""
+    latest: Dict[str, str] = {}
     for sub in ("twitter", "reddit"):
         path = os.path.join(sim_dir, sub, "actions.jsonl")
         if not os.path.exists(path):
@@ -2253,11 +2259,17 @@ def _find_latest_simulation_start(sim_dir: str) -> str:
                     if evt.get("event_type") != "simulation_start":
                         continue
                     ts = evt.get("timestamp", "")
-                    if ts and ts > latest:
-                        latest = ts
+                    if ts and ts > latest.get(sub, ""):
+                        latest[sub] = ts
         except Exception:
             continue
     return latest
+
+
+def _find_latest_simulation_start(sim_dir: str) -> str:
+    """兼容旧调用：返回所有平台中最近一次 simulation_start 时间戳。"""
+    starts = _find_latest_simulation_starts(sim_dir)
+    return max(starts.values()) if starts else ""
 
 
 def _extract_entity_type_names(ontology):
@@ -2388,13 +2400,18 @@ def get_simulation_replay(simulation_id: str):
         # ---------- 4. Actions + rounds ----------
         # 找出最近一次 simulation_start 的时间戳，过滤掉之前 run 残留的 actions
         # （actions.jsonl 是 append-only，多次 run 会累积；只显示最新这次）
-        latest_start_ts = _find_latest_simulation_start(sim_dir)
+        latest_start_by_platform = _find_latest_simulation_starts(sim_dir)
+        latest_start_ts = max(latest_start_by_platform.values()) if latest_start_by_platform else ""
 
         all_actions = SimulationRunner.get_all_actions(simulation_id)
-        if latest_start_ts:
-            all_actions = [a for a in all_actions if a.timestamp >= latest_start_ts]
+        if latest_start_by_platform:
+            all_actions = [
+                a for a in all_actions
+                if a.timestamp >= latest_start_by_platform.get(a.platform, latest_start_ts)
+            ]
         # 按时间戳升序（回放需要从 round 0 到最后）
         all_actions.sort(key=lambda a: (a.round_num, a.timestamp))
+        run_state = SimulationRunner.get_run_state(simulation_id)
 
         rounds_map = {}
         for action in all_actions:
@@ -2419,6 +2436,28 @@ def get_simulation_replay(simulation_id: str):
             rd["_by_type"][action.action_type] = rd["_by_type"].get(action.action_type, 0) + 1
             if action.platform in rd["_by_platform"]:
                 rd["_by_platform"][action.platform] += 1
+
+        # 真实模拟可能有若干轮没有产生动作；回放仍需要展示这些已执行轮次，
+        # 让现场讲解能看到完整双世界推进，而不是误以为只跑了一轮。
+        replay_total_rounds = 0
+        if run_state and _has_completed_run(run_state):
+            replay_total_rounds = int(getattr(run_state, "total_rounds", 0) or 0)
+        if replay_total_rounds > 0:
+            for r in range(replay_total_rounds):
+                if r in rounds_map:
+                    continue
+                simulated_minutes = r * minutes_per_round
+                rounds_map[r] = {
+                    "round_num": r,
+                    "simulated_hour": (simulated_minutes // 60) % 24,
+                    "simulated_day": simulated_minutes // (60 * 24) + 1,
+                    "first_timestamp": latest_start_ts,
+                    "last_timestamp": latest_start_ts,
+                    "actions": [],
+                    "_active_agents": set(),
+                    "_by_type": {},
+                    "_by_platform": {"twitter": 0, "reddit": 0},
+                }
 
         rounds_list = []
         for r in sorted(rounds_map.keys()):
@@ -2458,7 +2497,6 @@ def get_simulation_replay(simulation_id: str):
 
         # ---------- 6. Workflow 时间线 ----------
         status_str = state.status.value if hasattr(state.status, 'value') else str(state.status)
-        run_state = SimulationRunner.get_run_state(simulation_id)
         if _has_completed_run(run_state):
             status_str = "completed"
         workflow = [

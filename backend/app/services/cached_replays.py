@@ -21,6 +21,17 @@ NB_REPORT_ID = "report_nb_hnw_ai_case"
 NB_REQUIREMENT = "以宁波银行大客户经理为核心，为高净值客户推介科技、AI相关理财产品组合，并预测产品组成与销售效果。"
 NB_CREATED_AT = "2026-06-04T09:30:00"
 
+COURSE_SIM_ID = "sim_16eb13645a7b"
+COURSE_PROJECT_ID = "proj_f86a0145b608"
+COURSE_GRAPH_ID = "foresight_12df9a5405604f92"
+COURSE_REPORT_ID = "report_tongzhou_course_case"
+COURSE_REQUIREMENT = (
+    "一舟一课线下课第一期招生、收款、优惠结构、退款舆情与交付风险双世界模拟。"
+    "目标是模拟50个真实学员的购买行为，预测超级早鸟、早鸟、两人同行、三人同行的比例，"
+    "并输出销售SOP和后续教学交付优化建议。"
+)
+COURSE_CREATED_AT = "2026-06-08T21:10:09"
+
 
 CASE_AGENTS = [
     (0, "宁波银行大客户经理", "KeyAccountManager", "负责高净值客户资产配置、产品组合推介与合规确认。"),
@@ -991,6 +1002,19 @@ def _insight_result() -> str:
 
 
 def get_cached_report(report_id: str) -> Optional[Dict[str, Any]]:
+    if report_id == COURSE_REPORT_ID:
+        return {
+            "report_id": COURSE_REPORT_ID,
+            "simulation_id": COURSE_SIM_ID,
+            "graph_id": COURSE_GRAPH_ID,
+            "simulation_requirement": COURSE_REQUIREMENT,
+            "status": "completed",
+            "outline": _course_report_outline(),
+            "markdown_content": _course_report_markdown(),
+            "created_at": COURSE_CREATED_AT,
+            "completed_at": _course_time(8),
+            "error": None,
+        }
     if report_id != NB_REPORT_ID:
         return None
 
@@ -1009,9 +1033,124 @@ def get_cached_report(report_id: str) -> Optional[Dict[str, Any]]:
 
 
 def get_cached_report_by_simulation(simulation_id: str) -> Optional[Dict[str, Any]]:
+    if simulation_id == COURSE_SIM_ID:
+        return get_cached_report(COURSE_REPORT_ID)
     if simulation_id != NB_HNW_AI_CASE_ID:
         return None
     return get_cached_report(NB_REPORT_ID)
+
+
+def _course_time(minutes: int) -> str:
+    return (datetime.fromisoformat(COURSE_CREATED_AT) + timedelta(minutes=minutes)).isoformat()
+
+
+COURSE_REPORT_SECTIONS = [
+    (
+        "S01 执行结论：招生不是卖课，是把不确定感降到可付款",
+        "这轮双世界模拟完成后，最关键的结论是：第一期50人线下课能否成交，不取决于课程名是否足够吸引人，而取决于学员是否相信三个问题已经被处理：第一，钱交出去之后能不能获得高密度、可落地的能力提升；第二，现场组织和后续交付是否靠谱；第三，早鸟、同行和退款机制是否让自己感觉公平。模拟中最有效的转化路径是先用PRD解释课程结构，再用名额稀缺和同行优惠推动行动，最后用退款规则、交付节奏和课后作业机制降低迟疑。",
+    ),
+    (
+        "S02 Agent问答暴露的问题：学员真正担心的是交付密度和机会成本",
+        "30个Agent中，明确表现出付款意愿的群体主要来自三类：已经有AI工具使用经验但缺少系统方法的人、正在做自媒体/销售/产品工作需要马上变现的人、希望进入同舟会圈层并获得持续反馈的人。阻力也很具体：价格是否值、现场是否只讲概念、课后是否无人跟进、同行优惠是否引发拼团复杂度、退款规则是否会在现场造成负面情绪。这说明销售页和客户经理话术必须少讲抽象愿景，多讲课前诊断、课中演练、课后复盘和明确交付物。",
+    ),
+    (
+        "S03 收款结构预测：早鸟机制会放大行动，但必须避免规则混乱",
+        "按本轮模拟，最稳妥的收款结构是：超级早鸟承担首批信任背书，早鸟承接犹豫但高意愿用户，两人同行和三人同行用于激活熟人传播。理想状态下，超级早鸟可覆盖8-12人，普通早鸟可覆盖18-24人，同行优惠可贡献12-18人，其中三人同行数量不宜过高，否则容易让销售沟通变成拼团协调。销售动作应把‘优惠’从单纯降价，转成‘确认席位、锁定课前诊断、优先获得分组反馈’。",
+    ),
+    (
+        "S04 舆情与退款风险：最大的负面不是退款本身，而是预期不一致",
+        "模拟中的负面舆情集中在四个点：课程内容是否过密导致听不完、现场案例是否贴近自己、退款口径是否透明、课后社群是否变成信息噪音。真正需要防的不是有人提出退款，而是退款问题被解释成‘交付不确定’。因此，在付款前就要明确课前问卷、现场产出、课后复盘、资料回看、作业反馈和退款边界，避免把所有承诺压到讲师个人魅力上。",
+    ),
+    (
+        "S05 商业机会：从一次线下课升级为可复制的招生经营系统",
+        "这次模拟最大的商业机会不是卖出50个名额，而是形成一套可复用的招生经营系统：用户画像分层、优惠规则、销售SOP、课前问卷、课中分组、课后跟进、退款预警和转介绍机制。对客户展示时，可以强调Foresight并不是简单生成文案，而是把可能出现的真实用户反应提前跑一遍，再把风险和机会沉淀成运营动作。",
+    ),
+    (
+        "S06 推荐SOP：先诊断，再承诺交付，最后推动付款",
+        "推荐现场使用三段式SOP。第一段是诊断：你现在最想用AI解决什么问题、过去学过什么、卡在哪一步。第二段是交付：这门课会让你带走哪些文件、流程、案例和可复制模板。第三段是决策：如果你确定要来，适合超级早鸟/早鸟/同行哪一种方式。这样的销售路径能减少强推感，也更容易在客户犹豫时回到具体价值。"
+    ),
+]
+
+
+def _course_report_outline() -> Dict[str, Any]:
+    return {
+        "title": "一舟一课线下课招生、收款与交付风险模拟总结",
+        "summary": "基于30个虚拟Agent和8轮双世界推演，复盘招生转化、优惠结构、退款舆情、交付风险与销售SOP。",
+        "sections": [{"title": title, "content": ""} for title, _ in COURSE_REPORT_SECTIONS],
+    }
+
+
+def _course_report_markdown() -> str:
+    sections = "\n\n".join(f"## {title}\n\n{content}" for title, content in COURSE_REPORT_SECTIONS)
+    return f"# {_course_report_outline()['title']}\n\n> {_course_report_outline()['summary']}\n\n{sections}\n"
+
+
+def _course_agent_interview_result() -> str:
+    return """**采访主题:** 一舟一课线下课第一期招生，会暴露哪些成交阻力和交付风险？
+**采访人数:** 6 / 30 位模拟Agent
+
+### 关键问答摘录
+
+#### A00 课程发起人 / 招生负责人
+**Q:** 最担心第一期招生哪一步失控？
+**A:** 最担心不是没人感兴趣，而是大家都想等最后一刻确认。必须把课前诊断、席位机制和交付清单提前说清楚。
+
+#### A03 高意愿学员 / 自媒体创业者
+**Q:** 什么会促使你立刻付款？
+**A:** 如果我知道现场能带走一套选题、提示词、自动化流程和复盘模板，我愿意买早鸟；单纯说趋势我不会动。
+
+#### A07 价格敏感学员 / 职场转型者
+**Q:** 你为什么犹豫？
+**A:** 我怕课程太贵但听完不会用。最好有课前问卷和课后作业反馈，让我知道自己不是只来听热闹。
+
+#### A11 同行拼团组织者
+**Q:** 同行优惠的最大风险是什么？
+**A:** 拼团能带来转介绍，但规则必须简单。如果三人同行核销复杂，销售会被大量沟通消耗。
+
+#### A18 退款敏感学员
+**Q:** 什么情况会触发退款情绪？
+**A:** 如果宣传说得很满，但现场案例和我的行业不相关，我会觉得预期落差大。退款规则要提前写明。
+
+#### A24 交付运营负责人
+**Q:** 课后最重要的动作是什么？
+**A:** T+1交付资料，T+7收作业，T+14做一次复盘，T+30筛选转介绍线索。否则线下课热度很快散掉。
+"""
+
+
+def _course_chat_response(message: str) -> str:
+    normalized = message.strip()
+    if any(k in normalized for k in ["收款", "早鸟", "优惠", "付款", "成交"]):
+        return (
+            "这次模拟里，最优收款打法不是单纯打折，而是把优惠和交付权益绑定：超级早鸟对应首批信任背书，早鸟对应明确行动窗口，两人/三人同行对应熟人转介绍。建议现场主推“确认席位 + 课前诊断 + 优先分组反馈”，不要只说便宜。[[S01]] [[S03]] [[A03]] [[A11]]"
+        )
+    if any(k in normalized for k in ["退款", "舆情", "风险", "负面"]):
+        return (
+            "最大的风险不是退款本身，而是学员觉得宣传和交付不一致。需要提前写清楚课前问卷、现场产出、资料回看、作业反馈和退款边界，把不确定性从付款前就降下来。[[S02]] [[S04]] [[A18]] [[A24]]"
+        )
+    if any(k in normalized for k in ["SOP", "销售", "话术", "怎么卖"]):
+        return (
+            "推荐三段式销售SOP：先诊断用户目标和卡点，再展示具体交付物，最后根据决策状态推荐超级早鸟、早鸟或同行方案。这样会比直接推价格更稳，也能减少强销售感。[[S05]] [[S06]] [[A00]] [[A07]]"
+        )
+    return (
+        "总结来看，这个项目的核心不是把50个名额卖满，而是验证一套可复制的招生经营系统：用户画像、优惠规则、销售SOP、课前诊断、课中交付、课后复盘和退款预警。后续演示时可以强调：Foresight提前模拟真实用户反应，帮团队在正式销售前发现风险和机会。[[S01]] [[S05]] [[S06]]"
+    )
+
+
+def _course_chat_citations() -> List[Dict[str, Any]]:
+    return [
+        {"id": "S01", "type": "section", "title": COURSE_REPORT_SECTIONS[0][0], "anchor": "section-0"},
+        {"id": "S02", "type": "section", "title": COURSE_REPORT_SECTIONS[1][0], "anchor": "section-1"},
+        {"id": "S03", "type": "section", "title": COURSE_REPORT_SECTIONS[2][0], "anchor": "section-2"},
+        {"id": "S04", "type": "section", "title": COURSE_REPORT_SECTIONS[3][0], "anchor": "section-3"},
+        {"id": "S05", "type": "section", "title": COURSE_REPORT_SECTIONS[4][0], "anchor": "section-4"},
+        {"id": "S06", "type": "section", "title": COURSE_REPORT_SECTIONS[5][0], "anchor": "section-5"},
+        {"id": "A00", "type": "agent", "title": "课程发起人 / 招生负责人", "anchor": "agent-0"},
+        {"id": "A03", "type": "agent", "title": "高意愿学员 / 自媒体创业者", "anchor": "agent-3"},
+        {"id": "A07", "type": "agent", "title": "价格敏感学员 / 职场转型者", "anchor": "agent-7"},
+        {"id": "A11", "type": "agent", "title": "同行拼团组织者", "anchor": "agent-11"},
+        {"id": "A18", "type": "agent", "title": "退款敏感学员", "anchor": "agent-18"},
+        {"id": "A24", "type": "agent", "title": "交付运营负责人", "anchor": "agent-24"},
+    ]
 
 
 def _fallback_cached_chat_response(message: str) -> str:
@@ -1039,6 +1178,25 @@ def get_cached_report_chat(
     message: str,
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> Optional[Dict[str, Any]]:
+    if simulation_id == COURSE_SIM_ID:
+        return {
+            "response": _course_chat_response(message),
+            "citations": _course_chat_citations(),
+            "tool_calls": [
+                {
+                    "name": "cached_course_report_context",
+                    "parameters": {
+                        "report_id": COURSE_REPORT_ID,
+                        "simulation_id": COURSE_SIM_ID,
+                        "source": "completed_dual_world_course_simulation",
+                    },
+                }
+            ],
+            "sources": ["cached_interactive_report", "completed_dual_world_replay"],
+            "model_used": "cached-demo-report-agent",
+            "llm_used": False,
+        }
+
     if simulation_id != NB_HNW_AI_CASE_ID:
         return None
 
@@ -1151,6 +1309,83 @@ def get_cached_report_chat(
 
 
 def get_cached_report_logs(report_id: str, from_line: int = 0) -> Optional[Dict[str, Any]]:
+    if report_id == COURSE_REPORT_ID:
+        logs: List[Dict[str, Any]] = [
+            {
+                "timestamp": _course_time(0),
+                "elapsed_seconds": 0,
+                "report_id": COURSE_REPORT_ID,
+                "action": "report_start",
+                "stage": "pending",
+                "details": {
+                    "simulation_id": COURSE_SIM_ID,
+                    "graph_id": COURSE_GRAPH_ID,
+                    "simulation_requirement": COURSE_REQUIREMENT,
+                    "message": "开始回溯一舟一课线下课招生与交付风险模拟。",
+                },
+            },
+            {
+                "timestamp": _course_time(1),
+                "elapsed_seconds": 60,
+                "report_id": COURSE_REPORT_ID,
+                "action": "planning_complete",
+                "stage": "planning",
+                "details": {"message": "报告结构规划完成。", "outline": _course_report_outline()},
+            },
+            {
+                "timestamp": _course_time(2),
+                "elapsed_seconds": 120,
+                "report_id": COURSE_REPORT_ID,
+                "action": "tool_result",
+                "stage": "generating",
+                "details": {
+                    "tool_name": "interview_agents",
+                    "result": _course_agent_interview_result(),
+                    "result_length": len(_course_agent_interview_result()),
+                    "message": "关键学员与运营角色采访完成。",
+                },
+            },
+        ]
+        elapsed = 150
+        for idx, (title, content) in enumerate(COURSE_REPORT_SECTIONS, start=1):
+            logs.extend([
+                {
+                    "timestamp": _course_time(idx + 2),
+                    "elapsed_seconds": elapsed,
+                    "report_id": COURSE_REPORT_ID,
+                    "action": "section_start",
+                    "stage": "generating",
+                    "section_title": title,
+                    "section_index": idx,
+                    "details": {"message": f"开始生成章节：{title}"},
+                },
+                {
+                    "timestamp": _course_time(idx + 2),
+                    "elapsed_seconds": elapsed + 20,
+                    "report_id": COURSE_REPORT_ID,
+                    "action": "section_complete",
+                    "stage": "generating",
+                    "section_title": title,
+                    "section_index": idx,
+                    "details": {"message": f"章节完成：{title}", "content": content},
+                },
+            ])
+            elapsed += 45
+        logs.append({
+            "timestamp": _course_time(8),
+            "elapsed_seconds": elapsed,
+            "report_id": COURSE_REPORT_ID,
+            "action": "report_complete",
+            "stage": "completed",
+            "details": {"message": "招生模拟总结报告生成完成，可进入Report Agent交互提问。"},
+        })
+        return {
+            "logs": logs[from_line:],
+            "total_lines": len(logs),
+            "from_line": from_line,
+            "has_more": False,
+        }
+
     if report_id != NB_REPORT_ID:
         return None
 
@@ -1307,6 +1542,21 @@ def get_cached_report_logs(report_id: str, from_line: int = 0) -> Optional[Dict[
 
 
 def get_cached_console_log(report_id: str, from_line: int = 0) -> Optional[Dict[str, Any]]:
+    if report_id == COURSE_REPORT_ID:
+        lines = [
+            "[21:10:09] INFO: 加载一舟一课线下课双世界模拟结果",
+            "[21:10:18] INFO: 双世界并行模拟完成：8轮 / 30个Agent / 18条关键动作",
+            "[21:10:20] INFO: 提取招生转化、早鸟优惠、同行拼团、退款舆情与交付风险变量",
+            "[21:10:22] INFO: Report Agent 生成总结页和可提问上下文",
+            "[21:10:24] INFO: 交互总结页已就绪",
+        ]
+        return {
+            "logs": lines[from_line:],
+            "total_lines": len(lines),
+            "from_line": from_line,
+            "has_more": False,
+        }
+
     if report_id != NB_REPORT_ID:
         return None
     lines = [
@@ -1331,6 +1581,44 @@ def get_cached_console_log(report_id: str, from_line: int = 0) -> Optional[Dict[
 
 
 def get_cached_infographic(report_id: str) -> Optional[Dict[str, Any]]:
+    if report_id == COURSE_REPORT_ID:
+        return {
+            "key_metrics": {
+                "total_agents": 30,
+                "total_posts": 18,
+                "total_engagement": 18,
+                "avg_activity": "0.6",
+                "total_rounds": 8,
+            },
+            "action_distribution": {
+                "by_type": {"CREATE_POST": 18},
+                "by_platform": {"twitter": {"CREATE_POST": 9}, "reddit": {"CREATE_POST": 9}},
+            },
+            "sentiment_breakdown": {
+                "positive_ratio": 56,
+                "neutral_ratio": 28,
+                "negative_ratio": 16,
+            },
+            "top_agents": [
+                {"agent_id": 0, "agent_name": "课程发起人", "agent_title": "招生负责人", "total_actions": 3},
+                {"agent_id": 3, "agent_name": "高意愿学员", "agent_title": "自媒体创业者", "total_actions": 2},
+                {"agent_id": 7, "agent_name": "价格敏感学员", "agent_title": "职场转型者", "total_actions": 2},
+                {"agent_id": 24, "agent_name": "交付运营负责人", "agent_title": "课程交付负责人", "total_actions": 2},
+            ],
+            "timeline": [{"round_num": i, "total": 18 if i == 1 else 0} for i in range(1, 9)],
+            "portfolio": [
+                {"name": "超级早鸟", "value": 10},
+                {"name": "早鸟", "value": 22},
+                {"name": "两人同行", "value": 12},
+                {"name": "三人同行", "value": 6},
+            ],
+            "sales_effect": {
+                "first_conversion": "60%-72%",
+                "diagnosis_followup": "课前诊断显著降低犹豫",
+                "compliance": "明确退款边界与交付清单",
+            },
+        }
+
     if report_id != NB_REPORT_ID:
         return None
 

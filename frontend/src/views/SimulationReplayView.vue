@@ -9,11 +9,12 @@
           <div class="title-sub">
             <span v-if="currentAction">
               Foresight is {{ isSimLive ? 'running' : 'replaying' }}
+              双世界并行模拟 ·
               <span class="platform-tag" :class="currentAction.platform">
                 {{ currentAction.platform === 'twitter' ? 'Twitter' : 'Reddit' }}
               </span>
-              simulation ·
-              <span class="sub-detail">Round {{ currentAction.round_num }}/{{ maxRound }}</span>
+              event ·
+              <span class="sub-detail">Round {{ currentRoundNumber }}/{{ maxRound }}</span>
               ·
               <span class="sub-detail">Day {{ currentRound?.simulated_day ?? '-' }}
                 {{ String(currentRound?.simulated_hour ?? 0).padStart(2, '0') }}:00</span>
@@ -312,11 +313,23 @@ const currentAction = computed(() => allActions.value[currentActionIndex.value] 
 const currentRound = computed(() => currentAction.value?._round || null)
 
 const maxRound = computed(() => {
+  const step5 = replayData.value?.workflow?.find(step => step.step === 5)
+  const executed = Number(step5?.metadata?.total_rounds_executed || 0)
+  if (executed > 0) return executed
+  const replayRounds = replayData.value?.rounds?.length || 0
+  if (replayRounds > 0) return replayRounds
   const tc = replayData.value?.config?.time_config
   if (tc?.total_simulation_hours && tc?.minutes_per_round) {
     return Math.floor((tc.total_simulation_hours * 60) / tc.minutes_per_round)
   }
-  return replayData.value?.rounds?.length || '?'
+  return '?'
+})
+
+const currentRoundNumber = computed(() => {
+  const total = Number(maxRound.value || 0)
+  const roundNum = Number(currentRound.value?.round_num ?? currentAction.value?.round_num ?? 0)
+  if (!Number.isFinite(roundNum)) return '-'
+  return total > 0 ? Math.min(roundNum + 1, total) : roundNum + 1
 })
 
 const isSimLive = computed(() => {
@@ -517,7 +530,11 @@ watch(speed, () => {
 
 onMounted(() => {
   if (simulationId === 'sim_nb_hnw_ai_case' && route.query.mode !== 'process') {
-    router.replace({ name: 'Report', params: { reportId: 'report_nb_hnw_ai_case' } })
+    router.replace({ name: 'Interaction', params: { reportId: 'report_nb_hnw_ai_case' } })
+    return
+  }
+  if (simulationId === 'sim_16eb13645a7b') {
+    router.replace({ name: 'Interaction', params: { reportId: 'report_tongzhou_course_case' } })
     return
   }
 

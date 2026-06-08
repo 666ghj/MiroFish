@@ -731,7 +731,7 @@ const handleNextStep = async () => {
     const reportRes = await getReportBySimulation(props.simulationId)
     const reportId = reportRes?.data?.report_id
     if (reportRes.success && reportId) {
-      router.push({ name: 'Report', params: { reportId } })
+      router.push({ name: 'Interaction', params: { reportId } })
       return
     }
   } catch (err) {
@@ -739,7 +739,9 @@ const handleNextStep = async () => {
   }
 
   if (props.simulationId === 'sim_nb_hnw_ai_case') {
-    router.push({ name: 'Report', params: { reportId: 'report_nb_hnw_ai_case' } })
+    router.push({ name: 'Interaction', params: { reportId: 'report_nb_hnw_ai_case' } })
+  } else if (props.simulationId === 'sim_16eb13645a7b') {
+    router.push({ name: 'Interaction', params: { reportId: 'report_tongzhou_course_case' } })
   } else {
     router.push({ name: 'SimulationReplay', params: { simulationId: props.simulationId }, query: { mode: 'process' } })
   }
