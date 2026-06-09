@@ -70,6 +70,29 @@ services:
     networks:
       - mirofish_net
 
+  # One-shot e2e test. Built but only runs when you opt in:
+  #   docker compose --profile e2e run --rm mirofish-e2e
+  # Output is printed to the host (PASS/FAIL exit code).
+  mirofish-e2e:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.e2e
+    image: mirofish-e2e:latest
+    container_name: mirofish-e2e
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    env_file:
+      - secrets.env
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+      E2E_MAX_CHUNKS: "2"
+    networks:
+      - mirofish_net
+    profiles: ["e2e"]
+    restart: "no"
+
 volumes:
   uploads:
   flask-logs:

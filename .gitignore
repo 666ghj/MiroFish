@@ -58,3 +58,5 @@ backend/uploads/
 
 # Docker 数据
 data/
+# Deployment secrets (real values, never commit)
+deploy/secrets.env
