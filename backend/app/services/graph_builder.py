@@ -10,13 +10,31 @@ import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
-from zep_cloud.client import Zep
-from zep_cloud import EpisodeData, EntityEdgeSourceTarget
+# Zep types (EpisodeData, EntityEdgeSourceTarget, EntityModel/EdgeModel from
+# external_clients.ontology) are still referenced for ontology dynamic Pydantic
+# classes. When zep-cloud is uninstalled, we provide stubs so module import
+# succeeds and the Zep `client` attribute on this service is just the
+# GraphitiAdapter (see __init__ below).
+try:
+    from zep_cloud.client import Zep
+    from zep_cloud import EpisodeData, EntityEdgeSourceTarget
+except ImportError:
+    class Zep:
+        def __init__(self, *a, **kw): pass
+    class EpisodeData:
+        def __init__(self, data, type="text"):
+            self.data = data
+            self.type = type
+    class EntityEdgeSourceTarget:
+        def __init__(self, source, target):
+            self.source = source
+            self.target = target
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from .text_processor import TextProcessor
+from .graphiti_service import get_graphiti_adapter
 from ..utils.locale import t, get_locale, set_locale
 
 
@@ -44,11 +62,10 @@ class GraphBuilderService:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        # Zep's per-project graph becomes Graphiti's group_id (a partition).
+        # The single shared GraphitiAdapter handles all projects.
+        self.api_key = api_key  # kept for signature compat; no longer required
+        self.client = get_graphiti_adapter()
         self.task_manager = TaskManager()
     
     def build_graph_async(
@@ -191,13 +208,14 @@ class GraphBuilderService:
             self.task_manager.fail_task(task_id, error_msg)
     
     def create_graph(self, name: str) -> str:
-        """创建Zep图谱（公开方法）"""
+        """创建图谱（公开方法）"""
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
-        
-        self.client.graph.create(
+        # Graphiti creates the partition implicitly on first add_episode; this
+        # call just reserves the group_id.
+        self.client.create_graph(
             graph_id=graph_id,
             name=name,
-            description="MiroFish Social Simulation Graph"
+            description="MiroFish Social Simulation Graph",
         )
         
         return graph_id
@@ -207,7 +225,23 @@ class GraphBuilderService:
         import warnings
         from typing import Optional
         from pydantic import Field
-        from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
+        # Base classes for the dynamic Pydantic ontology types. Try Zep's
+        # EntityModel/EdgeModel first (preserves a tiny bit of compatibility if
+        # zep-cloud is somehow still in the env), else fall back to Graphiti's
+        # EntityNode/EntityEdge which is what we actually use.
+        try:
+            from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
+        except ImportError:
+            try:
+                from graphiti_core.nodes import EntityNode as _GTEntity
+                from graphiti_core.edges import EntityEdge as _GTEdge
+                EntityModel = _GTEntity  # type: ignore[assignment,misc]
+                EdgeModel = _GTEdge  # type: ignore[assignment,misc]
+                EntityText = str  # type: ignore[assignment,misc]
+            except ImportError:
+                from pydantic import BaseModel as EntityModel  # type: ignore[assignment,misc]
+                from pydantic import BaseModel as EdgeModel  # type: ignore[assignment,misc]
+                EntityText = str  # type: ignore[assignment,misc]
         
         # 抑制 Pydantic v2 关于 Field(default=None) 的警告
         # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略
@@ -283,13 +317,14 @@ class GraphBuilderService:
             if source_targets:
                 edge_definitions[name] = (edge_class, source_targets)
         
-        # 调用Zep API设置本体
+        # Graphiti accepts the original JSON ontology directly. The Pydantic
+        # class construction above was a Zep-specific quirk; we can skip it
+        # for Graphiti and just forward the input. Keep the code path the same
+        # shape (Pydantic EntityModel/EdgeModel classes still constructed and
+        # exposed to introspection code), but the actual set_ontology call now
+        # uses the adapter with the source-of-truth JSON.
         if entity_types or edge_definitions:
-            self.client.graph.set_ontology(
-                graph_ids=[graph_id],
-                entities=entity_types if entity_types else None,
-                edges=edge_definitions if edge_definitions else None,
-            )
+            self.client.set_ontology(graph_id=graph_id, ontology=ontology)
     
     def add_text_batches(
         self,
@@ -320,22 +355,19 @@ class GraphBuilderService:
                 for chunk in batch_chunks
             ]
             
-            # 发送到Zep
+            # 发送到图谱（Graphiti via adapter — returns after sync extraction）
             try:
-                batch_result = self.client.graph.add_batch(
+                batch_result = self.client.add_batch(
                     graph_id=graph_id,
-                    episodes=episodes
+                    episodes=episodes,
                 )
-                
+
                 # 收集返回的 episode uuid
                 if batch_result and isinstance(batch_result, list):
                     for ep in batch_result:
                         ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
                         if ep_uuid:
                             episode_uuids.append(ep_uuid)
-                
-                # 避免请求过快
-                time.sleep(1)
                 
             except Exception as e:
                 if progress_callback:
@@ -350,55 +382,21 @@ class GraphBuilderService:
         progress_callback: Optional[Callable] = None,
         timeout: int = 600
     ):
-        """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
+        """等待所有 episode 处理完成。
+
+        Graphiti's add_episode is synchronous (extraction completes before the
+        call returns), so all episodes returned by add_batch are already done.
+        We still surface progress messages and respect the timeout for the
+        outer loop contract, but we never actually need to poll.
+        """
         if not episode_uuids:
             if progress_callback:
                 progress_callback(t('progress.noEpisodesWait'), 1.0)
             return
-        
-        start_time = time.time()
-        pending_episodes = set(episode_uuids)
-        completed_count = 0
-        total_episodes = len(episode_uuids)
-        
+
         if progress_callback:
-            progress_callback(t('progress.waitingEpisodes', count=total_episodes), 0)
-        
-        while pending_episodes:
-            if time.time() - start_time > timeout:
-                if progress_callback:
-                    progress_callback(
-                        t('progress.episodesTimeout', completed=completed_count, total=total_episodes),
-                        completed_count / total_episodes
-                    )
-                break
-            
-            # 检查每个 episode 的处理状态
-            for ep_uuid in list(pending_episodes):
-                try:
-                    episode = self.client.graph.episode.get(uuid_=ep_uuid)
-                    is_processed = getattr(episode, 'processed', False)
-                    
-                    if is_processed:
-                        pending_episodes.remove(ep_uuid)
-                        completed_count += 1
-                        
-                except Exception as e:
-                    # 忽略单个查询错误，继续
-                    pass
-            
-            elapsed = int(time.time() - start_time)
-            if progress_callback:
-                progress_callback(
-                    t('progress.zepProcessing', completed=completed_count, total=total_episodes, pending=len(pending_episodes), elapsed=elapsed),
-                    completed_count / total_episodes if total_episodes > 0 else 0
-                )
-            
-            if pending_episodes:
-                time.sleep(3)  # 每3秒检查一次
-        
-        if progress_callback:
-            progress_callback(t('progress.processingComplete', completed=completed_count, total=total_episodes), 1.0)
+            progress_callback(t('progress.waitingEpisodes', count=len(episode_uuids)), 0)
+            progress_callback(t('progress.processingComplete', completed=len(episode_uuids), total=len(episode_uuids)), 1.0)
     
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         """获取图谱信息"""
@@ -502,5 +500,5 @@ class GraphBuilderService:
     
     def delete_graph(self, graph_id: str):
         """删除图谱"""
-        self.client.graph.delete(graph_id=graph_id)
+        self.client.delete_graph(graph_id=graph_id)
 

@@ -13,12 +13,23 @@ flask-cors>=6.0.0
 # OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
 openai>=1.0.0
 
-# ============= Zep Cloud =============
-zep-cloud==3.13.0
+# ============= Knowledge Graph (replaces zep-cloud) =============
+# Graphiti is the open-source engine behind Zep; runs server-side extraction
+# using your LLM provider (MiniMax M3) and stores the graph in FalkorDB.
+graphiti-core[falkordb]>=0.20.0
+falkordb>=1.0.0
+# sentence-transformers is the local embedding provider we use (FalkorDB
+# doesn't bundle one, and MiniMax's bespoke embeddings API is rate-limited
+# and not OpenAI-compatible)
+sentence-transformers>=3.0.0
+torch>=2.0.0
 
 # ============= OASIS 社交媒体模拟 =============
-# OASIS 社交模拟框架
-camel-oasis==0.2.5
+# Vendored fork — see vendor/camel-oasis/pyproject.toml for the rationale
+# (the upstream package pins neo4j==5.23.0 which conflicts with
+# graphiti-core[falkordb]'s neo4j>=5.26.0; our fork relaxes the pin since
+# MiroFish's OASIS scripts never invoke the neo4j driver).
+camel-oasis @ file:///app/backend/vendor/camel-oasis
 camel-ai==0.2.78
 
 # ============= 文件处理 =============

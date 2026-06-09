@@ -1,0 +1,41 @@
+[project]
+name = "camel-oasis"
+version = "0.2.5.post1"
+description = "Open Agents Social Interaction Simulations on a Large Scale (vendored fork: relaxed neo4j pin to coexist with graphiti-core[falkordb])"
+authors = [{ name = "CAMEL-AI.org" }]
+readme = "README.md"
+license = { text = "Apache-2.0" }
+keywords = ["multi-agent-systems", "social-simulations"]
+requires-python = ">=3.11,<3.13"
+
+dependencies = [
+    "pandas==2.2.2",
+    "igraph==0.11.6",
+    "cairocffi==1.7.1",
+    "pillow==10.3.0",
+    "unstructured==0.13.7",
+    "sentence-transformers==3.0.0",
+    "prance==23.6.21.0",
+    "openapi-spec-validator==0.7.1",
+    "slack_sdk==3.31.0",
+    # Relaxed from ==5.23.0 to coexist with graphiti-core[falkordb]'s
+    # neo4j>=5.26.0 requirement. The MiroFish code paths (run_*_simulation.py
+    # + run_parallel_simulation.py) never pass a neo4j_config, so AgentGraph
+    # is constructed in-memory-only and the neo4j driver is never invoked.
+    "neo4j>=5.23.0",
+    "camel-ai==0.2.78",
+    "requests_oauthlib==2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oasis"]
+
+# Required because the parent project (MiroFish) declares this package as
+# a direct-reference local path dep ("camel-oasis @ file:///app/backend/vendor/camel-oasis").
+# Without this, hatchling refuses to build when uv is constructing the lock entry.
+[tool.hatch.metadata]
+allow-direct-references = true

@@ -1,0 +1,81 @@
+# MiroFish deploy overlay — agent.profikid.nl
+#
+# Project conventions (matches hermes, snake, wiki siblings):
+#   /docker/<name>/docker-compose.yml
+#   COMPOSE_PROJECT_NAME=<name>
+#   TRAEFIK_HOST=agent.profikid.nl
+#
+# Single port (3000) exposed to Traefik; nginx inside the container
+# serves the built frontend and reverse-proxies /api/* + /health to Flask.
+#
+# Memory graph: FalkorDB (in-memory graph store) on a shared network.
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: mirofish-falkordb
+    restart: unless-stopped
+    expose:
+      - "6379"
+    volumes:
+      - falkordb-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - mirofish_net
+
+  mirofish:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mirofish:latest
+    container_name: mirofish
+    restart: unless-stopped
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    env_file:
+      - secrets.env
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+    expose:
+      - "3000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-mirofish}.rule=Host(`${COMPOSE_PROJECT_NAME:-mirofish}.${TRAEFIK_HOST:-agent.profikid.nl}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-mirofish}.entrypoints=websecure
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-mirofish}.tls.certresolver=letsencrypt
+      - traefik.http.services.${COMPOSE_PROJECT_NAME:-mirofish}.loadbalancer.server.port=3000
+      # HTTP -> HTTPS redirect
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-mirofish}-http.rule=Host(`${COMPOSE_PROJECT_NAME:-mirofish}.${TRAEFIK_HOST:-agent.profikid.nl}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-mirofish}-http.entrypoints=web
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-mirofish}-http.middlewares=redirect-to-https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+    volumes:
+      - uploads:/app/backend/uploads
+      - flask-logs:/app/logs
+      - embedding-model:/root/.cache/huggingface  # cache the sentence-transformers model
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - mirofish_net
+
+volumes:
+  uploads:
+  flask-logs:
+  falkordb-data:
+  embedding-model:
+
+networks:
+  mirofish_net:
+    name: mirofish_net

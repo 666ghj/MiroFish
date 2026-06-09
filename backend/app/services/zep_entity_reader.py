@@ -7,7 +7,17 @@ import time
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
+try:
+    from zep_cloud.client import Zep
+except ImportError:
+    class Zep:  # type: ignore[no-redef]
+        def __init__(self, *a, **kw): pass
+        class graph:
+            class node:
+                @staticmethod
+                def get_entity_edges(**kw): raise NotImplementedError("zep-cloud not installed; use graphiti_service")
+                @staticmethod
+                def get(**kw): raise NotImplementedError("zep-cloud not installed; use graphiti_service")
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -79,11 +89,9 @@ class ZepEntityReader:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        self.api_key = api_key  # kept for signature compat; no longer required
+        from .graphiti_service import get_graphiti_adapter
+        self.client = get_graphiti_adapter()
     
     def _call_with_retry(
         self, 
@@ -190,9 +198,9 @@ class ZepEntityReader:
             边列表
         """
         try:
-            # 使用重试机制调用Zep API
+            # Graphiti via adapter
             edges = self._call_with_retry(
-                func=lambda: self.client.graph.node.get_entity_edges(node_uuid=node_uuid),
+                func=lambda: self.client.get_node_edges(node_uuid=node_uuid),
                 operation_name=f"获取节点边(node={node_uuid[:8]}...)"
             )
             
@@ -346,9 +354,9 @@ class ZepEntityReader:
             EntityNode或None
         """
         try:
-            # 使用重试机制获取节点
+            # Graphiti via adapter
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=entity_uuid),
+                func=lambda: self.client.get_node(node_uuid=entity_uuid),
                 operation_name=f"获取节点详情(uuid={entity_uuid[:8]}...)"
             )
             

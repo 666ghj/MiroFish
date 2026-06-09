@@ -1,6 +1,6 @@
 [project]
 name = "mirofish-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "MiroFish - 简洁通用的群体智能引擎，预测万物"
 requires-python = ">=3.11,<3.13"
 license = { text = "AGPL-3.0" }
@@ -16,11 +16,24 @@ dependencies = [
     # LLM 相关
     "openai>=1.0.0",
     
-    # Zep Cloud
-    "zep-cloud==3.13.0",
+    # 知识图谱 (replaces zep-cloud)
+    # Graphiti is the open-source engine behind Zep; runs server-side extraction
+    # using your LLM provider (MiniMax M3) and stores the graph in FalkorDB.
+    "graphiti-core[falkordb]>=0.20.0",
+    # falkordb is the official Python client for the graph backend
+    "falkordb>=1.0.0",
+    # sentence-transformers is the local embedding provider we use (FalkorDB
+    # doesn't bundle one, and MiniMax's bespoke embeddings API is rate-limited
+    # and not OpenAI-compatible)
+    "sentence-transformers>=3.0.0",
+    "torch>=2.0.0",
     
     # OASIS 社交媒体模拟
-    "camel-oasis==0.2.5",
+    # Vendored fork — see vendor/camel-oasis/pyproject.toml for the rationale
+    # (the upstream package pins neo4j==5.23.0 which conflicts with
+    # graphiti-core[falkordb]'s neo4j>=5.26.0; our fork relaxes the pin since
+    # MiroFish's OASIS scripts never invoke the neo4j driver).
+    "camel-oasis @ file:///app/backend/vendor/camel-oasis",
     "camel-ai==0.2.78",
     
     # 文件处理
@@ -30,7 +43,10 @@ dependencies = [
     "chardet>=5.0.0",
     
     # 工具库
+    # 环境变量加载
     "python-dotenv>=1.0.0",
+    
+    # 数据验证
     "pydantic>=2.0.0",
 ]
 
@@ -53,3 +69,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+# Required because the deps list includes a direct-reference local path dep
+# (camel-oasis @ file:///app/backend/vendor/camel-oasis). Without this,
+# hatchling refuses to build the editable.
+[tool.hatch.metadata]
+allow-direct-references = true

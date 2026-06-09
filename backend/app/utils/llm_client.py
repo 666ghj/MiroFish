@@ -71,16 +71,17 @@ class LLMClient:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 4096
+        max_tokens: int = 16384
     ) -> Dict[str, Any]:
         """
         发送聊天请求并返回JSON
-        
+
         Args:
             messages: 消息列表
             temperature: 温度参数
-            max_tokens: 最大token数
-            
+            max_tokens: 最大token数 (默认 16384 — MiniMax M3 在本体/配置文件
+                这类长 JSON 模式下,4096 tokens 经常会把 JSON 截断在中间)
+
         Returns:
             解析后的JSON对象
         """
@@ -91,13 +92,24 @@ class LLMClient:
             response_format={"type": "json_object"}
         )
         # 清理markdown代码块标记
+        # MiniMax M3 ignores response_format=json_object and wraps JSON in
+        # markdown fences. Be aggressive about stripping them, including the
+        # ```json\n and trailing ``` even when surrounded by other content.
         cleaned_response = response.strip()
-        cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
+        # Strip a leading ``` (with optional language tag and newline)
+        cleaned_response = re.sub(r'^```(?:json|JSON)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
+        # Strip a trailing ``` (with optional preceding newline)
         cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
+        # If there's still a ```json or ``` anywhere, take the first JSON-looking
+        # block from the response.
+        if '```' in cleaned_response:
+            m = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', cleaned_response)
+            if m:
+                cleaned_response = m.group(1)
         cleaned_response = cleaned_response.strip()
 
         try:
             return json.loads(cleaned_response)
         except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
+            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response[:200]}")
 

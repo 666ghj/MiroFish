@@ -12,7 +12,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
+try:
+    from zep_cloud.client import Zep  # noqa: F811
+except ImportError:
+    class Zep:  # type: ignore[no-redef]
+        def __init__(self, *a, **kw): pass
+        class graph:
+            def add(self, **kw): raise NotImplementedError("zep-cloud not installed; use graphiti_service")
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -238,12 +244,10 @@ class ZepGraphMemoryUpdater:
             api_key: Zep API Key（可选，默认从配置读取）
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        self.api_key = api_key  # kept for signature compat; no longer required
+
+        from .graphiti_service import get_graphiti_adapter
+        self.client = get_graphiti_adapter()
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -411,10 +415,10 @@ class ZepGraphMemoryUpdater:
         # 带重试的发送
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
+                # Graphiti via adapter: one episode per batch (extraction is sync)
+                self.client.add_batch(
                     graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
+                    episodes=[{"data": combined_text, "type": "text"}],
                 )
                 
                 self._total_sent += 1

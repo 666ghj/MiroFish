@@ -32,8 +32,17 @@ class Config:
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
-    # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    # FalkorDB配置（replaces Zep）
+    FALKORDB_HOST = os.environ.get('FALKORDB_HOST', 'localhost')
+    FALKORDB_PORT = int(os.environ.get('FALKORDB_PORT', '6379'))
+    FALKORDB_USERNAME = os.environ.get('FALKORDB_USERNAME', None) or None
+    FALKORDB_PASSWORD = os.environ.get('FALKORDB_PASSWORD', None) or None
+    
+    # 嵌入模型：本地 sentence-transformers（pre-downloaded in image）
+    EMBEDDING_MODEL = os.environ.get(
+        'EMBEDDING_MODEL',
+        'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+    )
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -69,7 +78,7 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+        # FalkorDB host defaults to localhost; only fail if explicitly empty
+        if not cls.FALKORDB_HOST:
+            errors.append("FALKORDB_HOST 未配置")
         return errors
-

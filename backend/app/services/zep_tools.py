@@ -13,7 +13,15 @@ import json
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
+try:
+    from zep_cloud.client import Zep  # noqa: F811
+except ImportError:
+    class Zep:  # type: ignore[no-redef]
+        def __init__(self, *a, **kw): pass
+        class graph:
+            def search(self, **kw): raise NotImplementedError("zep-cloud not installed; use graphiti_service")
+            class node:
+                def get(self, **kw): raise NotImplementedError("zep-cloud not installed; use graphiti_service")
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -423,11 +431,9 @@ class ZepToolsService:
     RETRY_DELAY = 2.0
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        self.api_key = api_key  # kept for signature compat; no longer required
+        from .graphiti_service import get_graphiti_adapter
+        self.client = get_graphiti_adapter()
         # LLM客户端用于InsightForge生成子问题
         self._llm_client = llm_client
         logger.info(t("console.zepToolsInitialized"))
@@ -485,15 +491,14 @@ class ZepToolsService:
         """
         logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
         
-        # 尝试使用Zep Cloud Search API
+        # 尝试使用 Graphiti search
         try:
             search_results = self._call_with_retry(
-                func=lambda: self.client.graph.search(
+                func=lambda: self.client.search(
                     graph_id=graph_id,
                     query=query,
                     limit=limit,
                     scope=scope,
-                    reranker="cross_encoder"
                 ),
                 operation_name=t("console.graphSearchOp", graphId=graph_id)
             )
@@ -727,7 +732,7 @@ class ZepToolsService:
         
         try:
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=node_uuid),
+                func=lambda: self.client.get_node(node_uuid=node_uuid),
                 operation_name=t("console.fetchNodeDetailOp", uuid=node_uuid[:8])
             )
             

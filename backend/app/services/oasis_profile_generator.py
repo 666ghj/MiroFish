@@ -16,7 +16,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
+try:
+    from zep_cloud.client import Zep  # noqa: F811
+except ImportError:
+    class Zep:  # type: ignore[no-redef]
+        def __init__(self, *a, **kw): pass
+        class graph:
+            def search(self, **kw): raise NotImplementedError("zep-cloud not installed; use graphiti_service")
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -198,16 +204,11 @@ class OasisProfileGenerator:
             base_url=self.base_url
         )
         
-        # Zep客户端用于检索丰富上下文
-        self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
-        self.zep_client = None
+        # Graphiti adapter (replaces Zep) for retrieval-enrichment
+        self.zep_api_key = zep_api_key  # kept for signature compat
+        from .graphiti_service import get_graphiti_adapter
+        self.zep_client = get_graphiti_adapter()
         self.graph_id = graph_id
-        
-        if self.zep_api_key:
-            try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
-            except Exception as e:
-                logger.warning(f"Zep客户端初始化失败: {e}")
     
     def generate_profile_from_entity(
         self, 
@@ -324,12 +325,11 @@ class OasisProfileGenerator:
             
             for attempt in range(max_retries):
                 try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
+                    return self.zep_client.search(
                         graph_id=self.graph_id,
+                        query=comprehensive_query,
                         limit=30,
                         scope="edges",
-                        reranker="rrf"
                     )
                 except Exception as e:
                     last_exception = e
@@ -349,12 +349,11 @@ class OasisProfileGenerator:
             
             for attempt in range(max_retries):
                 try:
-                    return self.zep_client.graph.search(
+                    return self.zep_client.search(
+                        graph_id=self.graph_id or "",
                         query=comprehensive_query,
-                        graph_id=self.graph_id,
                         limit=20,
                         scope="nodes",
-                        reranker="rrf"
                     )
                 except Exception as e:
                     last_exception = e
