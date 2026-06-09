@@ -868,7 +868,7 @@ const sendToReportAgent = async (message) => {
     chatHistory.value.push({
       role: 'assistant',
       content: res.data.response || res.data.answer || t('step5.noResponse'),
-      citations: res.data.citations || [],
+      citations: [],
       timestamp: new Date().toISOString()
     })
     addLog(t('log.reportAgentReplied'))

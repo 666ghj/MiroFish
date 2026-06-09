@@ -1395,7 +1395,7 @@ Agent问答证据：
             response = _ensure_course_chat_citations(llm.chat(messages=messages, temperature=0.45, max_tokens=1600))
             return {
                 "response": response,
-                "citations": _course_chat_citations(),
+                "citations": [],
                 "tool_calls": [
                     {
                         "name": "course_report_context_review",
@@ -1426,7 +1426,7 @@ Agent问答证据：
             )
             return {
                 "response": _course_chat_response(message),
-                "citations": _course_chat_citations(),
+                "citations": [],
                 "tool_calls": [
                     {
                         "name": "course_report_context_fallback",
@@ -1513,7 +1513,7 @@ Agent问答证据：
         response = _ensure_chat_citations(llm.chat(messages=messages, temperature=0.45, max_tokens=1200))
         return {
             "response": response,
-            "citations": _chat_citations(),
+            "citations": [],
             "tool_calls": [
                 {
                     "name": "cached_report_context",
@@ -1536,7 +1536,7 @@ Agent问答证据：
         )
         return {
             "response": _fallback_cached_chat_response(message),
-            "citations": _chat_citations(),
+            "citations": [],
             "tool_calls": [
                 {
                     "name": "cached_report_context_fallback",
