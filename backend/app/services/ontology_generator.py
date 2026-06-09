@@ -214,12 +214,41 @@ class OntologyGenerator:
         ]
         
         # 调用LLM
-        result = self.llm_client.chat_json(
-            messages=messages,
-            temperature=0.3,
-            max_tokens=4096
-        )
-        
+        try:
+            result = self.llm_client.chat_json(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=16384,
+            )
+        except ValueError as json_err:
+            logger.warning(
+                f"[ontology] first attempt failed (likely M3 JSON truncation): {json_err}; retrying with compact prompt"
+            )
+            # 紧凑重试:限制 entity/edge types 数量,砍掉 attributes
+            compact_doc = "\n".join(document_texts)[:30000]
+            compact_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Output ONLY valid JSON, no markdown, no commentary. "
+                        "Schema: {entity_types:[{name:PascalCase,description:short}],"
+                        "edge_types:[{name:UPPER_SNAKE_CASE,description:short}],"
+                        "analysis_summary:one sentence}. "
+                        "Limit to AT MOST 6 entity types and 6 edge types. "
+                        "Do NOT include attributes arrays."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Text:\\n{compact_doc}\\n\\nRequirement: {simulation_requirement}\\n\\nReturn JSON.",
+                },
+            ]
+            result = self.llm_client.chat_json(
+                messages=compact_messages,
+                temperature=0.2,
+                max_tokens=8192,
+            )
+
         # 验证和后处理
         result = self._validate_and_process(result)
         

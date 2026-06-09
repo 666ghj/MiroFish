@@ -1,13 +1,19 @@
 # Lightweight e2e test image. Inherits the MiroFish base image (already
 # has the patched graphiti_service.py + all Python deps) and only adds
 # the test script. Keeps the image small and the build fast.
+#
+# Build context: project root (so the parent Dockerfile already has app/).
+# The test script is fetched from deploy/ in the project tree.
 
 FROM mirofish:latest
 
 # Drop the long-running start.sh and just run the test
 USER root
 RUN mkdir -p /app/deploy
-COPY e2e_test.py /app/deploy/e2e_test.py
+COPY deploy/e2e_test.py /app/deploy/e2e_test.py
 
-# Run the test as the entrypoint
-ENTRYPOINT ["python", "/app/deploy/e2e_test.py"]
+# Run the test as the entrypoint. The MiroFish image is uv-managed — flask,
+# graphiti, falkordb all live under /app/backend/.venv, so we need to invoke
+# python via `uv run` to get the venv on PYTHONPATH.
+WORKDIR /app/backend
+ENTRYPOINT ["uv", "run", "python", "/app/deploy/e2e_test.py"]

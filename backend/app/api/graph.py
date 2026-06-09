@@ -529,6 +529,236 @@ def build_graph():
         }), 500
 
 
+
+
+# ============== 一键摄入接口 ==============
+
+import threading
+import traceback
+
+from flask import request, jsonify
+
+from . import graph_bp
+from ..config import Config
+from ..services.graph_builder import GraphBuilderService
+from ..services.ontology_generator import OntologyGenerator
+from ..services.text_processor import TextProcessor
+from ..utils.logger import get_logger
+from ..utils.locale import t, get_locale, set_locale
+from ..models.task import TaskManager, TaskStatus
+from ..models.project import ProjectManager, ProjectStatus
+
+logger = get_logger("mirofish.api.ingest_text")
+
+
+@graph_bp.route("/ingest_text", methods=["POST"])
+def ingest_text():
+    """
+    One-shot ingest: text in, project + ontology + async build out.
+
+    Request (JSON):
+        {
+            "name": "iran-briefing-2026-06-09T11",
+            "text": "## IRAN/US/ISRAEL CONFLICT ...",
+            "simulation_requirement": "Extract entities and relations...",
+            "additional_context": "optional, free-form",
+            "graph_name": "optional, defaults to name",
+            "chunk_size": 500,
+            "chunk_overlap": 50
+        }
+
+    Response:
+        {
+            "success": true,
+            "data": {
+                "project_id": "proj_xxxx",
+                "task_id":    "task_xxxx",
+                "message":    "..."
+            }
+        }
+
+    Poll status with: GET /api/graph/task/<task_id>
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+
+        name = (data.get("name") or "").strip()
+        text = (data.get("text") or "").strip()
+        simulation_requirement = (data.get("simulation_requirement") or "").strip()
+        additional_context = (data.get("additional_context") or "").strip() or None
+        graph_name = (data.get("graph_name") or name or "MiroFish Graph").strip()
+        chunk_size = int(data.get("chunk_size") or Config.DEFAULT_CHUNK_SIZE)
+        chunk_overlap = int(data.get("chunk_overlap") or Config.DEFAULT_CHUNK_OVERLAP)
+
+        if not name:
+            return jsonify({"success": False, "error": "name is required"}), 400
+        if not text:
+            return jsonify({"success": False, "error": "text is required"}), 400
+        if not simulation_requirement:
+            return jsonify(
+                {"success": False, "error": "simulation_requirement is required"}
+            ), 400
+        if not Config.FALKORDB_HOST:
+            return jsonify({"success": False, "error": "FalkorDB not configured"}), 500
+
+        # 1. Create project
+        project = ProjectManager.create_project(name=name)
+        project.simulation_requirement = simulation_requirement
+        project.chunk_size = chunk_size
+        project.chunk_overlap = chunk_overlap
+        logger.info(f"[ingest_text] created project {project.project_id} ({name})")
+
+        # 2. Save extracted text
+        cleaned_text = TextProcessor.preprocess_text(text)
+        project.total_text_length = len(cleaned_text)
+        ProjectManager.save_extracted_text(project.project_id, cleaned_text)
+        logger.info(
+            f"[ingest_text] saved text: {len(cleaned_text)} chars "
+            f"(project={project.project_id})"
+        )
+
+        # 3. Generate ontology synchronously — this is an LLM call, takes ~10–30s
+        generator = OntologyGenerator()
+        ontology = generator.generate(
+            document_texts=[cleaned_text],
+            simulation_requirement=simulation_requirement,
+            additional_context=additional_context,
+        )
+        entity_count = len(ontology.get("entity_types", []))
+        edge_count = len(ontology.get("edge_types", []))
+        project.ontology = {
+            "entity_types": ontology.get("entity_types", []),
+            "edge_types": ontology.get("edge_types", []),
+        }
+        project.analysis_summary = ontology.get("analysis_summary", "")
+        project.status = ProjectStatus.ONTOLOGY_GENERATED
+        ProjectManager.save_project(project)
+        logger.info(
+            f"[ingest_text] ontology ready: {entity_count} entity types, "
+            f"{edge_count} edge types (project={project.project_id})"
+        )
+
+        # 4. Kick off async graph build (same path /build uses)
+        task_manager = TaskManager()
+        task_id = task_manager.create_task(f"构建图谱: {graph_name}")
+        project.status = ProjectStatus.GRAPH_BUILDING
+        project.graph_build_task_id = task_id
+        ProjectManager.save_project(project)
+        current_locale = get_locale()
+
+        def build_task():
+            set_locale(current_locale)
+            build_logger = get_logger("mirofish.build.ingest")
+            try:
+                build_logger.info(
+                    f"[{task_id}] start build for project={project.project_id}"
+                )
+                task_manager.update_task(
+                    task_id, status=TaskStatus.PROCESSING, message=t("progress.initGraphService")
+                )
+                builder = GraphBuilderService(api_key=None)
+
+                # Chunk
+                task_manager.update_task(task_id, message=t("progress.textChunking"), progress=5)
+                chunks = TextProcessor.split_text(
+                    cleaned_text, chunk_size=chunk_size, overlap=chunk_overlap
+                )
+                total_chunks = len(chunks)
+
+                # Create graph + ontology
+                task_manager.update_task(
+                    task_id, message=t("progress.creatingZepGraph"), progress=10
+                )
+                graph_id = builder.create_graph(name=graph_name)
+                project.graph_id = graph_id
+                ProjectManager.save_project(project)
+
+                task_manager.update_task(
+                    task_id, message=t("progress.settingOntology"), progress=15
+                )
+                builder.set_ontology(graph_id, ontology)
+
+                # Add text batches
+                def add_cb(msg, ratio):
+                    task_manager.update_task(
+                        task_id, message=msg, progress=15 + int(ratio * 40)
+                    )
+
+                episode_uuids = builder.add_text_batches(
+                    graph_id, chunks, batch_size=3, progress_callback=add_cb
+                )
+
+                # Wait for Graphiti to process episodes
+                def wait_cb(msg, ratio):
+                    task_manager.update_task(
+                        task_id, message=msg, progress=55 + int(ratio * 35)
+                    )
+
+                builder._wait_for_episodes(episode_uuids, wait_cb)
+
+                # Fetch final graph data
+                graph_data = builder.get_graph_data(graph_id)
+                project.status = ProjectStatus.GRAPH_COMPLETED
+                ProjectManager.save_project(project)
+
+                node_count = graph_data.get("node_count", 0)
+                edge_count_out = graph_data.get("edge_count", 0)
+                build_logger.info(
+                    f"[{task_id}] done: graph_id={graph_id} "
+                    f"nodes={node_count} edges={edge_count_out}"
+                )
+
+                task_manager.update_task(
+                    task_id,
+                    status=TaskStatus.COMPLETED,
+                    message=t("progress.graphBuildComplete"),
+                    progress=100,
+                    result={
+                        "project_id": project.project_id,
+                        "graph_id": graph_id,
+                        "node_count": node_count,
+                        "edge_count": edge_count_out,
+                        "chunk_count": total_chunks,
+                    },
+                )
+            except Exception as e:
+                build_logger.error(f"[{task_id}] failed: {e}")
+                build_logger.debug(traceback.format_exc())
+                project.status = ProjectStatus.FAILED
+                project.error = str(e)
+                ProjectManager.save_project(project)
+                task_manager.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED,
+                    message=t("progress.buildFailed", error=str(e)),
+                    error=traceback.format_exc(),
+                )
+
+        thread = threading.Thread(target=build_task, daemon=True)
+        thread.start()
+
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "project_id": project.project_id,
+                    "task_id": task_id,
+                    "graph_name": graph_name,
+                    "ontology_entity_types": entity_count,
+                    "ontology_edge_types": edge_count,
+                    "text_length": len(cleaned_text),
+                    "message": t("api.graphBuildStarted", taskId=task_id),
+                },
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"ingest_text failed: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify(
+            {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+        ), 500
+
 # ============== 任务查询接口 ==============
 
 @graph_bp.route('/task/<task_id>', methods=['GET'])

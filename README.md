@@ -28,6 +28,8 @@
 
 **MiroFish** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
 
+> **This is a maintained fork** of [666ghj/MiroFish](https://github.com/666ghj/MiroFish). It swaps Zep Cloud for **Graphiti + FalkorDB** (open source, self-hosted), adds a one-call `POST /api/graph/ingest_text` API for cron automations, and ships a production Docker stack for `agent.profikid.nl`. See [About this fork](#-about-this-fork) below.
+
 > You only need to: Upload seed materials (data analysis reports or interesting novel stories) and describe your prediction requirements in natural language</br>
 > MiroFish will return: A detailed prediction report and a deeply interactive high-fidelity digital world
 
@@ -116,15 +118,22 @@ cp .env.example .env
 
 ```env
 # LLM API Configuration (supports any LLM API with OpenAI SDK format)
-# Recommended: Alibaba Qwen-plus model via Bailian Platform: https://bailian.console.aliyun.com/
+# Recommended: MiniMax M-series via https://api.minimax.io/v1
+#   - MiniMax-M2.7-highspeed : best for cron / high-volume (recommended)
+#   - MiniMax-M3              : heavier reasoning, slower, higher quality
+# Alibaba Qwen-plus via Bailian Platform: https://bailian.console.aliyun.com/
 # High consumption, try simulations with fewer than 40 rounds first
 LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL_NAME=qwen-plus
+LLM_BASE_URL=https://api.minimax.io/v1
+LLM_MODEL_NAME=MiniMax-M2.7-highspeed
 
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+# Graph store (this fork: Graphiti + FalkorDB; no Zep API key needed)
+# FalkorDB runs as a Docker sidecar — see deploy/docker-compose.yml
+FALKORDB_HOST=falkordb
+FALKORDB_PORT=6379
+
+# Embedding model (local sentence-transformers, pre-downloaded in the image)
+EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 ```
 
 #### 2. Install Dependencies
@@ -191,6 +200,59 @@ The MiroFish team is recruiting full-time/internship positions. If you're intere
 **MiroFish has received strategic support and incubation from Shanda Group!**
 
 MiroFish's simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**, We sincerely thank the CAMEL-AI team for their open-source contributions!
+
+## 🔱 About this fork
+
+This is a maintained fork of [666ghj/MiroFish](https://github.com/666ghj/MiroFish) maintained at [profikid/MiroFish](https://github.com/profikid/MiroFish). It replaces the Zep Cloud dependency with **Graphiti + FalkorDB** (both open source), adds a one-call ingest API, and ships a production-ready Docker deployment for `agent.profikid.nl`.
+
+### What changed vs upstream
+
+| | Upstream | This fork |
+| --- | --- | --- |
+| Graph store | Zep Cloud (managed, requires API key) | Graphiti + FalkorDB (self-hosted, Redis protocol) |
+| LLM recommendation | Qwen-plus (DashScope) | MiniMax M-series (M2.7-highspeed for cron, M3 for high-quality) |
+| Ingest API | 3 calls (project → ontology → build) | 1 call: `POST /api/graph/ingest_text` (project + ontology + build) |
+| Deploy | `npm run dev` (dev) / `docker compose up` (Docker Hub) | `deploy/` overlay: Traefik + Let's Encrypt + FalkorDB sidecar + e2e one-shot |
+| E2E test | none shipped | `deploy/e2e_test.py` + `deploy/e2e.sh` (builds a one-shot image, runs against the real briefing seed) |
+| Cron-friendly | not designed for it | `deploy/mirofish_ingest.sh` — one-shot POST + poll, exits 0/2/3/4 |
+| Embeddings | Zep-managed | local `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (pre-downloaded in the image) |
+
+### Why Graphiti + FalkorDB
+
+Zep Cloud's free tier is fine for dev, but for a self-hosted cron pipeline (Iran briefing every 12h, entity extraction, simulations) you want:
+- **No per-month API cap** — the cron keeps running on bad days, good days, news spikes
+- **No external service dependency** — graph store lives next to the app as a Docker sidecar
+- **Same engine** — Graphiti is the open-source core that powers Zep Cloud, so the entity/edge quality is identical
+
+The `backend/app/services/graphiti_service.py` shim is a Zep-shaped facade over a real `Graphiti(graph_driver=FalkorDriver(...))`, so the rest of the MiroFish codebase (which still speaks Zep) didn't have to change.
+
+### Production deployment
+
+The `deploy/` directory contains a single-host Docker stack for `agent.profikid.nl`:
+
+```bash
+# On the host:
+cd /docker/mirofish
+./deploy/up.sh         # build image, bring up mirofish + falkordb
+./deploy/e2e.sh        # run the e2e test against the real briefing seed
+```
+
+Traefik (already on the host) auto-issues the Let's Encrypt cert for `mirofish.agent.profikid.nl`. See [deploy/README.md](./deploy/README.md) for the full layout, env vars, and troubleshooting.
+
+### Cron integration
+
+The fork was built so that a scheduled OSINT briefing cron can drop the markdown output straight into MiroFish:
+
+```bash
+# Cron's last-written briefing file -> POST + poll
+briefing="$(ls -t /home/hermes/.hermes/cron/output/<job_id>/*.md | head -1)"
+nohup bash /docker/mirofish/deploy/mirofish_ingest.sh \
+  "iran-osint-$(date -u +%Y%m%dT%H%M)" \
+  "$briefing" \
+  >/tmp/mirofish-ingest.log 2>&1 &
+```
+
+The script handles ontology generation + async graph build + polling, exits 0 on success with a `nodes=N edges=M` summary in the log.
 
 ## 📈 Project Statistics
 
