@@ -25,6 +25,21 @@ Traefik (running on the host as the `traefik` Docker network) auto-issues a Let'
 └── e2e_test.py                     <-- the test itself
 ```
 
+## Companion: FalkorDB Browser
+
+A separate stack at `/docker/falkordb-browser/` exposes the [FalkorDB Browser](https://github.com/FalkorDB/falkordb-browser) (v2.0.10) at **`https://falkor.agent.profikid.nl`**. It joins the same `mirofish_net` network as the sidecar so the browser UI can read every graph the MiroFish cron produces (MATCH queries, schema explorer, node editor).
+
+To add the connection in the UI:
+
+1. Open `https://falkor.agent.profikid.nl/`
+2. On the login page, enter:
+   - **Host:** `falkordb`
+   - **Port:** `6379`
+   - **Username / Password:** leave empty (the MiroFish FalkorDB runs without auth)
+3. The browser will list all the `mirofish_*` graphs from the cron ingests.
+
+The browser uses its own network connection (server-side) to dial `falkordb:6379`, so the host field is just an identifier — your browser doesn't need to be able to reach it.
+
 ## Deploy
 
 ```bash
