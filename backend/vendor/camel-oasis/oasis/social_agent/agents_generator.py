@@ -581,12 +581,20 @@ async def generate_reddit_agent_graph(
             "edges": [],  # Relationship details
             "other_info": {},
         }
-        # Update agent profile with additional information
-        profile["other_info"]["user_profile"] = agent_info[i]["persona"]
-        profile["other_info"]["mbti"] = agent_info[i]["mbti"]
-        profile["other_info"]["gender"] = agent_info[i]["gender"]
-        profile["other_info"]["age"] = agent_info[i]["age"]
-        profile["other_info"]["country"] = agent_info[i]["country"]
+        # Update agent profile with additional information.
+        # Use .get() with sensible defaults so a malformed/missing-field
+        # profile (which happens when the LLM-emitted persona JSON fails to
+        # parse and the persona worker falls back to a basic structure) does
+        # not KeyError the whole simulation at start time. Hard-coding
+        # defaults here means a sim can run with a few sparse profiles
+        # instead of crashing on round 1.
+        profile["other_info"]["user_profile"] = (
+            agent_info[i].get("persona") or agent_info[i].get("bio", "")
+        )
+        profile["other_info"]["mbti"] = agent_info[i].get("mbti", "ISTJ")
+        profile["other_info"]["gender"] = agent_info[i].get("gender", "other")
+        profile["other_info"]["age"] = agent_info[i].get("age", 30)
+        profile["other_info"]["country"] = agent_info[i].get("country", "Unknown")
 
         user_info = UserInfo(
             name=agent_info[i]["username"],

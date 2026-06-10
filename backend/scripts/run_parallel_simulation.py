@@ -1156,7 +1156,11 @@ async def run_twitter_simulation(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.TWITTER,
         database_path=db_path,
-        semaphore=30,  # Limit max concurrent LLM requests to prevent API overload
+        semaphore=8,  # Lowered from 30 to bound concurrent LLM responses in memory.
+                      # The OASIS Python process holds each in-flight response in RAM
+                      # until the asyncio.gather() fan-in; with 30 in flight, 2-4 KB
+                      # bios per agent stack up fast. At semaphore=8 the host has
+                      # headroom to run 20-25 agent sims on an 8GB box without OOM.
     )
     
     await result.env.reset()
@@ -1347,7 +1351,11 @@ async def run_reddit_simulation(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
-        semaphore=30,  # Limit max concurrent LLM requests to prevent API overload
+        semaphore=8,  # Lowered from 30 to bound concurrent LLM responses in memory.
+                      # The OASIS Python process holds each in-flight response in RAM
+                      # until the asyncio.gather() fan-in; with 30 in flight, 2-4 KB
+                      # bios per agent stack up fast. At semaphore=8 the host has
+                      # headroom to run 20-25 agent sims on an 8GB box without OOM.
     )
     
     await result.env.reset()

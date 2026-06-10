@@ -71,7 +71,7 @@ import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { getProject, getGraphData } from '../api/graph'
-import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from '../api/simulation'
+import { getSimulation } from '../api/simulation'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { useI18n } from 'vue-i18n'
 
@@ -177,68 +177,10 @@ const handleNextStep = (params = {}) => {
 
 // --- Data Logic ---
 
-/**
- * Check for and shut down any running simulation
- * When the user returns from Step 3 to Step 2, we assume they want to exit the simulation
- */
-const checkAndStopRunningSimulation = async () => {
-  if (!currentSimulationId.value) return
-  
-  try {
-    // First check whether the simulation environment is alive
-    const envStatusRes = await getEnvStatus({ simulation_id: currentSimulationId.value })
-    
-    if (envStatusRes.success && envStatusRes.data?.env_alive) {
-      addLog(t('log.detectedSimEnvRunning'))
-      
-      // Try to gracefully shut down the simulation environment
-      try {
-        const closeRes = await closeSimulationEnv({ 
-          simulation_id: currentSimulationId.value,
-          timeout: 10  // 10-second timeout
-        })
-        
-        if (closeRes.success) {
-          addLog(t('log.simEnvClosed'))
-        } else {
-          addLog(t('log.closeSimEnvFailedWithError', { error: closeRes.error || t('common.unknownError') }))
-          // If graceful shutdown failed, try a forced stop
-          await forceStopSimulation()
-        }
-      } catch (closeErr) {
-        addLog(t('log.closeSimEnvException', { error: closeErr.message }))
-        // If graceful shutdown raised, try a forced stop
-        await forceStopSimulation()
-      }
-    } else {
-      // Environment is not running, but a process may still be alive — check status
-      const simRes = await getSimulation(currentSimulationId.value)
-      if (simRes.success && simRes.data?.status === 'running') {
-        addLog(t('log.detectedSimRunning'))
-        await forceStopSimulation()
-      }
-    }
-  } catch (err) {
-    // Failing to check env status shouldn't block the rest of the flow
-    console.warn('Failed to check simulation status:', err)
-  }
-}
-
-/**
- * Force-stop the simulation
- */
-const forceStopSimulation = async () => {
-  try {
-    const stopRes = await stopSimulation({ simulation_id: currentSimulationId.value })
-    if (stopRes.success) {
-      addLog(t('log.simForceStopSuccess'))
-    } else {
-      addLog(t('log.forceStopSimFailed', { error: stopRes.error || t('common.unknownError') }))
-    }
-  } catch (err) {
-    addLog(t('log.forceStopSimException', { error: err.message }))
-  }
-}
+// NOTE: checkAndStopRunningSimulation() / forceStopSimulation() were removed.
+// They used to be called from onMounted, which killed in-progress simulations
+// whenever a user opened the sim URL directly or refreshed Step 2. Step 3's
+// handleGoBack() is the only place that should stop a sim now.
 
 const loadSimulationData = async () => {
   try {
@@ -293,10 +235,14 @@ const refreshGraph = () => {
 
 onMounted(async () => {
   addLog(t('log.simViewInit'))
-  
-  // Check for and shut down any running simulation (when the user returns from Step 3)
-  await checkAndStopRunningSimulation()
-  
+
+  // NOTE: We intentionally do NOT auto-stop running simulations on mount.
+  // Step 3's handleGoBack() is responsible for stopping the sim when the user
+  // explicitly clicks "Back" to return to Step 2. Previously this onMounted
+  // hook called checkAndStopRunningSimulation() unconditionally, which killed
+  // in-progress simulations whenever a user opened the sim URL directly or
+  // refreshed Step 2 (the "loading error" symptom).
+
   // Load simulation data
   loadSimulationData()
 })
