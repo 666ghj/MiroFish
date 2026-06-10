@@ -316,9 +316,13 @@ class MinimaxLLMClient(LLMClient):
 def _strip_reasoning_and_fence(s: str) -> str:
     """Remove <think>...</think> reasoning blocks and markdown code fences."""
     s = s.strip()
-    # Strip <think>...</think> blocks
+    # Strip <think>...</think> AND <think>...</think> reasoning blocks.
+    # M2.7 (the active model) emits the lowercase <think> tag; M3/Qwen emits <think>.
+    # Both must be stripped before JSON extraction.
     import re
     s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL)
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL)
+    s = re.sub(r"<antmlthinking>.*?</antmlthinking>", "", s, flags=re.DOTALL)
     s = s.strip()
     # Strip markdown code fences
     if s.startswith("```"):
@@ -475,14 +479,30 @@ def _normalize_extraction_payload(data: Dict[str, Any], model: Type[BaseModel]) 
 
         # Only rename entity_type_id if missing and the model expects it
         if "entity_type_id" in model_field_set and "entity_type_id" not in item_norm:
+            # M2.7 commonly emits "entity_types": ["Country", "Entity"] (a plural
+            # list of strings) instead of the singular "type"/"entity_type".
+            # Try the singular aliases first, then the plural list.
+            chosen = None
             for alias in ("type", "entity_type", "label", "category", "kind"):
                 if alias in item_norm:
-                    val = item_norm.pop(alias)
-                    if isinstance(val, int):
-                        item_norm["entity_type_id"] = val
-                    elif isinstance(val, str):
-                        item_norm["entity_type_id"] = _entity_type_id_for_label(val)
+                    chosen = item_norm.pop(alias)
                     break
+            if chosen is None and "entity_types" in item_norm:
+                v = item_norm.pop("entity_types")
+                if isinstance(v, list) and v:
+                    for candidate in v:
+                        if isinstance(candidate, str) and candidate.lower() != "entity":
+                            chosen = candidate
+                            break
+                    if chosen is None:
+                        chosen = v[0] if isinstance(v[0], str) else None
+                elif isinstance(v, str):
+                    chosen = v
+            if chosen is not None:
+                if isinstance(chosen, int):
+                    item_norm["entity_type_id"] = chosen
+                elif isinstance(chosen, str):
+                    item_norm["entity_type_id"] = _entity_type_id_for_label(chosen)
 
         # episode_indices default — M3 sometimes emits {"item": "0"} (JSON-schema
         # items shape) or a bare string instead of a list of ints.

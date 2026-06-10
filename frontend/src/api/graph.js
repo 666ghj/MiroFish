@@ -68,3 +68,16 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 列出项目（最近 N 个），用于首页 history 视图显示
+ * @param {Number} limit
+ * @returns {Promise}
+ */
+export function listProjects(limit = 20) {
+  return service({
+    url: '/api/graph/project/list',
+    method: 'get',
+    params: { limit }
+  })
+}

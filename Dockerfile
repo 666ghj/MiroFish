@@ -10,7 +10,7 @@ FROM python:3.11-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    VITE_API_BASE_URL=/api \
+    VITE_API_BASE_URL=""  \
     HF_HUB_OFFLINE=0 \
     SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
 

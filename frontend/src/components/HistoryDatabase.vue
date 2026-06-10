@@ -21,7 +21,7 @@
     <div v-if="projects.length > 0" class="cards-container" :class="{ expanded: isExpanded }" :style="containerStyle">
       <div 
         v-for="(project, index) in projects" 
-        :key="project.simulation_id"
+        :key="project.simulation_id || project.project_id"
         class="project-card"
         :class="{ expanded: isExpanded, hovering: hoveringCard === index }"
         :style="getCardStyle(index)"
@@ -195,6 +195,26 @@ import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } f
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getSimulationHistory } from '../api/simulation'
+import { listProjects } from '../api/graph'
+
+// Normalize a project record from /api/graph/project/list into the same
+// shape the card UI expects (which was originally designed for
+// /api/simulation/history items). Projects come from disk (the "graph was
+// built" view) — simulations come from the agent run. We merge both so the
+// homepage history is non-empty.
+function projectToHistoryItem(p) {
+  return {
+    project_id: p.project_id,
+    simulation_id: p.simulation_id || null,
+    report_id: p.report_id || null,
+    name: p.name,
+    simulation_requirement: p.simulation_requirement || p.analysis_summary || '',
+    created_at: p.created_at,
+    files: p.files || [],
+    graph_id: p.graph_id,
+    _source: 'project',
+  }
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -440,10 +460,32 @@ const goToReport = () => {
 const loadHistory = async () => {
   try {
     loading.value = true
-    const response = await getSimulationHistory(20)
-    if (response.success) {
-      projects.value = response.data || []
+    // Fetch BOTH simulations and projects in parallel, then merge by project_id
+    // so the homepage history shows the user's actual graph work, not just
+    // agent-run simulations (which most users will have zero of).
+    const [simResp, projResp] = await Promise.all([
+      getSimulationHistory(20).catch(() => ({ success: false, data: [] })),
+      listProjects(20).catch(() => ({ success: false, data: [] })),
+    ])
+
+    const sims = (simResp?.success && Array.isArray(simResp.data)) ? simResp.data : []
+    const projs = (projResp?.success && Array.isArray(projResp.data)) ? projResp.data.map(projectToHistoryItem) : []
+
+    // Merge with simulations taking priority (they have richer fields),
+    // but include every project the user has ever built a graph for.
+    const seen = new Set()
+    const merged = []
+    for (const s of sims) {
+      if (s.project_id) seen.add(s.project_id)
+      merged.push(s)
     }
+    for (const p of projs) {
+      if (!seen.has(p.project_id)) merged.push(p)
+    }
+    // Newest first
+    merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+
+    projects.value = merged
   } catch (error) {
     console.error('加载历史项目失败:', error)
     projects.value = []
