@@ -1,6 +1,6 @@
 """
-LLM客户端封装
-统一使用OpenAI格式调用
+LLM client wrapper
+Unified OpenAI-format invocation
 """
 
 import json
@@ -12,7 +12,7 @@ from ..config import Config
 
 
 class LLMClient:
-    """LLM客户端"""
+    """LLM client"""
     
     def __init__(
         self,
@@ -25,7 +25,7 @@ class LLMClient:
         self.model = model or Config.LLM_MODEL_NAME
         
         if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
+            raise ValueError("LLM_API_KEY is not configured")
         
         self.client = OpenAI(
             api_key=self.api_key,
@@ -40,16 +40,16 @@ class LLMClient:
         response_format: Optional[Dict] = None
     ) -> str:
         """
-        发送聊天请求
+        Send a chat completion request
         
         Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            response_format: 响应格式（如JSON模式）
+            messages: message list
+            temperature: sampling temperature
+            max_tokens: max tokens
+            response_format: response format（e.g. JSON mode）
             
         Returns:
-            模型响应文本
+            model response text
         """
         kwargs = {
             "model": self.model,
@@ -63,7 +63,7 @@ class LLMClient:
         
         response = self.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
-        # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
+        # Some models (e.g. MiniMax M2.5) embed <think>...</think> reasoning in content — strip it
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
         return content
     
@@ -74,16 +74,16 @@ class LLMClient:
         max_tokens: int = 16384
     ) -> Dict[str, Any]:
         """
-        发送聊天请求并返回JSON
+        Send a chat completion requestand parse the response as JSON
 
         Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数 (默认 16384 — MiniMax M3 在本体/配置文件
-                这类长 JSON 模式下,4096 tokens 经常会把 JSON 截断在中间)
+            messages: message list
+            temperature: sampling temperature
+            max_tokens: max tokens (default 16384 — MiniMax M3 in ontology / config
+                long-JSON mode — 4096 tokens frequently truncates the JSON in the middle)
 
         Returns:
-            解析后的JSON对象
+            parsed JSON object
         """
         response = self.chat(
             messages=messages,
@@ -91,7 +91,7 @@ class LLMClient:
             max_tokens=max_tokens,
             response_format={"type": "json_object"}
         )
-        # 清理markdown代码块标记
+        # Strip markdown code-block fences
         # MiniMax M3 ignores response_format=json_object and wraps JSON in
         # markdown fences. Be aggressive about stripping them, including the
         # ```json\n and trailing ``` even when surrounded by other content.
@@ -111,5 +111,5 @@ class LLMClient:
         try:
             return json.loads(cleaned_response)
         except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response[:200]}")
+            raise ValueError(f"LLM returned invalid JSON: {cleaned_response[:200]}")
 

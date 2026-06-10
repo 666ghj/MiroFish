@@ -1,3 +1,9 @@
+"""
+Locale / i18n helpers used by the backend. Loads translation files from
+``/opt/data/work/MiroFish/locales`` and exposes ``t(key)`` lookups plus a
+per-thread locale setting.
+"""
+
 import json
 import os
 import threading
@@ -64,6 +70,10 @@ def t(key: str, **kwargs) -> str:
 
 
 def get_language_instruction() -> str:
+    """
+    Return the LLM language-injection string for the active locale.
+    Falls back to a Chinese instruction if no configuration is found.
+    """
     locale = get_locale()
     lang_config = _languages.get(locale, _languages.get('zh', {}))
-    return lang_config.get('llmInstruction', '请使用中文回答。')
+    return lang_config.get('llmInstruction', 'Please reply in English.')

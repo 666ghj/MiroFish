@@ -1,5 +1,5 @@
 """
-文本处理服务
+Text processing service
 """
 
 from typing import List, Optional
@@ -7,11 +7,11 @@ from ..utils.file_parser import FileParser, split_text_into_chunks
 
 
 class TextProcessor:
-    """文本处理器"""
+    """Text processor"""
     
     @staticmethod
     def extract_from_files(file_paths: List[str]) -> str:
-        """从多个文件提取文本"""
+        """Extract text from multiple files"""
         return FileParser.extract_from_multiple(file_paths)
     
     @staticmethod
@@ -21,40 +21,40 @@ class TextProcessor:
         overlap: int = 50
     ) -> List[str]:
         """
-        分割文本
+        Split text into chunks
         
         Args:
-            text: 原始文本
-            chunk_size: 块大小
-            overlap: 重叠大小
+            text: raw text
+            chunk_size: chunk size
+            overlap: overlap size
             
         Returns:
-            文本块列表
+            list of text chunks
         """
         return split_text_into_chunks(text, chunk_size, overlap)
     
     @staticmethod
     def preprocess_text(text: str) -> str:
         """
-        预处理文本
-        - 移除多余空白
-        - 标准化换行
+        Preprocess text
+        - Strip extra whitespace
+        - Normalize newlines
         
         Args:
-            text: 原始文本
+            text: raw text
             
         Returns:
-            处理后的文本
+            processed text
         """
         import re
         
-        # 标准化换行
+        # Normalize newlines
         text = text.replace('\r\n', '\n').replace('\r', '\n')
         
-        # 移除连续空行（保留最多两个换行）
+        # Collapse consecutive blank lines（Keep at most two newlines in a row）
         text = re.sub(r'\n{3,}', '\n\n', text)
         
-        # 移除行首行尾空白
+        # Strip leading/trailing whitespace per line
         lines = [line.strip() for line in text.split('\n')]
         text = '\n'.join(lines)
         
@@ -62,7 +62,7 @@ class TextProcessor:
     
     @staticmethod
     def get_text_stats(text: str) -> dict:
-        """获取文本统计信息"""
+        """Get text statistics"""
         return {
             "total_chars": len(text),
             "total_lines": text.count('\n') + 1,

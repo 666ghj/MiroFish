@@ -1,6 +1,7 @@
 """
-Report API路由
-提供模拟报告生成、获取、对话等接口
+Report API routes.
+Exposes endpoints for generating simulation reports, fetching them and chatting
+with the report agent.
 """
 
 import os
@@ -20,36 +21,36 @@ from ..utils.locale import t, get_locale, set_locale
 logger = get_logger('mirofish.api.report')
 
 
-# ============== 报告生成接口 ==============
+# ============== Report generation endpoint ==============
 
 @report_bp.route('/generate', methods=['POST'])
 def generate_report():
     """
-    生成模拟分析报告（异步任务）
-    
-    这是一个耗时操作，接口会立即返回task_id，
-    使用 GET /api/report/generate/status 查询进度
-    
-    请求（JSON）：
+    Generate a simulation analysis report (async task).
+
+    This is a long-running operation; the endpoint returns a task_id immediately
+    and progress can be queried via GET /api/report/generate/status.
+
+    Request (JSON):
         {
-            "simulation_id": "sim_xxxx",    // 必填，模拟ID
-            "force_regenerate": false        // 可选，强制重新生成
+            "simulation_id": "sim_xxxx",    // required, simulation ID
+            "force_regenerate": false        // optional, force regeneration
         }
-    
-    返回：
+
+    Returns:
         {
             "success": true,
             "data": {
                 "simulation_id": "sim_xxxx",
                 "task_id": "task_xxxx",
                 "status": "generating",
-                "message": "报告生成任务已启动"
+                "message": "Report generation task started"
             }
         }
     """
     try:
         data = request.get_json() or {}
-        
+
         simulation_id = data.get('simulation_id')
         if not simulation_id:
             return jsonify({
@@ -58,18 +59,18 @@ def generate_report():
             }), 400
 
         force_regenerate = data.get('force_regenerate', False)
-        
-        # 获取模拟信息
+
+        # Look up the simulation
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        
+
         if not state:
             return jsonify({
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
 
-        # 检查是否已有报告
+        # Check whether a report already exists
         if not force_regenerate:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
@@ -83,34 +84,34 @@ def generate_report():
                         "already_generated": True
                     }
                 })
-        
-        # 获取项目信息
+
+        # Look up the project
         project = ProjectManager.get_project(state.project_id)
         if not project:
             return jsonify({
                 "success": False,
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
-        
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphIdEnsure')
             }), 400
-        
+
         simulation_requirement = project.simulation_requirement
         if not simulation_requirement:
             return jsonify({
                 "success": False,
                 "error": t('api.missingSimRequirement')
             }), 400
-        
-        # 提前生成 report_id，以便立即返回给前端
+
+        # Generate report_id up front so we can return it to the client immediately
         import uuid
         report_id = f"report_{uuid.uuid4().hex[:12]}"
-        
-        # 创建异步任务
+
+        # Create the async task
         task_manager = TaskManager()
         task_id = task_manager.create_task(
             task_type="report_generate",
@@ -120,11 +121,11 @@ def generate_report():
                 "report_id": report_id
             }
         )
-        
+
         # Capture locale before spawning background thread
         current_locale = get_locale()
 
-        # 定义后台任务
+        # Background worker
         def run_generate():
             set_locale(current_locale)
             try:
@@ -134,31 +135,31 @@ def generate_report():
                     progress=0,
                     message=t('api.initReportAgent')
                 )
-                
-                # 创建Report Agent
+
+                # Create the Report Agent
                 agent = ReportAgent(
                     graph_id=graph_id,
                     simulation_id=simulation_id,
                     simulation_requirement=simulation_requirement
                 )
-                
-                # 进度回调
+
+                # Progress callback
                 def progress_callback(stage, progress, message):
                     task_manager.update_task(
                         task_id,
                         progress=progress,
                         message=f"[{stage}] {message}"
                     )
-                
-                # 生成报告（传入预先生成的 report_id）
+
+                # Generate the report (passing in the pre-generated report_id)
                 report = agent.generate_report(
                     progress_callback=progress_callback,
                     report_id=report_id
                 )
-                
-                # 保存报告
+
+                # Persist the report
                 ReportManager.save_report(report)
-                
+
                 if report.status == ReportStatus.COMPLETED:
                     task_manager.complete_task(
                         task_id,
@@ -170,15 +171,15 @@ def generate_report():
                     )
                 else:
                     task_manager.fail_task(task_id, report.error or t('api.reportGenerateFailed'))
-                
+
             except Exception as e:
-                logger.error(f"报告生成失败: {str(e)}")
+                logger.error(f"Report generation failed: {str(e)}")
                 task_manager.fail_task(task_id, str(e))
-        
-        # 启动后台线程
+
+        # Launch background thread
         thread = threading.Thread(target=run_generate, daemon=True)
         thread.start()
-        
+
         return jsonify({
             "success": True,
             "data": {
@@ -190,9 +191,9 @@ def generate_report():
                 "already_generated": False
             }
         })
-        
+
     except Exception as e:
-        logger.error(f"启动报告生成任务失败: {str(e)}")
+        logger.error(f"Failed to start report generation task: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -203,15 +204,15 @@ def generate_report():
 @report_bp.route('/generate/status', methods=['POST'])
 def get_generate_status():
     """
-    查询报告生成任务进度
-    
-    请求（JSON）：
+    Query report-generation progress.
+
+    Request (JSON):
         {
-            "task_id": "task_xxxx",         // 可选，generate返回的task_id
-            "simulation_id": "sim_xxxx"     // 可选，模拟ID
+            "task_id": "task_xxxx",         // optional, task_id returned by /generate
+            "simulation_id": "sim_xxxx"     // optional, simulation ID
         }
-    
-    返回：
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -224,11 +225,11 @@ def get_generate_status():
     """
     try:
         data = request.get_json() or {}
-        
+
         task_id = data.get('task_id')
         simulation_id = data.get('simulation_id')
-        
-        # 如果提供了simulation_id，先检查是否已有完成的报告
+
+        # If a simulation_id was provided, first check whether a completed report already exists
         if simulation_id:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
@@ -243,43 +244,43 @@ def get_generate_status():
                         "already_completed": True
                     }
                 })
-        
+
         if not task_id:
             return jsonify({
                 "success": False,
                 "error": t('api.requireTaskOrSimId')
             }), 400
-        
+
         task_manager = TaskManager()
         task = task_manager.get_task(task_id)
-        
+
         if not task:
             return jsonify({
                 "success": False,
                 "error": t('api.taskNotFound', id=task_id)
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": task.to_dict()
         })
-        
+
     except Exception as e:
-        logger.error(f"查询任务状态失败: {str(e)}")
+        logger.error(f"Failed to query task status: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
 
 
-# ============== 报告获取接口 ==============
+# ============== Report retrieval endpoints ==============
 
 @report_bp.route('/<report_id>', methods=['GET'])
 def get_report(report_id: str):
     """
-    获取报告详情
-    
-    返回：
+    Fetch report details.
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -295,20 +296,20 @@ def get_report(report_id: str):
     """
     try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": report.to_dict()
         })
-        
+
     except Exception as e:
-        logger.error(f"获取报告失败: {str(e)}")
+        logger.error(f"Failed to fetch report: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -319,9 +320,9 @@ def get_report(report_id: str):
 @report_bp.route('/by-simulation/<simulation_id>', methods=['GET'])
 def get_report_by_simulation(simulation_id: str):
     """
-    根据模拟ID获取报告
-    
-    返回：
+    Fetch the report for a given simulation ID.
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -332,22 +333,22 @@ def get_report_by_simulation(simulation_id: str):
     """
     try:
         report = ReportManager.get_report_by_simulation(simulation_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.noReportForSim', id=simulation_id),
                 "has_report": False
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": report.to_dict(),
             "has_report": True
         })
-        
+
     except Exception as e:
-        logger.error(f"获取报告失败: {str(e)}")
+        logger.error(f"Failed to fetch report: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -358,13 +359,13 @@ def get_report_by_simulation(simulation_id: str):
 @report_bp.route('/list', methods=['GET'])
 def list_reports():
     """
-    列出所有报告
-    
-    Query参数：
-        simulation_id: 按模拟ID过滤（可选）
-        limit: 返回数量限制（默认50）
-    
-    返回：
+    List all reports.
+
+    Query parameters:
+        simulation_id: filter by simulation ID (optional).
+        limit: max number of results to return (default 50).
+
+    Returns:
         {
             "success": true,
             "data": [...],
@@ -374,20 +375,20 @@ def list_reports():
     try:
         simulation_id = request.args.get('simulation_id')
         limit = request.args.get('limit', 50, type=int)
-        
+
         reports = ReportManager.list_reports(
             simulation_id=simulation_id,
             limit=limit
         )
-        
+
         return jsonify({
             "success": True,
             "data": [r.to_dict() for r in reports],
             "count": len(reports)
         })
-        
+
     except Exception as e:
-        logger.error(f"列出报告失败: {str(e)}")
+        logger.error(f"Failed to list reports: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -398,42 +399,42 @@ def list_reports():
 @report_bp.route('/<report_id>/download', methods=['GET'])
 def download_report(report_id: str):
     """
-    下载报告（Markdown格式）
-    
-    返回Markdown文件
+    Download a report (Markdown format).
+
+    Returns the report as a Markdown file.
     """
     try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+
         md_path = ReportManager._get_report_markdown_path(report_id)
-        
+
         if not os.path.exists(md_path):
-            # 如果MD文件不存在，生成一个临时文件
+            # If the markdown file is missing, create a temporary one on the fly
             import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
                 f.write(report.markdown_content)
                 temp_path = f.name
-            
+
             return send_file(
                 temp_path,
                 as_attachment=True,
                 download_name=f"{report_id}.md"
             )
-        
+
         return send_file(
             md_path,
             as_attachment=True,
             download_name=f"{report_id}.md"
         )
-        
+
     except Exception as e:
-        logger.error(f"下载报告失败: {str(e)}")
+        logger.error(f"Failed to download report: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -443,23 +444,23 @@ def download_report(report_id: str):
 
 @report_bp.route('/<report_id>', methods=['DELETE'])
 def delete_report(report_id: str):
-    """删除报告"""
+    """Delete a report."""
     try:
         success = ReportManager.delete_report(report_id)
-        
+
         if not success:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+
         return jsonify({
             "success": True,
             "message": t('api.reportDeleted', id=report_id)
         })
-        
+
     except Exception as e:
-        logger.error(f"删除报告失败: {str(e)}")
+        logger.error(f"Failed to delete report: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -467,42 +468,43 @@ def delete_report(report_id: str):
         }), 500
 
 
-# ============== Report Agent对话接口 ==============
+# ============== Report Agent chat endpoint ==============
 
 @report_bp.route('/chat', methods=['POST'])
 def chat_with_report_agent():
     """
-    与Report Agent对话
-    
-    Report Agent可以在对话中自主调用检索工具来回答问题
-    
-    请求（JSON）：
+    Chat with the Report Agent.
+
+    The Report Agent can autonomously call retrieval tools to answer questions
+    while it converses with the user.
+
+    Request (JSON):
         {
-            "simulation_id": "sim_xxxx",        // 必填，模拟ID
-            "message": "请解释一下舆情走向",    // 必填，用户消息
-            "chat_history": [                   // 可选，对话历史
+            "simulation_id": "sim_xxxx",        // required, simulation ID
+            "message": "Please explain the public-opinion trend",  // required, user message
+            "chat_history": [                   // optional, conversation history
                 {"role": "user", "content": "..."},
                 {"role": "assistant", "content": "..."}
             ]
         }
-    
-    返回：
+
+    Returns:
         {
             "success": true,
             "data": {
-                "response": "Agent回复...",
-                "tool_calls": [调用的工具列表],
-                "sources": [信息来源]
+                "response": "Agent reply ...",
+                "tool_calls": [list of tools invoked],
+                "sources": [information sources]
             }
         }
     """
     try:
         data = request.get_json() or {}
-        
+
         simulation_id = data.get('simulation_id')
         message = data.get('message')
         chat_history = data.get('chat_history', [])
-        
+
         if not simulation_id:
             return jsonify({
                 "success": False,
@@ -514,11 +516,11 @@ def chat_with_report_agent():
                 "success": False,
                 "error": t('api.requireMessage')
             }), 400
-        
-        # 获取模拟和项目信息
+
+        # Look up the simulation and the project
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        
+
         if not state:
             return jsonify({
                 "success": False,
@@ -531,32 +533,32 @@ def chat_with_report_agent():
                 "success": False,
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
-        
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphId')
             }), 400
-        
+
         simulation_requirement = project.simulation_requirement or ""
-        
-        # 创建Agent并进行对话
+
+        # Create the agent and run the chat
         agent = ReportAgent(
             graph_id=graph_id,
             simulation_id=simulation_id,
             simulation_requirement=simulation_requirement
         )
-        
+
         result = agent.chat(message=message, chat_history=chat_history)
-        
+
         return jsonify({
             "success": True,
             "data": result
         })
-        
+
     except Exception as e:
-        logger.error(f"对话失败: {str(e)}")
+        logger.error(f"Chat failed: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -564,42 +566,42 @@ def chat_with_report_agent():
         }), 500
 
 
-# ============== 报告进度与分章节接口 ==============
+# ============== Report progress and per-section endpoints ==============
 
 @report_bp.route('/<report_id>/progress', methods=['GET'])
 def get_report_progress(report_id: str):
     """
-    获取报告生成进度（实时）
-    
-    返回：
+    Get the (live) report-generation progress.
+
+    Returns:
         {
             "success": true,
             "data": {
                 "status": "generating",
                 "progress": 45,
-                "message": "正在生成章节: 关键发现",
-                "current_section": "关键发现",
-                "completed_sections": ["执行摘要", "模拟背景"],
+                "message": "Generating section: Key Findings",
+                "current_section": "Key Findings",
+                "completed_sections": ["Executive Summary", "Simulation Background"],
                 "updated_at": "2025-12-09T..."
             }
         }
     """
     try:
         progress = ReportManager.get_progress(report_id)
-        
+
         if not progress:
             return jsonify({
                 "success": False,
                 "error": t('api.reportProgressNotAvail', id=report_id)
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": progress
         })
-        
+
     except Exception as e:
-        logger.error(f"获取报告进度失败: {str(e)}")
+        logger.error(f"Failed to fetch report progress: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -610,11 +612,12 @@ def get_report_progress(report_id: str):
 @report_bp.route('/<report_id>/sections', methods=['GET'])
 def get_report_sections(report_id: str):
     """
-    获取已生成的章节列表（分章节输出）
-    
-    前端可以轮询此接口获取已生成的章节内容，无需等待整个报告完成
-    
-    返回：
+    Get the list of already-generated sections (per-section output).
+
+    The frontend can poll this endpoint to stream section content without
+    waiting for the whole report to finish.
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -623,7 +626,7 @@ def get_report_sections(report_id: str):
                     {
                         "filename": "section_01.md",
                         "section_index": 1,
-                        "content": "## 执行摘要\\n\\n..."
+                        "content": "## Executive Summary\n\n..."
                     },
                     ...
                 ],
@@ -634,11 +637,11 @@ def get_report_sections(report_id: str):
     """
     try:
         sections = ReportManager.get_generated_sections(report_id)
-        
-        # 获取报告状态
+
+        # Read the report status
         report = ReportManager.get_report(report_id)
         is_complete = report is not None and report.status == ReportStatus.COMPLETED
-        
+
         return jsonify({
             "success": True,
             "data": {
@@ -648,9 +651,9 @@ def get_report_sections(report_id: str):
                 "is_complete": is_complete
             }
         })
-        
+
     except Exception as e:
-        logger.error(f"获取章节列表失败: {str(e)}")
+        logger.error(f"Failed to list sections: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -661,29 +664,29 @@ def get_report_sections(report_id: str):
 @report_bp.route('/<report_id>/section/<int:section_index>', methods=['GET'])
 def get_single_section(report_id: str, section_index: int):
     """
-    获取单个章节内容
-    
-    返回：
+    Get the content of a single section.
+
+    Returns:
         {
             "success": true,
             "data": {
                 "filename": "section_01.md",
-                "content": "## 执行摘要\\n\\n..."
+                "content": "## Executive Summary\n\n..."
             }
         }
     """
     try:
         section_path = ReportManager._get_section_path(report_id, section_index)
-        
+
         if not os.path.exists(section_path):
             return jsonify({
                 "success": False,
                 "error": t('api.sectionNotFound', index=f"{section_index:02d}")
             }), 404
-        
+
         with open(section_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         return jsonify({
             "success": True,
             "data": {
@@ -692,9 +695,9 @@ def get_single_section(report_id: str, section_index: int):
                 "content": content
             }
         })
-        
+
     except Exception as e:
-        logger.error(f"获取章节内容失败: {str(e)}")
+        logger.error(f"Failed to fetch section content: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -702,16 +705,16 @@ def get_single_section(report_id: str, section_index: int):
         }), 500
 
 
-# ============== 报告状态检查接口 ==============
+# ============== Report status check endpoint ==============
 
 @report_bp.route('/check/<simulation_id>', methods=['GET'])
 def check_report_status(simulation_id: str):
     """
-    检查模拟是否有报告，以及报告状态
-    
-    用于前端判断是否解锁Interview功能
-    
-    返回：
+    Check whether a simulation has a report, and its status.
+
+    Used by the frontend to decide whether the Interview feature is unlocked.
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -725,14 +728,14 @@ def check_report_status(simulation_id: str):
     """
     try:
         report = ReportManager.get_report_by_simulation(simulation_id)
-        
+
         has_report = report is not None
         report_status = report.status.value if report else None
         report_id = report.report_id if report else None
-        
-        # 只有报告完成后才解锁interview
+
+        # The Interview feature unlocks only when the report is complete
         interview_unlocked = has_report and report.status == ReportStatus.COMPLETED
-        
+
         return jsonify({
             "success": True,
             "data": {
@@ -743,9 +746,9 @@ def check_report_status(simulation_id: str):
                 "interview_unlocked": interview_unlocked
             }
         })
-        
+
     except Exception as e:
-        logger.error(f"检查报告状态失败: {str(e)}")
+        logger.error(f"Failed to check report status: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -753,22 +756,22 @@ def check_report_status(simulation_id: str):
         }), 500
 
 
-# ============== Agent 日志接口 ==============
+# ============== Agent log endpoint ==============
 
 @report_bp.route('/<report_id>/agent-log', methods=['GET'])
 def get_agent_log(report_id: str):
     """
-    获取 Report Agent 的详细执行日志
-    
-    实时获取报告生成过程中的每一步动作，包括：
-    - 报告开始、规划开始/完成
-    - 每个章节的开始、工具调用、LLM响应、完成
-    - 报告完成或失败
-    
-    Query参数：
-        from_line: 从第几行开始读取（可选，默认0，用于增量获取）
-    
-    返回：
+    Fetch the Report Agent's detailed execution log.
+
+    Streams every step of the report-generation process, including:
+    - report start, planning start/finish
+    - each section's start, tool calls, LLM responses, finish
+    - report completion or failure
+
+    Query parameters:
+        from_line: line number to start reading from (optional, default 0, used for incremental reads)
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -779,7 +782,7 @@ def get_agent_log(report_id: str):
                         "report_id": "report_xxxx",
                         "action": "tool_call",
                         "stage": "generating",
-                        "section_title": "执行摘要",
+                        "section_title": "Executive Summary",
                         "section_index": 1,
                         "details": {
                             "tool_name": "insight_forge",
@@ -797,16 +800,16 @@ def get_agent_log(report_id: str):
     """
     try:
         from_line = request.args.get('from_line', 0, type=int)
-        
+
         log_data = ReportManager.get_agent_log(report_id, from_line=from_line)
-        
+
         return jsonify({
             "success": True,
             "data": log_data
         })
-        
+
     except Exception as e:
-        logger.error(f"获取Agent日志失败: {str(e)}")
+        logger.error(f"Failed to fetch agent log: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -817,9 +820,9 @@ def get_agent_log(report_id: str):
 @report_bp.route('/<report_id>/agent-log/stream', methods=['GET'])
 def stream_agent_log(report_id: str):
     """
-    获取完整的 Agent 日志（一次性获取全部）
-    
-    返回：
+    Get the full agent log (one-shot dump).
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -830,7 +833,7 @@ def stream_agent_log(report_id: str):
     """
     try:
         logs = ReportManager.get_agent_log_stream(report_id)
-        
+
         return jsonify({
             "success": True,
             "data": {
@@ -838,9 +841,9 @@ def stream_agent_log(report_id: str):
                 "count": len(logs)
             }
         })
-        
+
     except Exception as e:
-        logger.error(f"获取Agent日志失败: {str(e)}")
+        logger.error(f"Failed to fetch agent log: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -848,27 +851,27 @@ def stream_agent_log(report_id: str):
         }), 500
 
 
-# ============== 控制台日志接口 ==============
+# ============== Console log endpoint ==============
 
 @report_bp.route('/<report_id>/console-log', methods=['GET'])
 def get_console_log(report_id: str):
     """
-    获取 Report Agent 的控制台输出日志
-    
-    实时获取报告生成过程中的控制台输出（INFO、WARNING等），
-    这与 agent-log 接口返回的结构化 JSON 日志不同，
-    是纯文本格式的控制台风格日志。
-    
-    Query参数：
-        from_line: 从第几行开始读取（可选，默认0，用于增量获取）
-    
-    返回：
+    Fetch the Report Agent's console-style log output.
+
+    Streams the console output (INFO, WARNING, etc.) emitted during report
+    generation. Unlike the structured JSON returned by the agent-log endpoint,
+    this is plain text in console format.
+
+    Query parameters:
+        from_line: line number to start reading from (optional, default 0, used for incremental reads)
+
+    Returns:
         {
             "success": true,
             "data": {
                 "logs": [
-                    "[19:46:14] INFO: 搜索完成: 找到 15 条相关事实",
-                    "[19:46:14] INFO: 图谱搜索: graph_id=xxx, query=...",
+                    "[19:46:14] INFO: Search complete: found 15 related facts",
+                    "[19:46:14] INFO: Graph search: graph_id=xxx, query=...",
                     ...
                 ],
                 "total_lines": 100,
@@ -879,16 +882,16 @@ def get_console_log(report_id: str):
     """
     try:
         from_line = request.args.get('from_line', 0, type=int)
-        
+
         log_data = ReportManager.get_console_log(report_id, from_line=from_line)
-        
+
         return jsonify({
             "success": True,
             "data": log_data
         })
-        
+
     except Exception as e:
-        logger.error(f"获取控制台日志失败: {str(e)}")
+        logger.error(f"Failed to fetch console log: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -899,9 +902,9 @@ def get_console_log(report_id: str):
 @report_bp.route('/<report_id>/console-log/stream', methods=['GET'])
 def stream_console_log(report_id: str):
     """
-    获取完整的控制台日志（一次性获取全部）
-    
-    返回：
+    Get the full console log (one-shot dump).
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -912,7 +915,7 @@ def stream_console_log(report_id: str):
     """
     try:
         logs = ReportManager.get_console_log_stream(report_id)
-        
+
         return jsonify({
             "success": True,
             "data": {
@@ -920,9 +923,9 @@ def stream_console_log(report_id: str):
                 "count": len(logs)
             }
         })
-        
+
     except Exception as e:
-        logger.error(f"获取控制台日志失败: {str(e)}")
+        logger.error(f"Failed to fetch console log: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -930,49 +933,49 @@ def stream_console_log(report_id: str):
         }), 500
 
 
-# ============== 工具调用接口（供调试使用）==============
+# ============== Tool-call endpoints (for debugging) ==============
 
 @report_bp.route('/tools/search', methods=['POST'])
 def search_graph_tool():
     """
-    图谱搜索工具接口（供调试使用）
-    
-    请求（JSON）：
+    Graph search tool endpoint (for debugging).
+
+    Request (JSON):
         {
             "graph_id": "mirofish_xxxx",
-            "query": "搜索查询",
+            "query": "search query",
             "limit": 10
         }
     """
     try:
         data = request.get_json() or {}
-        
+
         graph_id = data.get('graph_id')
         query = data.get('query')
         limit = data.get('limit', 10)
-        
+
         if not graph_id or not query:
             return jsonify({
                 "success": False,
                 "error": t('api.requireGraphIdAndQuery')
             }), 400
-        
+
         from ..services.zep_tools import ZepToolsService
-        
+
         tools = ZepToolsService()
         result = tools.search_graph(
             graph_id=graph_id,
             query=query,
             limit=limit
         )
-        
+
         return jsonify({
             "success": True,
             "data": result.to_dict()
         })
-        
+
     except Exception as e:
-        logger.error(f"图谱搜索失败: {str(e)}")
+        logger.error(f"Graph search failed: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -983,36 +986,36 @@ def search_graph_tool():
 @report_bp.route('/tools/statistics', methods=['POST'])
 def get_graph_statistics_tool():
     """
-    图谱统计工具接口（供调试使用）
-    
-    请求（JSON）：
+    Graph statistics tool endpoint (for debugging).
+
+    Request (JSON):
         {
             "graph_id": "mirofish_xxxx"
         }
     """
     try:
         data = request.get_json() or {}
-        
+
         graph_id = data.get('graph_id')
-        
+
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.requireGraphId')
             }), 400
-        
+
         from ..services.zep_tools import ZepToolsService
-        
+
         tools = ZepToolsService()
         result = tools.get_graph_statistics(graph_id)
-        
+
         return jsonify({
             "success": True,
             "data": result
         })
-        
+
     except Exception as e:
-        logger.error(f"获取图谱统计失败: {str(e)}")
+        logger.error(f"Failed to fetch graph statistics: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),

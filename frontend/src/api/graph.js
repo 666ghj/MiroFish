@@ -1,12 +1,12 @@
 import service, { requestWithRetry } from './index'
 
 /**
- * 生成本体（上传文档和模拟需求）
- * @param {Object} data - 包含files, simulation_requirement, project_name等
+ * Generate the ontology (upload documents + simulation requirement)
+ * @param {Object} data - Includes files, simulation_requirement, project_name, etc.
  * @returns {Promise}
  */
 export function generateOntology(formData) {
-  return requestWithRetry(() => 
+  return requestWithRetry(() =>
     service({
       url: '/api/graph/ontology/generate',
       method: 'post',
@@ -19,8 +19,8 @@ export function generateOntology(formData) {
 }
 
 /**
- * 构建图谱
- * @param {Object} data - 包含project_id, graph_name等
+ * Build the knowledge graph
+ * @param {Object} data - Includes project_id, graph_name, etc.
  * @returns {Promise}
  */
 export function buildGraph(data) {
@@ -34,8 +34,8 @@ export function buildGraph(data) {
 }
 
 /**
- * 查询任务状态
- * @param {String} taskId - 任务ID
+ * Query task status
+ * @param {String} taskId - Task ID
  * @returns {Promise}
  */
 export function getTaskStatus(taskId) {
@@ -46,8 +46,8 @@ export function getTaskStatus(taskId) {
 }
 
 /**
- * 获取图谱数据
- * @param {String} graphId - 图谱ID
+ * Get graph data
+ * @param {String} graphId - Graph ID
  * @returns {Promise}
  */
 export function getGraphData(graphId) {
@@ -58,8 +58,8 @@ export function getGraphData(graphId) {
 }
 
 /**
- * 获取项目信息
- * @param {String} projectId - 项目ID
+ * Get project info
+ * @param {String} projectId - Project ID
  * @returns {Promise}
  */
 export function getProject(projectId) {
@@ -70,7 +70,7 @@ export function getProject(projectId) {
 }
 
 /**
- * 列出项目（最近 N 个），用于首页 history 视图显示
+ * List the most recent N projects. Used by the home page history view.
  * @param {Number} limit
  * @returns {Promise}
  */
