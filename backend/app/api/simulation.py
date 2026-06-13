@@ -14,33 +14,30 @@ from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..utils.logger import get_logger
-from ..utils.locale import t, get_locale, set_locale
+from ..utils.locale import t, get_locale, set_locale, get_language_instruction
 from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
 
 
-# Interview prompt 优化前缀
-# 添加此前缀可以避免Agent调用工具，直接用文本回复
-INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
+# Interview prompt prefix.
+# This keeps interview calls in plain text and lets the requested locale drive the answer language.
+INTERVIEW_PROMPT_PREFIX = (
+    "Answer directly in plain text. Use your persona, all prior memories, prior actions, "
+    "and the simulation context. Do not call tools. Do not return JSON. "
+    "Follow this language instruction: {language_instruction}\n\nQuestion: "
+)
 
 
 def optimize_interview_prompt(prompt: str) -> str:
-    """
-    优化Interview提问，添加前缀避免Agent调用工具
-    
-    Args:
-        prompt: 原始提问
-        
-    Returns:
-        优化后的提问
-    """
+    """Add a plain-text interview prefix so agents answer instead of calling tools."""
     if not prompt:
         return prompt
-    # 避免重复添加前缀
-    if prompt.startswith(INTERVIEW_PROMPT_PREFIX):
+    if prompt.startswith("Answer directly in plain text."):
         return prompt
-    return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
+    return INTERVIEW_PROMPT_PREFIX.format(
+        language_instruction=get_language_instruction()
+    ) + prompt
 
 
 # ============== 实体读取接口 ==============
