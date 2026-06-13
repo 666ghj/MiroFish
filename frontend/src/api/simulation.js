@@ -177,6 +177,18 @@ export const interviewAgents = (data) => {
 }
 
 /**
+ * 获取某个模拟的采访历史（持久化记录，从 OASIS 数据库读取）
+ * @param {string} simulationId
+ * @param {Object} opts - { platform?, agent_id?, limit? }
+ */
+export const getInterviewHistory = (simulationId, opts = {}) => {
+  return service.post('/api/simulation/interview/history', {
+    simulation_id: simulationId,
+    ...opts
+  })
+}
+
+/**
  * 获取历史模拟列表（带项目详情）
  * 用于首页历史项目展示
  * @param {number} limit - 返回数量限制

@@ -414,7 +414,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
-import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
+import { interviewAgents, getSimulationProfilesRealtime, getInterviewHistory } from '../api/simulation'
 
 const { t } = useI18n()
 
@@ -928,6 +928,60 @@ const loadProfiles = async () => {
   }
 }
 
+// 去掉 optimize_interview_prompt 注入的前缀，仅展示用户真实问题
+const stripInterviewPrefix = (p) => {
+  if (!p) return ''
+  for (const marker of ['我的问题是：', '我的问题是:', '问题：', '问题:']) {
+    const idx = p.indexOf(marker)
+    if (idx >= 0) return p.slice(idx + marker.length).trim()
+  }
+  return p
+}
+
+// 加载已持久化的采访历史（来自 OASIS 数据库），按 agent 填充对话缓存（刷新后仍可见）
+const loadInterviewHistory = async () => {
+  if (!props.simulationId) return
+  try {
+    const res = await getInterviewHistory(props.simulationId, { limit: 200 })
+    // 后端返回 { history: [{ agent_id, prompt, response, platform, timestamp }] }（按时间降序）
+    const records = res.success && res.data ? (res.data.history || []) : []
+    if (!records.length) return
+
+    // 按 agent_id 分组，时间升序，按(问题+回答)去重（同一问题可能跨双平台各记一条）
+    const byAgent = {}
+    records
+      .slice()
+      .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+      .forEach(rec => {
+        const aid = rec.agent_id
+        if (!(aid in byAgent)) byAgent[aid] = { seen: new Set(), msgs: [] }
+        const prompt = stripInterviewPrefix(rec.prompt || '')
+        const answer = typeof rec.response === 'string' ? rec.response : JSON.stringify(rec.response)
+        const dedupeKey = prompt + '|' + answer
+        if (byAgent[aid].seen.has(dedupeKey)) return
+        byAgent[aid].seen.add(dedupeKey)
+        byAgent[aid].msgs.push(
+          { role: 'user', content: prompt, timestamp: rec.timestamp },
+          { role: 'assistant', content: answer, timestamp: rec.timestamp }
+        )
+      })
+
+    // 历史在前，本会话新对话在后
+    Object.keys(byAgent).forEach(aid => {
+      const key = `agent_${aid}`
+      chatHistoryCache.value[key] = [...byAgent[aid].msgs, ...(chatHistoryCache.value[key] || [])]
+    })
+
+    // 若已选中某个 Agent，立即刷新其对话视图
+    if (chatTarget.value !== 'report_agent' && selectedAgentIndex.value != null) {
+      chatHistory.value = chatHistoryCache.value[`agent_${selectedAgentIndex.value}`] || []
+    }
+    addLog(`Loaded ${records.length} interview record(s) from history`)
+  } catch (err) {
+    console.warn('加载采访历史失败:', err)
+  }
+}
+
 // Click outside to close dropdown
 const handleClickOutside = (e) => {
   const dropdown = document.querySelector('.agent-dropdown')
@@ -941,6 +995,7 @@ onMounted(() => {
   addLog(t('log.step5Init'))
   loadReportData()
   loadProfiles()
+  loadInterviewHistory()
   document.addEventListener('click', handleClickOutside)
 })
 

@@ -1757,8 +1757,8 @@ class SimulationRunner:
             )
             results.extend(platform_results)
         
-        # 按时间降序排序
-        results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        # 按时间降序排序（不同平台 created_at 可能是 int 或 datetime 字符串，统一转字符串避免类型比较报错）
+        results.sort(key=lambda x: str(x.get("timestamp", "")), reverse=True)
         
         # 如果查询了多个平台，限制总数
         if len(platforms) > 1 and len(results) > limit:
