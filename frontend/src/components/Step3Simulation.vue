@@ -687,10 +687,43 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
+// 初始化：已运行过的模拟用只读模式加载现有时间轴，避免 onMounted 自动 force-restart
+const initSimulation = async () => {
+  if (!props.simulationId) return
+  try {
+    const res = await getRunStatus(props.simulationId)
+    const data = res && res.data
+    const alreadyRan = data && (
+      data.runner_status === 'completed' ||
+      data.runner_status === 'stopped' ||
+      data.runner_status === 'running' ||
+      (data.total_actions_count || 0) > 0
+    )
+    if (alreadyRan) {
+      addLog('Loading existing run (view mode — no restart)')
+      runStatus.value = data
+      await fetchRunStatusDetail() // 加载已有动作到时间轴
+      if (data.runner_status === 'running') {
+        phase.value = 1
+        startStatusPolling()
+        startDetailPolling()
+      } else {
+        phase.value = 2
+        emit('update-status', 'completed')
+      }
+      return
+    }
+  } catch (err) {
+    console.warn('初始化状态检查失败，将按新模拟启动:', err)
+  }
+  // 全新模拟才启动
+  doStartSimulation()
+}
+
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    initSimulation()
   }
 })
 
