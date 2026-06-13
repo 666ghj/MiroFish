@@ -197,19 +197,43 @@ class SimulationManager:
         graph_id: str,
         enable_twitter: bool = True,
         enable_reddit: bool = True,
+        force_new: bool = False,
     ) -> SimulationState:
         """
         创建新的模拟
-        
+
         Args:
             project_id: 项目ID
             graph_id: Zep图谱ID
             enable_twitter: 是否启用Twitter模拟
             enable_reddit: 是否启用Reddit模拟
-            
+            force_new: 强制新建，跳过幂等复用（默认False）
+
         Returns:
             SimulationState
         """
+        # 幂等防重复：若已存在同一 project+graph 且尚未运行的模拟，则直接复用，
+        # 避免前端重试（requestWithRetry）或重复提交导致创建出多个相同的模拟。
+        if not force_new:
+            reusable_statuses = (
+                SimulationStatus.CREATED,
+                SimulationStatus.PREPARING,
+                SimulationStatus.READY,
+            )
+            for existing in self.list_simulations(project_id=project_id):
+                if (
+                    existing.graph_id == graph_id
+                    and existing.enable_twitter == enable_twitter
+                    and existing.enable_reddit == enable_reddit
+                    and existing.current_round == 0
+                    and existing.status in reusable_statuses
+                ):
+                    logger.info(
+                        f"复用未运行的模拟（幂等防重复）: {existing.simulation_id}, "
+                        f"project={project_id}, graph={graph_id}, status={existing.status.value}"
+                    )
+                    return existing
+
         import uuid
         simulation_id = f"sim_{uuid.uuid4().hex[:12]}"
         
