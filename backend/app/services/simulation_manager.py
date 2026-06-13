@@ -14,6 +14,7 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.security import validate_id
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
@@ -138,6 +139,7 @@ class SimulationManager:
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
+        validate_id(simulation_id, 'simulation_id')  # 路径校验，阻断穿越后再 join/makedirs
         sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir

@@ -28,6 +28,14 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: 3000,
+    // 安全响应头（生产由 vite preview 提供前端时生效）。frame-ancestors 仅在响应头中有效，
+    // 故在此补充；其余 CSP 指令由 index.html 的 <meta> 提供（两者一致）。
+    headers: {
+      'X-Frame-Options': 'DENY',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Content-Security-Policy': "frame-ancestors 'none'"
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:5001',

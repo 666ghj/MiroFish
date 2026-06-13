@@ -100,7 +100,16 @@ def create_app(config_class=Config):
         logger = get_logger('mirofish.request')
         logger.debug(f"响应: {response.status_code}")
         return response
-    
+
+    # 安全响应头（纵深防御）：API 响应附带基础安全头。前端 HTML 的 CSP 由 index.html 的
+    # <meta> + vite preview 响应头提供（后端不直接服务 HTML）。
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        return response
+
     # 注册蓝图
     from .api import graph_bp, simulation_bp, report_bp
     app.register_blueprint(graph_bp, url_prefix='/api/graph')

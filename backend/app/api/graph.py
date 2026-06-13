@@ -4,7 +4,7 @@
 """
 
 import os
-import traceback
+from ..utils.security import safe_traceback, upload_content_ok
 import threading
 from flask import request, jsonify
 
@@ -182,7 +182,8 @@ def generate_ontology():
         all_text = ""
         
         for file in uploaded_files:
-            if file and file.filename and allowed_file(file.filename):
+            # 扩展名白名单 + 魔术字节嗅探（拒绝改名混入的二进制/伪装文件）
+            if file and file.filename and allowed_file(file.filename) and upload_content_ok(file, file.filename):
                 # 保存文件到项目目录
                 file_info = ProjectManager.save_file_to_project(
                     project.project_id, 
@@ -251,7 +252,7 @@ def generate_ontology():
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": safe_traceback()
         }), 500
 
 
@@ -495,7 +496,7 @@ def build_graph():
             except Exception as e:
                 # 更新项目状态为失败
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
-                build_logger.debug(traceback.format_exc())
+                build_logger.debug(safe_traceback())
                 
                 project.status = ProjectStatus.FAILED
                 project.error = str(e)
@@ -505,7 +506,7 @@ def build_graph():
                     task_id,
                     status=TaskStatus.FAILED,
                     message=t('progress.buildFailed', error=str(e)),
-                    error=traceback.format_exc()
+                    error=safe_traceback()
                 )
         
         # 启动后台线程
@@ -525,7 +526,7 @@ def build_graph():
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": safe_traceback()
         }), 500
 
 
@@ -590,7 +591,7 @@ def get_graph_data(graph_id: str):
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": safe_traceback()
         }), 500
 
 
@@ -618,5 +619,5 @@ def delete_graph(graph_id: str):
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": safe_traceback()
         }), 500
