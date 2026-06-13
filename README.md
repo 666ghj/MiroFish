@@ -127,6 +127,43 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+#### Security configuration (required for production)
+
+The backend ships secure-by-default. When `FLASK_DEBUG=false` (the default) the app
+runs under **gunicorn** (no Werkzeug debugger) and refuses to start unless these are set:
+
+```env
+# A random secret (required when FLASK_DEBUG=false):
+#   python -c "import secrets;print(secrets.token_hex(32))"
+SECRET_KEY=your_random_secret
+
+# API-key auth is ON by default — every /api/* request must carry the key.
+# Clients send  X-API-Key: <API_KEY>  (or  Authorization: Bearer <API_KEY> ).
+AUTH_ENABLED=true
+API_KEY=your_strong_api_key
+```
+
+- The bundled web UI reads the key from the **build-time** var **`VITE_API_KEY`** (set it equal to
+  `API_KEY`) and sends it automatically as `X-API-Key`. It must be present **before** the frontend
+  is built:
+  - **Docker:** put `VITE_API_KEY` in the root `.env`; `docker compose up --build` injects it as a
+    build-arg (docker-compose.yml `build.args` → Dockerfile `ARG VITE_API_KEY` → `npm run build`).
+    The pre-built `ghcr.io` image (used by a bare `docker compose up` without `--build`) bakes no
+    custom key — rebuild, or use `AUTH_ENABLED=false` for that path.
+  - **Local frontend build:** copy `frontend/.env.example` → `frontend/.env` and set `VITE_API_KEY`,
+    then `npm run build`. (The root `.env` is read by the backend only, not by Vite.)
+  - ⚠️ A key baked into the client bundle is extractable by anyone who loads the page — for
+    multi-tenant/public exposure replace this with session login or a gateway that injects per-user
+    tokens. For local/internal/VPN or behind-a-gateway single-host use it is sufficient.
+- Local development / simplest single-host demo: set `AUTH_ENABLED=false` to disable the key
+  requirement entirely (the API is then protected only by your network boundary).
+- Cost controls (denial-of-wallet): a run is bounded by `OASIS_DEFAULT_MAX_ROUNDS` (when the
+  client omits `max_rounds`), the hard ceilings `OASIS_MAX_ROUNDS_CAP` / `OASIS_MAX_AGENTS_CAP`,
+  and per-round / total timeouts `OASIS_ROUND_TIMEOUT_SEC` / `OASIS_RUN_TIMEOUT_SEC`. See
+  `.env.example` for defaults.
+- Run the production server with a **single worker** (`gunicorn -w 1 --threads N`); simulation
+  run-state is held in-process, so multiple workers break stop/status routing.
+
 #### 2. Install Dependencies
 
 ```bash

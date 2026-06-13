@@ -29,6 +29,10 @@ from typing import Dict, Any, List, Optional
 _shutdown_event = None
 _cleanup_done = False
 
+# C4：模拟超时（秒），从环境变量读取（子进程继承父进程环境）
+_ROUND_TIMEOUT_SEC = int(os.environ.get("OASIS_ROUND_TIMEOUT_SEC", "600"))
+_RUN_TIMEOUT_SEC = int(os.environ.get("OASIS_RUN_TIMEOUT_SEC", "7200"))
+
 # 添加项目路径
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
 _backend_dir = os.path.abspath(os.path.join(_scripts_dir, '..'))
@@ -230,7 +234,7 @@ class IPCHandler:
             
             # 执行Interview
             actions = {agent: interview_action}
-            await self.env.step(actions)
+            await asyncio.wait_for(self.env.step(actions), timeout=_ROUND_TIMEOUT_SEC)  # C4：采访超时（TimeoutError 由本块 except 捕获）
             
             # 从数据库获取结果
             result = self._get_interview_result(agent_id)
@@ -276,7 +280,7 @@ class IPCHandler:
                 return False
             
             # 执行批量Interview
-            await self.env.step(actions)
+            await asyncio.wait_for(self.env.step(actions), timeout=_ROUND_TIMEOUT_SEC)  # C4：采访超时（TimeoutError 由本块 except 捕获）
             
             # 获取所有结果
             results = {}
@@ -616,8 +620,12 @@ class RedditSimulationRunner:
                     print(f"  警告: 无法为Agent {agent_id}创建初始帖子: {e}")
             
             if initial_actions:
-                await self.env.step(initial_actions)
-                print(f"  已发布 {len(initial_actions)} 条初始帖子")
+                # C4：初始帖子的 env.step 也加超时，避免进入主循环前就因 LLM/网络挂起而 wedge
+                try:
+                    await asyncio.wait_for(self.env.step(initial_actions), timeout=_ROUND_TIMEOUT_SEC)
+                    print(f"  已发布 {len(initial_actions)} 条初始帖子")
+                except asyncio.TimeoutError:
+                    print(f"  [超时] 初始帖子 env.step 超过 {_ROUND_TIMEOUT_SEC}s，跳过继续", flush=True)
         
         # 主模拟循环
         print("\n开始模拟循环...")
@@ -634,13 +642,23 @@ class RedditSimulationRunner:
             
             if not active_agents:
                 continue
-            
+
+            # C4：总时长上限 —— 超过则优雅停止
+            if (datetime.now() - start_time).total_seconds() > _RUN_TIMEOUT_SEC:
+                print(f"[超时] 模拟总时长超过 {_RUN_TIMEOUT_SEC}s，在第 {round_num + 1} 轮停止", flush=True)
+                break
+
             actions = {
                 agent: LLMAction()
                 for _, agent in active_agents
             }
-            
-            await self.env.step(actions)
+
+            # C4：每轮超时 —— 防止 env.step 因 LLM/网络挂起而永久 wedge
+            try:
+                await asyncio.wait_for(self.env.step(actions), timeout=_ROUND_TIMEOUT_SEC)
+            except asyncio.TimeoutError:
+                print(f"[超时] 第 {round_num + 1} 轮 env.step 超过 {_ROUND_TIMEOUT_SEC}s，跳过并停止循环", flush=True)
+                break
             
             if (round_num + 1) % 10 == 0 or round_num == 0:
                 elapsed = (datetime.now() - start_time).total_seconds()

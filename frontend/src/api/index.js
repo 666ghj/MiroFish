@@ -10,10 +10,19 @@ const service = axios.create({
   }
 })
 
+// API Key（C2）：后端默认对 /api/* 强制鉴权，前端需在每个请求带上 X-API-Key。
+// 注意：构建到客户端包里的 VITE_API_KEY 是【可被任何访问者从 JS 包中提取】的，因此对“公开部署”
+// 它只能挡住不加载页面的脚本式滥用，不能当作多租户隔离手段。真正的多租户场景应改为会话登录鉴权，
+// 或在网关处注入按用户签发的 token；单机/内网/网关后部署时此值足够。
+const API_KEY = import.meta.env.VITE_API_KEY || ''
+
 // 请求拦截器
 service.interceptors.request.use(
   config => {
     config.headers['Accept-Language'] = i18n.global.locale.value
+    if (API_KEY) {
+      config.headers['X-API-Key'] = API_KEY
+    }
     return config
   },
   error => {

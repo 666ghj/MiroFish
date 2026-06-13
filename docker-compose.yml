@@ -3,6 +3,13 @@ services:
     image: ghcr.io/666ghj/mirofish:latest
     # 加速镜像（如拉取缓慢可替换上方地址）
     # image: ghcr.nju.edu.cn/666ghj/mirofish:latest
+    # C2：本地构建以把前端 API Key 烤进打包产物。`docker compose up --build` 会用根 .env 里的
+    # VITE_API_KEY 作为 build-arg；若直接拉取上方预构建镜像（不 --build），其内置的 key 不可控，
+    # 此时请改用 AUTH_ENABLED=false（单机/内网）或自行构建带 VITE_API_KEY 的镜像。
+    build:
+      context: .
+      args:
+        VITE_API_KEY: ${VITE_API_KEY:-}
     container_name: mirofish
     env_file:
       - .env

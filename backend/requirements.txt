@@ -8,6 +8,9 @@
 # ============= 核心框架 =============
 flask>=3.0.0
 flask-cors>=6.0.0
+# 生产 WSGI 服务器（C1：替代 Flask 自带的 Werkzeug 开发服务器/调试器）
+# 注意：因模拟运行态保存在进程内类变量，必须以单 worker 多线程启动（-w 1 --threads N）
+gunicorn>=21.0.0
 
 # ============= LLM 相关 =============
 # OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
