@@ -47,8 +47,8 @@ def create_app(config_class=Config):
         logger.info("MiroFish Backend 启动中...")
         logger.info("=" * 50)
     
-    # 启用CORS
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # 启用CORS（H4）：限定来源为 Config.ALLOWED_ORIGINS（默认本地前端源），不再通配 '*'。
+    CORS(app, resources={r"/api/*": {"origins": Config.ALLOWED_ORIGINS}})
 
     # API Key 鉴权（C2）：所有 /api/* 端点强制鉴权。
     # 客户端通过 `X-API-Key: <key>` 或 `Authorization: Bearer <key>` 传入。

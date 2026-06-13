@@ -34,6 +34,14 @@ class Config:
     API_KEY = os.environ.get('API_KEY')
     AUTH_ENABLED = os.environ.get('AUTH_ENABLED', 'true').strip().lower() not in ('false', '0', 'no', 'off')
 
+    # CORS 允许来源（H4）：不再用通配 '*'。默认仅本地前端开发/预览源；生产用逗号分隔的
+    # ALLOWED_ORIGINS 指定前端域名（例如 https://app.example.com）。'*' 仍可显式设置但不推荐。
+    ALLOWED_ORIGINS = [
+        o.strip() for o in os.environ.get(
+            'ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000'
+        ).split(',') if o.strip()
+    ]
+
     # JSON配置 - 禁用ASCII转义，让中文直接显示（而不是 \uXXXX 格式）
     JSON_AS_ASCII = False
     
