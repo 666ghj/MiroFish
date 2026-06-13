@@ -16,12 +16,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
-
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
 from .zep_entity_reader import EntityNode, ZepEntityReader
+from ..graph_memory import create_graph_memory_adapter
 
 logger = get_logger('mirofish.oasis_profile')
 
@@ -205,7 +204,8 @@ class OasisProfileGenerator:
         
         if self.zep_api_key:
             try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
+                self.graph_memory = create_graph_memory_adapter(api_key=self.zep_api_key)
+                self.zep_client = getattr(self.graph_memory, 'raw_client', None)
             except Exception as e:
                 logger.warning(f"Zep客户端初始化失败: {e}")
     
@@ -324,7 +324,7 @@ class OasisProfileGenerator:
             
             for attempt in range(max_retries):
                 try:
-                    return self.zep_client.graph.search(
+                    return self.graph_memory.search(
                         query=comprehensive_query,
                         graph_id=self.graph_id,
                         limit=30,
@@ -349,7 +349,7 @@ class OasisProfileGenerator:
             
             for attempt in range(max_retries):
                 try:
-                    return self.zep_client.graph.search(
+                    return self.graph_memory.search(
                         query=comprehensive_query,
                         graph_id=self.graph_id,
                         limit=20,

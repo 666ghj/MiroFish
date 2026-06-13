@@ -31,6 +31,15 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+
+    # Graph memory backend configuration
+    GRAPH_MEMORY_BACKEND = os.environ.get('GRAPH_MEMORY_BACKEND', 'zep_cloud')
+    GRAPHITI_MODEL_NAME = os.environ.get('GRAPHITI_MODEL_NAME', LLM_MODEL_NAME)
+    GRAPHITI_EMBEDDING_MODEL_NAME = os.environ.get('GRAPHITI_EMBEDDING_MODEL_NAME', 'text-embedding-3-small')
+    GRAPHITI_BRIDGE_URL = os.environ.get('GRAPHITI_BRIDGE_URL', 'http://graphiti-bridge:8008')
+    FALKORDB_HOST = os.environ.get('FALKORDB_HOST', 'localhost')
+    FALKORDB_PORT = int(os.environ.get('FALKORDB_PORT', '6379'))
+    FALKORDB_DATABASE = os.environ.get('FALKORDB_DATABASE', 'mirofish')
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
@@ -69,7 +78,8 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
+        graph_backend = (cls.GRAPH_MEMORY_BACKEND or 'zep_cloud').lower()
+        if graph_backend in {'zep', 'zep_cloud', 'zep-cloud'} and not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
         return errors
 

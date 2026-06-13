@@ -1702,7 +1702,7 @@ class SimulationRunner:
                     "agent_id": user_id,
                     "response": info.get("response", info),
                     "prompt": info.get("prompt", ""),
-                    "timestamp": created_at,
+                    "timestamp": str(created_at) if created_at is not None else "",
                     "platform": platform_name
                 })
             
@@ -1712,6 +1712,28 @@ class SimulationRunner:
             logger.error(f"读取Interview历史失败 ({platform_name}): {e}")
         
         return results
+
+    @staticmethod
+    def _timestamp_sort_value(value: Any) -> float:
+        """Return a stable numeric sort value for mixed SQLite timestamp formats."""
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        text_value = str(value).strip()
+        if not text_value:
+            return 0.0
+
+        try:
+            return float(text_value)
+        except ValueError:
+            pass
+
+        try:
+            return datetime.fromisoformat(text_value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return 0.0
 
     @classmethod
     def get_interview_history(
@@ -1757,12 +1779,11 @@ class SimulationRunner:
             )
             results.extend(platform_results)
         
-        # 按时间降序排序
-        results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        # 按时间降序排序，兼容不同平台写入的字符串/数字时间戳
+        results.sort(key=lambda x: cls._timestamp_sort_value(x.get("timestamp")), reverse=True)
         
         # 如果查询了多个平台，限制总数
         if len(platforms) > 1 and len(results) > limit:
             results = results[:limit]
         
         return results
-

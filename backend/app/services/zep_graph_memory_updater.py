@@ -12,11 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
-
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
+from ..graph_memory import create_graph_memory_adapter
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
 
@@ -243,7 +242,8 @@ class ZepGraphMemoryUpdater:
         if not self.api_key:
             raise ValueError("ZEP_API_KEY未配置")
         
-        self.client = Zep(api_key=self.api_key)
+        self.graph_memory = create_graph_memory_adapter(api_key=self.api_key)
+        self.client = getattr(self.graph_memory, 'raw_client', None)
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -411,10 +411,9 @@ class ZepGraphMemoryUpdater:
         # 带重试的发送
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
+                self.graph_memory.add_text(
                     graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
+                    text=combined_text
                 )
                 
                 self._total_sent += 1

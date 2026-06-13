@@ -12,3 +12,36 @@ services:
     restart: unless-stopped
     volumes:
       - ./backend/uploads:/app/backend/uploads
+
+  graphiti-falkordb:
+    image: falkordb/falkordb:latest
+    container_name: graphiti-falkordb
+    profiles:
+      - graphiti
+    volumes:
+      - graphiti_falkordb_data:/data
+    restart: unless-stopped
+
+  graphiti-bridge:
+    build:
+      context: .
+      dockerfile: graphiti_bridge/Dockerfile
+    image: mirofish-graphiti-bridge:latest
+    container_name: graphiti-bridge
+    profiles:
+      - graphiti
+    environment:
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      MODEL_NAME: ${GRAPHITI_MODEL_NAME:-${LLM_MODEL_NAME:-gpt-5.4-mini}}
+      EMBEDDING_MODEL_NAME: ${GRAPHITI_EMBEDDING_MODEL_NAME:-text-embedding-3-small}
+      FALKORDB_HOST: graphiti-falkordb
+      FALKORDB_PORT: 6379
+    depends_on:
+      - graphiti-falkordb
+    ports:
+      - "127.0.0.1:8008:8008"
+    restart: unless-stopped
+
+volumes:
+  graphiti_falkordb_data:
