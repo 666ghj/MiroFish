@@ -4,7 +4,7 @@
 """
 
 import os
-from ..utils.security import safe_traceback, upload_content_ok
+from ..utils.security import safe_traceback, safe_error, upload_content_ok
 import threading
 from flask import request, jsonify
 
@@ -251,7 +251,7 @@ def generate_ontology():
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
+            "error": safe_error(e),
             "traceback": safe_traceback()
         }), 500
 
@@ -499,13 +499,13 @@ def build_graph():
                 build_logger.debug(safe_traceback())
                 
                 project.status = ProjectStatus.FAILED
-                project.error = str(e)
+                project.error = safe_error(e)
                 ProjectManager.save_project(project)
                 
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
-                    message=t('progress.buildFailed', error=str(e)),
+                    message=t('progress.buildFailed', error=safe_error(e)),
                     error=safe_traceback()
                 )
         
@@ -525,7 +525,7 @@ def build_graph():
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
+            "error": safe_error(e),
             "traceback": safe_traceback()
         }), 500
 
@@ -590,7 +590,7 @@ def get_graph_data(graph_id: str):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
+            "error": safe_error(e),
             "traceback": safe_traceback()
         }), 500
 
@@ -618,6 +618,6 @@ def delete_graph(graph_id: str):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
+            "error": safe_error(e),
             "traceback": safe_traceback()
         }), 500

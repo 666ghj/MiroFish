@@ -28,6 +28,16 @@ def safe_traceback() -> str:
     return tb if Config.DEBUG else 'Internal server error (see server logs)'
 
 
+def safe_error(e) -> str:
+    """
+    客户端可见的错误文案：DEBUG 模式返回异常消息，生产环境返回通用提示，
+    避免异常消息本身（如 FileNotFoundError 的路径、ValueError 里的配置值）泄露给客户端。
+    完整异常仍由各调用点的 logger.error / safe_traceback 记到服务端日志。
+    """
+    from ..config import Config
+    return str(e) if Config.DEBUG else 'Internal server error (see server logs)'
+
+
 def validate_id(value: str, kind: str = 'id') -> str:
     """
     路径校验：拒绝任何不匹配 _ID_RE 的 id（含 '..'、'/'、空值），

@@ -163,6 +163,11 @@ API_KEY=your_strong_api_key
   `.env.example` for defaults.
 - Run the production server with a **single worker** (`gunicorn -w 1 --threads N`); simulation
   run-state is held in-process, so multiple workers break stop/status routing.
+- **CSP / API origin:** the frontend ships a Content-Security-Policy whose `connect-src` allows
+  `'self'` + `http://localhost:5001` (the default API). If you point the UI at a different API
+  host (set `VITE_API_BASE_URL`), you **must** add that origin to `connect-src` in
+  `frontend/index.html` too, or the browser will silently block all API calls. Restrict
+  `ALLOWED_ORIGINS` (backend) to your real frontend origin in production.
 
 #### 2. Install Dependencies
 
