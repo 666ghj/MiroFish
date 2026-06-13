@@ -1,6 +1,6 @@
 """
-Dịch vụ cập nhật bộ nhớ đồ thị Zep
-Cập nhật động các hoạt động của Agent trong mô phỏng lên đồ thị Zep
+Dịch vụ cập nhật bộ nhớ đồ thị (Graphiti + Neo4j backend)
+Cập nhật động các hoạt động của Agent trong mô phỏng lên đồ thị tri thức
 """
 
 import os
@@ -9,13 +9,14 @@ import threading
 import json
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
+from graphiti_core.nodes import EpisodeType
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.graphiti_client import get_graphiti, run_async
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
 
@@ -231,19 +232,18 @@ class ZepGraphMemoryUpdater:
     def __init__(self, graph_id: str, api_key: Optional[str] = None):
         """
         Khởi tạo trình cập nhật
-        
+
         Args:
-            graph_id: ID của đồ thị Zep
-            api_key: Zep API Key (tự chọn, mặc định lấy từ config)
+            graph_id: group_id của đồ thị Graphiti (Neo4j)
+            api_key: giữ lại trong chữ ký để tương thích caller cũ, không còn dùng
+                     (Graphiti lấy cấu hình Neo4j + LLM qua get_graphiti()).
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY is not configured")
-        
-        self.client = Zep(api_key=self.api_key)
-        
+        self.api_key = api_key
+
+        # Graphiti instance lấy lazy per-thread qua get_graphiti() trong _send_batch_activities,
+        # không khởi tạo client ở đây để tránh chia sẻ event loop giữa các thread.
+
         # Hàng đợi hoạt động
         self._activity_queue: Queue = Queue()
         
@@ -389,28 +389,34 @@ class ZepGraphMemoryUpdater:
     
     def _send_batch_activities(self, activities: List[AgentActivity], platform: str):
         """
-        Gửi hàng loạt các hoạt động lên đồ thị Zep (Gộp chung vào một đoạn text)
-        
+        Gửi hàng loạt các hoạt động lên đồ thị tri thức (Gộp chung vào một episode)
+
         Args:
             activities: Danh sách hoạt động của Agent
             platform: Tên nền tảng
         """
         if not activities:
             return
-        
+
         # Gộp nhiều hoạt động vào một văn bản chung, tách nhau bởi xuống dòng
         episode_texts = [activity.to_episode_text() for activity in activities]
         combined_text = "\n".join(episode_texts)
-        
+
         # Gửi với cơ chế thử lại
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
-                )
-                
+                # Graphiti add_episode xử lý đồng bộ (extract + ghi Neo4j xong khi await trả về).
+                # group_id=self.graph_id để episode ghi vào đúng partition của simulation.
+                graphiti = get_graphiti()
+                run_async(graphiti.add_episode(
+                    name=f"sim_{platform}_round_{activities[0].round_num}",
+                    episode_body=combined_text,
+                    source_description=f"MiroFish simulation activity ({platform})",
+                    reference_time=datetime.now(timezone.utc),
+                    source=EpisodeType.text,
+                    group_id=self.graph_id,
+                ))
+
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)
@@ -420,10 +426,10 @@ class ZepGraphMemoryUpdater:
                 
             except Exception as e:
                 if attempt < self.MAX_RETRIES - 1:
-                    logger.warning(f"Failed to send batch to Zep (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    logger.warning(f"Failed to send batch to graph (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                 else:
-                    logger.error(f"Failed to send batch to Zep after {self.MAX_RETRIES} attempts: {e}")
+                    logger.error(f"Failed to send batch to graph after {self.MAX_RETRIES} attempts: {e}")
                     self._failed_count += 1
     
     def _flush_remaining(self):

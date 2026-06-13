@@ -30,11 +30,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
+
+from graphiti_core.search.search_config_recipes import (
+    EDGE_HYBRID_SEARCH_RRF,
+    NODE_HYBRID_SEARCH_RRF,
+)
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_cost import create_tracked_chat_completion
+from ..utils.graphiti_client import get_graphiti, run_async
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
@@ -259,19 +264,18 @@ class OasisProfileGenerator:
             "phase": "generate_profiles",
         }
 
-        # --- Khởi tạo Zep client (dùng để vector search tìm thêm context) ---
+        # --- Cấu hình graph search (dùng để bổ sung context cho entity) ---
         # graph_id được truyền vào từ simulation_manager để tất cả search đều
-        # trỏ đúng vào graph của simulation hiện tại
-        self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
-        self.zep_client = None
+        # trỏ đúng vào graph (group_id) của simulation hiện tại.
+        # zep_api_key giữ lại trong chữ ký để tương thích caller cũ, không còn dùng.
+        self.zep_api_key = zep_api_key
         self.graph_id = graph_id
 
-        if self.zep_api_key:
-            try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
-            except Exception as e:
-                # Không raise — Zep search là tính năng bổ sung, không bắt buộc
-                logger.warning(f"Failed to initialize Zep client: {e}")
+        # graph search là tính năng bổ sung, chỉ bật khi Neo4j được cấu hình.
+        # Graphiti instance lấy lazy per-thread qua get_graphiti() khi search.
+        self.graph_search_enabled = bool(Config.NEO4J_URI and Config.NEO4J_PASSWORD)
+        if not self.graph_search_enabled:
+            logger.warning("Neo4j not configured — entity graph search disabled (optional feature)")
 
     # --------------------------------------------------------------------------
     # PUBLIC: generate_profile_from_entity — Entry point sinh 1 profile đơn lẻ
@@ -409,8 +413,8 @@ class OasisProfileGenerator:
         """
         import concurrent.futures
 
-        # Nếu không có Zep client hoặc graph_id → trả về rỗng, không làm gì
-        if not self.zep_client:
+        # Nếu graph search bị tắt (Neo4j chưa cấu hình) → trả về rỗng, không làm gì
+        if not self.graph_search_enabled:
             return {"facts": [], "node_summaries": [], "context": ""}
 
         entity_name = entity.name
@@ -428,55 +432,41 @@ class OasisProfileGenerator:
         # Query tổng quát để Zep semantic search trả về nhiều kết quả nhất
         comprehensive_query = f"Provide all facts, activities, relationships, and context about: {entity_name}"
 
-        def search_edges():
-            """Tìm các fact/quan hệ qua edge search — có retry."""
+        def _search_with_retry(config_recipe, limit: int, kind: str):
+            """Chạy Graphiti hybrid search (RRF) với retry — trả về SearchResults hoặc None.
+
+            Mỗi lần gọi nằm trong worker thread riêng (ThreadPoolExecutor), nên
+            get_graphiti()/run_async cấp Graphiti instance + event loop riêng cho thread đó.
+            """
             max_retries = 3
-            last_exception = None
             delay = 2.0
 
             for attempt in range(max_retries):
                 try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=30,        # Lấy tối đa 30 facts
-                        scope="edges",
-                        reranker="rrf"   # Reciprocal Rank Fusion — kết hợp nhiều ranking strategies
-                    )
+                    graphiti = get_graphiti()
+                    cfg = config_recipe.model_copy(deep=True)
+                    cfg.limit = limit
+                    return run_async(graphiti.search_(
+                        comprehensive_query,
+                        config=cfg,
+                        group_ids=[self.graph_id],
+                    ))
                 except Exception as e:
-                    last_exception = e
                     if attempt < max_retries - 1:
-                        logger.debug(f"Zep Edge search failed on attempt {attempt + 1}: {str(e)[:80]}, retrying...")
+                        logger.debug(f"Graph {kind} search failed on attempt {attempt + 1}: {str(e)[:80]}, retrying...")
                         time.sleep(delay)
                         delay *= 2
                     else:
-                        logger.debug(f"Zep Edge search entirely failed after {max_retries} attempts: {e}")
+                        logger.debug(f"Graph {kind} search entirely failed after {max_retries} attempts: {e}")
             return None
+
+        def search_edges():
+            """Tìm các fact/quan hệ qua edge search — có retry."""
+            return _search_with_retry(EDGE_HYBRID_SEARCH_RRF, 30, "edge")
 
         def search_nodes():
             """Tìm các entity liên quan qua node search — có retry."""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=20,        # Lấy tối đa 20 node summaries
-                        scope="nodes",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep Node search failed on attempt {attempt + 1}: {str(e)[:80]}, retrying...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep Node search entirely failed after {max_retries} attempts: {e}")
-            return None
+            return _search_with_retry(NODE_HYBRID_SEARCH_RRF, 20, "node")
 
         try:
             # Chạy song song 2 search — giảm thời gian chờ từ ~2T xuống ~T
@@ -513,12 +503,12 @@ class OasisProfileGenerator:
                 context_parts.append("Related Entities:\n" + "\n".join(f"- {s}" for s in results["node_summaries"][:10]))
             results["context"] = "\n\n".join(context_parts)
 
-            logger.info(f"Zep unified search completed: {entity_name}, fetched {len(results['facts'])} facts, {len(results['node_summaries'])} related nodes")
+            logger.info(f"Graph unified search completed: {entity_name}, fetched {len(results['facts'])} facts, {len(results['node_summaries'])} related nodes")
 
         except concurrent.futures.TimeoutError:
-            logger.warning(f"Zep Retrieval Time-Out ({entity_name})")
+            logger.warning(f"Graph Retrieval Time-Out ({entity_name})")
         except Exception as e:
-            logger.warning(f"Zep Retrieval Failed ({entity_name}): {e}")
+            logger.warning(f"Graph Retrieval Failed ({entity_name}): {e}")
 
         return results
 
@@ -1205,7 +1195,7 @@ QUAN TRỌNG:
         use_llm: bool = True,
         progress_callback: Optional[callable] = None,
         graph_id: Optional[str] = None,
-        parallel_count: int = 5,
+        parallel_count: int = 15,
         realtime_output_path: Optional[str] = None,
         output_platform: str = "reddit",
         metadata_platform: Optional[str] = None,

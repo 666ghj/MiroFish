@@ -286,8 +286,9 @@ class OntologyGenerator:
         
         return result
     
-    # Định mức giới hạn độ dài ký tự tối đa của đoạn văn bản có thể gửi cho LLM (10 vạn chữ)
-    MAX_TEXT_LENGTH_FOR_LLM = 100000
+    # Định mức giới hạn độ dài ký tự tối đa của đoạn văn bản có thể gửi cho LLM
+    # (~4 ký tự/token; 400000 ký tự ≈ 100K token input, vẫn dư trong cửa sổ 262144 token của Qwen3.6-27B)
+    MAX_TEXT_LENGTH_FOR_LLM = 400000
     
     def _build_user_message(
         self,

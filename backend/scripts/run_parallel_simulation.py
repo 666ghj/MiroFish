@@ -1125,7 +1125,7 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     )
 
 
-def configure_agent_memory_limits(agent_graph, token_limit=150000, message_window_size=25):
+def configure_agent_memory_limits(agent_graph, token_limit=150000, message_window_size=50):
     """
     Cấu hình giới hạn memory cho tất cả agent trong agent_graph.
 
@@ -1337,7 +1337,7 @@ async def run_twitter_simulation(
     result.env = oasis.make(
         agent_graph=result.agent_graph,
         platform=twitter_platform,
-        semaphore=20,
+        semaphore=30,
     )
 
     await result.env.reset()
@@ -1532,7 +1532,7 @@ async def run_reddit_simulation(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
-        semaphore=20,
+        semaphore=30,
     )
 
     await result.env.reset()

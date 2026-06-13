@@ -17,6 +17,7 @@ from graphiti_core.edges import EntityEdge
 from graphiti_core.errors import GroupsEdgesNotFoundError
 from graphiti_core.nodes import EntityNode
 
+from .graphiti_client import run_async
 from .logger import get_logger
 
 logger = get_logger('mirofish.graph_paging')
@@ -142,7 +143,9 @@ def fetch_all_nodes(
     retry_delay: float = _DEFAULT_RETRY_DELAY,
 ) -> list[Any]:
     """Lấy toàn bộ EntityNode theo group_id, tối đa max_items (mặc định 2000)."""
-    return asyncio.run(_fetch_all_nodes_async(driver, graph_id, page_size, max_items, max_retries, retry_delay))
+    # run_async (loop thread-local) thay vì asyncio.run (loop mới) để Neo4j driver
+    # luôn chạy trên cùng event loop đã gắn — tránh "Future attached to a different loop".
+    return run_async(_fetch_all_nodes_async(driver, graph_id, page_size, max_items, max_retries, retry_delay))
 
 
 def fetch_all_edges(
@@ -153,4 +156,4 @@ def fetch_all_edges(
     retry_delay: float = _DEFAULT_RETRY_DELAY,
 ) -> list[Any]:
     """Lấy toàn bộ EntityEdge theo group_id."""
-    return asyncio.run(_fetch_all_edges_async(driver, graph_id, page_size, max_retries, retry_delay))
+    return run_async(_fetch_all_edges_async(driver, graph_id, page_size, max_retries, retry_delay))

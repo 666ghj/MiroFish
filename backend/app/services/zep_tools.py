@@ -1,5 +1,5 @@
 """
-Dịch vụ cung cấp các công cụ tìm kiếm trên nền tảng Zep Cloud.
+Dịch vụ cung cấp các công cụ tìm kiếm trên đồ thị tri thức (Graphiti + Neo4j backend).
 Đóng gói các công cụ tìm kiếm đồ thị (graph search), đọc thông tin node, truy vấn cạnh (edge), v.v., để Report Agent sử dụng.
 
 Các công cụ tìm kiếm cốt lõi (sau khi tối ưu hóa):
@@ -13,12 +13,17 @@ import json
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
+from graphiti_core.nodes import EntityNode as GraphitiEntityNode
+from graphiti_core.search.search_config_recipes import (
+    EDGE_HYBRID_SEARCH_RRF,
+    NODE_HYBRID_SEARCH_RRF,
+)
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from ..utils.graphiti_client import get_graphiti, run_async
 
 logger = get_logger('mirofish.zep_tools')
 
@@ -423,11 +428,9 @@ class ZepToolsService:
     RETRY_DELAY = 2.0
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY is not configured")
-        
-        self.client = Zep(api_key=self.api_key)
+        # api_key giữ lại trong chữ ký để tương thích caller cũ, không còn dùng:
+        # Graphiti lấy cấu hình Neo4j + LLM qua get_graphiti() (lazy, per-thread).
+        self.api_key = api_key
         # LLM client được sử dụng bởi InsightForge để sinh ra các sub-queries
         self._llm_client = llm_client
         logger.info("ZepToolsService initialized successfully")
@@ -487,42 +490,36 @@ class ZepToolsService:
             SearchResult: Đối tượng chứa kết quả tìm kiếm đã phân tích
         """
         logger.info(f"Graph search: graph_id={graph_id}, query={query[:50]}...")
-        
-        # Thử sử dụng API Zep Cloud Search
+
+        # Thử dùng Graphiti hybrid search (semantic + BM25 + RRF rerank).
         try:
             search_results = self._call_with_retry(
-                func=lambda: self.client.graph.search(
-                    graph_id=graph_id,
-                    query=query,
-                    limit=limit,
-                    scope=scope,
-                    reranker="cross_encoder"
-                ),
+                func=lambda: self._graphiti_search(graph_id, query, limit, scope),
                 operation_name=f"Graph Search(graph={graph_id})"
             )
-            
+
             facts = []
             edges = []
             nodes = []
-            
+
             # Phân tích kết quả tìm kiếm cạnh (edges/relationships)
             if hasattr(search_results, 'edges') and search_results.edges:
                 for edge in search_results.edges:
                     if hasattr(edge, 'fact') and edge.fact:
                         facts.append(edge.fact)
                     edges.append({
-                        "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
+                        "uuid": getattr(edge, 'uuid', ''),
                         "name": getattr(edge, 'name', ''),
                         "fact": getattr(edge, 'fact', ''),
                         "source_node_uuid": getattr(edge, 'source_node_uuid', ''),
                         "target_node_uuid": getattr(edge, 'target_node_uuid', ''),
                     })
-            
+
             # Phân tích kết quả tìm kiếm thực thể (nodes)
             if hasattr(search_results, 'nodes') and search_results.nodes:
                 for node in search_results.nodes:
                     nodes.append({
-                        "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
+                        "uuid": getattr(node, 'uuid', ''),
                         "name": getattr(node, 'name', ''),
                         "labels": getattr(node, 'labels', []),
                         "summary": getattr(node, 'summary', ''),
@@ -530,9 +527,9 @@ class ZepToolsService:
                     # Phần tóm tắt (summary) của node cũng được coi là một fact
                     if hasattr(node, 'summary') and node.summary:
                         facts.append(f"[{node.name}]: {node.summary}")
-            
+
             logger.info(f"Search completed: Found {len(facts)} related facts")
-            
+
             return SearchResult(
                 facts=facts,
                 edges=edges,
@@ -540,11 +537,40 @@ class ZepToolsService:
                 query=query,
                 total_count=len(facts)
             )
-            
+
         except Exception as e:
-            logger.warning(f"Zep Search API failed, gracefully degrading to local search: {str(e)}")
+            logger.warning(f"Graph Search failed, gracefully degrading to local search: {str(e)}")
             # Hạ cấp: Sử dụng tìm kiếm theo từ khóa cục bộ
             return self._local_search(graph_id, query, limit, scope)
+
+    def _graphiti_search(self, graph_id: str, query: str, limit: int, scope: str):
+        """Gọi Graphiti hybrid search và gộp kết quả node/edge.
+
+        Map scope (Zep) → search recipe (Graphiti):
+          - "edges"  → EDGE_HYBRID_SEARCH_RRF (chỉ trả edges/facts)
+          - "nodes"  → NODE_HYBRID_SEARCH_RRF (chỉ trả nodes)
+          - "both"   → chạy cả hai rồi gộp lại
+
+        Trả về SearchResults (có .edges và .nodes) để caller xử lý đồng nhất.
+        """
+        from graphiti_core.search.search_config import SearchResults
+
+        graphiti = get_graphiti()
+        group_ids = [graph_id]
+
+        async def _run():
+            results: List[SearchResults] = []
+            if scope in ("edges", "both"):
+                cfg = EDGE_HYBRID_SEARCH_RRF.model_copy(deep=True)
+                cfg.limit = limit
+                results.append(await graphiti.search_(query, config=cfg, group_ids=group_ids))
+            if scope in ("nodes", "both"):
+                cfg = NODE_HYBRID_SEARCH_RRF.model_copy(deep=True)
+                cfg.limit = limit
+                results.append(await graphiti.search_(query, config=cfg, group_ids=group_ids))
+            return SearchResults.merge(results) if results else SearchResults()
+
+        return run_async(_run())
     
     def _local_search(
         self, 
@@ -662,11 +688,11 @@ class ZepToolsService:
         """
         logger.info(f"Fetching all nodes for graph {graph_id}...")
 
-        nodes = fetch_all_nodes(self.client, graph_id)
+        nodes = fetch_all_nodes(get_graphiti().driver, graph_id)
 
         result = []
         for node in nodes:
-            node_uuid = getattr(node, 'uuid_', None) or getattr(node, 'uuid', None) or ""
+            node_uuid = getattr(node, 'uuid', None) or ""
             result.append(NodeInfo(
                 uuid=str(node_uuid) if node_uuid else "",
                 name=node.name or "",
@@ -691,11 +717,11 @@ class ZepToolsService:
         """
         logger.info(f"Fetching all edges for graph {graph_id}...")
 
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = fetch_all_edges(get_graphiti().driver, graph_id)
 
         result = []
         for edge in edges:
-            edge_uuid = getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', None) or ""
+            edge_uuid = getattr(edge, 'uuid', None) or ""
             edge_info = EdgeInfo(
                 uuid=str(edge_uuid) if edge_uuid else "",
                 name=edge.name or "",
@@ -704,12 +730,15 @@ class ZepToolsService:
                 target_node_uuid=edge.target_node_uuid or ""
             )
 
-            # Bổ sung thông tin thời gian hợp lệ (temporal info)
+            # Bổ sung thông tin thời gian hợp lệ (temporal info).
+            # Graphiti trả về datetime → ép sang str cho đồng nhất với EdgeInfo (Optional[str]).
             if include_temporal:
-                edge_info.created_at = getattr(edge, 'created_at', None)
-                edge_info.valid_at = getattr(edge, 'valid_at', None)
-                edge_info.invalid_at = getattr(edge, 'invalid_at', None)
-                edge_info.expired_at = getattr(edge, 'expired_at', None)
+                def _ts(value):
+                    return str(value) if value is not None else None
+                edge_info.created_at = _ts(getattr(edge, 'created_at', None))
+                edge_info.valid_at = _ts(getattr(edge, 'valid_at', None))
+                edge_info.invalid_at = _ts(getattr(edge, 'invalid_at', None))
+                edge_info.expired_at = _ts(getattr(edge, 'expired_at', None))
 
             result.append(edge_info)
 
@@ -729,16 +758,19 @@ class ZepToolsService:
         logger.info(f"Fetching node detail: {node_uuid[:8]}...")
         
         try:
+            # GraphitiEntityNode.get_by_uuid raise NodeNotFoundError nếu không có →
+            # được bắt bởi except phía dưới (log + trả None).
+            driver = get_graphiti().driver
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=node_uuid),
+                func=lambda: run_async(GraphitiEntityNode.get_by_uuid(driver, node_uuid)),
                 operation_name=f"Fetching node detail (uuid={node_uuid[:8]}...)"
             )
-            
+
             if not node:
                 return None
-            
+
             return NodeInfo(
-                uuid=getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
+                uuid=getattr(node, 'uuid', ''),
                 name=node.name or "",
                 labels=node.labels or [],
                 summary=node.summary or "",
@@ -1818,10 +1850,11 @@ Ràng buộc định dạng (BẮT BUỘC tuân thủ):
 - Sử dụng dấu ngoặc kép kiểu Việt Nam 「」 khi trích dẫn nguyên văn lời của người được phỏng vấn.
 - Có thể sử dụng dấu **in đậm** cho các từ khóa, nhưng không sử dụng bất kỳ cú pháp Markdown nào khác."""
 
+        interview_content = "\n\n".join(interview_texts)
         user_prompt = f"""Chủ đề phỏng vấn: {interview_requirement}
 
 Nội dung phỏng vấn:
-{"\n\n".join(interview_texts)}
+{interview_content}
 
 Hãy tạo bản tóm tắt phỏng vấn."""
 

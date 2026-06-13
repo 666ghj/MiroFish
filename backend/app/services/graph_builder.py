@@ -1,22 +1,24 @@
 """
 Dịch vụ xây dựng Đồ thị Tri thức (Knowledge Graph)
-API 2: Sử dụng Zep API để xây dựng một Standalone Graph (Đồ thị độc lập)
+API 2: Dùng graphiti_core (Neo4j backend) để xây dựng một Standalone Graph (Đồ thị độc lập)
 """
 
 import os
-import re  # changed
-import uuid
 import time
+import uuid
 import threading
-from typing import Dict, Any, List, Optional, Callable
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional, Callable, Type
 from dataclasses import dataclass
 
-from zep_cloud.client import Zep
-from zep_cloud import EpisodeData, EntityEdgeSourceTarget
+from pydantic import BaseModel, Field
+
+from graphiti_core.nodes import EntityNode, EpisodeType
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from ..utils.graphiti_client import get_graphiti, run_async
 from .text_processor import TextProcessor
 
 
@@ -40,16 +42,20 @@ class GraphInfo:
 class GraphBuilderService:
     """
     Dịch vụ tạo lập Graph
-    Đảm nhiệm logic gọi request lên Zep API để thiết lập Graph
+    Đảm nhiệm logic dùng graphiti_core (Neo4j) để thiết lập Graph
     """
-    
+
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY has not been configured.")
-        
-        self.client = Zep(api_key=self.api_key)
+        # api_key giữ lại trong chữ ký để tương thích caller cũ, nhưng không còn dùng
+        # (Graphiti dùng Neo4j + LLM config, lấy lazy qua get_graphiti()).
+        self.api_key = api_key
         self.task_manager = TaskManager()
+
+        # Ontology được build sẵn (Pydantic thuần) và truyền vào mỗi add_episode,
+        # vì Graphiti không có set_ontology server-side như Zep.
+        self._entity_types: Dict[str, Type[BaseModel]] = {}
+        self._edge_types: Dict[str, Type[BaseModel]] = {}
+        self._edge_type_map: Dict[tuple, List[str]] = {}
     
     def build_graph_async(
         self,
@@ -191,115 +197,95 @@ class GraphBuilderService:
             self.task_manager.fail_task(task_id, error_msg)
     
     def create_graph(self, name: str) -> str:
-        """Graph Creation: Initializes a new graph in Zep Cloud with a unique ID"""
+        """Sinh graph_id mới (dùng làm group_id của Graphiti).
 
-        # Generate unique graph_id
+        Graphiti không cần đăng ký partition trước — group_id là string tự do,
+        sẽ được tạo ngầm khi add_episode đầu tiên ghi vào. Vì vậy method này
+        chỉ sinh & trả về id, không gọi API nào.
+        """
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
-        
-        # Call Zep API create()
-        self.client.graph.create(
-            graph_id=graph_id,
-            name=name,
-            description="MiroFish Social Simulation Graph"
-        )
-        
         return graph_id
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
         """
-        Cấu hình dữ liệu Ontology (Bản thể học) cho Graph trên server Zep (Public access)
-        Ontology Setup: Defines the schema for entities and relationships using dynamic class creation.
+        Build schema Ontology (entity/edge types) dưới dạng Pydantic model thuần.
+
+        Graphiti không có API set_ontology server-side như Zep. Thay vào đó,
+        entity_types/edge_types/edge_type_map được truyền vào MỖI lần add_episode.
+        Method này build sẵn và lưu trên self để add_text_batches dùng lại.
         """
-        import warnings
         from typing import Optional
-        from pydantic import Field
-        from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
-        
-        # Ẩn bỏ đi các Warning (Cảnh báo) của thư viện Pydantic v2 liên quan đến Field(default=None)
-        # Vì đây là format bắt buộc phải có từ Zep SDK, các cảnh báo này phát sinh do tự động khởi tạo lớp ảo, hoàn toàn có thể bỏ qua được.
-        warnings.filterwarnings('ignore', category=UserWarning, module='pydantic')
-        
-        # Danh sách các tên định danh (variable/name) trùng với từ khoá bảo lưu của Zep, không được dùng làm tên thuộc tính
-        RESERVED_NAMES = {'uuid', 'name', 'group_id', 'name_embedding', 'summary', 'created_at'}
-        
+
+        # Các tên field trùng với EntityNode.model_fields của graphiti — không được dùng
+        # làm attribute (graphiti raise EntityTypeValidationError nếu trùng).
+        RESERVED_NAMES = {
+            'uuid', 'name', 'group_id', 'labels',
+            'name_embedding', 'summary', 'attributes', 'created_at',
+        }
+
         def safe_attr_name(attr_name: str) -> str:
-            """Hàm thay đổi các tên thuộc tính bị trùng với keyword của hệ thống để an toàn hơn"""
+            """Đổi tên attribute nếu trùng field bảo lưu của graphiti."""
             if attr_name.lower() in RESERVED_NAMES:
                 return f"entity_{attr_name}"
             return attr_name
-        
-        # Khởi tạo động (Dynamic Class Creation) các Model Loại Thực thể từ JSON đầu vào
-        entity_types = {}
 
-        # Processes each entity type from ontology definition
+        # --- Entity types (Pydantic thuần, key = tên PascalCase từ ontology) ---
+        entity_types: Dict[str, Type[BaseModel]] = {}
         for entity_def in ontology.get("entity_types", []):
             name = entity_def["name"]
             description = entity_def.get("description", f"A {name} entity.")
-            
-            # Chuẩn bị file từ điển cho Attribute và kiểu chú thích (Theo chuẩn Pydantic v2)
-            attrs = {"__doc__": description}
-            annotations = {}
-            
+
+            attrs: Dict[str, Any] = {"__doc__": description}
+            annotations: Dict[str, Any] = {}
+
             for attr_def in entity_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # Áp dụng hàm chống bị trùng từ khoá
+                attr_name = safe_attr_name(attr_def["name"])
                 attr_desc = attr_def.get("description", attr_name)
-                # Zep API bắt buộc phải nhận vào field description
-                attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[EntityText]  # Chú thích kiểu dữ liệu
-            
+                attrs[attr_name] = Field(default=None, description=attr_desc)
+                annotations[attr_name] = Optional[str]
+
             attrs["__annotations__"] = annotations
-            
-            # Dynamic class generation - Create Pydnatic model class for entity type at runtime
-            entity_class = type(name, (EntityModel,), attrs)
+            entity_class = type(name, (BaseModel,), attrs)
             entity_class.__doc__ = description
-            entity_types[name] = entity_class # Store in entity_types dict
-        
-        # Tương tự, dựa vào JSON để khởi tạo động khai báo các Model Loại Quan Hệ
-        edge_definitions = {}
+            entity_types[name] = entity_class
+
+        # --- Edge types (key = tên UPPER_SNAKE_CASE) + edge_type_map ---
+        edge_types: Dict[str, Type[BaseModel]] = {}
+        edge_type_map: Dict[tuple, List[str]] = {}
+
         for edge_def in ontology.get("edge_types", []):
             name = edge_def["name"]
             description = edge_def.get("description", f"A {name} relationship.")
-            
-            # Dọn các attribute dictionary và typing tương tự
+
             attrs = {"__doc__": description}
             annotations = {}
-            
             for attr_def in edge_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # Filter an toàn
+                attr_name = safe_attr_name(attr_def["name"])
                 attr_desc = attr_def.get("description", attr_name)
-                # Đảm bảo giữ format Zep API
-                attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[str]  # Định dạng Data cho thuộc tình của loại Quan Hệ là chuỗi String
-            
+                attrs[attr_name] = Field(default=None, description=attr_desc)
+                annotations[attr_name] = Optional[str]
+
             attrs["__annotations__"] = annotations
-            
-            # Khởi tạo Class động với Tên chuẩn format (PascalCase)
+            # Class name PascalCase chỉ để debug; KEY của dict mới là cái graphiti dùng.
             class_name = ''.join(word.capitalize() for word in name.split('_'))
-            # Creates Pydantic model class for relationship type
-            edge_class = type(class_name, (EdgeModel,), attrs)
+            edge_class = type(class_name, (BaseModel,), attrs)
             edge_class.__doc__ = description
-            
-            # Mapping thông số luồng thực thể gắn kết với Quan Hệ (Source/Targets config)
-            source_targets = []
-            for st in edge_def.get("source_targets", []):
-                source_targets.append(
-                    EntityEdgeSourceTarget(
-                        source=st.get("source", "Entity"),
-                        target=st.get("target", "Entity")
-                    )
-                )
-            
+            edge_types[name] = edge_class
+
+            # Build edge_type_map: (source_label, target_label) -> [edge_name, ...]
+            source_targets = edge_def.get("source_targets", [])
             if source_targets:
-                edge_definitions[name] = (edge_class, source_targets) # Store in edge_definitions dict
-        
-        # Action Gọi lệnh thay đổi Ontology cho môi trường GraphID của Zep
-        if entity_types or edge_definitions:
-            # Call Zep set_ontology() 
-            self.client.graph.set_ontology(
-                graph_ids=[graph_id],
-                entities=entity_types if entity_types else None,
-                edges=edge_definitions if edge_definitions else None,
-            )
+                for st in source_targets:
+                    key = (st.get("source", "Entity"), st.get("target", "Entity"))
+                    edge_type_map.setdefault(key, []).append(name)
+            else:
+                # Không khai báo source/target cụ thể → catch-all (Entity, Entity)
+                edge_type_map.setdefault(("Entity", "Entity"), []).append(name)
+
+        # Lưu lại để truyền vào add_episode (không gọi API nào ở đây).
+        self._entity_types = entity_types
+        self._edge_types = edge_types
+        self._edge_type_map = edge_type_map
     
     def add_text_batches(
         self,
@@ -308,71 +294,70 @@ class GraphBuilderService:
         batch_size: int = 3,
         progress_callback: Optional[Callable] = None
     ) -> List[str]:
-        """Tải các đoạn văn bản (text chunks) lên Graph theo từng gói nhỏ (batch) và trả về id (Episode UUID) của mọi phân đoạn dữ liệu gửi đi."""
-        episode_uuids = []
+        """Nạp từng chunk văn bản vào graph qua graphiti.add_episode (tuần tự).
+
+        Graphiti add_episode xử lý đồng bộ (await xong = đã extract & ghi Neo4j) và
+        khuyến nghị chạy tuần tự để giữ ngữ cảnh temporal giữa các episode liên tiếp.
+        Trả về list episode uuid.
+
+        `batch_size` không còn nghĩa "nhiều episode/1 request" (mỗi chunk = 1 episode);
+        giữ param cho tương thích caller, chỉ dùng để định nhịp progress.
+        """
+        graphiti = get_graphiti()
+        episode_uuids: List[str] = []
         total_chunks = len(chunks)
-        
-        for i in range(0, total_chunks, batch_size):
-            batch_chunks = chunks[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            total_batches = (total_chunks + batch_size - 1) // batch_size
-            
+        if total_chunks == 0:
+            return episode_uuids
+
+        # entity/edge types: truyền None nếu rỗng để graphiti dùng default.
+        entity_types = self._entity_types or None
+        edge_types = self._edge_types or None
+        edge_type_map = self._edge_type_map or None
+
+        for i, chunk in enumerate(chunks):
             if progress_callback:
-                progress = (i + len(batch_chunks)) / total_chunks
                 progress_callback(
-                    f"Sending data batch {batch_num}/{total_batches} ({len(batch_chunks)} chunks)...",
-                    progress
+                    f"Adding chunk {i + 1}/{total_chunks} to graph...",
+                    (i + 1) / total_chunks,
                 )
-            
-            # Create EpisodeData objects
-            episodes = [
-                EpisodeData(data=chunk, type="text")
-                for chunk in batch_chunks
-            ]
-            
-            # Khởi chạy gửi cho Zep Server
-            max_retries = 10  # changed
-            for attempt in range(max_retries):  # changed
+
+            # Lớp retry mỏng phòng LLM backend rate-limit / lỗi tạm thời.
+            max_retries = 3
+            delay = 2.0
+            for attempt in range(max_retries):
                 try:
-                    # UPLOAD BATCH TO ZEP - Sends batch of episodes for entity extraction
-                    batch_result = self.client.graph.add_batch(
-                        graph_id=graph_id,
-                        episodes=episodes
-                    )
-
-                    # Cập nhật và thu thập lại UUID của các Episode được trả về sau khi tạo mới
-                    if batch_result and isinstance(batch_result, list):
-                        for ep in batch_result:
-                            ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
-                            if ep_uuid:
-                                episode_uuids.append(ep_uuid)
-
-                    # Cài thời gian chờ (delay) nhỏ để tránh rate-limit bị quá tải số lượng requests
-                    time.sleep(3)
-                    break  # changed: thoát retry loop nếu thành công
-
-                except Exception as e:  # changed
-                    err_str = str(e)
-                    if "episode usage limit" in err_str or ("status_code: 429" in err_str):  # changed: bắt lỗi rate-limit
-                        # Đọc thời điểm reset từ error message để biết cần chờ bao lâu
-                        reset_match = re.search(r"x-ratelimit-reset['\"]:\s*['\"]?(\d+)", err_str)  # changed
-                        if reset_match:  # changed
-                            wait_seconds = max(int(reset_match.group(1)) - int(time.time()) + 2, 5)  # changed
-                        else:  # changed
-                            wait_seconds = 20  # changed: fallback 12s (5 calls/phút → cách nhau 12s)
-                        if progress_callback:  # changed
-                            progress_callback(  # changed
-                                f"Rate limited by Zep. Waiting {wait_seconds}s then retry (attempt {attempt + 1}/{max_retries})...",  # changed
-                                (i + len(batch_chunks)) / total_chunks  # changed
-                            )  # changed
-                        time.sleep(wait_seconds)  # changed
-                    else:  # changed: lỗi khác thì raise luôn, không retry
+                    result = run_async(graphiti.add_episode(
+                        name=f"chunk_{i}",
+                        episode_body=chunk,
+                        source_description="MiroFish text chunk",
+                        reference_time=datetime.now(timezone.utc),
+                        source=EpisodeType.text,
+                        group_id=graph_id,
+                        entity_types=entity_types,
+                        edge_types=edge_types,
+                        edge_type_map=edge_type_map,
+                    ))
+                    ep_uuid = getattr(result.episode, "uuid", None)
+                    if ep_uuid:
+                        episode_uuids.append(ep_uuid)
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
                         if progress_callback:
-                            progress_callback(f"Failed to send batch {batch_num}: {err_str}", 0)
-                        raise  # changed
-            else:  # changed: for...else — chạy khi hết max_retries mà vẫn chưa break
-                raise Exception(f"Batch {batch_num} failed after {max_retries} retries due to rate limiting")  # changed
-        
+                            progress_callback(
+                                f"Chunk {i + 1} failed ({str(e)[:80]}), retry in {delay:.0f}s...",
+                                (i + 1) / total_chunks,
+                            )
+                        time.sleep(delay)
+                        delay *= 2
+                    else:
+                        if progress_callback:
+                            progress_callback(
+                                f"Chunk {i + 1} failed after {max_retries} attempts: {str(e)[:120]}",
+                                (i + 1) / total_chunks,
+                            )
+                        raise
+
         return episode_uuids
     
     def _wait_for_episodes(
@@ -381,69 +366,24 @@ class GraphBuilderService:
         progress_callback: Optional[Callable] = None,
         timeout: int = 1000
     ):
-        """Chạy vòng lặp để kiểm tra và chờ cho tới khi mọi Episode (các khối Text) đều hoàn tất quá trình process từ hệ thống"""
-        if not episode_uuids:
-            if progress_callback:
-                progress_callback("No episodes to scan (Progress 100%)", 1.0)
-            return
-        
-        start_time = time.time()
-        pending_episodes = set(episode_uuids)
-        completed_count = 0
-        total_episodes = len(episode_uuids)
-        
+        """No-op với Graphiti: add_episode đã xử lý đồng bộ (extract + ghi Neo4j
+        xong trước khi return), nên không cần poll trạng thái processing.
+
+        Giữ method để tương thích caller (_build_graph_worker).
+        """
         if progress_callback:
-            progress_callback(f"Waiting for analysis of {total_episodes} text chunks to begin...", 0)
-        
-        while pending_episodes:
-            # Ngắt thoát và trả về lỗi nếu bị Timeout (Chạy quá thời gian cho phép)
-            if time.time() - start_time > timeout:
-                if progress_callback:
-                    progress_callback(
-                        f"Some text segments have timed out, but {completed_count}/{total_episodes} have completed successfully",
-                        completed_count / total_episodes
-                    )
-                break
-            
-            # Duyệt vòng lặp mỗi episode uuid để lấy cập nhật tiến trình check của từng episode một
-            for ep_uuid in list(pending_episodes):
-                try:
-                    # CHECK EPISODE STATUS - Queries individual episode processing status
-                    episode = self.client.graph.episode.get(uuid_=ep_uuid)
-                    # CHECK PROCESSED FLAG - Determines if Zep 
-                    is_processed = getattr(episode, 'processed', False)
-                    
-                    if is_processed:
-                        # if processed: remove from set
-                        pending_episodes.remove(ep_uuid)
-                        completed_count += 1
-                        
-                except Exception as e:
-                    # Tạm thời bỏ qua nếu request lỗi, vòng lặp kế theo sẽ tự động call tiếp để get status
-                    pass
-            
-            elapsed = int(time.time() - start_time)
-            # update progress callback
-            if progress_callback:
-                progress_callback(
-                    f"Zep is processing in the background... {completed_count}/{total_episodes} done, {len(pending_episodes)} tasks remaining ({elapsed}s elapsed)",
-                    completed_count / total_episodes if total_episodes > 0 else 0
-                )
-            
-            if pending_episodes:
-                time.sleep(3)  # Lặp chu kỳ check mỗi 3 giây
-        
-        if progress_callback:
-            # Final completion message
-            progress_callback(f"Data upload process completed: {completed_count}/{total_episodes}", 1.0)
-    
+            progress_callback("Processing complete (synchronous)", 1.0)
+        return
+
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         """Lấy/Get dữ liệu Graph Info hiện tại"""
-        # Load các điểm nút/Entity đang có (Qua trình duyệt web/paging)
-        nodes = fetch_all_nodes(self.client, graph_id)
+        driver = get_graphiti().driver
+
+        # Load các điểm nút/Entity đang có (phân trang)
+        nodes = fetch_all_nodes(driver, graph_id)
 
         # Lấy theo mảng phân trang thông tin các Edges/Mối Liên Kết
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = fetch_all_edges(driver, graph_id)
 
         # Nối lại và thống kê những Entity Types
         entity_types = set()
@@ -471,13 +411,14 @@ class GraphBuilderService:
             Một object Dictionary bao hàm thông tin dữ liệu về Mạng lưới Cụm (nodes) và Cạnh (edges), 
             và toàn bộ chi tiết đi kèm khác (Time khởi tạo, Property).
         """
-        nodes = fetch_all_nodes(self.client, graph_id)
-        edges = fetch_all_edges(self.client, graph_id)
+        driver = get_graphiti().driver
+        nodes = fetch_all_nodes(driver, graph_id)
+        edges = fetch_all_edges(driver, graph_id)
 
         # Giữ một map tra cứu để phục vụ lấy 'Tên' nhanh theo ID UUID
         node_map = {}
         for node in nodes:
-            node_map[node.uuid_] = node.name or ""
+            node_map[node.uuid] = node.name or ""
         
         nodes_data = []
         for node in nodes:
@@ -487,7 +428,7 @@ class GraphBuilderService:
                 created_at = str(created_at)
             
             nodes_data.append({
-                "uuid": node.uuid_,
+                "uuid": node.uuid,
                 "name": node.name,
                 "labels": node.labels or [],
                 "summary": node.summary or "",
@@ -514,7 +455,7 @@ class GraphBuilderService:
             fact_type = getattr(edge, 'fact_type', None) or edge.name or ""
             
             edges_data.append({
-                "uuid": edge.uuid_,
+                "uuid": edge.uuid,
                 "name": edge.name or "",
                 "fact": edge.fact or "",
                 "fact_type": fact_type,
@@ -539,6 +480,7 @@ class GraphBuilderService:
         }
     
     def delete_graph(self, graph_id: str):
-        """删除图谱"""
-        self.client.graph.delete(graph_id=graph_id)
+        """Xóa toàn bộ node/edge/episode thuộc group_id (DETACH DELETE cascade)."""
+        driver = get_graphiti().driver
+        run_async(EntityNode.delete_by_group_id(driver, graph_id))
 

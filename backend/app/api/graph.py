@@ -298,8 +298,8 @@ def build_graph():
         
         # Kiểm tra cấu hình
         errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY not configured")
+        if not Config.NEO4J_URI or not Config.NEO4J_PASSWORD:
+            errors.append("NEO4J_URI / NEO4J_PASSWORD not configured")
         if errors:
             logger.error(f"Configuration error: {errors}")
             return jsonify({
@@ -396,9 +396,9 @@ def build_graph():
                     message="Initializing graph builder service..."
                 )
                 
-                # INITIALIZE GRAPH BUILDER 
-                # Creates service instance with Zep Cloud API client
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                # INITIALIZE GRAPH BUILDER
+                # Graphiti (Neo4j) backend — cấu hình lấy lazy qua get_graphiti()
+                builder = GraphBuilderService()
                 
                 # Chunk text
                 task_manager.update_task(
@@ -454,9 +454,9 @@ def build_graph():
                 
                 # [4] - Sends text chunks as episodes to Zep for entity extraction
                 episode_uuids = builder.add_text_batches(
-                    graph_id, 
+                    graph_id,
                     chunks,
-                    batch_size=3,
+                    batch_size=8,
                     progress_callback=add_progress_callback
                 )
                 
@@ -591,13 +591,13 @@ def get_graph_data(graph_id: str):
     Lấy dữ liệu graph (nodes và edges)
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI or not Config.NEO4J_PASSWORD:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY not configured"
+                "error": "NEO4J_URI / NEO4J_PASSWORD not configured"
             }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+
+        builder = GraphBuilderService()
         graph_data = builder.get_graph_data(graph_id)
         
         return jsonify({
@@ -616,16 +616,16 @@ def get_graph_data(graph_id: str):
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
 def delete_graph(graph_id: str):
     """
-    Xóa Zep graph
+    Xóa graph (Graphiti + Neo4j)
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI or not Config.NEO4J_PASSWORD:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY not configured"
+                "error": "NEO4J_URI / NEO4J_PASSWORD not configured"
             }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+
+        builder = GraphBuilderService()
         builder.delete_graph(graph_id)
         
         return jsonify({

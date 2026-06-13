@@ -49,7 +49,6 @@ class Project:
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
-    llm_model_name: Optional[str] = None
     
     # Thông tin lỗi
     error: Optional[str] = None
@@ -64,7 +63,6 @@ class Project:
             "updated_at": self.updated_at,
             "files": self.files,
             "total_text_length": self.total_text_length,
-            "llm_model_name": self.llm_model_name,
             "ontology": self.ontology,
             "analysis_summary": self.analysis_summary,
             "graph_id": self.graph_id,
@@ -90,7 +88,6 @@ class Project:
             updated_at=data.get('updated_at', ''),
             files=data.get('files', []),
             total_text_length=data.get('total_text_length', 0),
-            llm_model_name=data.get('llm_model_name'),
             ontology=data.get('ontology'),
             analysis_summary=data.get('analysis_summary'),
             graph_id=data.get('graph_id'),
@@ -154,8 +151,7 @@ class ProjectManager:
             name=name,
             status=ProjectStatus.CREATED,
             created_at=now,
-            updated_at=now,
-            llm_model_name=Config.LLM_MODEL_NAME
+            updated_at=now
         )
         
         # Thiết lập các thư mục con trong không gian thư mục của project

@@ -58,10 +58,10 @@ def get_graph_entities(graph_id: str):
         enrich: Có lấy thông tin cạnh liên quan hay không (mặc định true)
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI or not Config.NEO4J_PASSWORD:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY is not configured"
+                "error": "NEO4J_URI / NEO4J_PASSWORD is not configured"
             }), 500
         
         entity_types_str = request.args.get('entity_types', '')
@@ -95,10 +95,10 @@ def get_graph_entities(graph_id: str):
 def get_entity_detail(graph_id: str, entity_uuid: str):
     """Lấy thông tin chi tiết của một thực thể."""
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI or not Config.NEO4J_PASSWORD:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY is not configured"
+                "error": "NEO4J_URI / NEO4J_PASSWORD is not configured"
             }), 500
         
         reader = ZepEntityReader()
@@ -128,10 +128,10 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
 def get_entities_by_type(graph_id: str, entity_type: str):
     """Lấy toàn bộ thực thể theo loại chỉ định."""
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI or not Config.NEO4J_PASSWORD:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY is not configured"
+                "error": "NEO4J_URI / NEO4J_PASSWORD is not configured"
             }), 500
         
         enrich = request.args.get('enrich', 'true').lower() == 'true'
@@ -309,7 +309,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - completed: đã chạy xong, nghĩa là đã chuẩn bị xong từ trước
         # - stopped: đã dừng, nghĩa là đã chuẩn bị xong từ trước
         # - failed: chạy thất bại (nhưng phần chuẩn bị đã hoàn tất)
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed", "paused"]
+        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
         
         if status in prepared_statuses and config_generated:
             # Lấy thông tin thống kê file
@@ -383,7 +383,7 @@ def prepare_simulation():
             "simulation_id": "sim_xxxx",                   // bắt buộc, simulation ID
             "entity_types": ["Student", "PublicFigure"],  // tùy chọn, chỉ định loại thực thể
             "use_llm_for_profiles": true,                 // tùy chọn, có dùng LLM để sinh persona hay không
-            "parallel_profile_count": 5,                  // tùy chọn, số lượng sinh persona song song, mặc định 5
+            "parallel_profile_count": 15,                 // tùy chọn, số lượng sinh persona song song, mặc định 15
             "force_regenerate": false                     // tùy chọn, buộc sinh lại, mặc định false
         }
     
@@ -468,7 +468,7 @@ def prepare_simulation():
         
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
-        parallel_profile_count = data.get('parallel_profile_count', 20)
+        parallel_profile_count = data.get('parallel_profile_count', 15)
         
         # ========== Đồng bộ lấy số lượng thực thể (trước khi chạy tác vụ nền) ==========
         # Nhờ đó frontend có thể lấy ngay tổng số Agent dự kiến sau khi gọi prepare

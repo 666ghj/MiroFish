@@ -34,11 +34,14 @@ import time
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
+# Graphiti classes import dưới alias để không đụng dataclass EntityNode định nghĩa bên dưới.
+from graphiti_core.nodes import EntityNode as GraphitiEntityNode
+from graphiti_core.edges import EntityEdge as GraphitiEntityEdge
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from ..utils.graphiti_client import get_graphiti, run_async
 
 logger = get_logger('mirofish.zep_entity_reader')
 
@@ -161,12 +164,9 @@ class ZepEntityReader:
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        # Ưu tiên api_key được truyền vào trực tiếp; fallback về biến môi trường
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY is not configured")
-
-        self.client = Zep(api_key=self.api_key)
+        # api_key giữ lại trong chữ ký để tương thích caller cũ, nhưng không còn dùng:
+        # Graphiti lấy cấu hình Neo4j + LLM qua get_graphiti() (lazy, per-thread).
+        self.api_key = api_key
 
     # --------------------------------------------------------------------------
     # PRIVATE: _call_with_retry — Retry wrapper cho các API call Zep đơn lẻ
@@ -253,14 +253,13 @@ class ZepEntityReader:
         """
         logger.info(f"Fetching all nodes for graph {graph_id}...")
 
-        nodes = fetch_all_nodes(self.client, graph_id)
+        nodes = fetch_all_nodes(get_graphiti().driver, graph_id)
 
-        # Chuẩn hoá từ Zep SDK object sang Python dict thuần
-        # getattr với 2 tên vì Zep SDK đôi khi dùng uuid_ thay vì uuid để tránh conflict keyword
+        # Chuẩn hoá từ graphiti EntityNode sang Python dict thuần
         nodes_data = []
         for node in nodes:
             nodes_data.append({
-                "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
+                "uuid": getattr(node, 'uuid', ''),
                 "name": node.name or "",
                 "labels": node.labels or [],
                 "summary": node.summary or "",
@@ -286,12 +285,12 @@ class ZepEntityReader:
         """
         logger.info(f"Fetching all edges for graph {graph_id}...")
 
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = fetch_all_edges(get_graphiti().driver, graph_id)
 
         edges_data = []
         for edge in edges:
             edges_data.append({
-                "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
+                "uuid": getattr(edge, 'uuid', ''),
                 "name": edge.name or "",
                 "fact": edge.fact or "",           # Mô tả quan hệ dạng câu (ví dụ: "A làm việc tại B")
                 "source_node_uuid": edge.source_node_uuid,  # UUID node nguồn
@@ -327,15 +326,16 @@ class ZepEntityReader:
             Trả về [] nếu lỗi (không raise exception — caller tự xử lý thiếu data).
         """
         try:
+            driver = get_graphiti().driver
             edges = self._call_with_retry(
-                func=lambda: self.client.graph.node.get_entity_edges(node_uuid=node_uuid),
+                func=lambda: run_async(GraphitiEntityEdge.get_by_node_uuid(driver, node_uuid)),
                 operation_name=f"Fetch node edges(node={node_uuid[:8]}...)"
             )
 
             edges_data = []
             for edge in edges:
                 edges_data.append({
-                    "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
+                    "uuid": getattr(edge, 'uuid', ''),
                     "name": edge.name or "",
                     "fact": edge.fact or "",
                     "source_node_uuid": edge.source_node_uuid,
@@ -579,9 +579,12 @@ class ZepEntityReader:
             EntityNode đầy đủ hoặc None nếu không tìm thấy / lỗi
         """
         try:
-            # Fetch node theo UUID với retry
+            # Fetch node theo UUID với retry.
+            # GraphitiEntityNode.get_by_uuid raise NodeNotFoundError nếu không có →
+            # được bắt bởi except phía dưới (log + trả None).
+            driver = get_graphiti().driver
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=entity_uuid),
+                func=lambda: run_async(GraphitiEntityNode.get_by_uuid(driver, entity_uuid)),
                 operation_name=f"Fetch node detail(uuid={entity_uuid[:8]}...)"
             )
 
@@ -629,7 +632,7 @@ class ZepEntityReader:
                     })
 
             return EntityNode(
-                uuid=getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
+                uuid=getattr(node, 'uuid', ''),
                 name=node.name or "",
                 labels=node.labels or [],
                 summary=node.summary or "",
