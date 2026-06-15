@@ -176,6 +176,10 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+### Optional: On-Premise Graph Memory
+
+The default graph-memory backend remains Zep Cloud. For local graph memory, MiroFish can run a Graphiti bridge and FalkorDB through Docker Compose. See [On-Premise Graph Memory](./docs/on-prem-graph-memory.md) for architecture, configuration, health checks, and installation-agent instructions.
+
 ## 📬 Join the Conversation
 
 <div align="center">
