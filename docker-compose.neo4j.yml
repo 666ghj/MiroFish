@@ -1,0 +1,33 @@
+# Neo4j 本地开发数据库
+# 使用方式: docker compose -f docker-compose.neo4j.yml up -d
+
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: mirofish-neo4j
+    ports:
+      - "7474:7474"   # Neo4j Browser (HTTP)
+      - "7687:7687"   # Bolt 协议 (用于驱动连接)
+    environment:
+      # Neo4j 认证 (neo4j/密码)
+      - NEO4J_AUTH=neo4j/password
+      # 内存配置
+      - NEO4J_server.memory.heap.initial_size=512m
+      - NEO4J_server.memory.heap.max_size=2G
+      # 允许远程连接
+      - NEO4J_server.default_listen_address=0.0.0.0
+    volumes:
+      # 持久化数据
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

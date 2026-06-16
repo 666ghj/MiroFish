@@ -1,203 +1,238 @@
-<div align="center">
+# MiroFish Neo4j 二开版
 
-<img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="75%"/>
+[English](./README.md) | 中文
 
-<a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="666ghj%2FMiroFish | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="MiroFish | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
-简洁通用的群体智能引擎，预测万物
-</br>
-<em>A Simple and Universal Swarm Intelligence Engine, Predicting Anything</em>
+本项目基于原始开源仓库 [666ghj/MiroFish](https://github.com/666ghj/MiroFish) 进行二次开发。
 
-<a href="https://www.shanda.com/" target="_blank"><img src="./static/image/shanda_logo.png" alt="666ghj%2FMiroFish | Shanda" height="40"/></a>
+本版本的核心改动是：将原项目中的 Zep Cloud 图谱记忆与检索依赖替换为本地 Neo4j 后端，使项目可以使用本地图数据库完成实体关系存储、图谱检索、报告工具调用和模拟后的记忆更新，同时保留原 MiroFish 的多智能体模拟流程。
 
-[![GitHub Stars](https://img.shields.io/github/stars/666ghj/MiroFish?style=flat-square&color=DAA520)](https://github.com/666ghj/MiroFish/stargazers)
-[![GitHub Watchers](https://img.shields.io/github/watchers/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/watchers)
-[![GitHub Forks](https://img.shields.io/github/forks/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/network)
-[![Docker](https://img.shields.io/badge/Docker-Build-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/666ghj/MiroFish)
+本项目遵守原仓库一致的开源协议：**AGPL-3.0**。
 
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white)](http://discord.gg/ePf5aPaHnA)
-[![X](https://img.shields.io/badge/X-Follow-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/mirofish_ai)
-[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?style=flat-square&logo=instagram&logoColor=white)](https://www.instagram.com/mirofish_ai/)
+## 主要改动
 
-[English](./README.md) | [中文文档](./README-ZH.md)
+- 使用本地 Neo4j 替代 Zep Cloud 图谱存储与检索。
+- 新增 Neo4j 图谱构建、实体读取、记忆更新和搜索服务。
+- 新增图数据库后端工厂，支持按配置切换图谱后端。
+- 修复并增强报告工具输出：
+  - Deep Insight
+  - Panorama Search
+  - Quick Search
+- 新增 LLM 429 限流等待与重试逻辑。
+- 新增足球场景的比分概率计算与报告注入。
+- 新增本地 Neo4j Docker Compose 配置。
 
-</div>
+## 功能说明
 
-## ⚡ 项目概述
+- 上传种子文档并抽取实体关系。
+- 将抽取结果写入本地 Neo4j 图谱。
+- 生成模拟 Agent 和社交行为配置。
+- 运行双平台社交模拟。
+- 基于图谱检索生成预测报告。
+- 在足球比赛场景中输出胜平负概率、最可能比分、期望进球和比分矩阵。
 
-**MiroFish** 是一款基于多智能体技术的新一代 AI 预测引擎。通过提取现实世界的种子信息（如突发新闻、政策草案、金融信号），自动构建出高保真的平行数字世界。在此空间内，成千上万个具备独立人格、长期记忆与行为逻辑的智能体进行自由交互与社会演化。你可透过「上帝视角」动态注入变量，精准推演未来走向——**让未来在数字沙盘中预演，助决策在百战模拟后胜出**。
+## 项目结构
 
-> 你只需：上传种子材料（数据分析报告或者有趣的小说故事），并用自然语言描述预测需求</br>
-> MiroFish 将返回：一份详尽的预测报告，以及一个可深度交互的高保真数字世界
-
-### 我们的愿景
-
-MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体互动引发的群体涌现，突破传统预测的局限：
-
-- **于宏观**：我们是决策者的预演实验室，让政策与公关在零风险中试错
-- **于微观**：我们是个人用户的创意沙盘，无论是推演小说结局还是探索脑洞，皆可有趣、好玩、触手可及
-
-从严肃预测到趣味仿真，我们让每一个如果都能看见结果，让预测万物成为可能。
-
-## 🌐 在线体验
-
-欢迎访问在线 Demo 演示环境，体验我们为你准备的一次关于热点舆情事件的推演预测：[mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
-
-## 📸 系统截图
-
-<div align="center">
-<table>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图1.png" alt="截图1" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图2.png" alt="截图2" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图3.png" alt="截图3" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图4.png" alt="截图4" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图5.png" alt="截图5" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图6.png" alt="截图6" width="100%"/></td>
-</tr>
-</table>
-</div>
-
-## 🎬 演示视频
-
-### 1. 武汉大学舆情推演预测 + MiroFish项目讲解
-
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="MiroFish Demo Video" width="75%"/></a>
-
-点击图片查看使用微舆BettaFish生成的《武大舆情报告》进行预测的完整演示视频
-</div>
-
-### 2. 《红楼梦》失传结局推演预测
-
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1cPk3BBExq" target="_blank"><img src="./static/image/红楼梦模拟推演封面.jpg" alt="MiroFish Demo Video" width="75%"/></a>
-
-点击图片查看基于《红楼梦》前80回数十万字，MiroFish深度预测失传结局
-</div>
-
-> **金融方向推演预测**、**时政要闻推演预测**等示例陆续更新中...
-
-## 🔄 工作流程
-
-1. **图谱构建**：现实种子提取 & 个体与群体记忆注入 & GraphRAG构建
-2. **环境搭建**：实体关系抽取 & 人设生成 & 环境配置Agent注入仿真参数
-3. **开始模拟**：双平台并行模拟 & 自动解析预测需求 & 动态更新时序记忆
-4. **报告生成**：ReportAgent拥有丰富的工具集与模拟后环境进行深度交互
-5. **深度互动**：与模拟世界中的任意一位进行对话 & 与ReportAgent进行对话
-
-## 🚀 快速开始
-
-### 一、源码部署（推荐）
-
-#### 前置要求
-
-| 工具 | 版本要求 | 说明 | 安装检查 |
-|------|---------|------|---------|
-| **Node.js** | 18+ | 前端运行环境，包含 npm | `node -v` |
-| **Python** | ≥3.11, ≤3.12 | 后端运行环境 | `python --version` |
-| **uv** | 最新版 | Python 包管理器 | `uv --version` |
-
-#### 1. 配置环境变量
-
-```bash
-# 复制示例配置文件
-cp .env.example .env
-
-# 编辑 .env 文件，填入必要的 API 密钥
+```text
+frontend/                 Vue + Vite 前端
+backend/                  Flask 后端
+backend/app/services/     模拟、报告、图谱与适配服务
+backend/app/services/adapters/
+                           Neo4j 图谱适配实现
+backend/app/utils/neo4j/  Neo4j 驱动与 Schema 工具
+locales/                  多语言文案
+static/                   静态图片资源
 ```
 
-**必需的环境变量：**
+## 环境要求
+
+- Node.js 18+
+- Python 3.11 - 3.12
+- uv
+- Docker（用于快速启动 Neo4j）
+- 一个兼容 OpenAI SDK 格式的 LLM API Key
+
+## 环境变量配置
+
+复制示例文件：
+
+```bash
+cp .env.example .env
+```
+
+最小本地配置示例：
 
 ```env
-# LLM API配置（支持 OpenAI SDK 格式的任意 LLM API）
-# 推荐使用阿里百炼平台qwen-plus模型：https://bailian.console.aliyun.com/
-# 注意消耗较大，可先进行小于40轮的模拟尝试
-LLM_API_KEY=your_api_key
+LLM_API_KEY=your_api_key_here
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
-# Zep Cloud 配置
-# 每月免费额度即可支撑简单使用：https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+GRAPH_BACKEND=neo4j
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=password
+NEO4J_DATABASE=neo4j
 ```
 
-#### 2. 安装依赖
+可选的 LLM 限流重试配置：
+
+```env
+LLM_RATE_LIMIT_MAX_ATTEMPTS=20
+LLM_RATE_LIMIT_INITIAL_DELAY=30
+LLM_RATE_LIMIT_MAX_DELAY=180
+LLM_RATE_LIMIT_BACKOFF_FACTOR=1.5
+```
+
+## 启动 Neo4j
+
+项目提供了本地 Neo4j 的 Docker Compose 文件：
 
 ```bash
-# 一键安装所有依赖（根目录 + 前端 + 后端）
+docker compose -f docker-compose.neo4j.yml up -d
+```
+
+默认地址：
+
+- Neo4j Browser：`http://localhost:7474`
+- Bolt URI：`bolt://localhost:7687`
+- 默认账号：`neo4j / password`
+
+请确保 `.env` 中的 `NEO4J_PASSWORD` 与 Docker Compose 中配置的密码一致。
+
+## 安装依赖
+
+一次性安装前后端依赖：
+
+```bash
 npm run setup:all
 ```
 
-或者分步安装：
+也可以分开安装：
 
 ```bash
-# 安装 Node 依赖（根目录 + 前端）
 npm run setup
-
-# 安装 Python 依赖（后端，自动创建虚拟环境）
 npm run setup:backend
 ```
 
-#### 3. 启动服务
+## 运行项目
+
+同时启动前端和后端：
 
 ```bash
-# 同时启动前后端（在项目根目录执行）
 npm run dev
 ```
 
-**服务地址：**
+服务地址：
+
 - 前端：`http://localhost:3000`
 - 后端 API：`http://localhost:5001`
 
-**单独启动：**
+单独启动：
 
 ```bash
-npm run backend   # 仅启动后端
-npm run frontend  # 仅启动前端
+npm run backend
+npm run frontend
 ```
 
-### 二、Docker 部署
+## Docker 运行
+
+根目录的 `docker-compose.yml` 可用于启动应用容器。若使用本地 Neo4j 图谱后端，建议先启动 Neo4j：
 
 ```bash
-# 1. 配置环境变量（同源码部署）
-cp .env.example .env
+docker compose -f docker-compose.neo4j.yml up -d
+```
 
-# 2. 拉取镜像并启动
+再启动应用：
+
+```bash
 docker compose up -d
 ```
 
-默认会读取根目录下的 `.env`，并映射端口 `3000（前端）/5001（后端）`
+默认会读取根目录下的 `.env`，并映射端口 `3000（前端）/5001（后端）`。
 
-> 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
+## 基本使用流程
 
-## 📬 更多交流
+1. 启动 Neo4j。
+2. 启动后端和前端。
+3. 打开 `http://localhost:3000`。
+4. 创建或打开项目。
+5. 上传种子文档。
+6. 构建图谱。
+7. 生成模拟配置。
+8. 启动模拟。
+9. 生成预测报告。
 
-<div align="center">
-<img src="./static/image/QQ群.png" alt="QQ交流群" width="60%"/>
-</div>
+## 报告检索工具
 
-&nbsp;
+报告 Agent 可以调用以下图谱检索工具：
 
-MiroFish团队长期招募全职/实习，如果你对多Agent应用感兴趣，欢迎投递简历至：**mirofish@shanda.com**
+- **Deep Insight**：将问题拆解为多个子问题，并收集相关事实、实体和关系链。
+- **Panorama Search**：返回图谱中的全景实体和事实。
+- **Quick Search**：对图谱事实、节点名称和节点摘要进行轻量关键词搜索。
+- **Interview Agents**：结合模拟或图谱上下文生成面向 Agent 的回答。
 
-## 📄 致谢
+在 Neo4j 二开版中，检索工具会输出前端可直接解析的文本结构，因此报告时间线能够展示事实、实体和关系链，而不是空白 JSON。
 
-**MiroFish 得到了盛大集团的战略支持和孵化！**
+## 足球比分概率报告
 
-MiroFish 的仿真引擎由 **[OASIS](https://github.com/camel-ai/oasis)** 驱动，我们衷心感谢 CAMEL-AI 团队的开源贡献！
+当模拟需求或种子数据包含足球、比分、泊松、lambda、xG、expected goals 等信号时，后端会尝试抽取：
 
-## 📈 项目统计
+- `lambda_home`
+- `lambda_away`
+- xG / expected goals
+- 主客队信息
 
-<a href="https://www.star-history.com/#666ghj/MiroFish&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&legend=top-left" />
- </picture>
-</a>
+并生成：
+
+- 主胜 / 平局 / 客胜概率
+- 最可能比分 Top Scorelines
+- 期望进球
+- 比分概率矩阵
+
+该部分会作为确定性计算结果注入报告，避免报告只停留在 LLM 的泛化描述。
+
+## 日志位置
+
+常用本地日志：
+
+```text
+log/backend-restart.out.log
+log/backend-restart.err.log
+log/frontend-direct.out.log
+log/frontend-direct.err.log
+backend/uploads/reports/<report_id>/agent_log.jsonl
+backend/uploads/reports/<report_id>/console_log.txt
+```
+
+## 常见问题
+
+### Neo4j 连接失败
+
+确认 Neo4j 已启动，并检查 `.env` 中的 Neo4j 配置是否与 Docker Compose 一致。
+
+```bash
+docker compose -f docker-compose.neo4j.yml ps
+```
+
+### LLM 返回 429
+
+后端已内置限流重试逻辑。遇到 429 时会根据 `LLM_RATE_LIMIT_*` 配置等待后继续重试。
+
+### Deep Insight / Panorama Search / Quick Search 内容为空
+
+请确认项目已经成功构建图谱。Neo4j 检索会搜索关系事实、节点名称和节点摘要；如果图谱本身没有内容，工具也无法返回有效结果。
+
+### 报告缺少比分预测
+
+请确认模拟需求或种子数据包含足球相关关键词，并提供可抽取的 `lambda_home`、`lambda_away`、xG 或 expected goals 信息。
+
+## 开源协议
+
+本项目继承原仓库协议，使用 **AGPL-3.0**。
+
+如果你部署、分发，或通过网络提供该软件服务，请遵守 AGPL-3.0 的相关要求。
+
+## 致谢
+
+本项目基于 [666ghj/MiroFish](https://github.com/666ghj/MiroFish) 进行二次开发。感谢原作者及所有贡献者的开源工作。

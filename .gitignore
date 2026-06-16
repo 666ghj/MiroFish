@@ -29,6 +29,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+npm_cache/
+frontend/npm_cache/
 
 # IDE
 .vscode/
@@ -52,9 +54,18 @@ mytest/
 # 日志文件
 backend/logs/
 *.log
+log/
 
 # 上传文件
 backend/uploads/
+
+# 本地依赖缓存
+pip_cache/
+backend/pip_cache/
+
+# 本地环境配置
+.env.dev
+.env.neo4j
 
 # Docker 数据
 data/

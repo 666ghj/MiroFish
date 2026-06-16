@@ -11,13 +11,13 @@ from flask import request, jsonify
 from . import graph_bp
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
-from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
+from ..services.graph_service_factory import get_graph_factory
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..models.task import TaskManager, TaskStatus
-from ..models.project import ProjectManager, ProjectStatus
+from ..models.project import ProjectManager, ProjectStatus, validate_simulation_requirement
 
 # 获取日志器
 logger = get_logger('mirofish.api')
@@ -163,6 +163,13 @@ def generate_ontology():
                 "success": False,
                 "error": t('api.requireSimulationRequirement')
             }), 400
+
+        requirement_error = validate_simulation_requirement(simulation_requirement)
+        if requirement_error:
+            return jsonify({
+                "success": False,
+                "error": requirement_error
+            }), 400
         
         # 获取上传的文件
         uploaded_files = request.files.getlist('files')
@@ -283,10 +290,15 @@ def build_graph():
     try:
         logger.info("=== 开始构建图谱 ===")
         
-        # 检查配置
+        # 检查配置 - 根据后端检查相应配置
         errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append(t('api.zepApiKeyMissing'))
+        factory = get_graph_factory()
+        health = factory.check_backend_health()
+        if not health.get('healthy'):
+            if factory.backend == 'zep':
+                errors.append(t('api.zepApiKeyMissing'))
+            else:
+                errors.append(f"Neo4j 连接失败，请检查配置")
         if errors:
             logger.error(f"配置错误: {errors}")
             return jsonify({
@@ -387,7 +399,7 @@ def build_graph():
                 )
                 
                 # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                builder = get_graph_factory().get_graph_builder()
                 
                 # 分块
                 task_manager.update_task(
@@ -572,20 +584,15 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        factory = get_graph_factory()
+        builder = factory.get_graph_builder()
         graph_data = builder.get_graph_data(graph_id)
-        
+
         return jsonify({
             "success": True,
             "data": graph_data
         })
-        
+
     except Exception as e:
         return jsonify({
             "success": False,
@@ -600,20 +607,15 @@ def delete_graph(graph_id: str):
     删除Zep图谱
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        factory = get_graph_factory()
+        builder = factory.get_graph_builder()
         builder.delete_graph(graph_id)
-        
+
         return jsonify({
             "success": True,
             "message": t('api.graphDeleted', id=graph_id)
         })
-        
+
     except Exception as e:
         return jsonify({
             "success": False,

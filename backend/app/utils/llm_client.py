@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
+from .llm_rate_limit import call_llm_with_rate_limit_retry
 
 
 class LLMClient:
@@ -58,10 +59,14 @@ class LLMClient:
             "max_tokens": max_tokens,
         }
         
-        if response_format:
+        # MiniMax 不支持 response_format 参数，跳过
+        if response_format and "MiniMax" not in self.model and "minimax" not in self.model:
             kwargs["response_format"] = response_format
         
-        response = self.client.chat.completions.create(**kwargs)
+        response = call_llm_with_rate_limit_retry(
+            lambda: self.client.chat.completions.create(**kwargs),
+            operation_name="LLM chat"
+        )
         content = response.choices[0].message.content
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
@@ -96,8 +101,51 @@ class LLMClient:
         cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
         cleaned_response = cleaned_response.strip()
 
+        # 尝试直接解析
         try:
             return json.loads(cleaned_response)
         except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
+            pass
+
+        # 策略2: 尝试提取 JSON 对象（可能嵌套在其他文本中）
+        json_patterns = [
+            r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',  # 简单嵌套
+            r'(\{"[^"]*"\s*:\s*)',  # JSON 开始位置
+        ]
+        for pattern in json_patterns:
+            match = re.search(pattern, cleaned_response, re.DOTALL)
+            if match:
+                try:
+                    # 尝试从匹配位置开始解析
+                    candidate = match.group(0) if match.group(0).startswith('{') else match.group(1)
+                    # 向后扩展直到找到完整对象
+                    for end in range(len(candidate), len(cleaned_response) + 1):
+                        try:
+                            result = json.loads(cleaned_response[match.start():end])
+                            return result
+                        except json.JSONDecodeError:
+                            continue
+                except Exception:
+                    pass
+
+        # 策略3: 尝试修复常见 JSON 问题
+        fixed = cleaned_response
+        # 移除控制字符
+        fixed = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', fixed)
+        # 修复单引号
+        fixed = re.sub(r"'", '"', fixed)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 策略4: 查找 ```json ... ``` 块
+        code_block_match = re.search(r'```json\s*\n?(.*?)\n?```', cleaned_response, re.DOTALL | re.IGNORECASE)
+        if code_block_match:
+            try:
+                return json.loads(code_block_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response[:500]}")
 

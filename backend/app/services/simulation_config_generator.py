@@ -21,7 +21,13 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
-from .zep_entity_reader import EntityNode, ZepEntityReader
+from ..utils.llm_rate_limit import call_llm_with_rate_limit_retry
+
+# 根据后端选择实体读取器
+if Config.GRAPH_BACKEND == 'neo4j':
+    from .adapters.neo4j_entity_reader import EntityNode, FilteredEntities
+else:
+    from .zep_entity_reader import EntityNode, FilteredEntities
 
 logger = get_logger('mirofish.simulation_config')
 
@@ -440,15 +446,18 @@ class SimulationConfigGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
+                response = call_llm_with_rate_limit_retry(
+                    lambda: self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
+                        # 不设置max_tokens，让LLM自由发挥
+                    ),
+                    operation_name="Simulation config LLM"
                 )
                 
                 content = response.choices[0].message.content

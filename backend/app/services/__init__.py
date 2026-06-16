@@ -1,15 +1,16 @@
 """
 业务服务模块
+
+注意：Zep 相关模块已移至 adapters/，通过 graph_service_factory 按需加载
+不需要安装 zep_cloud 库，Neo4j 模式下直接使用本地 Neo4j
 """
 
 from .ontology_generator import OntologyGenerator
-from .graph_builder import GraphBuilderService
 from .text_processor import TextProcessor
-from .zep_entity_reader import ZepEntityReader, EntityNode, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_manager import SimulationManager, SimulationState, SimulationStatus
 from .simulation_config_generator import (
-    SimulationConfigGenerator, 
+    SimulationConfigGenerator,
     SimulationParameters,
     AgentActivityConfig,
     TimeSimulationConfig,
@@ -23,11 +24,6 @@ from .simulation_runner import (
     AgentAction,
     RoundSummary
 )
-from .zep_graph_memory_updater import (
-    ZepGraphMemoryUpdater,
-    ZepGraphMemoryManager,
-    AgentActivity
-)
 from .simulation_ipc import (
     SimulationIPCClient,
     SimulationIPCServer,
@@ -38,12 +34,8 @@ from .simulation_ipc import (
 )
 
 __all__ = [
-    'OntologyGenerator', 
-    'GraphBuilderService', 
+    'OntologyGenerator',
     'TextProcessor',
-    'ZepEntityReader',
-    'EntityNode',
-    'FilteredEntities',
     'OasisProfileGenerator',
     'OasisAgentProfile',
     'SimulationManager',
@@ -60,9 +52,6 @@ __all__ = [
     'RunnerStatus',
     'AgentAction',
     'RoundSummary',
-    'ZepGraphMemoryUpdater',
-    'ZepGraphMemoryManager',
-    'AgentActivity',
     'SimulationIPCClient',
     'SimulationIPCServer',
     'IPCCommand',
@@ -70,4 +59,3 @@ __all__ = [
     'CommandType',
     'CommandStatus',
 ]
-

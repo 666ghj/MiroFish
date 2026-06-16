@@ -14,7 +14,9 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
-from .zep_entity_reader import ZepEntityReader, FilteredEntities
+# FilteredEntities 是 Zep 实体读取器的类型，现在通过 graph_service_factory 延迟加载
+# from .zep_entity_reader import FilteredEntities
+from .graph_service_factory import get_graph_factory
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
 from ..utils.locale import t
@@ -273,7 +275,7 @@ class SimulationManager:
             if progress_callback:
                 progress_callback("reading", 0, t('progress.connectingZepGraph'))
             
-            reader = ZepEntityReader()
+            reader = get_graph_factory().get_entity_reader()
             
             if progress_callback:
                 progress_callback("reading", 30, t('progress.readingNodeData'))

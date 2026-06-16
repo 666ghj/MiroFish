@@ -21,7 +21,7 @@ from queue import Queue
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
-from .zep_graph_memory_updater import ZepGraphMemoryManager
+from .graph_service_factory import get_graph_factory
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
 logger = get_logger('mirofish.simulation_runner')
@@ -375,7 +375,7 @@ class SimulationRunner:
                 raise ValueError("启用图谱记忆更新时必须提供 graph_id")
             
             try:
-                ZepGraphMemoryManager.create_updater(simulation_id, graph_id)
+                get_graph_factory().get_memory_updater(simulation_id, graph_id)
                 cls._graph_memory_enabled[simulation_id] = True
                 logger.info(f"已启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
             except Exception as e:
@@ -414,7 +414,7 @@ class SimulationRunner:
             #   simulation.log        - 主进程日志
             
             cmd = [
-                sys.executable,  # Python解释器
+                "D:\\conda\\python.exe",  # 使用包含 camel-ai 的 Python
                 script_path,
                 "--config", config_path,  # 使用完整配置文件路径
             ]
@@ -432,6 +432,13 @@ class SimulationRunner:
             env = os.environ.copy()
             env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
             env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
+
+            # 确保使用 conda Python，优先搜索其路径
+            conda_python_dir = r"D:\conda"
+            if 'PATH' in env:
+                env['PATH'] = conda_python_dir + os.pathsep + env['PATH']
+            else:
+                env['PATH'] = conda_python_dir
             
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
@@ -556,7 +563,7 @@ class SimulationRunner:
             # 停止图谱记忆更新器
             if cls._graph_memory_enabled.get(simulation_id, False):
                 try:
-                    ZepGraphMemoryManager.stop_updater(simulation_id)
+                    get_graph_factory().stop_memory_updater(simulation_id)
                     logger.info(f"已停止图谱记忆更新: simulation_id={simulation_id}")
                 except Exception as e:
                     logger.error(f"停止图谱记忆更新器失败: {e}")
@@ -604,7 +611,7 @@ class SimulationRunner:
         graph_memory_enabled = cls._graph_memory_enabled.get(state.simulation_id, False)
         graph_updater = None
         if graph_memory_enabled:
-            graph_updater = ZepGraphMemoryManager.get_updater(state.simulation_id)
+            graph_updater = get_graph_factory().get_existing_memory_updater(state.simulation_id)
         
         try:
             with open(log_path, 'r', encoding='utf-8') as f:
@@ -812,7 +819,7 @@ class SimulationRunner:
         # 停止图谱记忆更新器
         if cls._graph_memory_enabled.get(simulation_id, False):
             try:
-                ZepGraphMemoryManager.stop_updater(simulation_id)
+                get_graph_factory().stop_memory_updater(simulation_id)
                 logger.info(f"已停止图谱记忆更新: simulation_id={simulation_id}")
             except Exception as e:
                 logger.error(f"停止图谱记忆更新器失败: {e}")
@@ -1206,7 +1213,7 @@ class SimulationRunner:
         
         # 首先停止所有图谱记忆更新器（stop_all 内部会打印日志）
         try:
-            ZepGraphMemoryManager.stop_all()
+            get_graph_factory().stop_all_memory_updaters()
         except Exception as e:
             logger.error(f"停止图谱记忆更新器失败: {e}")
         cls._graph_memory_enabled.clear()

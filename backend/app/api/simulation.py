@@ -9,13 +9,13 @@ from flask import request, jsonify, send_file
 
 from . import simulation_bp
 from ..config import Config
-from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.graph_service_factory import get_graph_factory
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
-from ..models.project import ProjectManager
+from ..models.project import ProjectManager, validate_simulation_requirement
 
 logger = get_logger('mirofish.api.simulation')
 
@@ -23,6 +23,19 @@ logger = get_logger('mirofish.api.simulation')
 # Interview prompt 优化前缀
 # 添加此前缀可以避免Agent调用工具，直接用文本回复
 INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
+
+
+def _graph_backend_error_response():
+    factory = get_graph_factory()
+    health = factory.check_backend_health()
+    if health.get("healthy"):
+        return None
+
+    if factory.backend == "zep":
+        error = t('api.zepApiKeyMissing')
+    else:
+        error = "Neo4j 连接失败，请检查 NEO4J_URI/NEO4J_USERNAME/NEO4J_PASSWORD 配置"
+    return jsonify({"success": False, "error": error}), 500
 
 
 def optimize_interview_prompt(prompt: str) -> str:
@@ -57,11 +70,9 @@ def get_graph_entities(graph_id: str):
         enrich: 是否获取相关边信息（默认true）
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
+        backend_error = _graph_backend_error_response()
+        if backend_error:
+            return backend_error
         
         entity_types_str = request.args.get('entity_types', '')
         entity_types = [t.strip() for t in entity_types_str.split(',') if t.strip()] if entity_types_str else None
@@ -69,7 +80,7 @@ def get_graph_entities(graph_id: str):
         
         logger.info(f"获取图谱实体: graph_id={graph_id}, entity_types={entity_types}, enrich={enrich}")
         
-        reader = ZepEntityReader()
+        reader = get_graph_factory().get_entity_reader()
         result = reader.filter_defined_entities(
             graph_id=graph_id,
             defined_entity_types=entity_types,
@@ -94,13 +105,11 @@ def get_graph_entities(graph_id: str):
 def get_entity_detail(graph_id: str, entity_uuid: str):
     """获取单个实体的详细信息"""
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
+        backend_error = _graph_backend_error_response()
+        if backend_error:
+            return backend_error
         
-        reader = ZepEntityReader()
+        reader = get_graph_factory().get_entity_reader()
         entity = reader.get_entity_with_context(graph_id, entity_uuid)
         
         if not entity:
@@ -127,15 +136,13 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
 def get_entities_by_type(graph_id: str, entity_type: str):
     """获取指定类型的所有实体"""
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": t('api.zepApiKeyMissing')
-            }), 500
+        backend_error = _graph_backend_error_response()
+        if backend_error:
+            return backend_error
         
         enrich = request.args.get('enrich', 'true').lower() == 'true'
         
-        reader = ZepEntityReader()
+        reader = get_graph_factory().get_entity_reader()
         entities = reader.get_entities_by_type(
             graph_id=graph_id,
             entity_type=entity_type,
@@ -207,6 +214,13 @@ def create_simulation():
                 "success": False,
                 "error": t('api.projectNotFound', id=project_id)
             }), 404
+
+        requirement_error = validate_simulation_requirement(project.simulation_requirement or "")
+        if requirement_error:
+            return jsonify({
+                "success": False,
+                "error": requirement_error
+            }), 400
         
         graph_id = data.get('graph_id') or project.graph_id
         if not graph_id:
@@ -472,7 +486,7 @@ def prepare_simulation():
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
         try:
             logger.info(f"同步获取实体数量: graph_id={state.graph_id}")
-            reader = ZepEntityReader()
+            reader = get_graph_factory().get_entity_reader()
             # 快速读取实体（不需要边信息，只统计数量）
             filtered_preview = reader.filter_defined_entities(
                 graph_id=state.graph_id,
@@ -1401,7 +1415,7 @@ def generate_profiles():
         use_llm = data.get('use_llm', True)
         platform = data.get('platform', 'reddit')
         
-        reader = ZepEntityReader()
+        reader = get_graph_factory().get_entity_reader()
         filtered = reader.filter_defined_entities(
             graph_id=graph_id,
             defined_entity_types=entity_types,

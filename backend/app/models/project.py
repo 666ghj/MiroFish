@@ -14,6 +14,41 @@ from dataclasses import dataclass, field, asdict
 from ..config import Config
 
 
+CONTAMINATED_REQUIREMENT_KEYWORDS = (
+    "No module named 'camel'",
+    "缺少依赖",
+    "进程退出码",
+    "runner_status",
+    "insight_forge",
+    "panorama_search",
+    "quick_search",
+    "interview_agents",
+    "Session.run() got multiple values",
+    "to_text",
+    "Neo4jSearchService",
+    "模拟系统故障",
+    "模拟启动失败",
+    "系统启动失败",
+)
+
+
+def validate_simulation_requirement(requirement: str) -> Optional[str]:
+    """拒绝把内部错误日志或故障报告误当作模拟需求。"""
+    text = (requirement or "").strip()
+    if not text:
+        return "模拟需求不能为空"
+
+    for keyword in CONTAMINATED_REQUIREMENT_KEYWORDS:
+        if keyword.lower() in text.lower():
+            return (
+                "模拟需求疑似包含内部错误日志或故障报告，请重新填写真实预测需求。"
+                "例如：预测 Qatar vs Switzerland 足球比赛的舆论反应、双方支持者观点、"
+                "媒体关注点、潜在争议和胜负倾向。"
+            )
+
+    return None
+
+
 class ProjectStatus(str, Enum):
     """项目状态"""
     CREATED = "created"              # 刚创建，文件已上传

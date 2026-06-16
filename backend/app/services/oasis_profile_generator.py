@@ -16,12 +16,36 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
+
+# Zep 是可选依赖，如果未安装则使用 Neo4j 适配器
+try:
+    from zep_cloud.client import Zep as ZepClient
+except ImportError:
+    ZepClient = None
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
-from .zep_entity_reader import EntityNode, ZepEntityReader
+from ..utils.llm_rate_limit import call_llm_with_rate_limit_retry
+
+# 实体节点类型 - 延迟导入以支持 Neo4j 后端
+EntityNode = None
+ZepEntityReader = None
+
+
+def _ensure_entity_types():
+    """延迟导入实体类型，确保在需要时可用"""
+    global EntityNode, ZepEntityReader
+    if EntityNode is None:
+        # 根据后端选择合适的实体读取器
+        if Config.GRAPH_BACKEND == 'neo4j':
+            from ..services.adapters.neo4j_entity_reader import EntityNode as Neo4jEntityNode
+            EntityNode = Neo4jEntityNode
+        else:
+            from .zep_entity_reader import EntityNode as ZepEntityNode
+            from .zep_entity_reader import ZepEntityReader as ZepEntityReaderCls
+            EntityNode = ZepEntityNode
+            ZepEntityReader = ZepEntityReaderCls
 
 logger = get_logger('mirofish.oasis_profile')
 
@@ -198,20 +222,20 @@ class OasisProfileGenerator:
             base_url=self.base_url
         )
         
-        # Zep客户端用于检索丰富上下文
+        # Zep客户端用于检索丰富上下文（可选）
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
         self.zep_client = None
         self.graph_id = graph_id
-        
-        if self.zep_api_key:
+
+        if ZepClient and self.zep_api_key:
             try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
+                self.zep_client = ZepClient(api_key=self.zep_api_key)
             except Exception as e:
                 logger.warning(f"Zep客户端初始化失败: {e}")
     
     def generate_profile_from_entity(
-        self, 
-        entity: EntityNode, 
+        self,
+        entity,  # EntityNode - 类型在运行时确定
         user_id: int,
         use_llm: bool = True
     ) -> OasisAgentProfile:
@@ -283,7 +307,7 @@ class OasisProfileGenerator:
         suffix = random.randint(100, 999)
         return f"{username}_{suffix}"
     
-    def _search_zep_for_entity(self, entity: EntityNode) -> Dict[str, Any]:
+    def _search_zep_for_entity(self, entity) -> Dict[str, Any]:  # EntityNode
         """
         使用Zep图谱混合搜索功能获取实体相关的丰富信息
         
@@ -411,7 +435,7 @@ class OasisProfileGenerator:
         
         return results
     
-    def _build_entity_context(self, entity: EntityNode) -> str:
+    def _build_entity_context(self, entity) -> str:  # EntityNode
         """
         构建实体的完整上下文信息
         
@@ -527,15 +551,23 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
+                # MiniMax 不支持 response_format 参数，跳过
+                kwargs = {
+                    "model": self.model_name,
+                    "messages": [
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
+                    "temperature": 0.7 - (attempt * 0.1)  # 每次重试降低温度
                     # 不设置max_tokens，让LLM自由发挥
+                }
+
+                if "MiniMax" not in self.model_name and "minimax" not in self.model_name:
+                    kwargs["response_format"] = {"type": "json_object"}
+
+                response = call_llm_with_rate_limit_retry(
+                    lambda: self.client.chat.completions.create(**kwargs),
+                    operation_name="OASIS profile LLM"
                 )
                 
                 content = response.choices[0].message.content
@@ -850,7 +882,7 @@ class OasisProfileGenerator:
     
     def generate_profiles_from_entities(
         self,
-        entities: List[EntityNode],
+        entities,  # List[EntityNode]
         use_llm: bool = True,
         progress_callback: Optional[callable] = None,
         graph_id: Optional[str] = None,

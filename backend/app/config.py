@@ -31,9 +31,23 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    LLM_RATE_LIMIT_MAX_ATTEMPTS = int(os.environ.get('LLM_RATE_LIMIT_MAX_ATTEMPTS', '20'))
+    LLM_RATE_LIMIT_INITIAL_DELAY = float(os.environ.get('LLM_RATE_LIMIT_INITIAL_DELAY', '30'))
+    LLM_RATE_LIMIT_MAX_DELAY = float(os.environ.get('LLM_RATE_LIMIT_MAX_DELAY', '180'))
+    LLM_RATE_LIMIT_BACKOFF_FACTOR = float(os.environ.get('LLM_RATE_LIMIT_BACKOFF_FACTOR', '1.5'))
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+
+    # Neo4j配置（替代Zep的本地图数据库）
+    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
+    NEO4J_USERNAME = os.environ.get('NEO4J_USERNAME', 'neo4j')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', '')
+    NEO4J_DATABASE = os.environ.get('NEO4J_DATABASE', 'neo4j')
+    NEO4J_MAX_POOL_SIZE = int(os.environ.get('NEO4J_MAX_POOL_SIZE', '50'))
+
+    # 选择图数据库后端：'zep' 或 'neo4j'
+    GRAPH_BACKEND = os.environ.get('GRAPH_BACKEND', 'neo4j').lower()
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -69,7 +83,9 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
+        if cls.GRAPH_BACKEND == 'zep' and not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
+        if cls.GRAPH_BACKEND == 'neo4j' and not cls.NEO4J_PASSWORD:
+            errors.append("NEO4J_PASSWORD 未配置")
         return errors
 
