@@ -210,6 +210,9 @@
   "step4": {
     "generatingSection": "正在生成{title}...",
     "goToInteraction": "进入深度互动",
+    "step5Label": "第 5/5 步",
+    "deepInteractionTitle": "深度互动",
+    "deepInteractionDescription": "继续进入模拟世界，向报告 Agent 或具体 Agent 追问后续问题。",
     "waitingForReportAgent": "Waiting for Report Agent...",
     "collapse": "收起 ▲",
     "expandAll": "展开全部 {count} 条 ▼",
