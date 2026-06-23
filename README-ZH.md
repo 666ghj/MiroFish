@@ -24,6 +24,14 @@
 
 </div>
 
+<p align="center">
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=MiroFish">
+    <img src="./static/image/atlas-cloud-logo.png" alt="Atlas Cloud" width="200">
+  </a>
+</p>
+
+> 🎁 **[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=MiroFish)** 是一个全模态、OpenAI 兼容的 AI 推理平台。由于 MiroFish 通过任意 OpenAI 格式的 LLM API 驱动群体智能体，你可以把 Atlas Cloud 作为即插即用的后端——只需把 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL_NAME` 指向它，即可用一套 API 访问 DeepSeek、Qwen、GLM、Kimi、MiniMax 等众多模型，无需逐家厂商各自接入。跑大规模多轮模拟时，搭配 [coding plan](https://www.atlascloud.ai/console/coding-plan) 更省成本。
+
 ## ⚡ 项目概述
 
 **MiroFish** 是一款基于多智能体技术的新一代 AI 预测引擎。通过提取现实世界的种子信息（如突发新闻、政策草案、金融信号），自动构建出高保真的平行数字世界。在此空间内，成千上万个具备独立人格、长期记忆与行为逻辑的智能体进行自由交互与社会演化。你可透过「上帝视角」动态注入变量，精准推演未来走向——**让未来在数字沙盘中预演，助决策在百战模拟后胜出**。
@@ -126,6 +134,16 @@ LLM_MODEL_NAME=qwen-plus
 # 每月免费额度即可支撑简单使用：https://app.getzep.com/
 ZEP_API_KEY=your_zep_api_key
 ```
+
+> 💡 **使用 [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=MiroFish)（OpenAI 兼容）** —— 因为 MiroFish 接受任意 OpenAI 格式的接口，你可以把上面三个 `LLM_*` 变量指向 Atlas Cloud，用一套 API 调用 50+ 模型：
+>
+> ```env
+> LLM_API_KEY=<atlascloud-api-key>
+> LLM_BASE_URL=https://api.atlascloud.ai/v1
+> LLM_MODEL_NAME=deepseek-ai/deepseek-v4-pro
+> ```
+>
+> `deepseek-ai/deepseek-v4-pro` 是带推理（reasoning）的模型，请把 `max_tokens` 给足（≥ 512），否则 token 可能先耗在思维链上、最终回答为空。其他可直接使用的模型 ID 还有 `Qwen/Qwen3-235B-A22B-Instruct-2507`、`zai-org/glm-5`、`moonshotai/Kimi-K2-Thinking`、`minimaxai/minimax-m2.5` 等。
 
 #### 2. 安装依赖
 
