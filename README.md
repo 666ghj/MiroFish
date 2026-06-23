@@ -24,6 +24,14 @@
 
 </div>
 
+<p align="center">
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=MiroFish">
+    <img src="./static/image/atlas-cloud-logo.png" alt="Atlas Cloud" width="200">
+  </a>
+</p>
+
+> 🎁 **[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=MiroFish)** is a full-modal, OpenAI-compatible AI inference platform. Since MiroFish drives its swarm-intelligence agents through any OpenAI-format LLM API, you can plug Atlas Cloud in as a drop-in backend — just set `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL_NAME` to reach DeepSeek, Qwen, GLM, Kimi, MiniMax and more through a single API, with no multi-vendor setup. Running large multi-round simulations is more budget-friendly with the [coding plan](https://www.atlascloud.ai/console/coding-plan).
+
 ## ⚡ Overview
 
 **MiroFish** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
@@ -126,6 +134,16 @@ LLM_MODEL_NAME=qwen-plus
 # Free monthly quota is sufficient for simple usage: https://app.getzep.com/
 ZEP_API_KEY=your_zep_api_key
 ```
+
+> 💡 **Using [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=MiroFish) (OpenAI-compatible)** — because MiroFish accepts any OpenAI-format endpoint, you can point the three `LLM_*` variables at Atlas Cloud and reach 50+ models through one API:
+>
+> ```env
+> LLM_API_KEY=<atlascloud-api-key>
+> LLM_BASE_URL=https://api.atlascloud.ai/v1
+> LLM_MODEL_NAME=deepseek-ai/deepseek-v4-pro
+> ```
+>
+> `deepseek-ai/deepseek-v4-pro` is a reasoning model — keep `max_tokens` generous (≥ 512) so the chain-of-thought does not exhaust the budget before the final answer. Other ready-to-use IDs include `Qwen/Qwen3-235B-A22B-Instruct-2507`, `zai-org/glm-5`, `moonshotai/Kimi-K2-Thinking` and `minimaxai/minimax-m2.5`.
 
 #### 2. Install Dependencies
 
