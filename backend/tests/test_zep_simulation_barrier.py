@@ -270,6 +270,119 @@ def test_force_restart_does_not_continue_while_old_ingestion_is_pending(monkeypa
     assert cleanup_called == []
 
 
+def test_terminal_restart_cleans_old_logs_before_start(monkeypatch):
+    simulation = SimpleNamespace(
+        simulation_id="sim-terminal",
+        project_id="proj-1",
+        graph_id=None,
+        status=SimulationStatus.READY,
+    )
+    events = []
+    monkeypatch.setattr(
+        simulation_api,
+        "SimulationManager",
+        lambda: SimpleNamespace(get_simulation=lambda _simulation_id: simulation),
+    )
+    monkeypatch.setattr(
+        simulation_api.SimulationRunner,
+        "get_run_state",
+        classmethod(
+            lambda _cls, _simulation_id: SimulationRunState(
+                simulation_id="sim-terminal",
+                runner_status=RunnerStatus.COMPLETED,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        simulation_api.SimulationRunner,
+        "cleanup_simulation_logs",
+        classmethod(
+            lambda _cls, _simulation_id: (
+                events.append("cleanup") or {"success": True, "errors": []}
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        simulation_api.SimulationRunner,
+        "start_simulation",
+        classmethod(
+            lambda _cls, **_kwargs: (
+                events.append("start")
+                or SimulationRunState(
+                    simulation_id="sim-terminal",
+                    runner_status=RunnerStatus.STARTING,
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        simulation_api.ZepGraphMemoryManager,
+        "get_updater",
+        classmethod(lambda _cls, _simulation_id: None),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/api/simulation/start",
+        method="POST",
+        json={"simulation_id": "sim-terminal"},
+    ):
+        response = simulation_api.start_simulation()
+
+    assert response.status_code == 200
+    assert response.get_json()["data"]["force_restarted"] is True
+    assert events == ["cleanup", "start"]
+
+
+def test_terminal_restart_rejects_pending_graph_updates(monkeypatch):
+    simulation = SimpleNamespace(
+        simulation_id="sim-pending-terminal",
+        project_id="proj-1",
+        graph_id=None,
+        status=SimulationStatus.READY,
+    )
+    cleanup_called = []
+    monkeypatch.setattr(
+        simulation_api,
+        "SimulationManager",
+        lambda: SimpleNamespace(get_simulation=lambda _simulation_id: simulation),
+    )
+    monkeypatch.setattr(
+        simulation_api.SimulationRunner,
+        "get_run_state",
+        classmethod(
+            lambda _cls, _simulation_id: SimulationRunState(
+                simulation_id="sim-pending-terminal",
+                runner_status=RunnerStatus.FAILED,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        simulation_api.SimulationRunner,
+        "cleanup_simulation_logs",
+        classmethod(
+            lambda _cls, _simulation_id: cleanup_called.append(True)
+        ),
+    )
+    monkeypatch.setattr(
+        simulation_api.ZepGraphMemoryManager,
+        "get_updater",
+        classmethod(lambda _cls, _simulation_id: object()),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/api/simulation/start",
+        method="POST",
+        json={"simulation_id": "sim-pending-terminal"},
+    ):
+        response, status = simulation_api.start_simulation()
+
+    assert status == 409
+    assert "pending graph memory updates" in response.get_json()["error"]
+    assert cleanup_called == []
+
+
 def test_monitor_start_failure_terminates_the_spawned_process(monkeypatch, tmp_path):
     simulation_id = "sim-start-failure"
     sim_dir = tmp_path / "runs" / simulation_id
@@ -481,4 +594,46 @@ def test_shutdown_drain_failure_remains_failed_and_retryable(monkeypatch):
     finally:
         SimulationRunner._cleanup_done = False
         SimulationRunner._graph_memory_enabled.pop(simulation_id, None)
+        SimulationRunner._manual_stop_requests.discard(simulation_id)
+
+
+def test_shutdown_preserves_completed_state_without_pending_resources(monkeypatch):
+    simulation_id = "sim-shutdown-completed"
+    state = SimulationRunState(
+        simulation_id=simulation_id,
+        runner_status=RunnerStatus.COMPLETED,
+        completed_at="2026-07-23T00:00:00",
+    )
+
+    class FinishedProcess:
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(
+        SimulationRunner,
+        "get_run_state",
+        classmethod(lambda _cls, _simulation_id: state),
+    )
+    monkeypatch.setattr(
+        runner_module.ZepGraphMemoryManager,
+        "get_simulation_ids",
+        classmethod(lambda _cls: []),
+    )
+    monkeypatch.setattr(
+        runner_module.ZepGraphMemoryManager,
+        "get_updater",
+        classmethod(lambda _cls, _simulation_id: None),
+    )
+
+    SimulationRunner._cleanup_done = False
+    SimulationRunner._processes[simulation_id] = FinishedProcess()
+    SimulationRunner._graph_memory_enabled.pop(simulation_id, None)
+    try:
+        SimulationRunner.cleanup_all_simulations()
+        assert state.runner_status == RunnerStatus.COMPLETED
+        assert state.completed_at == "2026-07-23T00:00:00"
+        assert state.error is None
+    finally:
+        SimulationRunner._cleanup_done = False
+        SimulationRunner._processes.pop(simulation_id, None)
         SimulationRunner._manual_stop_requests.discard(simulation_id)

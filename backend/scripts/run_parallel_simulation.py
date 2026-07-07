@@ -608,7 +608,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 # 需要过滤掉的非核心动作类型（这些动作对分析价值较低）
-FILTERED_ACTIONS = {'refresh', 'sign_up'}
+FILTERED_ACTIONS = {'refresh', 'sign_up', 'do_nothing'}
 
 # 动作类型映射表（数据库中的名称 -> 标准名称）
 ACTION_TYPE_MAP = {

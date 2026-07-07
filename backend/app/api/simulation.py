@@ -337,8 +337,9 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - running: 正在运行，说明准备早就完成了
         # - completed: 运行完成，说明准备早就完成了
         # - stopped: 已停止，说明准备早就完成了
+        # - paused: 手动停止后会写入 paused，配置仍然可复用
         # - failed: 运行失败（但准备是完成的）
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
+        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "paused", "failed"]
         if status in prepared_statuses and config_generated:
             # 获取文件统计信息
             profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
@@ -1690,6 +1691,40 @@ def start_simulation():
                     "success": False,
                     "error": t('api.graphIdRequiredForMemory')
                 }), 400
+
+        existing_run_state = SimulationRunner.get_run_state(simulation_id)
+        restartable_statuses = {
+            RunnerStatus.IDLE,
+            RunnerStatus.STOPPED,
+            RunnerStatus.COMPLETED,
+            RunnerStatus.FAILED,
+        }
+        if (
+            existing_run_state
+            and existing_run_state.runner_status in restartable_statuses
+        ):
+            if ZepGraphMemoryManager.get_updater(simulation_id) is not None:
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "The previous simulation still has pending graph "
+                        "memory updates; finalize or reset it before restarting"
+                    ),
+                }), 409
+            logger.info(
+                f"清理已结束的旧运行记录后重新启动: "
+                f"simulation_id={simulation_id}, runner_status={existing_run_state.runner_status.value}"
+            )
+            cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
+            if not cleanup_result.get("success"):
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Failed to clean previous simulation logs: "
+                        f"{cleanup_result.get('errors')}"
+                    ),
+                }), 500
+            force_restarted = True
 
         graph_guard = (
             graph_lifecycle_lock(graph_id)
