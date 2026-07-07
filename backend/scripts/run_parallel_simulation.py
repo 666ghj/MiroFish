@@ -678,8 +678,9 @@ def fetch_new_actions_from_db(
     if not os.path.exists(db_path):
         return actions, new_last_rowid
     
+    conn = None
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=5)
         cursor = conn.cursor()
         
         # 使用 rowid 来追踪已处理的记录（rowid 是 SQLite 的内置自增字段）
@@ -739,11 +740,33 @@ def fetch_new_actions_from_db(
                 'action_args': simplified_args,
             })
         
-        conn.close()
     except Exception as e:
         print(f"读取数据库动作失败: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
     
     return actions, new_last_rowid
+
+
+def get_latest_trace_rowid(db_path: str) -> int:
+    """Return the latest processed trace row id for a platform DB."""
+    if not os.path.exists(db_path):
+        return 0
+
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path, timeout=5)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COALESCE(MAX(rowid), 0) FROM trace")
+        rowid = int(cursor.fetchone()[0] or 0)
+        return rowid
+    except Exception as e:
+        print(f"读取最新动作游标失败: {e}")
+        return 0
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _enrich_action_context(
@@ -1034,6 +1057,9 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     return ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
         model_type=llm_model,
+        api_key=llm_api_key or None,
+        url=llm_base_url or None,
+        default_headers={"User-Agent": "python-requests/2.32.5"},
     )
 
 
@@ -1184,10 +1210,16 @@ async def run_twitter_simulation(
             content = post.get("content", "")
             try:
                 agent = result.env.agent_graph.get_agent(agent_id)
-                initial_actions[agent] = ManualAction(
+                manual_action = ManualAction(
                     action_type=ActionType.CREATE_POST,
                     action_args={"content": content}
                 )
+                if agent in initial_actions:
+                    if not isinstance(initial_actions[agent], list):
+                        initial_actions[agent] = [initial_actions[agent]]
+                    initial_actions[agent].append(manual_action)
+                else:
+                    initial_actions[agent] = manual_action
                 
                 if action_logger:
                     action_logger.log_action(
@@ -1204,7 +1236,9 @@ async def run_twitter_simulation(
         
         if initial_actions:
             await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            last_rowid = get_latest_trace_rowid(db_path)
+            posted_count = sum(len(action) if isinstance(action, list) else 1 for action in initial_actions.values())
+            log_info(f"已发布 {posted_count} 条初始帖子")
     
     # 记录 round 0 结束
     if action_logger:
@@ -1403,7 +1437,9 @@ async def run_reddit_simulation(
         
         if initial_actions:
             await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            last_rowid = get_latest_trace_rowid(db_path)
+            posted_count = sum(len(action) if isinstance(action, list) else 1 for action in initial_actions.values())
+            log_info(f"已发布 {posted_count} 条初始帖子")
     
     # 记录 round 0 结束
     if action_logger:
