@@ -52,6 +52,8 @@ mytest/
 # 日志文件
 backend/logs/
 *.log
+artifacts/
+stock_swarm_result.json
 
 # 上传文件
 backend/uploads/
