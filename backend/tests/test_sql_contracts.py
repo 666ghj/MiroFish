@@ -46,6 +46,24 @@ def test_deepdive_is_strict_superset_of_screen():
         assert _has_alias(deepdive_fs, extra), f"deepdive missing extra alias: {extra}"
 
 
+def test_deepdive_universe_orders_by_market_cap_desc_with_limit():
+    sql = (SQL_DIR / "deepdive_universe.sql").read_text()
+    assert re.search(r"ORDER\s+BY\s+market_cap\s+DESC", sql, re.IGNORECASE), \
+        "deep-dive universe must ORDER BY market_cap DESC"
+    assert re.search(r"\bLIMIT\b", sql, re.IGNORECASE), \
+        "deep-dive universe must have a LIMIT"
+    assert "{limit:UInt32}" in sql, \
+        "deep-dive universe must be parameterized by {limit:UInt32}"
+    # deterministic secondary sort on ticker (no alphabetical tie-break ambiguity)
+    assert re.search(r"ORDER\s+BY\s+market_cap\s+DESC\s*,\s*ticker", sql, re.IGNORECASE), \
+        "deep-dive universe needs a deterministic secondary sort on ticker"
+    # null-safe: marketcap filtered non-null so market_cap column cannot be null
+    assert re.search(r"marketcap\s*>\s*0", sql, re.IGNORECASE), \
+        "deep-dive universe must filter marketcap > 0 to avoid nullable-column failures"
+    assert re.search(r"isdelisted\s*=\s*'N'", sql, re.IGNORECASE), \
+        "deep-dive universe must restrict to non-delisted companies"
+
+
 def test_param_arity():
     screen = (SQL_DIR / "dossier_screen.sql").read_text()
     deepdive = (SQL_DIR / "dossier_deepdive.sql").read_text()

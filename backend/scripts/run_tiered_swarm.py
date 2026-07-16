@@ -491,6 +491,22 @@ def _dossier_for(c: dict, tier: str) -> dict:
     return base
 
 
+def estimate_tokens(dossier: dict) -> int:
+    """Rough token estimate for a dossier dict (gate 23 recording). chars/4."""
+    if not dossier:
+        return 0
+    return max(1, len(json.dumps(dossier, separators=(",", ":"))) // 4)
+
+
+def screen_dossier_token_count(eligible: list[dict], screen_agents: list[dict]) -> int:
+    """Mean token estimate of the screen dossier across screen agents (gate 23)."""
+    counts = [estimate_tokens(_dossier_for(_co(eligible, a["ticker"]), "screen"))
+              for a in screen_agents]
+    if not counts:
+        return 0
+    return int(round(sum(counts) / len(counts)))
+
+
 async def _call_batch(prompts: list[tuple[int, str]], complete, sem, cfg: VariantConfig
                       ) -> tuple[dict[int, dict], list[CallResult]]:
     async def one(aid, p):
@@ -678,7 +694,9 @@ async def _run_tiered_b(cfg: VariantConfig, eligible: list[dict], prior_flags, c
                      tier_meta={"deepdive_companies": len(deep_cos), "screen_companies": len(screen_cos),
                                  "not_covered": not_covered, "promotion_next_run": promo,
                                  "prior_flags_used": prior_flags or [],
-                                 "deepdive_tickers": [c["ticker"] for c in deep_cos]})
+                                 "deepdive_tickers": [c["ticker"] for c in deep_cos]},
+                     extra_metrics={"screen_dossier_token_count":
+                                    screen_dossier_token_count(eligible, screen_agents)})
 
 
 async def _run_bias_control(cfg: VariantConfig, eligible: list[dict], complete, sem) -> dict:
@@ -744,7 +762,9 @@ async def _run_pure_screen_c(cfg: VariantConfig, eligible: list[dict], complete,
     return _assemble("C", cfg, eligible, agents, r1, {}, calls, rounds_wall=[wall],
                      before=before, after=after, flips=0,
                      company_consensus=cc, consensus_by_co=consensus_by_co,
-                     reinforcement=0.0, tier_meta={"deepdive_companies": 0})
+                     reinforcement=0.0, tier_meta={"deepdive_companies": 0},
+                     extra_metrics={"screen_dossier_token_count":
+                                    screen_dossier_token_count(eligible, agents)})
 
 
 # --------------------------------------------------------------------------- #
@@ -816,13 +836,28 @@ def _reinf_rate(assignments: list[list[dict]]) -> float:
 
 def _assemble(variant, cfg, eligible, agents, r1, r2, calls, rounds_wall,
               before, after, flips, company_consensus, consensus_by_co,
-              reinforcement, tier_meta=None) -> dict:
+              reinforcement, tier_meta=None, extra_metrics=None) -> dict:
     pt = sum(c.prompt_tokens for c in calls)
     ct = sum(c.completion_tokens for c in calls)
     covered = len(company_consensus)
     failures = sum(1 for c in calls if not c.ok)
     before_valid = [o for o in before if is_valid_opinion(o)]
     after_valid = [o for o in after if is_valid_opinion(o)]
+    metrics = {
+        "requests": len(calls),
+        "failures": failures,
+        "prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct,
+        "cost_per_covered_company": round((pt + ct) / covered, 2) if covered else 0,
+        "rounds_wall_seconds": [round(w, 3) for w in rounds_wall],
+        "before_gossip_distribution": distribution(before_valid),
+        "after_gossip_distribution": distribution(after_valid),
+        "deepdive_per_agent_flip_rate": round(flips / max(len(before_valid), 1), 4),
+        "deepdive_flips": flips,
+        "reinforcement_rate": reinforcement,
+        "balance_gap_before": _balance_gap(before_valid),
+        "balance_gap_after": _balance_gap(after_valid),
+    }
+    metrics = {**metrics, **(extra_metrics or {})}
     return {
         "meta": {
             "schema_version": SCHEMA_VERSION,
@@ -836,20 +871,7 @@ def _assemble(variant, cfg, eligible, agents, r1, r2, calls, rounds_wall,
             "tier_meta": tier_meta or {},
         },
         "opinion_schema": {"score": "0-10", "confidence": "0-1", "views": list(VIEWS)},
-        "metrics": {
-            "requests": len(calls),
-            "failures": failures,
-            "prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct,
-            "cost_per_covered_company": round((pt + ct) / covered, 2) if covered else 0,
-            "rounds_wall_seconds": [round(w, 3) for w in rounds_wall],
-            "before_gossip_distribution": distribution(before_valid),
-            "after_gossip_distribution": distribution(after_valid),
-            "deepdive_per_agent_flip_rate": round(flips / max(len(before_valid), 1), 4),
-            "deepdive_flips": flips,
-            "reinforcement_rate": reinforcement,
-            "balance_gap_before": _balance_gap(before_valid),
-            "balance_gap_after": _balance_gap(after_valid),
-        },
+        "metrics": metrics,
         "company_consensus": company_consensus,
         "consensus_by_tier": consensus_by_co,
         "rounds": {"r1": {str(k): v for k, v in r1.items()},

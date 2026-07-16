@@ -60,3 +60,7 @@ backend/uploads/
 
 # Docker 数据
 data/
+# local scratch (throughput/load-firer dev artifacts, not part of v15 acceptance)
+backend/scripts/fire_llm.py
+backend/scripts/run_p2p_swarm.py
+k8s/
