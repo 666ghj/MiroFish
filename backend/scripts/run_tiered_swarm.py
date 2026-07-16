@@ -340,12 +340,32 @@ async def invoke(complete, prompt, sem, max_retries, base_delay) -> CallResult:
 # --------------------------------------------------------------------------- #
 
 def screen_prompt(agent: dict, dossier: dict) -> str:
+    """Original (unbiased-candidate) primary-analyst prompt — variant A baseline."""
     return (f"You are analyst {agent['agent_id']} screening {agent['ticker']} "
             f"as a primary analyst. role: {agent['role']}.\n"
             f"DOSSIER: {json.dumps(dossier, separators=(',', ':'))}\n"
             "Form an independent opinion. Respond ONLY with valid JSON, no markdown:\n"
             '{"view":"bullish|bearish|neutral","score":0-10,"confidence":0-1,'
-            '"thesis":"one sentence","note":"one short evidence-based note for peers"}')
+            '"thesis":"one sentence","note":"one short evidence-based note for peers"})')
+
+
+def bias_fixed_prompt(agent: dict, dossier: dict) -> str:
+    """Bias-fixed prompt for B and C (gate 13). Anchors neutrality on sector medians
+    so a fundamentally average company is called neutral; bull/bear require clear
+    above/below-median fundamentals. Calibrates away the pessimistic baseline bias."""
+    sector = (dossier.get("sector") or "this sector").strip() or "this sector"
+    return (f"You are analyst {agent['agent_id']} screening {agent['ticker']} "
+            f"as a primary analyst. role: {agent['role']}.\n"
+            f"Calibration rule (apply strictly):\n"
+            f"- A company whose fundamentals sit at or near {sector} medians is NEUTRAL by definition: an average company is neither a buy nor a sell, and mediocre-but-stable fundamentals are NEUTRAL, not bearish.\n"
+            f"- Do NOT default to bearish when data is merely average or when a single field looks soft; reserve bearish for clear deterioration (persistently negative/declining margins, ROE, or growth).\n"
+            f"- Be symmetric: bullish and bearish are equally available; a soft PE alone or mediocre margins alone are not bearish.\n"
+            f"- Where a field is null or absent, treat it as sector-average; missing data is not a negative signal.\n"
+            f"DOSSIER: {json.dumps(dossier, separators=(',', ':'))}\n"
+            "Benchmark THIS company against its sector and respond ONLY with valid JSON:\n"
+            '{"view":"bullish|bearish|neutral","score":0-10,"confidence":0-1,'
+            '"thesis":"one sentence citing which fundamentals deviate from sector norms",'
+            '"note":"one short evidence-based note for peers"}')
 
 
 def deepdive_r1_prompt(agent: dict, dossier: dict) -> str:
@@ -712,8 +732,10 @@ async def _run_bias_control(cfg: VariantConfig, eligible: list[dict], complete, 
     agents = [{"agent_id": i, "ticker": d["ticker"], "role": "primary"}
              for i, d in enumerate(sample)]
     t0 = time.perf_counter()
-    prompts = [(a["agent_id"], screen_prompt(a, d) if prompt_set != "A"
-               else _neutral_prompt_a(a, d))
+    # control-A tests the ORIGINAL screen prompt (the prompt variant A actually uses);
+    # control-BC tests the bias-fixed prompt.
+    prompts = [(a["agent_id"], bias_fixed_prompt(a, d) if prompt_set == "BC"
+               else screen_prompt(a, d))
                for a, d in zip(agents, sample)]
     r1, calls = await _call_batch(prompts, complete, sem, cfg)
     views = [r1[a["agent_id"]]["view"] for a in agents if a["agent_id"] in r1]
@@ -752,7 +774,7 @@ async def _run_pure_screen_c(cfg: VariantConfig, eligible: list[dict], complete,
     agents = [{"agent_id": i, "ticker": c["ticker"], "role": "primary", "tier": "screen"}
               for i, c in enumerate(cos)]
     r1_start = time.perf_counter()
-    prompts = [(a["agent_id"], screen_prompt(a, _dossier_for(_co(eligible, a["ticker"]), "screen")))
+    prompts = [(a["agent_id"], bias_fixed_prompt(a, _dossier_for(_co(eligible, a["ticker"]), "screen")))
                for a in agents]
     r1, calls = await _call_batch(prompts, complete, sem, cfg)
     wall = time.perf_counter() - r1_start

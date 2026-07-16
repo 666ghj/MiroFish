@@ -16,9 +16,10 @@ import random
 import statistics
 from typing import Any
 
+# Use the real field names present in the eligible dossiers so medians actually compute.
 NUMERIC_FIELDS = (
-    "revenue_annual",
-    "net_income_annual",
+    "revenue_ttm",
+    "net_income",
     "roe",
     "pe",
     "ps",
@@ -49,7 +50,12 @@ def sector_median_fundamentals(dossiers: list[dict]) -> dict[str, dict]:
 
 
 def synthetic_neutral_dossier(ticker: str, sector: str, medians: dict) -> dict:
-    """A dossier pinned to sector medians for every numeric field."""
+    """A dossier pinned to sector medians for every numeric field.
+
+    Also exposes the explicit sector-percentile fields at 50 (their median by
+    construction) so a calibrated model has an unambiguous neutral anchor: a
+    company at the 50th percentile of its sector is, by definition, average.
+    """
     sec_medians = medians.get(sector, {})
     d = {"ticker": ticker, "name": ticker, "sector": sector, "synthetic_neutral": True}
     for f in NUMERIC_FIELDS:

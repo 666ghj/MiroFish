@@ -5,11 +5,11 @@ import bias_control as bc
 
 def _dossiers():
     return [
-        {"ticker": "AAA", "sector": "tech", "revenue_annual": 100, "roe": 0.1, "pe": 20, "ps": 4},
-        {"ticker": "BBB", "sector": "tech", "revenue_annual": 300, "roe": 0.3, "pe": 40, "ps": 8},
-        {"ticker": "CCC", "sector": "tech", "revenue_annual": 200, "roe": 0.2, "pe": 30, "ps": 6},
-        {"ticker": "DDD", "sector": "energy", "revenue_annual": 50, "roe": None, "pe": 10, "ps": 2},
-        {"ticker": "EEE", "sector": "energy", "revenue_annual": 150, "roe": 0.15, "pe": 15, "ps": 3},
+        {"ticker": "AAA", "sector": "tech", "revenue_ttm": 100, "roe": 0.1, "pe": 20, "ps": 4},
+        {"ticker": "BBB", "sector": "tech", "revenue_ttm": 300, "roe": 0.3, "pe": 40, "ps": 8},
+        {"ticker": "CCC", "sector": "tech", "revenue_ttm": 200, "roe": 0.2, "pe": 30, "ps": 6},
+        {"ticker": "DDD", "sector": "energy", "revenue_ttm": 50, "roe": None, "pe": 10, "ps": 2},
+        {"ticker": "EEE", "sector": "energy", "revenue_ttm": 150, "roe": 0.15, "pe": 15, "ps": 3},
     ]
 
 
@@ -17,7 +17,7 @@ def test_sector_median_ignores_none_and_returns_medians():
     medians = bc.sector_median_fundamentals(_dossiers())
     assert set(medians) == {"tech", "energy"}
     # tech sorted revenue 100,200,300 -> median 200; roe 0.1,0.2,0.3 -> 0.2
-    assert medians["tech"]["revenue_annual"] == 200
+    assert medians["tech"]["revenue_ttm"] == 200
     assert medians["tech"]["roe"] == 0.2
     # energy roe had one None -> only 0.15 survives -> median 0.15
     assert medians["energy"]["roe"] == 0.15
@@ -29,7 +29,7 @@ def test_synthetic_neutral_dossier_pins_medians_and_marks_flag():
     assert d["ticker"] == "ZZZ"
     assert d["sector"] == "tech"
     assert d["synthetic_neutral"] is True
-    assert d["revenue_annual"] == medians["tech"]["revenue_annual"] == 200
+    assert d["revenue_ttm"] == medians["tech"]["revenue_ttm"] == 200
     assert d["roe"] == 0.2
     # field absent from medians stays None
     assert d["net_margin"] is None
