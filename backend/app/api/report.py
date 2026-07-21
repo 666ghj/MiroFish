@@ -20,6 +20,46 @@ from ..utils.locale import t, get_locale, set_locale
 logger = get_logger('mirofish.api.report')
 
 
+def _get_status_request_data():
+    """Read status parameters from JSON bodies or query strings."""
+    if request.method == 'GET':
+        return request.args
+    return request.get_json(silent=True) or {}
+
+
+def _find_report_task(task_manager: TaskManager, task_id: str = None, report_id: str = None, simulation_id: str = None):
+    if task_id:
+        task = task_manager.get_task(task_id)
+        return task.to_dict() if task else None
+
+    for task in task_manager.list_tasks('report_generate'):
+        metadata = task.get('metadata') or {}
+        if report_id and metadata.get('report_id') == report_id:
+            return task
+        if simulation_id and metadata.get('simulation_id') == simulation_id:
+            return task
+    return None
+
+
+def _report_status_payload(report, progress=None):
+    status = report.status.value if hasattr(report.status, 'value') else str(report.status)
+    payload = {
+        "simulation_id": report.simulation_id,
+        "report_id": report.report_id,
+        "status": status,
+        "progress": 100 if report.status == ReportStatus.COMPLETED else 0,
+        "message": t('api.reportGenerated') if report.status == ReportStatus.COMPLETED else status,
+        "already_completed": report.status == ReportStatus.COMPLETED
+    }
+    if progress:
+        payload.update(progress)
+        payload["simulation_id"] = report.simulation_id
+        payload["report_id"] = report.report_id
+        payload["status"] = progress.get("status", status)
+        payload["already_completed"] = report.status == ReportStatus.COMPLETED
+    return payload
+
+
 # ============== 报告生成接口 ==============
 
 @report_bp.route('/generate', methods=['POST'])
@@ -200,58 +240,71 @@ def generate_report():
         }), 500
 
 
-@report_bp.route('/generate/status', methods=['POST'])
+@report_bp.route('/generate/status', methods=['GET', 'POST'])
 def get_generate_status():
     """
     查询报告生成任务进度
     
-    请求（JSON）：
-        {
-            "task_id": "task_xxxx",         // 可选，generate返回的task_id
-            "simulation_id": "sim_xxxx"     // 可选，模拟ID
-        }
-    
-    返回：
-        {
-            "success": true,
-            "data": {
-                "task_id": "task_xxxx",
-                "status": "processing|completed|failed",
-                "progress": 45,
-                "message": "..."
-            }
-        }
+    支持通过 JSON body 或 query string 传入 task_id、report_id 或 simulation_id。
     """
     try:
-        data = request.get_json() or {}
+        data = _get_status_request_data()
         
         task_id = data.get('task_id')
+        report_id = data.get('report_id')
         simulation_id = data.get('simulation_id')
-        
-        # 如果提供了simulation_id，先检查是否已有完成的报告
-        if simulation_id:
-            existing_report = ReportManager.get_report_by_simulation(simulation_id)
-            if existing_report and existing_report.status == ReportStatus.COMPLETED:
+
+        task_manager = TaskManager()
+
+        if report_id:
+            report = ReportManager.get_report(report_id)
+            if report:
                 return jsonify({
                     "success": True,
-                    "data": {
-                        "simulation_id": simulation_id,
-                        "report_id": existing_report.report_id,
-                        "status": "completed",
-                        "progress": 100,
-                        "message": t('api.reportGenerated'),
-                        "already_completed": True
-                    }
+                    "data": _report_status_payload(report, ReportManager.get_progress(report_id))
                 })
-        
+
+            task = _find_report_task(task_manager, report_id=report_id)
+            if task:
+                return jsonify({"success": True, "data": task})
+
+            return jsonify({
+                "success": False,
+                "error": t('api.reportNotFound', id=report_id)
+            }), 404
+
+        if simulation_id:
+            existing_report = ReportManager.get_report_by_simulation(simulation_id)
+            if existing_report:
+                return jsonify({
+                    "success": True,
+                    "data": _report_status_payload(
+                        existing_report,
+                        ReportManager.get_progress(existing_report.report_id)
+                    )
+                })
+
+            task = _find_report_task(task_manager, simulation_id=simulation_id)
+            if task:
+                return jsonify({"success": True, "data": task})
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "simulation_id": simulation_id,
+                    "status": "not_started",
+                    "progress": 0,
+                    "message": t('api.requireTaskOrSimId')
+                }
+            })
+
         if not task_id:
             return jsonify({
                 "success": False,
                 "error": t('api.requireTaskOrSimId')
             }), 400
-        
-        task_manager = TaskManager()
-        task = task_manager.get_task(task_id)
+
+        task = _find_report_task(task_manager, task_id=task_id)
         
         if not task:
             return jsonify({
@@ -261,7 +314,7 @@ def get_generate_status():
         
         return jsonify({
             "success": True,
-            "data": task.to_dict()
+            "data": task
         })
         
     except Exception as e:
