@@ -155,6 +155,15 @@ npm run dev
 - 前端：`http://localhost:3000`
 - 后端 API：`http://localhost:5001`
 
+> **远程部署说明：** 如果您从不同于运行MiroFish的机器（例如在VPS上）访问MiroFish，您必须在构建前端之前设置 `VITE_API_BASE_URL` 环境变量为您的服务器IP或域名。否则，前端会尝试连接浏览器本机的 `localhost:5001` 而不是服务器。
+>
+> ```bash
+> # 远程部署示例
+> VITE_API_BASE_URL=http://你的服务器IP:5001 npm run build
+> ```
+>
+> Vite开发服务器的代理配置（`/api` → `http://localhost:5001`）仅在本地开发模式下有效，在生产环境构建后需要设置此变量。
+
 **单独启动：**
 
 ```bash

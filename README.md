@@ -155,6 +155,15 @@ npm run dev
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:5001`
 
+> **Remote/VPS Deployment Note:** If you are accessing MiroFish from a different machine than where it's running (e.g., on a VPS), you must set the `VITE_API_BASE_URL` environment variable to your server's IP or domain before building the frontend. Without this, the frontend will try to connect to `localhost:5001` on the *browser's* machine instead of the server.
+>
+> ```bash
+> # Example for remote deployment
+> VITE_API_BASE_URL=http://YOUR_SERVER_IP:5001 npm run build
+> ```
+>
+> The Vite dev server proxy (`/api` → `http://localhost:5001`) only works in local development mode, not in production builds.
+
 **Start Individually:**
 
 ```bash
