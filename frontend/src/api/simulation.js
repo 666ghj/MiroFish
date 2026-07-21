@@ -185,3 +185,11 @@ export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
 
+/**
+ * 采访单个 Agent（聊天）
+ * @param {Object} data - { simulation_id, agent_id, prompt, platform?, timeout? }
+ */
+export const interviewAgent = (data) => {
+  return service.post('/api/simulation/interview', data)
+}
+
