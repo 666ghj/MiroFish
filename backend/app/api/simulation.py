@@ -43,6 +43,56 @@ def optimize_interview_prompt(prompt: str) -> str:
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
 
 
+def detect_platform_from_simulation(simulation_id: str) -> str:
+    """
+    Detect which platform(s) were used in a simulation by checking for database files.
+    
+    Args:
+        simulation_id: The simulation ID to check
+        
+    Returns:
+        Platform name ('reddit' or 'twitter'), defaulting to 'reddit' if neither exists
+    """
+    import os
+    from pathlib import Path
+    
+    base_path = Path(os.environ.get('SIMULATION_DATA_PATH', 'data')) / simulation_id
+    
+    # Check for actual database files
+    has_reddit = (base_path / 'reddit_simulation.db').exists()
+    has_twitter = (base_path / 'twitter_simulation.db').exists()
+    
+    # Return the platform that actually has data
+    if has_twitter and not has_reddit:
+        return 'twitter'
+    elif has_reddit and not has_twitter:
+        return 'reddit'
+    elif has_twitter and has_reddit:
+        # Both exist - prefer reddit for backward compatibility
+        return 'reddit'
+    else:
+        # Neither exists - default to reddit
+        return 'reddit'
+
+
+def get_platform_with_fallback(simulation_id: str, requested_platform: str | None = None) -> str:
+    """
+    Get platform with intelligent fallback to prevent silent data loss.
+    
+    Args:
+        simulation_id: The simulation ID
+        requested_platform: Platform explicitly requested by user (optional)
+        
+    Returns:
+        Platform to use for the query
+    """
+    if requested_platform:
+        return requested_platform
+    
+    # Auto-detect from simulation data
+    return detect_platform_from_simulation(simulation_id)
+
+
 # ============== 实体读取接口 ==============
 
 @simulation_bp.route('/entities/<graph_id>', methods=['GET'])
@@ -993,10 +1043,14 @@ def get_simulation_profiles(simulation_id: str):
     获取模拟的Agent Profile
     
     Query参数：
-        platform: 平台类型（reddit/twitter，默认reddit）
+        platform: 平台类型（reddit/twitter，默认自动检测）
     """
     try:
-        platform = request.args.get('platform', 'reddit')
+        # Auto-detect platform from simulation data if not specified
+        platform = get_platform_with_fallback(
+            simulation_id, 
+            request.args.get('platform')
+        )
         
         manager = SimulationManager()
         profiles = manager.get_profiles(simulation_id, platform=platform)
@@ -1058,7 +1112,11 @@ def get_simulation_profiles_realtime(simulation_id: str):
     from datetime import datetime
     
     try:
-        platform = request.args.get('platform', 'reddit')
+        # Auto-detect platform from simulation data if not specified
+        platform = get_platform_with_fallback(
+            simulation_id,
+            request.args.get('platform')
+        )
         
         # 获取模拟目录
         sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
@@ -1997,7 +2055,11 @@ def get_simulation_posts(simulation_id: str):
     返回帖子列表（从SQLite数据库读取）
     """
     try:
-        platform = request.args.get('platform', 'reddit')
+        # Auto-detect platform from simulation data if not specified
+        platform = get_platform_with_fallback(
+            simulation_id,
+            request.args.get('platform')
+        )
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
         
