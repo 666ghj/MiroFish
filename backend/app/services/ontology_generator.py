@@ -9,6 +9,7 @@ import re
 from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.locale import get_language_instruction
+from .ontology_schema import normalize_ontology_schema
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +277,7 @@ class OntologyGenerator:
     
     def _validate_and_process(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """验证和后处理结果"""
+        result = normalize_ontology_schema(result)
         
         # 确保必要字段存在
         if "entity_types" not in result:
@@ -407,6 +409,8 @@ class OntologyGenerator:
         Returns:
             Python代码字符串
         """
+        ontology = normalize_ontology_schema(ontology)
+
         code_lines = [
             '"""',
             '自定义实体类型定义',
@@ -503,4 +507,3 @@ class OntologyGenerator:
         code_lines.append('}')
         
         return '\n'.join(code_lines)
-

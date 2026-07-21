@@ -17,6 +17,7 @@ from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from .text_processor import TextProcessor
+from .ontology_schema import normalize_ontology_schema
 from ..utils.locale import t, get_locale, set_locale
 
 
@@ -208,6 +209,8 @@ class GraphBuilderService:
         from typing import Optional
         from pydantic import Field
         from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
+
+        ontology = normalize_ontology_schema(ontology)
         
         # 抑制 Pydantic v2 关于 Field(default=None) 的警告
         # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略
@@ -503,4 +506,3 @@ class GraphBuilderService:
     def delete_graph(self, graph_id: str):
         """删除图谱"""
         self.client.graph.delete(graph_id=graph_id)
-
