@@ -32,6 +32,7 @@ dependencies = [
     # 工具库
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
+    "socksio>=1.0.0",
 ]
 
 [project.optional-dependencies]
