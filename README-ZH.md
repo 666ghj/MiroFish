@@ -176,6 +176,26 @@ docker compose up -d
 
 > 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
 
+#### ⚠️ 远程/VPS 部署注意事项
+
+将 MiroFish 部署在远程服务器上时，需要额外设置 `VITE_API_BASE_URL`。
+
+**原因：** Vite 的开发代理仅在本地开发时有效。远程访问时，浏览器会尝试连接**用户本机**的 `localhost:5001`，而非服务器，导致前端报"网络错误"。
+
+**解决方法：** 在 `.env` 中添加：
+
+```env
+VITE_API_BASE_URL=http://your_server_ip:5001
+```
+
+然后重新构建并启动容器：
+
+```bash
+docker compose down && docker compose up --build -d
+```
+
+> **提示：** 请确保服务器防火墙已开放 `5001` 端口。
+
 ## 📬 更多交流
 
 <div align="center">

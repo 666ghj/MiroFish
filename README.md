@@ -176,6 +176,26 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+#### ⚠️ Remote / VPS Deployment Note
+
+When deploying MiroFish on a remote server, you must set the `VITE_API_BASE_URL` environment variable.
+
+**Why:** Vite's development proxy only works during local development. When accessing the app remotely, the browser tries to reach `localhost:5001` on the **user's own machine** rather than the server, causing a "Network error" on the frontend.
+
+**Fix:** Add the following to your `.env` file:
+
+```env
+VITE_API_BASE_URL=http://your_server_ip:5001
+```
+
+Then rebuild and restart the containers:
+
+```bash
+docker compose down && docker compose up --build -d
+```
+
+> **Tip:** Make sure your server firewall allows inbound traffic on port `5001`.
+
 ## 📬 Join the Conversation
 
 <div align="center">
