@@ -247,7 +247,11 @@
     "panelRelatedEdges": "Related Edges",
     "panelRelatedNodes": "Related Nodes",
     "world1": "World 1",
-    "world2": "World 2"
+    "world2": "World 2",
+    "reportFailedTitle": "Report generation failed",
+    "reportFailedDesc": "Your outline and {count} completed sections are preserved. Click below to continue from where it stopped.",
+    "resumeGeneration": "Resume Generation",
+    "resumingGeneration": "Resuming..."
   },
   "step5": {
     "interactiveTools": "Interactive Tools",
@@ -429,6 +433,8 @@
     "outlineDone": "Outline complete, {count} sections",
     "generatingSection": "Generating section: {title} ({current}/{total})",
     "sectionDone": "Section {title} complete",
+    "resumeStart": "Resuming generation, {count} sections already done",
+    "sectionResumed": "Section {title} already exists, skipped",
     "assemblingReport": "Assembling full report...",
     "reportComplete": "Report generation complete",
     "reportFailed": "Report generation failed: {error}",
@@ -597,6 +603,8 @@
     "sectionGenFailedContent": "(This section failed to generate: LLM returned empty response, please retry later)",
     "outlineSavedToFile": "Outline saved to file: {reportId}/outline.json",
     "sectionSaved": "Section saved: {reportId}/section_{sectionNum}.md",
+    "resumeStart": "Resuming report generation {reportId} ({count} sections already completed)",
+    "sectionResumed": "Section {title} already generated, reusing",
     "reportGenDone": "Report generation complete: {reportId}",
     "reportGenFailed": "Report generation failed: {error}",
     "agentChat": "Report Agent chat: {message}...",

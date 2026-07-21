@@ -247,7 +247,11 @@
     "panelRelatedEdges": "相关关系",
     "panelRelatedNodes": "相关节点",
     "world1": "世界1",
-    "world2": "世界2"
+    "world2": "世界2",
+    "reportFailedTitle": "报告生成失败",
+    "reportFailedDesc": "大纲和已完成的 {count} 个章节已保存，点击下方按钮可从失败处继续。",
+    "resumeGeneration": "继续生成",
+    "resumingGeneration": "正在继续..."
   },
   "step5": {
     "interactiveTools": "Interactive Tools",
@@ -429,6 +433,8 @@
     "outlineDone": "大纲规划完成，共{count}个章节",
     "generatingSection": "正在生成章节: {title} ({current}/{total})",
     "sectionDone": "章节 {title} 已完成",
+    "resumeStart": "恢复生成，已完成 {count} 个章节",
+    "sectionResumed": "章节 {title} 已存在，跳过",
     "assemblingReport": "正在组装完整报告...",
     "reportComplete": "报告生成完成",
     "reportFailed": "报告生成失败: {error}",
@@ -597,6 +603,8 @@
     "sectionGenFailedContent": "（本章节生成失败：LLM 返回空响应，请稍后重试）",
     "outlineSavedToFile": "大纲已保存到文件: {reportId}/outline.json",
     "sectionSaved": "章节已保存: {reportId}/section_{sectionNum}.md",
+    "resumeStart": "恢复生成报告 {reportId}（已完成 {count} 个章节）",
+    "sectionResumed": "章节 {title} 已生成过，复用已有内容",
     "reportGenDone": "报告生成完成: {reportId}",
     "reportGenFailed": "报告生成失败: {error}",
     "agentChat": "Report Agent对话: {message}...",

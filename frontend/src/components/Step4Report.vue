@@ -4,6 +4,25 @@
     <div class="main-split-layout">
       <!-- LEFT PANEL: Report Style -->
       <div class="left-panel report-style" ref="leftPanel">
+        <!-- Failure + Resume Banner -->
+        <div v-if="reportStatus === 'failed'" class="resume-banner">
+          <div class="resume-banner-icon">!</div>
+          <div class="resume-banner-body">
+            <div class="resume-banner-title">{{ $t('step4.reportFailedTitle') }}</div>
+            <div class="resume-banner-desc">
+              {{ $t('step4.reportFailedDesc', { count: Object.keys(generatedSections).length }) }}
+            </div>
+            <div v-if="reportError" class="resume-banner-error">{{ reportError }}</div>
+            <button
+              class="resume-banner-btn"
+              :disabled="isResuming || !simulationId"
+              @click="resumeReport"
+            >
+              {{ isResuming ? $t('step4.resumingGeneration') : $t('step4.resumeGeneration') }}
+            </button>
+          </div>
+        </div>
+
         <div v-if="reportOutline" class="report-content-wrapper">
           <!-- Report Header -->
           <div class="report-header-block">
@@ -393,7 +412,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, getReportProgress, generateReport } from '../api/report'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -425,6 +444,9 @@ const expandedContent = ref(new Set())
 const expandedLogs = ref(new Set())
 const collapsedSections = ref(new Set())
 const isComplete = ref(false)
+const reportStatus = ref(null)       // 后端报告状态: pending|planning|generating|completed|failed
+const reportError = ref(null)        // 失败时的错误信息
+const isResuming = ref(false)        // 点击"继续生成"按钮后的 loading 态
 const startTime = ref(null)
 const leftPanel = ref(null)
 const rightPanel = ref(null)
@@ -2055,11 +2077,31 @@ const fetchAgentLog = async () => {
           if (log.action === 'report_complete') {
             isComplete.value = true
             currentSectionIndex.value = null  // 确保清除 loading 状态
+            // 清掉历史 error 日志留下的 failed 态，防止 banner 残留
+            reportStatus.value = 'completed'
+            reportError.value = null
             emit('update-status', 'completed')
             stopPolling()
             // 滚动逻辑统一在循环结束后的 nextTick 中处理
           }
-          
+
+          // Resume 日志 = 之前的 error 已被跨过，继续生成中
+          if (log.action === 'resume_start') {
+            reportStatus.value = 'generating'
+            reportError.value = null
+          }
+
+          // Agent 抛出错误时直接标记失败 —— 比 progress.json 轮询更即时，
+          // 也能兜底 update_progress 写失败的场景
+          // 注意：这里不 stopPolling，否则 Resume 后重新拉取日志会再次命中
+          // 这个历史 error 条目并立刻杀掉定时器，导致无法感知后续 resume/complete。
+          if (log.action === 'error') {
+            reportStatus.value = 'failed'
+            reportError.value = log.details?.error || log.details?.message || null
+            currentSectionIndex.value = null
+            emit('update-status', 'error')
+          }
+
           if (log.action === 'report_start') {
             startTime.value = new Date(log.timestamp)
           }
@@ -2154,14 +2196,63 @@ const fetchConsoleLog = async () => {
   }
 }
 
+let progressTimer = null
+
+const fetchProgress = async () => {
+  if (!props.reportId) return
+  try {
+    const res = await getReportProgress(props.reportId)
+    if (res.success && res.data) {
+      const prevStatus = reportStatus.value
+      reportStatus.value = res.data.status
+      // progress.json 用 message 字段携带失败原因
+      reportError.value = res.data.status === 'failed' ? (res.data.message || null) : null
+
+      if (res.data.status === 'failed') {
+        // 不 stopPolling：progress.json 可能在 resume 后翻回 generating
+        emit('update-status', 'error')
+      } else if (res.data.status === 'completed') {
+        emit('update-status', 'completed')
+      } else if (prevStatus !== res.data.status) {
+        emit('update-status', 'processing')
+      }
+    }
+  } catch (err) {
+    // 进度文件还没创建时是正常的 404，静默忽略
+  }
+}
+
+const resumeReport = async () => {
+  if (!props.simulationId || isResuming.value) return
+  isResuming.value = true
+  try {
+    const res = await generateReport({ simulation_id: props.simulationId, resume: true })
+    if (res.success) {
+      // 重置本地失败态，重启轮询
+      reportStatus.value = 'generating'
+      reportError.value = null
+      emit('update-status', 'processing')
+      agentLogLine.value = 0
+      consoleLogLine.value = 0
+      startPolling()
+    }
+  } catch (err) {
+    console.warn('Resume failed:', err)
+  } finally {
+    isResuming.value = false
+  }
+}
+
 const startPolling = () => {
   if (agentLogTimer || consoleLogTimer) return
-  
+
   fetchAgentLog()
   fetchConsoleLog()
-  
+  fetchProgress()
+
   agentLogTimer = setInterval(fetchAgentLog, 2000)
   consoleLogTimer = setInterval(fetchConsoleLog, 1500)
+  progressTimer = setInterval(fetchProgress, 3000)
 }
 
 const stopPolling = () => {
@@ -2172,6 +2263,10 @@ const stopPolling = () => {
   if (consoleLogTimer) {
     clearInterval(consoleLogTimer)
     consoleLogTimer = null
+  }
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
   }
 }
 
@@ -2200,8 +2295,11 @@ watch(() => props.reportId, (newId) => {
     expandedLogs.value = new Set()
     collapsedSections.value = new Set()
     isComplete.value = false
+    reportStatus.value = null
+    reportError.value = null
+    isResuming.value = false
     startTime.value = null
-    
+
     startPolling()
   }
 }, { immediate: true })
@@ -2330,6 +2428,72 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   flex-direction: column;
   padding: 30px 50px 60px 50px;
+}
+
+.resume-banner {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+  background: #FFF7ED;
+  border: 1px solid #FDBA74;
+  border-radius: 8px;
+}
+.resume-banner-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #F97316;
+  color: #FFF;
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.resume-banner-body {
+  flex: 1;
+  min-width: 0;
+}
+.resume-banner-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #9A3412;
+  margin-bottom: 4px;
+}
+.resume-banner-desc {
+  font-size: 13px;
+  color: #7C2D12;
+  line-height: 1.5;
+}
+.resume-banner-error {
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #9A3412;
+  word-break: break-word;
+  opacity: 0.85;
+}
+.resume-banner-btn {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: #F97316;
+  color: #FFF;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.resume-banner-btn:hover:not(:disabled) {
+  background: #EA580C;
+}
+.resume-banner-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .left-panel::-webkit-scrollbar {

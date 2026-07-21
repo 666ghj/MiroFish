@@ -6,6 +6,7 @@ Report API路由
 import os
 import traceback
 import threading
+from typing import Optional
 from flask import request, jsonify, send_file
 
 from . import report_bp
@@ -33,9 +34,10 @@ def generate_report():
     请求（JSON）：
         {
             "simulation_id": "sim_xxxx",    // 必填，模拟ID
-            "force_regenerate": false        // 可选，强制重新生成
+            "force_regenerate": false,       // 可选，强制重新生成（清空已有报告）
+            "resume": false                  // 可选，从已失败的报告恢复生成（沿用大纲和已完成章节）
         }
-    
+
     返回：
         {
             "success": true,
@@ -49,7 +51,7 @@ def generate_report():
     """
     try:
         data = request.get_json() or {}
-        
+
         simulation_id = data.get('simulation_id')
         if not simulation_id:
             return jsonify({
@@ -58,20 +60,30 @@ def generate_report():
             }), 400
 
         force_regenerate = data.get('force_regenerate', False)
-        
+        resume = data.get('resume', False)
+
         # 获取模拟信息
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        
+
         if not state:
             return jsonify({
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
 
-        # 检查是否已有报告
-        if not force_regenerate:
-            existing_report = ReportManager.get_report_by_simulation(simulation_id)
+        # Resume 模式：查找已失败的报告并复用其 report_id
+        existing_report = ReportManager.get_report_by_simulation(simulation_id)
+        resume_report_id: Optional[str] = None
+        if resume:
+            if existing_report and existing_report.status != ReportStatus.COMPLETED:
+                resume_report_id = existing_report.report_id
+            else:
+                # 没有可恢复的报告，降级为全新生成
+                resume = False
+
+        # 检查是否已有报告（非 resume / 非 force_regenerate 情况）
+        if not force_regenerate and not resume:
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
                 return jsonify({
                     "success": True,
@@ -83,7 +95,7 @@ def generate_report():
                         "already_generated": True
                     }
                 })
-        
+
         # 获取项目信息
         project = ProjectManager.get_project(state.project_id)
         if not project:
@@ -91,24 +103,27 @@ def generate_report():
                 "success": False,
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
-        
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphIdEnsure')
             }), 400
-        
+
         simulation_requirement = project.simulation_requirement
         if not simulation_requirement:
             return jsonify({
                 "success": False,
                 "error": t('api.missingSimRequirement')
             }), 400
-        
-        # 提前生成 report_id，以便立即返回给前端
-        import uuid
-        report_id = f"report_{uuid.uuid4().hex[:12]}"
+
+        # Resume 时复用已有 report_id，否则生成新的
+        if resume_report_id:
+            report_id = resume_report_id
+        else:
+            import uuid
+            report_id = f"report_{uuid.uuid4().hex[:12]}"
         
         # 创建异步任务
         task_manager = TaskManager()
@@ -150,10 +165,11 @@ def generate_report():
                         message=f"[{stage}] {message}"
                     )
                 
-                # 生成报告（传入预先生成的 report_id）
+                # 生成报告（传入预先生成的 report_id；resume=True 时复用已有大纲和章节）
                 report = agent.generate_report(
                     progress_callback=progress_callback,
-                    report_id=report_id
+                    report_id=report_id,
+                    resume=resume
                 )
                 
                 # 保存报告

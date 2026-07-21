@@ -2,10 +2,19 @@ import service, { requestWithRetry } from './index'
 
 /**
  * 开始报告生成
- * @param {Object} data - { simulation_id, force_regenerate? }
+ * @param {Object} data - { simulation_id, force_regenerate?, resume? }
+ *   - resume=true: 从已失败的报告恢复（沿用大纲和已完成章节）
  */
 export const generateReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/generate', data), 3, 1000)
+}
+
+/**
+ * 获取报告生成进度（包含 status / progress / completed_sections 等）
+ * @param {string} reportId
+ */
+export const getReportProgress = (reportId) => {
+  return service.get(`/api/report/${reportId}/progress`)
 }
 
 /**
