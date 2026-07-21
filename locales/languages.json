@@ -26,5 +26,13 @@
   "de": {
     "label": "Deutsch",
     "llmInstruction": "Bitte antworten Sie auf Deutsch."
+  },
+  "nl": {
+    "label": "Nederlands",
+    "llmInstruction": "Antwoord alstublieft in het Nederlands."
+  },
+  "fr": {
+    "label": "Français",
+    "llmInstruction": "Veuillez répondre en français."
   }
 }
