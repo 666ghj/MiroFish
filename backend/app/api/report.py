@@ -10,6 +10,7 @@ from flask import request, jsonify, send_file
 
 from . import report_bp
 from ..config import Config
+from ..utils.id_validator import validate_safe_id
 from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
 from ..services.simulation_manager import SimulationManager
 from ..models.project import ProjectManager
@@ -195,8 +196,7 @@ def generate_report():
         logger.error(f"启动报告生成任务失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -294,6 +294,7 @@ def get_report(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         report = ReportManager.get_report(report_id)
         
         if not report:
@@ -311,8 +312,7 @@ def get_report(report_id: str):
         logger.error(f"获取报告失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -331,6 +331,7 @@ def get_report_by_simulation(simulation_id: str):
         }
     """
     try:
+        validate_safe_id(simulation_id, "simulation_id")
         report = ReportManager.get_report_by_simulation(simulation_id)
         
         if not report:
@@ -350,8 +351,7 @@ def get_report_by_simulation(simulation_id: str):
         logger.error(f"获取报告失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -390,8 +390,7 @@ def list_reports():
         logger.error(f"列出报告失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -403,6 +402,7 @@ def download_report(report_id: str):
     返回Markdown文件
     """
     try:
+        validate_safe_id(report_id, "report_id")
         report = ReportManager.get_report(report_id)
         
         if not report:
@@ -436,8 +436,7 @@ def download_report(report_id: str):
         logger.error(f"下载报告失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -445,6 +444,7 @@ def download_report(report_id: str):
 def delete_report(report_id: str):
     """删除报告"""
     try:
+        validate_safe_id(report_id, "report_id")
         success = ReportManager.delete_report(report_id)
         
         if not success:
@@ -462,8 +462,7 @@ def delete_report(report_id: str):
         logger.error(f"删除报告失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -559,8 +558,7 @@ def chat_with_report_agent():
         logger.error(f"对话失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -585,6 +583,7 @@ def get_report_progress(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         progress = ReportManager.get_progress(report_id)
         
         if not progress:
@@ -602,8 +601,7 @@ def get_report_progress(report_id: str):
         logger.error(f"获取报告进度失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -633,6 +631,7 @@ def get_report_sections(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         sections = ReportManager.get_generated_sections(report_id)
         
         # 获取报告状态
@@ -653,8 +652,7 @@ def get_report_sections(report_id: str):
         logger.error(f"获取章节列表失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -673,6 +671,7 @@ def get_single_section(report_id: str, section_index: int):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         section_path = ReportManager._get_section_path(report_id, section_index)
         
         if not os.path.exists(section_path):
@@ -697,8 +696,7 @@ def get_single_section(report_id: str, section_index: int):
         logger.error(f"获取章节内容失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -724,6 +722,7 @@ def check_report_status(simulation_id: str):
         }
     """
     try:
+        validate_safe_id(simulation_id, "simulation_id")
         report = ReportManager.get_report_by_simulation(simulation_id)
         
         has_report = report is not None
@@ -748,8 +747,7 @@ def check_report_status(simulation_id: str):
         logger.error(f"检查报告状态失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -796,6 +794,7 @@ def get_agent_log(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         from_line = request.args.get('from_line', 0, type=int)
         
         log_data = ReportManager.get_agent_log(report_id, from_line=from_line)
@@ -809,8 +808,7 @@ def get_agent_log(report_id: str):
         logger.error(f"获取Agent日志失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -829,6 +827,7 @@ def stream_agent_log(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         logs = ReportManager.get_agent_log_stream(report_id)
         
         return jsonify({
@@ -843,8 +842,7 @@ def stream_agent_log(report_id: str):
         logger.error(f"获取Agent日志失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -878,6 +876,7 @@ def get_console_log(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         from_line = request.args.get('from_line', 0, type=int)
         
         log_data = ReportManager.get_console_log(report_id, from_line=from_line)
@@ -891,8 +890,7 @@ def get_console_log(report_id: str):
         logger.error(f"获取控制台日志失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -911,6 +909,7 @@ def stream_console_log(report_id: str):
         }
     """
     try:
+        validate_safe_id(report_id, "report_id")
         logs = ReportManager.get_console_log_stream(report_id)
         
         return jsonify({
@@ -925,8 +924,7 @@ def stream_console_log(report_id: str):
         logger.error(f"获取控制台日志失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -975,8 +973,7 @@ def search_graph_tool():
         logger.error(f"图谱搜索失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1015,6 +1012,5 @@ def get_graph_statistics_tool():
         logger.error(f"获取图谱统计失败: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500

@@ -10,6 +10,7 @@ from flask import request, jsonify
 
 from . import graph_bp
 from ..config import Config
+from ..utils.id_validator import validate_safe_id
 from ..services.ontology_generator import OntologyGenerator
 from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
@@ -38,6 +39,7 @@ def get_project(project_id: str):
     """
     获取项目详情
     """
+    validate_safe_id(project_id, "project_id")
     project = ProjectManager.get_project(project_id)
     
     if not project:
@@ -72,6 +74,7 @@ def delete_project(project_id: str):
     """
     删除项目
     """
+    validate_safe_id(project_id, "project_id")
     success = ProjectManager.delete_project(project_id)
     
     if not success:
@@ -91,6 +94,7 @@ def reset_project(project_id: str):
     """
     重置项目状态（用于重新构建图谱）
     """
+    validate_safe_id(project_id, "project_id")
     project = ProjectManager.get_project(project_id)
     
     if not project:
@@ -182,12 +186,13 @@ def generate_ontology():
         all_text = ""
         
         for file in uploaded_files:
-            if file and file.filename and allowed_file(file.filename):
+            safe_filename = os.path.basename(file.filename) if file.filename else ''
+            if file and safe_filename and allowed_file(safe_filename):
                 # 保存文件到项目目录
                 file_info = ProjectManager.save_file_to_project(
-                    project.project_id, 
-                    file, 
-                    file.filename
+                    project.project_id,
+                    file,
+                    safe_filename
                 )
                 project.files.append({
                     "filename": file_info["original_filename"],
@@ -250,8 +255,7 @@ def generate_ontology():
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -304,7 +308,9 @@ def build_graph():
                 "success": False,
                 "error": t('api.requireProjectId')
             }), 400
-        
+
+        validate_safe_id(project_id, "project_id")
+
         # 获取项目
         project = ProjectManager.get_project(project_id)
         if not project:
@@ -524,8 +530,7 @@ def build_graph():
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -572,6 +577,7 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
+        validate_safe_id(graph_id, "graph_id")
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
@@ -589,8 +595,7 @@ def get_graph_data(graph_id: str):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -600,6 +605,7 @@ def delete_graph(graph_id: str):
     删除Zep图谱
     """
     try:
+        validate_safe_id(graph_id, "graph_id")
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
@@ -617,6 +623,5 @@ def delete_graph(graph_id: str):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
