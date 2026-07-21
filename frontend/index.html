@@ -6,6 +6,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100..800&family=Noto+Sans+SC:wght@300;400;500;700;800;900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
     <meta charset="UTF-8" />
+    <!-- CSP（纵深防御，配合 DOMPurify 抵御 XSS）。注意：
+         - script-src 含 'unsafe-inline' 仅因本文件顶部有一段内联 lang 脚本；移除该脚本可去掉它以收紧策略。
+         - connect-src 默认含本机后端；若后端在其它域，部署时需把该域加入 connect-src。
+         - frame-ancestors 在 <meta> 中无效，已由服务端/预览响应头（X-Frame-Options / CSP 头）补充。 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://localhost:5001; object-src 'none'; base-uri 'self'; form-action 'self'" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="MiroFish - 社交媒体舆论模拟系统" />

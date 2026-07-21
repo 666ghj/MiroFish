@@ -21,6 +21,7 @@ from queue import Queue
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
+from ..utils.security import validate_id
 from .zep_graph_memory_updater import ZepGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
@@ -240,9 +241,15 @@ class SimulationRunner:
         return state
     
     @classmethod
+    def _run_dir(cls, simulation_id: str) -> str:
+        """Validated RUN_STATE_DIR/<simulation_id> -- blocks path traversal before any fs op."""
+        validate_id(simulation_id, 'simulation_id')
+        return os.path.join(cls.RUN_STATE_DIR, simulation_id)
+
+    @classmethod
     def _load_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """从文件加载运行状态"""
-        state_file = os.path.join(cls.RUN_STATE_DIR, simulation_id, "run_state.json")
+        state_file = os.path.join(cls._run_dir(simulation_id), "run_state.json")
         if not os.path.exists(state_file):
             return None
         
@@ -298,7 +305,7 @@ class SimulationRunner:
     @classmethod
     def _save_run_state(cls, state: SimulationRunState):
         """保存运行状态到文件"""
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+        sim_dir = cls._run_dir(state.simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         state_file = os.path.join(sim_dir, "run_state.json")
         
@@ -331,13 +338,16 @@ class SimulationRunner:
         Returns:
             SimulationRunState
         """
+        # 路径校验：simulation_id 会进入 RUN_STATE_DIR 下的 join/makedirs 与子进程参数
+        validate_id(simulation_id, 'simulation_id')
+
         # 检查是否已在运行
         existing = cls.get_run_state(simulation_id)
         if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
             raise ValueError(f"模拟已在运行中: {simulation_id}")
         
         # 加载模拟配置
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         config_path = os.path.join(sim_dir, "simulation_config.json")
         
         if not os.path.exists(config_path):
@@ -351,14 +361,27 @@ class SimulationRunner:
         total_hours = time_config.get("total_simulation_hours", 72)
         minutes_per_round = time_config.get("minutes_per_round", 30)
         total_rounds = int(total_hours * 60 / minutes_per_round)
-        
-        # 如果指定了最大轮数，则截断
-        if max_rounds is not None and max_rounds > 0:
-            original_rounds = total_rounds
-            total_rounds = min(total_rounds, max_rounds)
-            if total_rounds < original_rounds:
-                logger.info(f"轮数已截断: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
-        
+
+        # C3（denial-of-wallet 防护）：限制总轮数。
+        # - max_rounds 未指定时，应用服务端默认上限 OASIS_DEFAULT_MAX_ROUNDS（之前为 dead config）
+        # - 无论是否指定，都不得超过硬上限 OASIS_MAX_ROUNDS_CAP
+        effective_max = max_rounds if (max_rounds is not None and max_rounds > 0) else Config.OASIS_DEFAULT_MAX_ROUNDS
+        effective_max = min(effective_max, Config.OASIS_MAX_ROUNDS_CAP)
+        if total_rounds > effective_max:
+            logger.info(
+                f"轮数已限制: {total_rounds} -> {effective_max} "
+                f"(max_rounds={max_rounds}, default={Config.OASIS_DEFAULT_MAX_ROUNDS}, cap={Config.OASIS_MAX_ROUNDS_CAP})"
+            )
+            total_rounds = effective_max
+
+        # C3（denial-of-wallet 防护）：限制 agent 数量。超过硬上限直接拒绝（避免巨额并发 LLM 调用）。
+        agent_count = len(config.get("agent_configs", []))
+        if agent_count > Config.OASIS_MAX_AGENTS_CAP:
+            raise ValueError(
+                f"Agent 数量 {agent_count} 超过上限 {Config.OASIS_MAX_AGENTS_CAP}，"
+                f"请减少种子实体或调高 OASIS_MAX_AGENTS_CAP 环境变量"
+            )
+
         state = SimulationRunState(
             simulation_id=simulation_id,
             runner_status=RunnerStatus.STARTING,
@@ -419,9 +442,9 @@ class SimulationRunner:
                 "--config", config_path,  # 使用完整配置文件路径
             ]
             
-            # 如果指定了最大轮数，添加到命令行参数
-            if max_rounds is not None and max_rounds > 0:
-                cmd.extend(["--max-rounds", str(max_rounds)])
+            # C3：始终把已限制的有效轮数传给子进程，确保子进程按 default/cap 截断
+            # （total_rounds 此处已应用 OASIS_DEFAULT_MAX_ROUNDS 与 OASIS_MAX_ROUNDS_CAP）
+            cmd.extend(["--max-rounds", str(total_rounds)])
             
             # 创建主日志文件，避免 stdout/stderr 管道缓冲区满导致进程阻塞
             main_log_path = os.path.join(sim_dir, "simulation.log")
@@ -482,7 +505,7 @@ class SimulationRunner:
     def _monitor_simulation(cls, simulation_id: str, locale: str = 'zh'):
         """监控模拟进程，解析动作日志"""
         set_locale(locale)
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         
         # 新的日志结构：分平台的动作日志
         twitter_actions_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
@@ -700,7 +723,7 @@ class SimulationRunner:
         Returns:
             True 如果所有启用的平台都已完成
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+        sim_dir = cls._run_dir(state.simulation_id)
         twitter_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
         reddit_log = os.path.join(sim_dir, "reddit", "actions.jsonl")
         
@@ -910,7 +933,7 @@ class SimulationRunner:
         Returns:
             完整的动作列表（按时间戳排序，新的在前）
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         actions = []
         
         # 读取 Twitter 动作文件（根据文件路径自动设置 platform 为 twitter）
@@ -1124,7 +1147,7 @@ class SimulationRunner:
         """
         import shutil
         
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         
         if not os.path.exists(sim_dir):
             return {"success": True, "message": "模拟目录不存在，无需清理"}
@@ -1242,7 +1265,7 @@ class SimulationRunner:
                     
                     # 同时更新 state.json，将状态设为 stopped
                     try:
-                        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+                        sim_dir = cls._run_dir(simulation_id)
                         state_file = os.path.join(sim_dir, "state.json")
                         logger.info(f"尝试更新 state.json: {state_file}")
                         if os.path.exists(state_file):
@@ -1381,7 +1404,7 @@ class SimulationRunner:
         Returns:
             True 表示环境存活，False 表示环境已关闭
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         if not os.path.exists(sim_dir):
             return False
 
@@ -1399,7 +1422,7 @@ class SimulationRunner:
         Returns:
             状态详情字典，包含 status, twitter_available, reddit_available, timestamp
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         status_file = os.path.join(sim_dir, "env_status.json")
         
         default_status = {
@@ -1453,7 +1476,7 @@ class SimulationRunner:
             ValueError: 模拟不存在或环境未运行
             TimeoutError: 等待响应超时
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1515,7 +1538,7 @@ class SimulationRunner:
             ValueError: 模拟不存在或环境未运行
             TimeoutError: 等待响应超时
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1572,7 +1595,7 @@ class SimulationRunner:
         Returns:
             全局采访结果字典
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1625,7 +1648,7 @@ class SimulationRunner:
         Returns:
             操作结果字典
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
         
@@ -1736,7 +1759,7 @@ class SimulationRunner:
         Returns:
             Interview历史记录列表
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._run_dir(simulation_id)
         
         results = []
         

@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from ..config import Config
+from ..utils.security import validate_id
 
 
 class ProjectStatus(str, Enum):
@@ -112,6 +113,7 @@ class ProjectManager:
     @classmethod
     def _get_project_dir(cls, project_id: str) -> str:
         """获取项目目录路径"""
+        validate_id(project_id, 'project_id')  # 路径校验，阻断穿越后再 join/rmtree
         return os.path.join(cls.PROJECTS_DIR, project_id)
     
     @classmethod

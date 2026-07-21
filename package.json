@@ -9,7 +9,10 @@
     "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "start": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend:prod\" \"npm run frontend:preview\"",
+    "backend:prod": "cd backend && uv run gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:5001 'app:create_app()'",
+    "frontend:preview": "cd frontend && npm run preview"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

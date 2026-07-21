@@ -21,6 +21,7 @@ from enum import Enum
 from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
+from ..utils.security import validate_id
 from ..utils.locale import get_language_instruction, t
 from .zep_tools import (
     ZepToolsService, 
@@ -48,6 +49,7 @@ class ReportLogger:
         Args:
             report_id: 报告ID，用于确定日志文件路径
         """
+        validate_id(report_id, 'report_id')  # path check: report_id flows straight into the file path
         self.report_id = report_id
         self.log_file_path = os.path.join(
             Config.UPLOAD_FOLDER, 'reports', report_id, 'agent_log.jsonl'
@@ -319,6 +321,7 @@ class ReportConsoleLogger:
         Args:
             report_id: 报告ID，用于确定日志文件路径
         """
+        validate_id(report_id, 'report_id')  # path check: report_id flows straight into the file path
         self.report_id = report_id
         self.log_file_path = os.path.join(
             Config.UPLOAD_FOLDER, 'reports', report_id, 'console_log.txt'
@@ -1910,6 +1913,7 @@ class ReportManager:
     @classmethod
     def _get_report_folder(cls, report_id: str) -> str:
         """获取报告文件夹路径"""
+        validate_id(report_id, 'report_id')  # path check before join/rmtree
         return os.path.join(cls.REPORTS_DIR, report_id)
     
     @classmethod

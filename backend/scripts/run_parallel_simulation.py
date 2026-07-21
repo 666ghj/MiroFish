@@ -81,6 +81,11 @@ from typing import Dict, Any, List, Optional, Tuple
 _shutdown_event = None
 _cleanup_done = False
 
+# C4：模拟超时（秒）。从环境变量读取（子进程继承 Flask 父进程的环境）。
+# 每轮 env.step 超时防止单轮因 LLM/网络挂起而永久 wedge；总超时为整轮模拟的硬墙钟上限。
+_ROUND_TIMEOUT_SEC = int(os.environ.get("OASIS_ROUND_TIMEOUT_SEC", "600"))
+_RUN_TIMEOUT_SEC = int(os.environ.get("OASIS_RUN_TIMEOUT_SEC", "7200"))
+
 # 添加 backend 目录到路径
 # 脚本固定位于 backend/scripts/ 目录
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
@@ -333,8 +338,10 @@ class ParallelIPCHandler:
                 action_args={"prompt": prompt}
             )
             actions = {agent: interview_action}
-            await env.step(actions)
-            
+            # C4：采访 env.step 加超时；TimeoutError 会被本方法的 except Exception 捕获并返回错误响应，
+            # 不会让持久化命令循环永久卡死。
+            await asyncio.wait_for(env.step(actions), timeout=_ROUND_TIMEOUT_SEC)
+
             result = self._get_interview_result(agent_id, actual_platform)
             result["platform"] = actual_platform
             return result
@@ -466,7 +473,7 @@ class ParallelIPCHandler:
                         print(f"  警告: 无法获取Twitter Agent {agent_id}: {e}")
                 
                 if twitter_actions:
-                    await self.twitter_env.step(twitter_actions)
+                    await asyncio.wait_for(self.twitter_env.step(twitter_actions), timeout=_ROUND_TIMEOUT_SEC)  # C4：批量采访超时
                     
                     for interview in twitter_interviews:
                         agent_id = interview.get("agent_id")
@@ -493,7 +500,7 @@ class ParallelIPCHandler:
                         print(f"  警告: 无法获取Reddit Agent {agent_id}: {e}")
                 
                 if reddit_actions:
-                    await self.reddit_env.step(reddit_actions)
+                    await asyncio.wait_for(self.reddit_env.step(reddit_actions), timeout=_ROUND_TIMEOUT_SEC)  # C4：批量采访超时
                     
                     for interview in reddit_interviews:
                         agent_id = interview.get("agent_id")
@@ -1203,8 +1210,12 @@ async def run_twitter_simulation(
                 pass
         
         if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            # C4：初始帖子的 env.step 也加超时 —— 否则在进入受保护的主循环前就可能因 LLM/网络挂起而 wedge
+            try:
+                await asyncio.wait_for(result.env.step(initial_actions), timeout=_ROUND_TIMEOUT_SEC)
+                log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            except asyncio.TimeoutError:
+                log_info(f"[超时] 初始帖子 env.step 超过 {_ROUND_TIMEOUT_SEC}s，跳过初始帖子继续")
     
     # 记录 round 0 结束
     if action_logger:
@@ -1250,8 +1261,20 @@ async def run_twitter_simulation(
                 action_logger.log_round_end(round_num + 1, 0)
             continue
         
+        # C4：总时长上限 —— 超过则优雅停止（保留环境，后续仍可 close/interview）
+        if (datetime.now() - start_time).total_seconds() > _RUN_TIMEOUT_SEC:
+            log_info(f"[超时] 模拟总时长超过 {_RUN_TIMEOUT_SEC}s，在第 {round_num + 1} 轮停止")
+            break
+
         actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
+        # C4：每轮超时 —— 防止 env.step 因 LLM/网络挂起而永久 wedge
+        try:
+            await asyncio.wait_for(result.env.step(actions), timeout=_ROUND_TIMEOUT_SEC)
+        except asyncio.TimeoutError:
+            log_info(f"[超时] 第 {round_num + 1} 轮 env.step 超过 {_ROUND_TIMEOUT_SEC}s，跳过并停止循环")
+            if action_logger:
+                action_logger.log_round_end(round_num + 1, 0)
+            break
         
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(
@@ -1402,8 +1425,12 @@ async def run_reddit_simulation(
                 pass
         
         if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            # C4：初始帖子的 env.step 也加超时 —— 否则在进入受保护的主循环前就可能因 LLM/网络挂起而 wedge
+            try:
+                await asyncio.wait_for(result.env.step(initial_actions), timeout=_ROUND_TIMEOUT_SEC)
+                log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            except asyncio.TimeoutError:
+                log_info(f"[超时] 初始帖子 env.step 超过 {_ROUND_TIMEOUT_SEC}s，跳过初始帖子继续")
     
     # 记录 round 0 结束
     if action_logger:
@@ -1449,8 +1476,20 @@ async def run_reddit_simulation(
                 action_logger.log_round_end(round_num + 1, 0)
             continue
         
+        # C4：总时长上限 —— 超过则优雅停止（保留环境，后续仍可 close/interview）
+        if (datetime.now() - start_time).total_seconds() > _RUN_TIMEOUT_SEC:
+            log_info(f"[超时] 模拟总时长超过 {_RUN_TIMEOUT_SEC}s，在第 {round_num + 1} 轮停止")
+            break
+
         actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
+        # C4：每轮超时 —— 防止 env.step 因 LLM/网络挂起而永久 wedge
+        try:
+            await asyncio.wait_for(result.env.step(actions), timeout=_ROUND_TIMEOUT_SEC)
+        except asyncio.TimeoutError:
+            log_info(f"[超时] 第 {round_num + 1} 轮 env.step 超过 {_ROUND_TIMEOUT_SEC}s，跳过并停止循环")
+            if action_logger:
+                action_logger.log_round_end(round_num + 1, 0)
+            break
         
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(
@@ -1577,16 +1616,34 @@ async def main():
     reddit_result: Optional[PlatformSimulation] = None
     
     if args.twitter_only:
-        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds)
+        # C4：与并行路径对称 —— 单平台非超时异常也隔离为 None 并记录，确保后续 env.close 块仍可达
+        try:
+            twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds)
+        except Exception as e:
+            log_manager.error(f"[Twitter] 模拟异常，已隔离: {e}")
+            twitter_result = None
     elif args.reddit_only:
-        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds)
+        try:
+            reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds)
+        except Exception as e:
+            log_manager.error(f"[Reddit] 模拟异常，已隔离: {e}")
+            reddit_result = None
     else:
         # 并行运行（每个平台使用独立的日志记录器）
+        # C4：return_exceptions=True —— 一个平台抛异常（如 LLM 401/429/配额）不再取消另一平台，
+        # 也不会绕过下方的 env.close（否则环境泄漏，违背“优雅停止、保留环境”的设计）。
         results = await asyncio.gather(
             run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds),
             run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds),
+            return_exceptions=True,
         )
         twitter_result, reddit_result = results
+        if isinstance(twitter_result, BaseException):
+            log_manager.error(f"[Twitter] 模拟异常，已隔离: {twitter_result}")
+            twitter_result = None
+        if isinstance(reddit_result, BaseException):
+            log_manager.error(f"[Reddit] 模拟异常，已隔离: {reddit_result}")
+            reddit_result = None
     
     total_elapsed = (datetime.now() - start_time).total_seconds()
     log_manager.info("=" * 60)

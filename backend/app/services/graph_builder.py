@@ -18,6 +18,10 @@ from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from .text_processor import TextProcessor
 from ..utils.locale import t, get_locale, set_locale
+from ..utils.logger import get_logger
+from ..utils.security import safe_error
+
+logger = get_logger('mirofish.graph_builder')
 
 
 @dataclass
@@ -186,9 +190,8 @@ class GraphBuilderService:
             })
             
         except Exception as e:
-            import traceback
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
-            self.task_manager.fail_task(task_id, error_msg)
+            logger.error(f"graph build failed (task {task_id})", exc_info=True)
+            self.task_manager.fail_task(task_id, safe_error(e))
     
     def create_graph(self, name: str) -> str:
         """创建Zep图谱（公开方法）"""
@@ -339,7 +342,7 @@ class GraphBuilderService:
                 
             except Exception as e:
                 if progress_callback:
-                    progress_callback(t('progress.batchFailed', batch=batch_num, error=str(e)), 0)
+                    progress_callback(t('progress.batchFailed', batch=batch_num, error=safe_error(e)), 0)
                 raise
         
         return episode_uuids

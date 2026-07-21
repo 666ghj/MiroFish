@@ -27,17 +27,23 @@ def _ensure_utf8_stdout():
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
 
 
-def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.Logger:
+def setup_logger(name: str = 'mirofish', level: int = None) -> logging.Logger:
     """
     设置日志器
-    
+
     Args:
         name: 日志器名称
-        level: 日志级别
-        
+        level: 日志级别（None 时按 FLASK_DEBUG 自动选择）
+
     Returns:
         配置好的日志器
     """
+    # H5：生产模式（FLASK_DEBUG=false）下用 INFO —— 避免把请求体/调试细节（可能含上传内容、
+    # 提示词、客户端传入的凭据）以明文写入轮转日志文件。开发模式仍用 DEBUG。
+    if level is None:
+        from ..config import Config
+        level = logging.DEBUG if Config.DEBUG else logging.INFO
+
     # 确保日志目录存在
     os.makedirs(LOG_DIR, exist_ok=True)
     
@@ -71,7 +77,7 @@ def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.
         backupCount=5,
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
     file_handler.setFormatter(detailed_formatter)
     
     # 2. 控制台处理器 - 简洁日志（INFO及以上）

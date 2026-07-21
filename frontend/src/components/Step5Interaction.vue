@@ -412,6 +412,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import DOMPurify from 'dompurify'
 import { useI18n } from 'vue-i18n'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
@@ -638,7 +639,8 @@ const renderMarkdown = (content) => {
   }
   html = tokens.join('')
 
-  return html
+  // H1：消毒最终 HTML，剥离来自不可信 LLM/采访内容的脚本/事件处理器，防止存储型 XSS
+  return DOMPurify.sanitize(html)
 }
 
 // Chat Methods

@@ -12,7 +12,9 @@ dependencies = [
     # 核心框架
     "flask>=3.0.0",
     "flask-cors>=6.0.0",
-    
+    # 生产 WSGI 服务器（C1：替代 Werkzeug 开发服务器/调试器；须以 -w 1 --threads N 单进程启动）
+    "gunicorn>=21.0.0",
+
     # LLM 相关
     "openai>=1.0.0",
     
