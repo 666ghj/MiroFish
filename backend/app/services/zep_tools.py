@@ -10,10 +10,12 @@ Zep检索工具服务
 
 import time
 import json
+import re
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 from zep_cloud.client import Zep
+from zep_cloud.core.api_error import ApiError
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -22,6 +24,55 @@ from ..utils.locale import get_locale, t
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_tools')
+
+_MAX_RATE_LIMIT_DELAY = 60.0
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    status_code = getattr(error, "status_code", None)
+    if status_code == 429:
+        return True
+
+    body = getattr(error, "body", None)
+    if isinstance(body, str) and "rate limit" in body.lower():
+        return True
+
+    text = str(error).lower()
+    return "status_code: 429" in text or "rate limit" in text or "too many requests" in text
+
+
+def _parse_retry_after(error: Exception) -> float | None:
+    headers = getattr(error, "headers", None)
+    if isinstance(headers, dict):
+        retry_after = headers.get("retry-after") or headers.get("Retry-After")
+        if retry_after:
+            try:
+                return max(float(retry_after), 0.0)
+            except (TypeError, ValueError):
+                pass
+
+        reset = headers.get("x-ratelimit-reset") or headers.get("X-RateLimit-Reset")
+        if reset:
+            try:
+                reset_seconds = float(reset)
+                if reset_seconds > 1_000_000_000:
+                    wait_seconds = reset_seconds - time.time()
+                else:
+                    wait_seconds = reset_seconds
+                if wait_seconds > 0:
+                    return wait_seconds
+            except (TypeError, ValueError):
+                pass
+
+    text = str(error)
+    match = re.search(r"retry-after['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    if match:
+        try:
+            return max(float(match.group(1)), 0.0)
+        except (TypeError, ValueError):
+            pass
+
+    return None
 
 
 @dataclass
@@ -448,14 +499,32 @@ class ZepToolsService:
         for attempt in range(max_retries):
             try:
                 return func()
-            except Exception as e:
+            except (Exception, ApiError) as e:
                 last_exception = e
                 if attempt < max_retries - 1:
-                    logger.warning(
-                        t("console.zepRetryAttempt", operation=operation_name, attempt=attempt + 1, error=str(e)[:100], delay=f"{delay:.1f}")
-                    )
+                    if _is_rate_limit_error(e):
+                        retry_after = _parse_retry_after(e)
+                        if retry_after is not None:
+                            delay = min(max(retry_after, self.RETRY_DELAY), _MAX_RATE_LIMIT_DELAY)
+                        else:
+                            delay = min(max(delay, self.RETRY_DELAY), _MAX_RATE_LIMIT_DELAY)
+                    else:
+                        delay = min(delay, _MAX_RATE_LIMIT_DELAY)
+
+                    if _is_rate_limit_error(e):
+                        logger.warning(
+                            f"Zep {operation_name} rate limit hit (attempt {attempt + 1}/{max_retries}); "
+                            f"retrying in {delay:.1f}s..."
+                        )
+                    else:
+                        logger.warning(
+                            t("console.zepRetryAttempt", operation=operation_name, attempt=attempt + 1, error=str(e)[:100], delay=f"{delay:.1f}")
+                        )
                     time.sleep(delay)
-                    delay *= 2
+                    if _is_rate_limit_error(e):
+                        delay = min(delay * 1.25, _MAX_RATE_LIMIT_DELAY)
+                    else:
+                        delay = min(delay * 2, _MAX_RATE_LIMIT_DELAY)
                 else:
                     logger.error(t("console.zepAllRetriesFailed", operation=operation_name, retries=max_retries, error=str(e)))
         

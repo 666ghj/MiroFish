@@ -3,17 +3,19 @@ import i18n from '../i18n'
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001',
-  timeout: 300000, // 5分钟超时（本体生成可能需要较长时间）
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  // Default to the Vite proxy so the frontend works both on localhost
+  // and when accessed from another machine via the dev server host.
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  timeout: 300000 // 5分钟超时（本体生成可能需要较长时间）
 })
 
 // 请求拦截器
 service.interceptors.request.use(
   config => {
     config.headers['Accept-Language'] = i18n.global.locale.value
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type']
+    }
     return config
   },
   error => {
