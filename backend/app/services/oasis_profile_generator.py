@@ -15,10 +15,10 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from openai import OpenAI
 from zep_cloud.client import Zep
 
 from ..config import Config
+from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
 from .zep_entity_reader import EntityNode, ZepEntityReader
@@ -193,9 +193,10 @@ class OasisProfileGenerator:
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
         
-        self.client = OpenAI(
+        self.llm_client = LLMClient(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            model=self.model_name
         )
         
         # Zep客户端用于检索丰富上下文
@@ -521,64 +522,36 @@ class OasisProfileGenerator:
                 entity_name, entity_type, entity_summary, entity_attributes, context
             )
 
-        # 尝试多次生成，直到成功或达到最大重试次数
-        max_attempts = 3
-        last_error = None
-        
-        for attempt in range(max_attempts):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": self._get_system_prompt(is_individual)},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
-                
-                content = response.choices[0].message.content
-                
-                # 检查是否被截断（finish_reason不是'stop'）
-                finish_reason = response.choices[0].finish_reason
-                if finish_reason == 'length':
-                    logger.warning(f"LLM输出被截断 (attempt {attempt+1}), 尝试修复...")
-                    content = self._fix_truncated_json(content)
-                
-                # 尝试解析JSON
-                try:
-                    result = json.loads(content)
-                    
-                    # 验证必需字段
-                    if "bio" not in result or not result["bio"]:
-                        result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
-                    if "persona" not in result or not result["persona"]:
-                        result["persona"] = entity_summary or f"{entity_name}是一个{entity_type}。"
-                    
-                    return result
-                    
-                except json.JSONDecodeError as je:
-                    logger.warning(f"JSON解析失败 (attempt {attempt+1}): {str(je)[:80]}")
-                    
-                    # 尝试修复JSON
-                    result = self._try_fix_json(content, entity_name, entity_type, entity_summary)
-                    if result.get("_fixed"):
-                        del result["_fixed"]
-                        return result
-                    
-                    last_error = je
-                    
-            except Exception as e:
-                logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
-                last_error = e
-                import time
-                time.sleep(1 * (attempt + 1))  # 指数退避
-        
-        logger.warning(f"LLM生成人设失败（{max_attempts}次尝试）: {last_error}, 使用规则生成")
-        return self._generate_profile_rule_based(
-            entity_name, entity_type, entity_summary, entity_attributes
-        )
+        try:
+            result = self.llm_client.chat_json(
+                messages=[
+                    {"role": "system", "content": self._get_system_prompt(is_individual)},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=None,
+                max_attempts=3,
+                temperature_step=0.1,
+                fallback_parser=lambda content: self._try_fix_json(
+                    content, entity_name, entity_type, entity_summary
+                ),
+                retry_delay_seconds=1.0
+            )
+
+            if "bio" not in result or not result["bio"]:
+                result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
+            if "persona" not in result or not result["persona"]:
+                result["persona"] = entity_summary or f"{entity_name}是一个{entity_type}。"
+
+            if result.get("_fixed"):
+                del result["_fixed"]
+
+            return result
+        except Exception as e:
+            logger.warning(f"LLM生成人设失败（3次尝试）: {e}, 使用规则生成")
+            return self._generate_profile_rule_based(
+                entity_name, entity_type, entity_summary, entity_attributes
+            )
     
     def _fix_truncated_json(self, content: str) -> str:
         """修复被截断的JSON（输出被max_tokens限制截断）"""
@@ -1202,4 +1175,3 @@ class OasisProfileGenerator:
         """[已废弃] 请使用 save_profiles() 方法"""
         logger.warning("save_profiles_to_json已废弃，请使用save_profiles方法")
         self.save_profiles(profiles, file_path, platform)
-

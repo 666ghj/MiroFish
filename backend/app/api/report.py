@@ -11,6 +11,7 @@ from flask import request, jsonify, send_file
 from . import report_bp
 from ..config import Config
 from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
+from ..services.signal_extractor import SignalExtractor
 from ..services.simulation_manager import SimulationManager
 from ..models.project import ProjectManager
 from ..models.task import TaskManager, TaskStatus
@@ -923,6 +924,89 @@ def stream_console_log(report_id: str):
         
     except Exception as e:
         logger.error(f"获取控制台日志失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+# ============== 预测信号接口 ==============
+
+@report_bp.route('/<report_id>/signal', methods=['POST'])
+def extract_signal(report_id: str):
+    """
+    从已完成的报告中提取结构化预测信号（miro_signal）
+
+    对报告的 markdown 内容执行一次 LLM 提取，返回可供
+    外部预测市场管道直接消费的规范化概率信号。
+
+    返回：
+        {
+            "success": true,
+            "data": {
+                "signal_id": "uuid",
+                "schema_version": "1.1",
+                "report_id": "report_xxxx",
+                "simulation_id": "sim_xxxx",
+                "generated_at": "2026-...",
+                "thesis": {
+                    "p_yes": 0.73,
+                    "confidence": "high",
+                    "action": "buy_yes",
+                    "regime": "consensus_forming",
+                    "summary": "...",
+                    "drivers": ["...", "..."],
+                    "invalidators": ["...", "..."]
+                }
+            }
+        }
+    """
+    try:
+        report = ReportManager.get_report(report_id)
+
+        if not report:
+            return jsonify({
+                "success": False,
+                "error": f"报告不存在: {report_id}"
+            }), 404
+
+        if report.status != ReportStatus.COMPLETED:
+            return jsonify({
+                "success": False,
+                "error": f"报告尚未完成 (status={report.status.value})，无法提取信号"
+            }), 400
+
+        if not report.markdown_content:
+            return jsonify({
+                "success": False,
+                "error": "报告内容为空，无法提取信号"
+            }), 400
+
+        extractor = SignalExtractor()
+        signal = extractor.extract(
+            report_id=report_id,
+            simulation_id=report.simulation_id,
+            markdown_content=report.markdown_content,
+            simulation_requirement=report.simulation_requirement,
+        )
+
+        logger.info(f"信号提取完成: report={report_id} p_yes={signal.p_yes} action={signal.action}")
+
+        return jsonify({
+            "success": True,
+            "data": signal.to_dict()
+        })
+
+    except ValueError as e:
+        logger.error(f"信号提取失败 (LLM): {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 422
+
+    except Exception as e:
+        logger.error(f"信号提取失败: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
