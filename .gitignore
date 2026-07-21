@@ -9,6 +9,7 @@ Thumbs.db
 .env.development
 .env.test
 .env.production
+start.sh
 
 # Python
 __pycache__/
@@ -18,6 +19,7 @@ __pycache__/
 .Python
 .venv/
 venv/
+venv11/
 ENV/
 .eggs/
 *.egg-info/

@@ -1,0 +1,7 @@
+# Optional OASIS runtime.
+#
+# These third-party packages currently declare Python <3.12 support.
+# Use a Python 3.11 venv if you need the original OASIS simulation scripts.
+
+camel-oasis==0.2.5; python_version < "3.12"
+camel-ai==0.2.78; python_version < "3.12"

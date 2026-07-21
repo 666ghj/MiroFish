@@ -20,6 +20,10 @@ def create_app(config_class=Config):
     """Flask应用工厂函数"""
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    if app.config.get('ENABLE_PROXY_FIX'):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     
     # 设置JSON编码：确保中文直接显示（而不是 \uXXXX 格式）
     # Flask >= 2.3 使用 app.json.ensure_ascii，旧版本使用 JSON_AS_ASCII 配置
@@ -38,6 +42,8 @@ def create_app(config_class=Config):
         logger.info("=" * 50)
         logger.info("MiroFish Backend 启动中...")
         logger.info("=" * 50)
+        if app.config.get('ENABLE_PROXY_FIX'):
+            logger.info("已启用 ProxyFix（适用于 Tailscale Serve/Funnel 等反向代理）")
     
     # 启用CORS
     CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -77,4 +83,3 @@ def create_app(config_class=Config):
         logger.info("MiroFish Backend 启动完成")
     
     return app
-

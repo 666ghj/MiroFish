@@ -31,9 +31,31 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    LLM_CONTEXT_WINDOW = int(os.environ.get('LLM_CONTEXT_WINDOW', '8192'))
+    LLM_MAX_CONCURRENCY = int(os.environ.get('LLM_MAX_CONCURRENCY', '1'))
+    LLM_JSON_MAX_RETRIES = int(os.environ.get('LLM_JSON_MAX_RETRIES', '2'))
+    ONTOLOGY_MAX_OUTPUT_TOKENS = int(os.environ.get('ONTOLOGY_MAX_OUTPUT_TOKENS', '2048'))
+    ONTOLOGY_PROMPT_MARGIN_TOKENS = int(os.environ.get('ONTOLOGY_PROMPT_MARGIN_TOKENS', '512'))
+    ONTOLOGY_MAX_CHUNKS = int(os.environ.get('ONTOLOGY_MAX_CHUNKS', '8'))
+    LOCAL_ZEP_EXTRACT_MAX_RETRIES = int(os.environ.get('LOCAL_ZEP_EXTRACT_MAX_RETRIES', '2'))
+    LOCAL_ZEP_EXTRACT_MAX_OUTPUT_TOKENS = int(os.environ.get('LOCAL_ZEP_EXTRACT_MAX_OUTPUT_TOKENS', '2048'))
     
-    # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    # Local graph / embeddings 配置
+    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')  # deprecated, ignored by the local graph backend
+    EMBEDDING_API_KEY = os.environ.get('EMBEDDING_API_KEY', 'local-embedding-key')
+    EMBEDDING_BASE_URL = os.environ.get('EMBEDDING_BASE_URL')
+    EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL_NAME')
+    RERANKER_API_KEY = os.environ.get('RERANKER_API_KEY', 'local-reranker-key')
+    RERANKER_BASE_URL = os.environ.get('RERANKER_BASE_URL')
+    RERANKER_MODEL_NAME = os.environ.get('RERANKER_MODEL_NAME')
+    LOCAL_ZEP_RERANK_TOP_K = int(os.environ.get('LOCAL_ZEP_RERANK_TOP_K', '50'))
+    LOCAL_ZEP_DB_PATH = os.environ.get(
+        'LOCAL_ZEP_DB_PATH',
+        os.path.join(os.path.dirname(__file__), '../data/local_zep.sqlite3')
+    )
+    PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL')
+    TAILSCALE_URL = os.environ.get('TAILSCALE_URL')
+    ENABLE_PROXY_FIX = os.environ.get('ENABLE_PROXY_FIX', 'False').lower() == 'true'
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -47,6 +69,7 @@ class Config:
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
     OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+    OASIS_PYTHON = os.environ.get('OASIS_PYTHON')
     
     # OASIS平台可用动作配置
     OASIS_TWITTER_ACTIONS = [
@@ -69,7 +92,8 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+        if not cls.EMBEDDING_BASE_URL:
+            errors.append("EMBEDDING_BASE_URL 未配置")
+        if not cls.EMBEDDING_MODEL_NAME:
+            errors.append("EMBEDDING_MODEL_NAME 未配置")
         return errors
-

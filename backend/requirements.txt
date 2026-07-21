@@ -1,7 +1,7 @@
 # ===========================================
 # MiroFish Backend Dependencies
 # ===========================================
-# Python 3.11+ required
+# Python 3.11+ required. Python 3.13 is supported for the API/local-Zep backend.
 # Install: pip install -r requirements.txt
 # ===========================================
 
@@ -13,13 +13,11 @@ flask-cors>=6.0.0
 # OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
 openai>=1.0.0
 
-# ============= Zep Cloud =============
-zep-cloud==3.13.0
-
 # ============= OASIS 社交媒体模拟 =============
-# OASIS 社交模拟框架
-camel-oasis==0.2.5
-camel-ai==0.2.78
+# camel-oasis 0.2.5 declares Python <3.12, so keep it optional on newer Python.
+# The backend server and local-Zep graph work on Python 3.13 without these packages.
+camel-oasis==0.2.5; python_version < "3.12"
+camel-ai==0.2.78; python_version < "3.12"
 
 # ============= 文件处理 =============
 PyMuPDF>=1.24.0

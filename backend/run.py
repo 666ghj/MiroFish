@@ -40,6 +40,11 @@ def main():
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     port = int(os.environ.get('FLASK_PORT', 5001))
     debug = Config.DEBUG
+
+    if Config.PUBLIC_BASE_URL:
+        print(f"Public backend URL: {Config.PUBLIC_BASE_URL}")
+    if Config.TAILSCALE_URL:
+        print(f"Tailscale URL: {Config.TAILSCALE_URL}")
     
     # 启动服务
     app.run(host=host, port=port, debug=debug, threaded=True)
@@ -47,4 +52,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

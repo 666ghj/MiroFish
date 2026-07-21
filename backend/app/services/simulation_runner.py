@@ -414,7 +414,7 @@ class SimulationRunner:
             #   simulation.log        - 主进程日志
             
             cmd = [
-                sys.executable,  # Python解释器
+                Config.OASIS_PYTHON or sys.executable,  # Python解释器
                 script_path,
                 "--config", config_path,  # 使用完整配置文件路径
             ]
@@ -1765,4 +1765,3 @@ class SimulationRunner:
             results = results[:limit]
         
         return results
-

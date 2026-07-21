@@ -16,12 +16,10 @@ dependencies = [
     # LLM 相关
     "openai>=1.0.0",
     
-    # Zep Cloud
-    "zep-cloud==3.13.0",
-    
-    # OASIS 社交媒体模拟
-    "camel-oasis==0.2.5",
-    "camel-ai==0.2.78",
+    # OASIS 社交媒体模拟.
+    # These packages currently publish metadata for Python <3.12 only.
+    "camel-oasis==0.2.5; python_version < '3.12'",
+    "camel-ai==0.2.78; python_version < '3.12'",
     
     # 文件处理
     "PyMuPDF>=1.24.0",
@@ -35,6 +33,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+oasis = [
+    "camel-oasis==0.2.5; python_version < '3.12'",
+    "camel-ai==0.2.78; python_version < '3.12'",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -52,4 +54,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["app", "local_zep", "zep_cloud"]

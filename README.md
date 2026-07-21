@@ -100,8 +100,8 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 | Tool | Version | Description | Check Installation |
 |------|---------|-------------|-------------------|
 | **Node.js** | 18+ | Frontend runtime, includes npm | `node -v` |
-| **Python** | ≥3.11, ≤3.12 | Backend runtime | `python --version` |
-| **uv** | Latest | Python package manager | `uv --version` |
+| **Python** | ≥3.11 | Backend runtime. Python 3.13 is supported for the API and local graph backend. | `python --version` |
+| **Python 3.11** | 3.11.x | Optional but recommended for OASIS/CAMEL, because `camel-oasis==0.2.5` declares Python `<3.12`. | `python3.11 --version` |
 
 #### 1. Configure Environment Variables
 
@@ -121,10 +121,31 @@ cp .env.example .env
 LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
+LLM_CONTEXT_WINDOW=8192
+LLM_MAX_CONCURRENCY=1
+LLM_JSON_MAX_RETRIES=2
+ONTOLOGY_MAX_OUTPUT_TOKENS=2048
+ONTOLOGY_PROMPT_MARGIN_TOKENS=512
+LOCAL_ZEP_EXTRACT_MAX_OUTPUT_TOKENS=2048
+LOCAL_ZEP_EXTRACT_MAX_RETRIES=2
 
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+# Local Graph / Embeddings Configuration
+# Use an OpenAI-compatible embeddings endpoint. vLLM is a good first option.
+EMBEDDING_API_KEY=local-embedding-key
+EMBEDDING_BASE_URL=http://localhost:8001/v1
+EMBEDDING_MODEL_NAME=your_embedding_model
+
+# Optional cross-encoder reranker endpoint. If omitted, local graph search falls back to RRF.
+RERANKER_API_KEY=local-reranker-key
+RERANKER_BASE_URL=http://localhost:8002/v1
+RERANKER_MODEL_NAME=your_reranker_model
+LOCAL_ZEP_RERANK_TOP_K=50
+
+# Optional: choose where the local graph SQLite file is stored
+LOCAL_ZEP_DB_PATH=backend/data/local_zep.sqlite3
+
+# Optional: use a separate Python 3.11 venv for original OASIS/CAMEL scripts
+OASIS_PYTHON=/absolute/path/to/venv11/bin/python
 ```
 
 #### 2. Install Dependencies
@@ -142,6 +163,23 @@ npm run setup
 
 # Install Python dependencies (backend, auto-creates virtual environment)
 npm run setup:backend
+```
+
+If your default `python3` is older than 3.11, create the backend venv manually with the desired interpreter before running the backend:
+
+```bash
+python3.13 -m venv venv
+./venv/bin/python -m pip install --upgrade pip
+./venv/bin/python -m pip install -r backend/requirements.txt
+```
+
+For the original OASIS/CAMEL simulation engine, use a Python 3.11 venv and point `OASIS_PYTHON` at it:
+
+```bash
+python3.11 -m venv venv11
+./venv11/bin/python -m pip install --upgrade pip
+./venv11/bin/python -m pip install -r backend/requirements.txt
+echo "OASIS_PYTHON=$(pwd)/venv11/bin/python" >> .env
 ```
 
 #### 3. Start Services
@@ -162,7 +200,129 @@ npm run backend   # Start backend only
 npm run frontend  # Start frontend only
 ```
 
+### Local Model Runtime and Parameters
+
+MiroFish no longer requires Zep Cloud. The local graph module stores graph data in SQLite and uses your OpenAI-compatible embedding endpoint. A reranker endpoint is optional and is used only when graph search requests `cross_encoder`; otherwise search falls back to local hybrid ranking/RRF.
+
+Example local endpoints:
+
+```bash
+# Main LLM endpoint, llama.cpp example
+llama-server \
+  -m /path/to/model.gguf \
+  --alias Qwen3.5-9B-VL \
+  --host 127.0.0.1 \
+  --port 8000 \
+  -c 16384 \
+  --jinja
+
+# Embeddings endpoint, vLLM example
+vllm serve /path/to/Qwen3-Embedding-0.6B \
+  --host 127.0.0.1 \
+  --port 8001 \
+  --runner pooling \
+  --max-model-len 8192
+
+# Optional reranker endpoint, vLLM example
+vllm serve /path/to/Qwen3-Reranker-0.6B \
+  --host 127.0.0.1 \
+  --port 8002 \
+  --runner pooling \
+  --max-model-len 8192
+```
+
+Tested 24GB GPU profile (RTX 3090 / RTX 4090 class). Paths are intentionally anonymized:
+
+```bash
+# Main llama.cpp LLM endpoint
+./llama-server \
+  --mmproj /path/to/models/Qwen3.5-9B-gguf/mmproj-Qwen3.5-9B-BF16.gguf \
+  --alias Qwen3.5-9B-VL \
+  --host 127.0.0.1 \
+  --port 8000 \
+  -c 280000 \
+  -ngl auto \
+  --temp 0.7 \
+  --top-p 0.8 \
+  --top-k 20 \
+  --min-p 0.0 \
+  --jinja \
+  -m /path/to/models/Qwen3.5-9B-gguf/Qwen3.5-9B-Q6_K.gguf
+
+# Embedding endpoint. Observed peak is about 2-3GB VRAM.
+vllm serve /path/to/models/embedding/Qwen3-Embedding-0.6B \
+  --host 127.0.0.1 \
+  --port 8001 \
+  --runner pooling \
+  --gpu-memory-utilization 0.08 \
+  --max-model-len 8192 \
+  --quantization fp8 \
+  --kv-cache-dtype fp8
+
+# Reranker endpoint. Observed peak is about 2-3GB VRAM.
+vllm serve /path/to/models/embedding/Qwen3-Reranker-0.6B \
+  --host 127.0.0.1 \
+  --port 8002 \
+  --runner pooling \
+  --gpu-memory-utilization 0.09 \
+  --max-model-len 8192 \
+  --quantization fp8 \
+  --kv-cache-dtype fp8
+```
+
+Matching `.env` settings:
+
+```env
+LLM_BASE_URL=http://127.0.0.1:8000/v1
+LLM_MODEL_NAME=Qwen3.5-9B-VL
+LLM_CONTEXT_WINDOW=280000
+LLM_MAX_CONCURRENCY=1
+ONTOLOGY_MAX_OUTPUT_TOKENS=8192
+LOCAL_ZEP_EXTRACT_MAX_OUTPUT_TOKENS=8192
+
+EMBEDDING_BASE_URL=http://127.0.0.1:8001/v1
+EMBEDDING_MODEL_NAME=/path/to/Qwen3-Embedding-0.6B
+
+RERANKER_BASE_URL=http://127.0.0.1:8002/v1
+RERANKER_MODEL_NAME=/path/to/Qwen3-Reranker-0.6B
+LOCAL_ZEP_RERANK_TOP_K=50
+```
+
+Parameter rules:
+- `LLM_CONTEXT_WINDOW` must match the context length exposed by the main LLM server. Keep `prompt tokens + max output tokens <= LLM_CONTEXT_WINDOW`.
+- For the 24GB profile above, set `LLM_CONTEXT_WINDOW=280000` to match `-c 280000`. For a `16k` context model, `ONTOLOGY_MAX_OUTPUT_TOKENS=8192` leaves roughly half the window for output. For an `8k` endpoint, use `2048` to `4096`.
+- Set `LLM_MAX_CONCURRENCY=1` for single llama.cpp/vLLM main endpoints unless you know the server can handle parallel chat completions.
+- Embedding dimension is not configured manually. The local graph records vectors from the embedding model; keep the same embedding model for one graph database.
+- The reranker is different from the embedding model. Embeddings are required for graph indexing and semantic search. The reranker is optional and only reorders candidate search results.
+- `.env`, `start.sh`, `venv/`, `venv11/`, uploaded simulations, and local graph databases are intentionally ignored by git.
+
+### Tailscale Access
+
+Release note: Tailscale support is intended for source-code/dev deployments where the backend and Vite proxy run on the same host. It does not make the local LLM, embedding, or reranker endpoints public by itself; keep those endpoints bound to `127.0.0.1` unless you intentionally expose them.
+
+The frontend now defaults to same-origin `/api` instead of `http://localhost:5001`, so opening the Vite dev server from another device over Tailscale will still reach the backend running on the host machine.
+
+Recommended root `.env` settings:
+
+```env
+VITE_DEV_HOST=0.0.0.0
+VITE_DEV_PORT=3000
+VITE_DEV_PROXY_TARGET=http://127.0.0.1:5001
+VITE_ALLOWED_HOSTS=localhost,127.0.0.1,.ts.net,.beta.tailscale.net
+FLASK_HOST=0.0.0.0
+FLASK_PORT=5001
+```
+
+Then access from another Tailscale device at:
+
+- Frontend: `http://<your-tailnet-hostname>:3000`
+- Backend: `http://<your-tailnet-hostname>:5001`
+
+If you expose the backend through `tailscale serve` or `tailscale funnel`, set `ENABLE_PROXY_FIX=true`. If HMR does not reconnect correctly over MagicDNS, set `VITE_HMR_HOST` to your Tailscale hostname.
+
 ### Option 2: Docker Deployment
+
+Release constraint: Docker deployment is legacy/not validated for the local Zep replacement, external vLLM/llama.cpp endpoints, and split Python 3.11 OASIS runtime. Use source deployment for the tested local-first workflow.
 
 ```bash
 # 1. Configure environment variables (same as source deployment)
