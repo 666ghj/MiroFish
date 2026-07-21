@@ -15,7 +15,9 @@ from zep_cloud import EpisodeData, EntityEdgeSourceTarget
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
+from ..utils.llm_client import LLMClient
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from .local_graph_store import LocalGraphStore
 from .text_processor import TextProcessor
 from ..utils.locale import t, get_locale, set_locale
 
@@ -45,11 +47,23 @@ class GraphBuilderService:
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        self.use_local_storage = Config.GRAPH_STORAGE_BACKEND == 'sqlite' or not self.api_key
         self.task_manager = TaskManager()
+        self.local_store = LocalGraphStore() if self.use_local_storage else None
+        self.llm_client = None
+
+        if self.use_local_storage:
+            # Local SQLite mode: no Zep client needed.
+            if Config.LLM_API_KEY:
+                try:
+                    self.llm_client = LLMClient()
+                except Exception:
+                    self.llm_client = None
+            self.client = None
+        else:
+            if not self.api_key:
+                raise ValueError("ZEP_API_KEY 未配置")
+            self.client = Zep(api_key=self.api_key)
     
     def build_graph_async(
         self,
@@ -191,19 +205,31 @@ class GraphBuilderService:
             self.task_manager.fail_task(task_id, error_msg)
     
     def create_graph(self, name: str) -> str:
-        """创建Zep图谱（公开方法）"""
+        """创建图谱（公开方法）"""
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
-        
+
+        if self.use_local_storage:
+            self.local_store.create_graph(
+                graph_id=graph_id,
+                name=name,
+                description="MiroFish Social Simulation Graph",
+            )
+            return graph_id
+
         self.client.graph.create(
             graph_id=graph_id,
             name=name,
             description="MiroFish Social Simulation Graph"
         )
-        
+
         return graph_id
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
         """设置图谱本体（公开方法）"""
+        if self.use_local_storage:
+            self.local_store.set_ontology(graph_id, ontology)
+            return
+
         import warnings
         from typing import Optional
         from pydantic import Field
@@ -290,7 +316,6 @@ class GraphBuilderService:
                 entities=entity_types if entity_types else None,
                 edges=edge_definitions if edge_definitions else None,
             )
-    
     def add_text_batches(
         self,
         graph_id: str,
@@ -299,6 +324,25 @@ class GraphBuilderService:
         progress_callback: Optional[Callable] = None
     ) -> List[str]:
         """分批添加文本到图谱，返回所有 episode 的 uuid 列表"""
+        if self.use_local_storage:
+            total = len(chunks)
+            if total == 0:
+                return []
+            if progress_callback:
+                progress_callback(t('progress.sendingBatch', current=1, total=1, chunks=total), 0.0)
+
+            episode_uuids = self.local_store.extract_and_store_chunks(
+                graph_id=graph_id,
+                chunks=chunks,
+                ontology=(self.local_store.get_graph(graph_id) or {}).get('ontology', {}),
+                llm_client=self.llm_client,
+                progress_callback=None,
+                batch_size=batch_size,
+            )
+            if progress_callback:
+                progress_callback(t('progress.processingComplete', completed=len(episode_uuids), total=len(episode_uuids)), 1.0)
+            return episode_uuids
+
         episode_uuids = []
         total_chunks = len(chunks)
         
@@ -351,6 +395,11 @@ class GraphBuilderService:
         timeout: int = 600
     ):
         """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
+        if self.use_local_storage:
+            if progress_callback:
+                progress_callback(t('progress.processingComplete', completed=len(episode_uuids), total=len(episode_uuids)), 1.0)
+            return
+
         if not episode_uuids:
             if progress_callback:
                 progress_callback(t('progress.noEpisodesWait'), 1.0)
@@ -402,11 +451,29 @@ class GraphBuilderService:
     
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         """获取图谱信息"""
+        if self.use_local_storage:
+            graph = self.local_store.get_graph(graph_id) or {}
+            nodes = graph.get("nodes", [])
+            edges = graph.get("edges", [])
+            entity_types = set()
+            for node in nodes:
+                for label in node.get("labels", []):
+                    if label not in ["Entity", "Node"]:
+                        entity_types.add(label)
+            return GraphInfo(
+                graph_id=graph_id,
+                node_count=len(nodes),
+                edge_count=len(edges),
+                entity_types=list(entity_types),
+            )
+
         # 获取节点（分页）
-        nodes = fetch_all_nodes(self.client, graph_id)
+        client = self.client
+        assert client is not None
+        nodes = fetch_all_nodes(client, graph_id)
 
         # 获取边（分页）
-        edges = fetch_all_edges(self.client, graph_id)
+        edges = fetch_all_edges(client, graph_id)
 
         # 统计实体类型
         entity_types = set()
@@ -433,8 +500,22 @@ class GraphBuilderService:
         Returns:
             包含nodes和edges的字典，包括时间信息、属性等详细数据
         """
-        nodes = fetch_all_nodes(self.client, graph_id)
-        edges = fetch_all_edges(self.client, graph_id)
+        if self.use_local_storage:
+            graph = self.local_store.get_graph(graph_id) or {}
+            nodes_data = graph.get("nodes", [])
+            edges_data = graph.get("edges", [])
+            return {
+                "graph_id": graph_id,
+                "nodes": nodes_data,
+                "edges": edges_data,
+                "node_count": len(nodes_data),
+                "edge_count": len(edges_data),
+            }
+
+        client = self.client
+        assert client is not None
+        nodes = fetch_all_nodes(client, graph_id)
+        edges = fetch_all_edges(client, graph_id)
 
         # 创建节点映射用于获取节点名称
         node_map = {}
@@ -502,5 +583,8 @@ class GraphBuilderService:
     
     def delete_graph(self, graph_id: str):
         """删除图谱"""
+        if self.use_local_storage:
+            self.local_store.delete_graph(graph_id)
+            return
         self.client.graph.delete(graph_id=graph_id)
 
