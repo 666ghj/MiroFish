@@ -1,5 +1,11 @@
 <template>
   <div class="graph-panel">
+    <!-- Barra de inteligência Zep — mostra context do grafo -->
+    <GraphContextBar
+      :graphData="graphData"
+      :projectData="projectData"
+      :currentPhase="currentPhase"
+    />
     <div class="panel-header">
       <span class="panel-title">{{ $t('graph.panelTitle') }}</span>
       <!-- 顶部工具栏 (Internal Top Right) -->
@@ -238,12 +244,14 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import * as d3 from 'd3'
+import GraphContextBar from './workspace/GraphContextBar.vue'
 
 const props = defineProps({
-  graphData: Object,
-  loading: Boolean,
+  graphData:    Object,
+  projectData:  { type: Object, default: null },
+  loading:      Boolean,
   currentPhase: Number,
-  isSimulating: Boolean
+  isSimulating: Boolean,
 })
 
 const emit = defineEmits(['refresh', 'toggle-maximize'])

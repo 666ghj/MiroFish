@@ -174,7 +174,10 @@
     "genderOther": "其他",
     "yearsOld": "岁",
     "initializing": "初始化",
-    "generating": "生成中"
+    "generating": "生成中",
+    "showLess": "收起",
+    "showAll": "展开全部 ({count})",
+    "profileModalProfession": "职业"
   },
   "step3": {
     "startGenerateReport": "开始生成结果报告",
@@ -295,7 +298,20 @@
     "graphDataLoading": "图谱数据加载中...",
     "waitingOntology": "等待本体生成...",
     "toggleMaximize": "最大化/还原",
-    "closeHint": "关闭提示"
+    "closeHint": "关闭提示",
+    "ctxTypes": "类型",
+    "ctxStateMemory": "记忆激活",
+    "ctxStateReady": "图谱就绪",
+    "ctxStateBuilding": "构建中",
+    "ctxStateOntology": "本体已设置",
+    "ctxStatePending": "等待中"
+  },
+  "system": {
+    "noLogs": "暂无日志。",
+    "labelProject": "项目",
+    "labelGraph": "图谱",
+    "labelSimulation": "模拟",
+    "labelTask": "任务"
   },
   "history": {
     "title": "推演记录",

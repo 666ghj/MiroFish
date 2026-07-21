@@ -174,7 +174,10 @@
     "genderOther": "Other",
     "yearsOld": "years old",
     "initializing": "Initializing",
-    "generating": "Generating"
+    "generating": "Generating",
+    "showLess": "Show less",
+    "showAll": "Show all ({count})",
+    "profileModalProfession": "Profession"
   },
   "step3": {
     "startGenerateReport": "Generate Report",
@@ -295,7 +298,20 @@
     "graphDataLoading": "Loading graph data...",
     "waitingOntology": "Waiting for ontology generation...",
     "toggleMaximize": "Maximize/Restore",
-    "closeHint": "Close hint"
+    "closeHint": "Close hint",
+    "ctxTypes": "types",
+    "ctxStateMemory": "Memory active",
+    "ctxStateReady": "Graph ready",
+    "ctxStateBuilding": "Building",
+    "ctxStateOntology": "Ontology set",
+    "ctxStatePending": "Pending"
+  },
+  "system": {
+    "noLogs": "No logs yet.",
+    "labelProject": "Project",
+    "labelGraph": "Graph",
+    "labelSimulation": "Simulation",
+    "labelTask": "Task"
   },
   "history": {
     "title": "Simulation History",
