@@ -128,6 +128,7 @@ class SimulationRunState:
     
     # 每轮摘要
     rounds: List[RoundSummary] = field(default_factory=list)
+    max_rounds_kept: int = 20  # Limit rounds in memory to prevent memory leak
     
     # 最近动作（用于前端实时展示）
     recent_actions: List[AgentAction] = field(default_factory=list)
@@ -156,6 +157,15 @@ class SimulationRunState:
             self.reddit_actions_count += 1
         
         self.updated_at = datetime.now().isoformat()
+    
+    def add_round_summary(self, summary: 'RoundSummary'):
+        """添加轮次摘要（带自动清理，防止内存泄漏）"""
+        self.rounds.append(summary)
+        
+        # Cleanup old rounds jika melebihi limit
+        if len(self.rounds) > self.max_rounds_kept:
+            # Simpan first round untuk context, hapus yang lama
+            self.rounds = [self.rounds[0]] + self.rounds[-(self.max_rounds_kept-1):]
     
     def to_dict(self) -> Dict[str, Any]:
         return {

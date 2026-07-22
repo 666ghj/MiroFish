@@ -38,14 +38,23 @@ service.interceptors.response.use(
   error => {
     console.error('Response error:', error)
     
+    // 优先使用后端返回的 JSON 错误信息（后端在 4xx/5xx 时也会返回 {"success": false, "error": "..."}）
+    if (error.response && error.response.data) {
+      const data = error.response.data
+      const msg = data.error || data.message || data.traceback || `请求失败 (${error.response.status})`
+      return Promise.reject(new Error(msg))
+    }
+    
     // 处理超时
     if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
       console.error('Request timeout')
+      return Promise.reject(new Error('请求超时，请稍后重试'))
     }
     
     // 处理网络错误
     if (error.message === 'Network Error') {
       console.error('Network error - please check your connection')
+      return Promise.reject(new Error('网络错误，请检查连接'))
     }
     
     return Promise.reject(error)

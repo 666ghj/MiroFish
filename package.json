@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "description": "MiroFish - 简洁通用的群体智能引擎，预测万物",
   "scripts": {
-    "setup": "npm install && cd frontend && npm install",
+    "setup": "bun install && cd frontend && bun install",
     "setup:backend": "cd backend && uv sync",
-    "setup:all": "npm run setup && npm run setup:backend",
-    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
+    "setup:all": "bun run setup && bun run setup:backend",
+    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"bun run backend\" \"bun run frontend\"",
     "backend": "cd backend && uv run python run.py",
-    "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build"
+    "frontend": "cd frontend && bun run dev",
+    "build": "cd frontend && bun run build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
@@ -19,3 +19,4 @@
   },
   "license": "AGPL-3.0"
 }
+

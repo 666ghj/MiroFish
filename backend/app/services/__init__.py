@@ -36,6 +36,14 @@ from .simulation_ipc import (
     CommandType,
     CommandStatus
 )
+from .checkpoint_manager import CheckpointManager
+from .decision_cache import DecisionCache
+from .batch_processor import (
+    BatchProcessor,
+    BatchProcessorConfig,
+    BatchResult,
+    AgentBatchProcessor,
+)
 
 __all__ = [
     'OntologyGenerator', 
@@ -69,5 +77,7 @@ __all__ = [
     'IPCResponse',
     'CommandType',
     'CommandStatus',
+    'CheckpointManager',
+    'DecisionCache',
 ]
 

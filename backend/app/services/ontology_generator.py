@@ -218,7 +218,7 @@ class OntologyGenerator:
         result = self.llm_client.chat_json(
             messages=messages,
             temperature=0.3,
-            max_tokens=4096
+            max_tokens=16384
         )
         
         # 验证和后处理
@@ -454,6 +454,14 @@ class OntologyGenerator:
                     st["target"] = entity_name_map[st["target"]]
             if "source_targets" not in edge:
                 edge["source_targets"] = []
+            # Zep API 限制：source_targets 最多 10 项，超出则截断（保留前 N 项）
+            MAX_SOURCE_TARGETS = 10
+            if len(edge["source_targets"]) > MAX_SOURCE_TARGETS:
+                logger.warning(
+                    f"Edge '{edge.get('name')}' has {len(edge['source_targets'])} source_targets, "
+                    f"truncated to {MAX_SOURCE_TARGETS} (Zep API limit)"
+                )
+                edge["source_targets"] = edge["source_targets"][:MAX_SOURCE_TARGETS]
             if "attributes" not in edge:
                 edge["attributes"] = []
             if len(edge.get("description", "")) > 100:
