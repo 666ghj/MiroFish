@@ -440,16 +440,39 @@ class SimulationConfigGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
+                kwargs = {
+                    "model": self.model_name,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
+                    "response_format": {"type": "json_object"},
+                    # 部分模型不支持自定义温度，后续会自动降级重试
+                    "temperature": 0.7 - (attempt * 0.1)
+                }
+
+                response = None
+                for _ in range(3):
+                    try:
+                        response = self.client.chat.completions.create(**kwargs)
+                        break
+                    except Exception as e:
+                        err_text = str(e).lower()
+
+                        if "unsupported parameter" in err_text and "max_tokens" in err_text and "max_tokens" in kwargs:
+                            kwargs.pop("max_tokens", None)
+                            continue
+
+                        if "temperature" in err_text and (
+                            "unsupported value" in err_text or "default (1) value" in err_text
+                        ) and "temperature" in kwargs:
+                            kwargs.pop("temperature", None)
+                            continue
+
+                        raise
+
+                if response is None:
+                    raise RuntimeError("OpenAI chat completion failed after compatibility retries")
                 
                 content = response.choices[0].message.content
                 finish_reason = response.choices[0].finish_reason
