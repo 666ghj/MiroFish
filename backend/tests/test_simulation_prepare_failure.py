@@ -3,6 +3,7 @@ import json
 import pytest
 
 from app import create_app
+from app.api import simulation as simulation_api
 from app.config import Config
 from app.services import simulation_manager as simulation_manager_module
 from app.services.simulation_manager import (
@@ -29,6 +30,63 @@ def _write_failed_state(root, simulation_id="sim_failed"):
         encoding="utf-8",
     )
     return simulation_id
+
+
+def _write_prepared_files(
+    root,
+    *,
+    simulation_id="sim_paused",
+    status="paused",
+    config_generated=True,
+):
+    sim_dir = root / simulation_id
+    sim_dir.mkdir(parents=True)
+    (sim_dir / "state.json").write_text(
+        json.dumps(
+            {
+                "status": status,
+                "config_generated": config_generated,
+                "entities_count": 2,
+                "entity_types": ["Person"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (sim_dir / "simulation_config.json").write_text("{}", encoding="utf-8")
+    (sim_dir / "reddit_profiles.json").write_text(
+        json.dumps([{"user_id": 1}, {"user_id": 2}]),
+        encoding="utf-8",
+    )
+    (sim_dir / "twitter_profiles.csv").write_text(
+        "user_id,name\n1,agent\n",
+        encoding="utf-8",
+    )
+    return simulation_id
+
+
+@pytest.mark.parametrize(
+    ("config_generated", "expected_prepared"),
+    [(True, True), (False, False)],
+)
+def test_paused_state_requires_generated_config(
+    tmp_path,
+    monkeypatch,
+    config_generated,
+    expected_prepared,
+):
+    simulation_id = _write_prepared_files(
+        tmp_path,
+        config_generated=config_generated,
+    )
+    monkeypatch.setattr(Config, "OASIS_SIMULATION_DATA_DIR", str(tmp_path))
+
+    is_prepared, info = simulation_api._check_simulation_prepared(simulation_id)
+
+    assert is_prepared is expected_prepared
+    assert info["status"] == "paused"
+    assert info["config_generated"] is config_generated
+    if expected_prepared:
+        assert info["profiles_count"] == 2
 
 
 def test_realtime_endpoints_expose_terminal_failure(tmp_path, monkeypatch):
