@@ -19,6 +19,10 @@
     "label": "Português",
     "llmInstruction": "Por favor, responda em português."
   },
+  "pt-BR": {
+    "label": "Português (Brasil)",
+    "llmInstruction": "Por favor, responda em português do Brasil."
+  },
   "ru": {
     "label": "Русский",
     "llmInstruction": "Пожалуйста, отвечайте на русском языке."
