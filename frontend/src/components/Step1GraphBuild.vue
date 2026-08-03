@@ -124,7 +124,34 @@
           <p class="description">
             {{ $t('step1.graphRagDesc') }}
           </p>
-          
+
+          <!-- Engine Selector (Graphify-style) -->
+          <div class="engine-selector">
+            <span class="engine-label">{{ $t('step1.graphEngine') }}</span>
+            <div class="engine-pills">
+              <button
+                type="button"
+                class="engine-pill"
+                :class="{ active: graphEngine === 'claude' }"
+                :disabled="currentPhase >= 1"
+                @click="$emit('update:graph-engine', 'claude')"
+              >
+                <span class="engine-dot claude"></span>
+                Claude
+              </button>
+              <button
+                type="button"
+                class="engine-pill"
+                :class="{ active: graphEngine === 'zep' }"
+                :disabled="currentPhase >= 1"
+                @click="$emit('update:graph-engine', 'zep')"
+              >
+                <span class="engine-dot zep"></span>
+                Zep
+              </button>
+            </div>
+          </div>
+
           <!-- Stats Cards -->
           <div class="stats-grid">
             <div class="stat-card">
@@ -201,10 +228,11 @@ const props = defineProps({
   ontologyProgress: Object,
   buildProgress: Object,
   graphData: Object,
-  systemLogs: { type: Array, default: () => [] }
+  systemLogs: { type: Array, default: () => [] },
+  graphEngine: { type: String, default: 'claude' }
 })
 
-defineEmits(['next-step'])
+defineEmits(['next-step', 'update:graph-engine'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
@@ -568,6 +596,76 @@ watch(() => props.systemLogs.length, () => {
 
 .conn-arrow {
     color: #BBB;
+}
+
+/* Step 02 Engine Selector */
+.engine-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.engine-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.engine-pills {
+  display: flex;
+  gap: 6px;
+  background: #F5F5F5;
+  padding: 3px;
+  border-radius: 20px;
+  border: 1px solid #EAEAEA;
+}
+
+.engine-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: #777;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.engine-pill:hover:not(:disabled) {
+  color: #333;
+}
+
+.engine-pill.active {
+  background: #FFF;
+  color: #000;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+.engine-pill:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.engine-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.engine-dot.claude {
+  background: #D97757;
+}
+
+.engine-dot.zep {
+  background: #3498db;
 }
 
 /* Step 02 Stats */

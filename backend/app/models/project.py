@@ -43,6 +43,7 @@ class Project:
     # 图谱信息（接口2完成后填充）
     graph_id: Optional[str] = None
     graph_build_task_id: Optional[str] = None
+    graph_engine: Optional[str] = None  # "claude" 或 "zep"
     
     # 配置
     simulation_requirement: Optional[str] = None
@@ -66,6 +67,7 @@ class Project:
             "analysis_summary": self.analysis_summary,
             "graph_id": self.graph_id,
             "graph_build_task_id": self.graph_build_task_id,
+            "graph_engine": self.graph_engine,
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
@@ -91,6 +93,7 @@ class Project:
             analysis_summary=data.get('analysis_summary'),
             graph_id=data.get('graph_id'),
             graph_build_task_id=data.get('graph_build_task_id'),
+            graph_engine=data.get('graph_engine'),
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),

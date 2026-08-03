@@ -12,6 +12,7 @@ from . import graph_bp
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
 from ..services.graph_builder import GraphBuilderService
+from ..services.claude_graph_builder import ClaudeGraphBuilderService
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
@@ -22,6 +23,9 @@ from ..models.project import ProjectManager, ProjectStatus
 # 获取日志器
 logger = get_logger('mirofish.api')
 
+# 支持的图谱构建引擎
+GRAPH_ENGINES = ('claude', 'zep')
+
 
 def allowed_file(filename: str) -> bool:
     """检查文件扩展名是否允许"""
@@ -29,6 +33,20 @@ def allowed_file(filename: str) -> bool:
         return False
     ext = os.path.splitext(filename)[1].lower().lstrip('.')
     return ext in Config.ALLOWED_EXTENSIONS
+
+
+def get_graph_builder(engine: str):
+    """按引擎名称创建对应的图谱构建服务实例"""
+    if engine == 'claude':
+        return ClaudeGraphBuilderService(api_key=Config.ANTHROPIC_API_KEY)
+    if engine == 'zep':
+        return GraphBuilderService(api_key=Config.ZEP_API_KEY)
+    raise ValueError(t('api.unknownEngine', engine=engine))
+
+
+def infer_engine_from_graph_id(graph_id: str) -> str:
+    """从 graph_id 命名规则推断所属引擎（claude 引擎的 id 带有 _claude_ 标记）"""
+    return 'claude' if '_claude_' in graph_id else 'zep'
 
 
 # ============== 项目管理接口 ==============
@@ -107,9 +125,10 @@ def reset_project(project_id: str):
     
     project.graph_id = None
     project.graph_build_task_id = None
+    project.graph_engine = None
     project.error = None
     ProjectManager.save_project(project)
-    
+
     return jsonify({
         "success": True,
         "message": t('api.projectReset', id=project_id),
@@ -282,23 +301,32 @@ def build_graph():
     """
     try:
         logger.info("=== 开始构建图谱 ===")
-        
-        # 检查配置
+
+        # 解析请求
+        data = request.get_json() or {}
+        project_id = data.get('project_id')
+        engine = data.get('engine', Config.GRAPH_ENGINE_DEFAULT)
+        logger.debug(f"请求参数: project_id={project_id}, engine={engine}")
+
+        if engine not in GRAPH_ENGINES:
+            return jsonify({
+                "success": False,
+                "error": t('api.unknownEngine', engine=engine)
+            }), 400
+
+        # 检查所选引擎所需的配置
         errors = []
-        if not Config.ZEP_API_KEY:
+        if engine == 'zep' and not Config.ZEP_API_KEY:
             errors.append(t('api.zepApiKeyMissing'))
+        if engine == 'claude' and not Config.ANTHROPIC_API_KEY:
+            errors.append(t('api.anthropicApiKeyMissing'))
         if errors:
             logger.error(f"配置错误: {errors}")
             return jsonify({
                 "success": False,
                 "error": t('api.configError', details="; ".join(errors))
             }), 500
-        
-        # 解析请求
-        data = request.get_json() or {}
-        project_id = data.get('project_id')
-        logger.debug(f"请求参数: project_id={project_id}")
-        
+
         if not project_id:
             return jsonify({
                 "success": False,
@@ -369,8 +397,9 @@ def build_graph():
         # 更新项目状态
         project.status = ProjectStatus.GRAPH_BUILDING
         project.graph_build_task_id = task_id
+        project.graph_engine = engine
         ProjectManager.save_project(project)
-        
+
         # Capture locale before spawning background thread
         current_locale = get_locale()
 
@@ -386,8 +415,8 @@ def build_graph():
                     message=t('progress.initGraphService')
                 )
                 
-                # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                # 创建图谱构建服务（按所选引擎）
+                builder = get_graph_builder(engine)
                 
                 # 分块
                 task_manager.update_task(
@@ -405,7 +434,7 @@ def build_graph():
                 # 创建图谱
                 task_manager.update_task(
                     task_id,
-                    message=t('progress.creatingZepGraph'),
+                    message=t('progress.creatingClaudeGraph') if engine == 'claude' else t('progress.creatingZepGraph'),
                     progress=10
                 )
                 graph_id = builder.create_graph(name=graph_name)
@@ -444,10 +473,10 @@ def build_graph():
                     progress_callback=add_progress_callback
                 )
                 
-                # 等待Zep处理完成（查询每个episode的processed状态）
+                # 等待处理完成（Zep 引擎需轮询 episode 状态，Claude 引擎是同步抽取）
                 task_manager.update_task(
                     task_id,
-                    message=t('progress.waitingZepProcess'),
+                    message=t('progress.claudeExtractionDone') if engine == 'claude' else t('progress.waitingZepProcess'),
                     progress=55
                 )
                 
@@ -572,20 +601,27 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        engine = request.args.get('engine') or infer_engine_from_graph_id(graph_id)
+
+        if engine == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
             }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        if engine == 'claude' and not Config.ANTHROPIC_API_KEY:
+            return jsonify({
+                "success": False,
+                "error": t('api.anthropicApiKeyMissing')
+            }), 500
+
+        builder = get_graph_builder(engine)
         graph_data = builder.get_graph_data(graph_id)
-        
+
         return jsonify({
             "success": True,
             "data": graph_data
         })
-        
+
     except Exception as e:
         return jsonify({
             "success": False,
@@ -597,23 +633,30 @@ def get_graph_data(graph_id: str):
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
 def delete_graph(graph_id: str):
     """
-    删除Zep图谱
+    删除图谱（Claude 本地图谱或 Zep 云端图谱）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        engine = request.args.get('engine') or infer_engine_from_graph_id(graph_id)
+
+        if engine == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
             }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        if engine == 'claude' and not Config.ANTHROPIC_API_KEY:
+            return jsonify({
+                "success": False,
+                "error": t('api.anthropicApiKeyMissing')
+            }), 500
+
+        builder = get_graph_builder(engine)
         builder.delete_graph(graph_id)
-        
+
         return jsonify({
             "success": True,
             "message": t('api.graphDeleted', id=graph_id)
         })
-        
+
     except Exception as e:
         return jsonify({
             "success": False,

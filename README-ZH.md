@@ -40,6 +40,29 @@ MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 
 从严肃预测到趣味仿真，我们让每一个如果都能看见结果，让预测万物成为可能。
 
+## 🧠 本 Fork：Claude Code 图谱引擎
+
+本 Fork 在原有 Zep 图谱引擎之外，新增了一个由 Claude 驱动的图谱构建引擎，采用 **Graphify 风格**的理念：
+基于本体约束、逐块透明抽取，让图谱的构建过程节点级可见、可追溯。
+
+- **智能体驱动的抽取**：不再依赖 Zep Cloud，每个文本块会连同由本体（实体类型、关系类型、允许的
+  source/target）动态生成的结构化 `tool_use` schema 一起发送给 Claude，只抽取文本中明确出现的事实。
+- **本地可检查的图谱存储**：抽取结果（节点、边、事实、来源）以 JSON 形式按项目本地持久化，无需外部图数据库即可体验。
+- **即插即用，可视化不变**：Claude 引擎实现了与 Zep 引擎完全一致的服务接口（`create_graph`、`set_ontology`、
+  `add_text_batches`、`get_graph_data`、`delete_graph`），因此现有的 D3 图谱面板、实体图例、节点/边详情面板无需改动即可复用。
+- **按项目切换**：在图谱构建步骤中通过 Claude / Zep 切换按钮选择引擎，默认使用 Claude。
+
+在 `.env` 中配置：
+
+```bash
+GRAPH_ENGINE_DEFAULT=claude
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+CLAUDE_MODEL_NAME=claude-sonnet-5
+```
+
+详见 `backend/app/services/claude_graph_builder.py`（抽取智能体）与
+`backend/app/models/graph_store.py`（本地图谱持久化层）。
+
 ## 🌐 在线体验
 
 欢迎访问在线 Demo 演示环境，体验我们为你准备的一次关于热点舆情事件的推演预测：[mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)

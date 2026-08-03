@@ -40,6 +40,35 @@ MiroFish is dedicated to creating a swarm intelligence mirror that maps reality.
 
 From serious predictions to playful simulations, we let every "what if" see its outcome, making it possible to predict anything.
 
+## 🧠 This Fork: Claude Code Graph Engine
+
+This fork adds a second, Claude-powered graph construction engine alongside the original Zep-based one, with a
+**Graphify-style** philosophy: transparent, incremental, ontology-constrained entity/relationship extraction that
+you can watch build up node by node.
+
+- **Agent-driven extraction**: instead of delegating extraction to Zep Cloud, each text chunk is sent to Claude
+  with a structured `tool_use` schema derived from your generated ontology (entity types, edge types, allowed
+  source/target pairs). Claude returns only entities and relationships that are explicitly grounded in that
+  fragment — no hallucinated facts, no silent inference.
+- **Local, inspectable graph store**: the resulting graph (nodes, edges, facts, provenance) is persisted as plain
+  JSON per project — no external graph database required to try it out.
+- **Drop-in engine, same visualization**: the Claude engine implements the exact same service interface as the
+  Zep engine (`create_graph`, `set_ontology`, `add_text_batches`, `get_graph_data`, `delete_graph`), so the
+  existing D3 graph panel, entity legend, and node/edge inspector work unmodified.
+- **Pick per project**: choose the engine ("Claude" or "Zep") from a pill toggle on the Graph Build step before
+  building — Claude is the default.
+
+Configure it via `.env`:
+
+```bash
+GRAPH_ENGINE_DEFAULT=claude
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+CLAUDE_MODEL_NAME=claude-sonnet-5
+```
+
+See `backend/app/services/claude_graph_builder.py` for the extraction agent and
+`backend/app/models/graph_store.py` for the local graph persistence layer.
+
 ## 🌐 Live Demo
 
 Welcome to visit our online demo environment and experience a prediction simulation on trending public opinion events we've prepared for you: [mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)

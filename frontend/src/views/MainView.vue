@@ -51,7 +51,7 @@
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <!-- Step 1: 图谱构建 -->
-        <Step1GraphBuild 
+        <Step1GraphBuild
           v-if="currentStep === 1"
           :currentPhase="currentPhase"
           :projectData="projectData"
@@ -59,6 +59,8 @@
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :graphEngine="graphEngine"
+          @update:graph-engine="val => graphEngine = val"
           @next-step="handleNextStep"
         />
         <!-- Step 2: 环境搭建 -->
@@ -109,6 +111,7 @@ const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
+const graphEngine = ref('claude') // 'claude' | 'zep' - 图谱构建引擎
 
 // Polling timers
 let pollTimer = null
@@ -238,6 +241,7 @@ const loadProject = async () => {
     const res = await getProject(currentProjectId.value)
     if (res.success) {
       projectData.value = res.data
+      if (res.data.graph_engine) graphEngine.value = res.data.graph_engine
       updatePhaseByStatus(res.data.status)
       addLog(`Project loaded. Status: ${res.data.status}`)
       
@@ -279,7 +283,7 @@ const startBuildGraph = async () => {
     buildProgress.value = { progress: 0, message: 'Starting build...' }
     addLog('Initiating graph build...')
     
-    const res = await buildGraph({ project_id: currentProjectId.value })
+    const res = await buildGraph({ project_id: currentProjectId.value, engine: graphEngine.value })
     if (res.success) {
       addLog(`Graph build task started. Task ID: ${res.data.task_id}`)
       startGraphPolling()
