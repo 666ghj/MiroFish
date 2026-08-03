@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      pull-requests: write
     env:
       GIT_TERMINAL_PROMPT: '0'
       EXPECTED_REPOSITORY: '666ghj/MiroFish'
@@ -70,6 +71,7 @@ jobs:
           -v
 
       - name: Fetch aggregate Star count only
+        id: count
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -88,6 +90,7 @@ jobs:
           mapfile -t lines < "$output"
           (( ${#lines[@]} == 1 ))
           [[ "${lines[0]}" =~ ^[0-9]+$ ]]
+          printf 'value=%s\n' "${lines[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Record scheduled aggregate Star snapshot offline without tokens
         shell: bash
@@ -187,6 +190,7 @@ jobs:
           printf 'created=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Verify one allowlisted commit and unchanged main target
+        id: verify
         if: ${{ steps.commit.outputs.created == 'true' }}
         shell: bash
         env:
@@ -206,6 +210,9 @@ jobs:
 
           base="$GITHUB_SHA"
           target_ref="$GITHUB_REF"
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          update_branch="automation/star-history/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           [[ "${GITHUB_REPOSITORY,,}" == "${EXPECTED_REPOSITORY,,}" ]]
           [[ "$GITHUB_REF" == "refs/heads/$EXPECTED_DEFAULT_BRANCH" ]]
           [[ "$(git rev-parse HEAD^)" == "$base" ]]
@@ -248,11 +255,33 @@ jobs:
             exit 1
           }
 
-      - name: Push one allowlisted commit with an ephemeral credential
+          if git \
+            -c credential.helper= \
+            -c http.followRedirects=false \
+            ls-remote \
+            --exit-code \
+            --heads \
+            origin \
+            "refs/heads/$update_branch" >/dev/null
+          then
+            echo "::error::Temporary branch already exists"
+            exit 1
+          else
+            status=$?
+            [[ "$status" -eq 2 ]] || exit "$status"
+          fi
+
+          printf 'branch=%s\n' "$update_branch" >> "$GITHUB_OUTPUT"
+          printf 'head=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish through a verified pull request with an ephemeral credential
+        id: publish
         if: ${{ steps.commit.outputs.created == 'true' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          UPDATE_BRANCH: ${{ steps.verify.outputs.branch }}
+          EXPECTED_HEAD: ${{ steps.verify.outputs.head }}
           GIT_TERMINAL_PROMPT: '0'
           GIT_TRACE: '0'
           GIT_TRACE_CURL: '0'
@@ -260,6 +289,7 @@ jobs:
           GIT_CURL_VERBOSE: '0'
         run: |
           set -euo pipefail
+          umask 077
 
           allowed() {
             case "$1" in
@@ -271,6 +301,12 @@ jobs:
           }
 
           base="$GITHUB_SHA"
+          head="$(git rev-parse HEAD)"
+          update_branch="$UPDATE_BRANCH"
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$update_branch" == "automation/star-history/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]
+          [[ "$head" == "$EXPECTED_HEAD" ]]
           [[ "${GITHUB_REPOSITORY,,}" == "${EXPECTED_REPOSITORY,,}" ]]
           [[ "$GITHUB_REF" == "refs/heads/$EXPECTED_DEFAULT_BRANCH" ]]
           [[ "$(git rev-parse HEAD^)" == "$base" ]]
@@ -300,8 +336,31 @@ jobs:
           done < <(git diff-tree --no-commit-id --name-only -r -z HEAD)
           (( count > 0 )) || exit 1
 
+          expected_files="$RUNNER_TEMP/star-history-expected-files-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          pr_files="$RUNNER_TEMP/star-history-pr-files-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          [[ ! -e "$expected_files" && ! -L "$expected_files" ]]
+          [[ ! -e "$pr_files" && ! -L "$pr_files" ]]
+          git diff-tree --no-commit-id --name-only -r HEAD |
+            LC_ALL=C sort > "$expected_files"
+          [[ -s "$expected_files" && ! -L "$expected_files" ]]
+          trap '
+            rm -f -- "$expected_files" "$pr_files"
+            unset GH_TOKEN GITHUB_TOKEN
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+          ' EXIT
+
           [[ -n "$GITHUB_TOKEN" ]]
           [[ "$GITHUB_TOKEN" != *$'\n'* && "$GITHUB_TOKEN" != *$'\r'* ]]
+          command -v gh >/dev/null
+          export GH_TOKEN="$GITHUB_TOKEN"
+
+          current_base="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$EXPECTED_DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          [[ "$current_base" == "$base" ]]
+
           encoded="$(
             printf 'x-access-token:%s' "$GITHUB_TOKEN" |
               base64 |
@@ -310,8 +369,7 @@ jobs:
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0="http.${origin}.extraheader"
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $encoded"
-          unset encoded GITHUB_TOKEN
-          trap 'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0' EXIT
+          unset encoded
 
           git \
             -c core.hooksPath=/dev/null \
@@ -319,4 +377,295 @@ jobs:
             push \
             --porcelain \
             origin \
-            "HEAD:$GITHUB_REF"
+            "HEAD:refs/heads/$update_branch"
+
+          unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+
+          remote_head="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$update_branch" \
+              --jq '.object.sha'
+          )"
+          [[ "$remote_head" == "$head" ]]
+
+          current_base="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$EXPECTED_DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          [[ "$current_base" == "$base" ]]
+
+          create_result="$(
+            gh api --method POST "repos/$EXPECTED_REPOSITORY/pulls" \
+              -f 'title=chore: update Star History' \
+              -f "head=$update_branch" \
+              -f "base=$EXPECTED_DEFAULT_BRANCH" \
+              -f 'body=Automated aggregate Star History refresh. The workflow will verify the base, head, and generated-file allowlist before squash-merging.' \
+              --jq '[.number, .html_url] | @tsv'
+          )"
+          IFS=$'\t' read -r pr_number pr_url <<< "$create_result"
+          [[ "$pr_number" =~ ^[0-9]+$ ]]
+          [[ "$pr_url" == "https://github.com/$EXPECTED_REPOSITORY/pull/$pr_number" ]]
+
+          validate_open_pr() {
+            local metadata
+            local pr_state pr_draft pr_base_repo pr_base_ref pr_base_sha
+            local pr_head_repo pr_head_ref pr_head_sha pr_author
+
+            metadata="$(
+              gh api "repos/$EXPECTED_REPOSITORY/pulls/$pr_number" \
+                --jq '[.state, (.draft | tostring), .base.repo.full_name, .base.ref, .base.sha, .head.repo.full_name, .head.ref, .head.sha, .user.login] | @tsv'
+            )"
+            IFS=$'\t' read -r \
+              pr_state pr_draft pr_base_repo pr_base_ref pr_base_sha \
+              pr_head_repo pr_head_ref pr_head_sha pr_author <<< "$metadata"
+            [[ "$pr_state" == "open" ]]
+            [[ "$pr_draft" == "false" ]]
+            [[ "${pr_base_repo,,}" == "${EXPECTED_REPOSITORY,,}" ]]
+            [[ "$pr_base_ref" == "$EXPECTED_DEFAULT_BRANCH" ]]
+            [[ "$pr_base_sha" == "$base" ]]
+            [[ "${pr_head_repo,,}" == "${EXPECTED_REPOSITORY,,}" ]]
+            [[ "$pr_head_ref" == "$update_branch" ]]
+            [[ "$pr_head_sha" == "$head" ]]
+            [[ "$pr_author" == 'github-actions[bot]' ]]
+          }
+
+          validate_open_pr
+          gh api \
+            "repos/$EXPECTED_REPOSITORY/pulls/$pr_number/files?per_page=100" \
+            --jq '.[].filename' |
+            LC_ALL=C sort > "$pr_files"
+          [[ -s "$pr_files" && ! -L "$pr_files" ]]
+          cmp --silent "$expected_files" "$pr_files"
+
+          mergeable='null'
+          for attempt in 1 2 3 4 5; do
+            current_base="$(
+              gh api \
+                "repos/$EXPECTED_REPOSITORY/git/ref/heads/$EXPECTED_DEFAULT_BRANCH" \
+                --jq '.object.sha'
+            )"
+            [[ "$current_base" == "$base" ]]
+            validate_open_pr
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/pulls/$pr_number/files?per_page=100" \
+              --jq '.[].filename' |
+              LC_ALL=C sort > "$pr_files"
+            cmp --silent "$expected_files" "$pr_files"
+            mergeable="$(
+              gh api "repos/$EXPECTED_REPOSITORY/pulls/$pr_number" \
+                --jq '(.mergeable | tostring)'
+            )"
+            case "$mergeable" in
+              true) break ;;
+              false)
+                echo '::error::Pull request is not mergeable'
+                exit 1
+                ;;
+              null)
+                if (( attempt < 5 )); then
+                  sleep 2
+                fi
+                ;;
+              *) exit 1 ;;
+            esac
+          done
+          [[ "$mergeable" == 'true' ]]
+          validate_open_pr
+          current_base="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$EXPECTED_DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          [[ "$current_base" == "$base" ]]
+
+          merge_result="$(
+            gh api --method PUT "repos/$EXPECTED_REPOSITORY/pulls/$pr_number/merge" \
+              -f "merge_method=squash" \
+              -f "sha=$head" \
+              -f 'commit_title=chore: update star history [skip ci]' \
+              -f 'commit_message=Automated aggregate Star History refresh.' \
+              --jq '[(.merged | tostring), .sha] | @tsv'
+          )"
+          IFS=$'\t' read -r merged merge_sha <<< "$merge_result"
+          [[ "$merged" == "true" ]]
+          [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          main_sha="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$EXPECTED_DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          [[ "$main_sha" == "$merge_sha" ]]
+          merge_parent="$(
+            gh api "repos/$EXPECTED_REPOSITORY/git/commits/$merge_sha" \
+              --jq 'if (.parents | length) == 1 then .parents[0].sha else empty end'
+          )"
+          [[ "$merge_parent" == "$base" ]]
+
+          merged_metadata="$(
+            gh api "repos/$EXPECTED_REPOSITORY/pulls/$pr_number" \
+              --jq '[.state, (.merged | tostring), .merge_commit_sha, .base.repo.full_name, .base.ref, .head.ref, .head.sha, .user.login, .merged_by.login] | @tsv'
+          )"
+          IFS=$'\t' read -r \
+            merged_state pr_merged pr_merge_sha merged_base_repo merged_base_ref \
+            merged_head_ref merged_head_sha merged_author merged_by <<< "$merged_metadata"
+          [[ "$merged_state" == 'closed' ]]
+          [[ "$pr_merged" == 'true' ]]
+          [[ "$pr_merge_sha" == "$merge_sha" ]]
+          [[ "${merged_base_repo,,}" == "${EXPECTED_REPOSITORY,,}" ]]
+          [[ "$merged_base_ref" == "$EXPECTED_DEFAULT_BRANCH" ]]
+          [[ "$merged_head_ref" == "$update_branch" ]]
+          [[ "$merged_head_sha" == "$head" ]]
+          [[ "$merged_author" == 'github-actions[bot]' ]]
+          [[ "$merged_by" == 'github-actions[bot]' ]]
+
+          printf 'branch=%s\n' "$update_branch" >> "$GITHUB_OUTPUT"
+          printf 'head_sha=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'merge_sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"
+          printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
+          printf 'pr_url=%s\n' "$pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify published main without tokens
+        id: verify_published
+        if: ${{ steps.commit.outputs.created == 'true' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+          EXPECTED_MERGE_SHA: ${{ steps.publish.outputs.merge_sha }}
+          EXPECTED_STAR_COUNT: ${{ steps.count.outputs.value }}
+        run: |
+          set -euo pipefail
+          [[ -z "${GITHUB_TOKEN:-}" && -z "${GH_TOKEN:-}" ]]
+          expected_merge_sha="$EXPECTED_MERGE_SHA"
+          [[ "$expected_merge_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_STAR_COUNT" =~ ^[0-9]+$ ]]
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+
+          git \
+            -c credential.helper= \
+            -c http.followRedirects=false \
+            fetch \
+            --no-tags \
+            --depth=2 \
+            origin \
+            "refs/heads/$EXPECTED_DEFAULT_BRANCH"
+          published_sha="$(git rev-parse FETCH_HEAD)"
+          [[ "$published_sha" == "$expected_merge_sha" ]]
+          published_parent="$(git rev-parse "$published_sha^")"
+          [[ "$published_parent" == "$GITHUB_SHA" ]]
+          [[ "$(git rev-list --count "${GITHUB_SHA}..$published_sha")" == 1 ]]
+          git diff --quiet HEAD "$published_sha" --
+
+          allowed() {
+            case "$1" in
+              .github/star-history/history.json|\
+              static/image/star-history-light.svg|\
+              static/image/star-history-dark.svg) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          count=0
+          while IFS= read -r -d '' path; do
+            allowed "$path" || {
+              printf '::error::Unexpected published path: %q\n' "$path"
+              exit 1
+            }
+            ((count += 1))
+          done < <(
+            git diff-tree --no-commit-id --name-only -r -z "$published_sha"
+          )
+          (( count > 0 )) || exit 1
+
+          python3 - "$EXPECTED_STAR_COUNT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          expected = int(sys.argv[1])
+          payload = json.loads(
+              Path('.github/star-history/history.json').read_text(encoding='utf-8')
+          )
+          snapshots = payload.get('snapshots')
+          if not isinstance(snapshots, list) or not snapshots:
+              raise SystemExit('missing Star History snapshots')
+          if snapshots[-1].get('stars') != expected:
+              raise SystemExit('published Star count does not match fetched count')
+          PY
+          grep -Fq "cron: '17 3 1,16 * *'" \
+            .github/workflows/update-star-history.yml
+          printf 'verified=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Delete verified temporary branch with an ephemeral credential
+        if: >-
+          ${{
+            steps.commit.outputs.created == 'true' &&
+            steps.verify_published.outputs.verified == 'true'
+          }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UPDATE_BRANCH: ${{ steps.publish.outputs.branch }}
+          EXPECTED_HEAD: ${{ steps.publish.outputs.head_sha }}
+          EXPECTED_MERGE_SHA: ${{ steps.publish.outputs.merge_sha }}
+          PR_NUMBER: ${{ steps.publish.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GITHUB_TOKEN" ]]
+          [[ "$GITHUB_TOKEN" != *$'\n'* && "$GITHUB_TOKEN" != *$'\r'* ]]
+          command -v gh >/dev/null
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          update_branch="$UPDATE_BRANCH"
+          [[ "$update_branch" == "automation/star-history/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          export GH_TOKEN="$GITHUB_TOKEN"
+
+          remote_head="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$update_branch" \
+              --jq '.object.sha'
+          )"
+          [[ "$remote_head" == "$EXPECTED_HEAD" ]]
+          main_sha="$(
+            gh api \
+              "repos/$EXPECTED_REPOSITORY/git/ref/heads/$EXPECTED_DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          [[ "$main_sha" == "$EXPECTED_MERGE_SHA" ]]
+          pr_state="$(
+            gh api "repos/$EXPECTED_REPOSITORY/pulls/$PR_NUMBER" \
+              --jq '[.state, (.merged | tostring), .merge_commit_sha, .head.ref, .head.sha, .user.login, .merged_by.login] | @tsv'
+          )"
+          IFS=$'\t' read -r \
+            state merged merge_sha head_ref head_sha author merged_by <<< "$pr_state"
+          [[ "$state" == 'closed' ]]
+          [[ "$merged" == 'true' ]]
+          [[ "$merge_sha" == "$EXPECTED_MERGE_SHA" ]]
+          [[ "$head_ref" == "$update_branch" ]]
+          [[ "$head_sha" == "$EXPECTED_HEAD" ]]
+          [[ "$author" == 'github-actions[bot]' ]]
+          [[ "$merged_by" == 'github-actions[bot]' ]]
+
+          gh api --method DELETE "repos/$EXPECTED_REPOSITORY/git/refs/heads/$update_branch" \
+            >/dev/null
+          unset GH_TOKEN GITHUB_TOKEN
+
+          if git \
+            -c credential.helper= \
+            -c http.followRedirects=false \
+            ls-remote \
+            --exit-code \
+            --heads \
+            origin \
+            "refs/heads/$update_branch" >/dev/null
+          then
+            echo "::error::Temporary branch still exists"
+            exit 1
+          else
+            status=$?
+            [[ "$status" -eq 2 ]] || exit "$status"
+          fi
