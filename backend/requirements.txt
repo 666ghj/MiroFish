@@ -12,6 +12,8 @@ flask-cors>=6.0.0
 # ============= LLM 相关 =============
 # OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
 openai>=1.0.0
+# Anthropic SDK（Claude 图谱构建引擎）
+anthropic>=0.40.0
 
 # ============= Zep Cloud =============
 zep-cloud==3.13.0

@@ -34,7 +34,15 @@ class Config:
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
-    
+
+    # Claude图谱引擎配置（Anthropic API，作为图谱构建的智能体）
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+    ANTHROPIC_BASE_URL = os.environ.get('ANTHROPIC_BASE_URL')
+    CLAUDE_MODEL_NAME = os.environ.get('CLAUDE_MODEL_NAME', 'claude-sonnet-5')
+
+    # 图谱构建默认引擎："claude" 或 "zep"
+    GRAPH_ENGINE_DEFAULT = os.environ.get('GRAPH_ENGINE_DEFAULT', 'claude')
+
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
@@ -69,7 +77,10 @@ class Config:
         errors = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
+        # 图谱构建引擎所需的密钥按默认引擎校验，另一个引擎仍可在请求时按需选用
+        if cls.GRAPH_ENGINE_DEFAULT == 'zep' and not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
+        if cls.GRAPH_ENGINE_DEFAULT == 'claude' and not cls.ANTHROPIC_API_KEY:
+            errors.append("ANTHROPIC_API_KEY 未配置")
         return errors
 
