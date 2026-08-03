@@ -223,16 +223,13 @@ class FetchStarCountTests(unittest.TestCase):
             for section in workflow.split("\n      - name: ")
             if "GITHUB_TOKEN: ${{ github.token }}" in section
         ]
-        self.assertEqual(len(token_steps), 3)
+        self.assertEqual(len(token_steps), 2)
         for section in token_steps:
             step_name = section.splitlines()[0]
             self.assertTrue(
                 step_name.startswith("Fetch aggregate Star count only")
                 or step_name.startswith(
                     "Publish through a verified pull request with an ephemeral credential"
-                )
-                or step_name.startswith(
-                    "Delete verified temporary branch with an ephemeral credential"
                 )
             )
 
@@ -248,7 +245,7 @@ class FetchStarCountTests(unittest.TestCase):
             self.assertNotIn("${{ github.token }}", section)
             self.assertIn("--force", section)
 
-    def test_workflow_publishes_only_through_a_verified_pull_request(self):
+    def test_workflow_submits_a_verified_pull_request_for_manual_merge(self):
         repository = Path(__file__).resolve().parents[1]
         workflow = (
             repository / ".github/workflows/update-star-history.yml"
@@ -289,56 +286,45 @@ class FetchStarCountTests(unittest.TestCase):
         self.assertIn('[[ "$pr_head_ref" == "$update_branch" ]]', workflow)
         self.assertIn('[[ "$pr_head_sha" == "$head" ]]', workflow)
         self.assertIn('cmp --silent "$expected_files" "$pr_files"', workflow)
-        self.assertGreaterEqual(workflow.count('validate_open_pr\n'), 2)
-        self.assertGreaterEqual(
-            workflow.count('[[ "$current_base" == "$base" ]]'), 3
-        )
-        self.assertIn("for attempt in 1 2 3 4 5; do", workflow)
-        self.assertIn("(.mergeable | tostring)", workflow)
-        self.assertIn("sleep 2", workflow)
+        self.assertGreaterEqual(workflow.count("          validate_open_pr\n"), 2)
+        self.assertIn("Please review and merge this pull request manually.", workflow)
+        self.assertIn("$GITHUB_STEP_SUMMARY", workflow)
+        self.assertIn("existing automated Star History pull request", workflow)
+        self.assertNotIn("pulls/$pr_number/merge", workflow)
+        self.assertNotIn("gh pr merge", workflow)
+        self.assertNotIn("merge_method=", workflow)
+        self.assertNotIn("pulls/$pr_number/reviews", workflow)
+        self.assertNotIn("git/refs/heads/$update_branch", workflow)
+        self.assertNotIn("Verify published main without tokens", workflow)
+        self.assertNotIn("Delete verified temporary branch", workflow)
+        self.assertNotIn("merged_by", workflow)
+        self.assertNotIn("GIT_TRACE:", workflow)
+        self.assertNotIn("GIT_TRACE_CURL:", workflow)
+        self.assertNotIn("GIT_TRACE_PACKET:", workflow)
+        self.assertNotIn("GIT_CURL_VERBOSE:", workflow)
 
-        self.assertIn(
-            'gh api --method PUT "repos/$EXPECTED_REPOSITORY/pulls/$pr_number/merge"',
-            workflow,
+        duplicate_guard_index = workflow.index(
+            "pulls?state=open&base=$EXPECTED_DEFAULT_BRANCH&per_page=100"
         )
-        self.assertIn('-f "merge_method=squash"', workflow)
-        self.assertIn('-f "sha=$head"', workflow)
-        self.assertIn('[[ "$current_base" == "$base" ]]', workflow)
-        self.assertIn('[[ "$merged" == "true" ]]', workflow)
-        self.assertIn('[[ "$main_sha" == "$merge_sha" ]]', workflow)
-        self.assertIn('[[ "$merge_parent" == "$base" ]]', workflow)
-        self.assertGreaterEqual(
-            workflow.count('[[ "$merged_by" == \'github-actions[bot]\' ]]'), 2
-        )
-
-        self.assertIn(
-            'gh api --method DELETE "repos/$EXPECTED_REPOSITORY/git/refs/heads/$update_branch"',
-            workflow,
-        )
-        self.assertIn("Verify published main without tokens", workflow)
-        self.assertIn('[[ "$published_sha" == "$expected_merge_sha" ]]', workflow)
-        self.assertIn('[[ "$published_parent" == "$GITHUB_SHA" ]]', workflow)
-        self.assertIn('git diff --quiet HEAD "$published_sha"', workflow)
-        self.assertIn("published Star count does not match fetched count", workflow)
-        self.assertIn("grep -Fq \"cron: '17 3 1,16 * *'\"", workflow)
-
+        push_index = workflow.index('"HEAD:refs/heads/$update_branch"')
         create_index = workflow.index(
             'gh api --method POST "repos/$EXPECTED_REPOSITORY/pulls"'
         )
         files_index = workflow.index(
             '"repos/$EXPECTED_REPOSITORY/pulls/$pr_number/files?per_page=100"'
         )
-        merge_index = workflow.index(
-            'gh api --method PUT "repos/$EXPECTED_REPOSITORY/pulls/$pr_number/merge"'
+        revalidate_index = workflow.rindex("          validate_open_pr\n")
+        remote_head_index = workflow.rindex(
+            '"repos/$EXPECTED_REPOSITORY/git/ref/heads/$update_branch"'
         )
-        verify_index = workflow.index("- name: Verify published main without tokens")
-        delete_index = workflow.index(
-            'gh api --method DELETE "repos/$EXPECTED_REPOSITORY/git/refs/heads/$update_branch"'
-        )
+        summary_index = workflow.index("$GITHUB_STEP_SUMMARY")
+        self.assertLess(duplicate_guard_index, push_index)
+        self.assertLess(push_index, create_index)
         self.assertLess(create_index, files_index)
-        self.assertLess(files_index, merge_index)
-        self.assertLess(merge_index, verify_index)
-        self.assertLess(verify_index, delete_index)
+        self.assertLess(files_index, summary_index)
+        self.assertLess(files_index, revalidate_index)
+        self.assertLess(revalidate_index, remote_head_index)
+        self.assertLess(remote_head_index, summary_index)
 
 
 if __name__ == "__main__":
