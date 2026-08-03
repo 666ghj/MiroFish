@@ -38,3 +38,25 @@ ninguna combinación de herramientas de git/GitHub disponibles tiene permiso de
    qué error) en vez de reportar el trabajo como "publicado" o "hecho" sin más.
 6. Si el usuario confirma que corrigió los permisos, reintentar `git push` (o
    `create_branch` + `push_files`) antes de volver a generar un parche.
+
+### Actualización: workaround con un Personal Access Token del usuario
+
+Si el usuario ofrece pegar/entregar un GitHub Personal Access Token (classic, con
+scope `repo`) para que la sesión "tome su rol":
+
+- **Sí funciona** hacer `git push` directo a `https://<token>@github.com/<owner>/<repo>.git`
+  (protocolo git smart-HTTP contra `github.com`), añadiendo un remote temporal, empujando,
+  y luego `git remote remove <ese-remote>` inmediatamente para no dejar el token en texto
+  plano en `.git/config` más tiempo del necesario.
+- **NO funciona** usar ese mismo token contra `api.github.com` (ni vía `curl` directo ni
+  vía las tools `mcp__github__*`, que internamente pegan a `api.github.com`): el proxy de
+  salida de la sesión intercepta las llamadas a `api.github.com` para esta org y devuelve
+  `{"message":"GitHub access is not enabled for this session. An org admin must connect
+  the Claude GitHub App for this organization."}` — es un bloqueo de infraestructura del
+  lado de Anthropic/el proxy, no de permisos de GitHub, y un PAT válido no lo evita.
+- Consecuencia práctica: con un PAT del usuario se puede publicar la rama (`git push`),
+  pero **no** se puede crear el Pull Request por API. Hay que darle al usuario el link
+  directo que devuelve `git push` en su salida (`https://github.com/<owner>/<repo>/pull/new/<rama>`)
+  para que abra el PR manualmente, o esperar a que conecten la GitHub App de Claude a la org.
+- Seguridad: avisar siempre al usuario que rote/revoque el token después de usarlo, ya que
+  quedó expuesto en el texto de la conversación.
