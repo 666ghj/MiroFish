@@ -301,26 +301,40 @@ class SimulationManager:
                 defined_entity_types=defined_entity_types,
                 enrich_with_edges=True
             )
-            
-            state.entities_count = filtered.filtered_count
-            state.entity_types = list(filtered.entity_types)
-            
-            if progress_callback:
-                progress_callback(
-                    "reading", 100,
-                    t('progress.readingComplete', count=filtered.filtered_count),
-                    current=filtered.filtered_count,
-                    total=filtered.filtered_count
-                )
-            
+
             if filtered.filtered_count == 0:
                 state.status = SimulationStatus.FAILED
                 state.error = "没有找到符合条件的实体，请检查图谱是否正确构建"
                 self._save_simulation_state(state)
                 raise ValueError(state.error)
+
+            agent_entities = OasisProfileGenerator.filter_agent_persona_entities(
+                filtered.entities,
+                allow_group_accounts=False
+            )
+            
+            state.entities_count = len(agent_entities)
+            state.entity_types = sorted({
+                entity.get_entity_type() or "Unknown"
+                for entity in agent_entities
+            })
+            
+            if progress_callback:
+                progress_callback(
+                    "reading", 100,
+                    t('progress.readingComplete', count=len(agent_entities)),
+                    current=len(agent_entities),
+                    total=len(agent_entities)
+                )
+            
+            if not agent_entities:
+                state.status = SimulationStatus.FAILED
+                state.error = "没有找到可用于生成人设的个人实体，请检查图谱是否包含Person类实体"
+                self._save_simulation_state(state)
+                raise ValueError(state.error)
             
             # ========== 阶段2: 生成Agent Profile ==========
-            total_entities = len(filtered.entities)
+            total_entities = len(agent_entities)
             
             if progress_callback:
                 progress_callback(
@@ -355,13 +369,14 @@ class SimulationManager:
                 realtime_platform = "twitter"
             
             profiles = generator.generate_profiles_from_entities(
-                entities=filtered.entities,
+                entities=agent_entities,
                 use_llm=use_llm_for_profiles,
                 progress_callback=profile_progress,
                 graph_id=state.graph_id,  # 传入graph_id用于Zep检索
                 parallel_count=parallel_profile_count,  # 并行生成数量
                 realtime_output_path=realtime_output_path,  # 实时保存路径
-                output_platform=realtime_platform  # 输出格式
+                output_platform=realtime_platform,  # 输出格式
+                allow_group_accounts=False
             )
             
             state.profiles_count = len(profiles)
@@ -426,7 +441,7 @@ class SimulationManager:
                 graph_id=state.graph_id,
                 simulation_requirement=simulation_requirement,
                 document_text=document_text,
-                entities=filtered.entities,
+                entities=agent_entities,
                 enable_twitter=state.enable_twitter,
                 enable_reddit=state.enable_reddit
             )

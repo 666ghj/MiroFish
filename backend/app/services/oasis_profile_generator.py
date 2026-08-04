@@ -239,6 +239,57 @@ class OasisProfileGenerator:
         "university", "governmentagency", "organization", "ngo", 
         "mediaoutlet", "company", "institution", "group", "community"
     ]
+
+    @classmethod
+    def _normalize_entity_type(cls, entity_type: Optional[str]) -> str:
+        if not entity_type:
+            return ""
+        return "".join(ch for ch in entity_type.lower() if ch.isalnum())
+
+    @classmethod
+    def is_agent_persona_entity(
+        cls,
+        entity: EntityNode,
+        allow_group_accounts: bool = False
+    ) -> bool:
+        """Return whether a graph entity should be promoted into an agent."""
+        allowed_types = {
+            cls._normalize_entity_type(entity_type)
+            for entity_type in cls.INDIVIDUAL_ENTITY_TYPES
+        }
+        if allow_group_accounts:
+            allowed_types.update(
+                cls._normalize_entity_type(entity_type)
+                for entity_type in cls.GROUP_ENTITY_TYPES
+            )
+
+        labels = [
+            label for label in entity.labels
+            if label not in ["Entity", "Node"]
+        ]
+        entity_type = entity.get_entity_type()
+        if entity_type:
+            labels.insert(0, entity_type)
+
+        return any(
+            cls._normalize_entity_type(label) in allowed_types
+            for label in labels
+        )
+
+    @classmethod
+    def filter_agent_persona_entities(
+        cls,
+        entities: List[EntityNode],
+        allow_group_accounts: bool = False
+    ) -> List[EntityNode]:
+        """Filter graph entities down to nodes that can act as simulation agents."""
+        return [
+            entity for entity in entities
+            if cls.is_agent_persona_entity(
+                entity,
+                allow_group_accounts=allow_group_accounts
+            )
+        ]
     
     def __init__(
         self, 
@@ -900,7 +951,8 @@ class OasisProfileGenerator:
         graph_id: Optional[str] = None,
         parallel_count: int = 5,
         realtime_output_path: Optional[str] = None,
-        output_platform: str = "reddit"
+        output_platform: str = "reddit",
+        allow_group_accounts: bool = True
     ) -> List[OasisAgentProfile]:
         """
         批量从实体生成Agent Profile（支持并行生成）
@@ -913,6 +965,7 @@ class OasisProfileGenerator:
             parallel_count: 并行生成数量，默认5
             realtime_output_path: 实时写入的文件路径（如果提供，每生成一个就写入一次）
             output_platform: 输出平台格式 ("reddit" 或 "twitter")
+            allow_group_accounts: 是否允许机构/群体账号成为Agent
             
         Returns:
             Agent Profile列表
@@ -923,6 +976,19 @@ class OasisProfileGenerator:
         # 设置graph_id用于Zep检索
         if graph_id:
             self.graph_id = graph_id
+
+        original_count = len(entities)
+        entities = self.filter_agent_persona_entities(
+            entities,
+            allow_group_accounts=allow_group_accounts
+        )
+        if len(entities) != original_count:
+            logger.info(
+                "Agent人设实体过滤: 原始 %s, 可用 %s, 跳过 %s",
+                original_count,
+                len(entities),
+                original_count - len(entities),
+            )
         
         total = len(entities)
         profiles = [None] * total  # 预分配列表保持顺序
