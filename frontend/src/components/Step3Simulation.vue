@@ -398,75 +398,15 @@ const resetAllState = () => {
   stopPolling()  // 停止之前可能存在的轮询
 }
 
-const hasExistingRunData = (data) => {
-  if (!data) return false
-  const runnerStatus = data.runner_status
-  const actionsCount = Number(data.total_actions_count || 0)
-    + Number(data.twitter_actions_count || 0)
-    + Number(data.reddit_actions_count || 0)
-  return Boolean(data.started_at)
-    || actionsCount > 0
-    || ['starting', 'running', 'completed', 'stopped', 'paused', 'failed'].includes(runnerStatus)
-}
-
-const isActiveRun = (data) => {
-  return data?.runner_status === 'starting'
-    || data?.runner_status === 'running'
-    || data?.twitter_running
-    || data?.reddit_running
-}
-
-const restoreExistingRun = async (data) => {
-  runStatus.value = data
-  prevTwitterRound.value = data.twitter_current_round || 0
-  prevRedditRound.value = data.reddit_current_round || 0
-  await fetchRunStatusDetail()
-
-  if (isActiveRun(data)) {
-    phase.value = 1
-    emit('update-status', 'processing')
-    startStatusPolling()
-    startDetailPolling()
-    return
-  }
-
-  phase.value = 2
-  emit('update-status', data.runner_status === 'failed' ? 'error' : 'completed')
-  if (data.error) {
-    addLog(t('log.startFailed', { error: data.error }))
-  }
-}
-
-const initializeSimulationView = async () => {
-  if (!props.simulationId) {
-    addLog(t('log.errorMissingSimId'))
-    return
-  }
-
-  resetAllState()
-
-  try {
-    const res = await getRunStatus(props.simulationId)
-    if (res.success && hasExistingRunData(res.data)) {
-      await restoreExistingRun(res.data)
-      return
-    }
-  } catch (err) {
-    console.warn('恢复模拟运行状态失败:', err)
-  }
-
-  await doStartSimulation({ reset: false })
-}
-
 // 启动模拟
-const doStartSimulation = async ({ reset = true } = {}) => {
+const doStartSimulation = async () => {
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
   }
 
   // 先重置所有状态，确保不会受到上一次模拟的影响
-  if (reset) resetAllState()
+  resetAllState()
   
   isStarting.value = true
   startError.value = null
@@ -477,7 +417,7 @@ const doStartSimulation = async ({ reset = true } = {}) => {
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: false,
+      force: true,  // 强制重新开始
       enable_graph_memory_update: true  // 开启动态图谱更新
     }
     
@@ -774,7 +714,7 @@ watch(() => props.systemLogs?.length, () => {
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    initializeSimulationView()
+    doStartSimulation()
   }
 })
 
