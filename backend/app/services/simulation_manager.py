@@ -17,6 +17,7 @@ from ..utils.logger import get_logger
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
+from ..utils.locale import t
 
 logger = get_logger('mirofish.simulation')
 
@@ -27,6 +28,7 @@ class SimulationStatus(str, Enum):
     PREPARING = "preparing"
     READY = "ready"
     RUNNING = "running"
+    STOPPING = "stopping"
     PAUSED = "paused"
     STOPPED = "stopped"      # 模拟被手动停止
     COMPLETED = "completed"  # 模拟自然完成
@@ -59,6 +61,7 @@ class SimulationState:
     entity_types: List[str] = field(default_factory=list)
     
     # 配置生成信息
+    profiles_generated: bool = False
     config_generated: bool = False
     config_reasoning: str = ""
     
@@ -86,6 +89,7 @@ class SimulationState:
             "entities_count": self.entities_count,
             "profiles_count": self.profiles_count,
             "entity_types": self.entity_types,
+            "profiles_generated": self.profiles_generated,
             "config_generated": self.config_generated,
             "config_reasoning": self.config_reasoning,
             "current_round": self.current_round,
@@ -96,6 +100,15 @@ class SimulationState:
             "error": self.error,
         }
     
+    def get_default_platform(self) -> str:
+        """根据启用状态返回默认平台"""
+        if self.enable_twitter and self.enable_reddit:
+            return "reddit"  # 两者都启用时保持原默认
+        elif self.enable_twitter:
+            return "twitter"
+        else:
+            return "reddit"
+
     def to_simple_dict(self) -> Dict[str, Any]:
         """简化状态字典（API返回使用）"""
         return {
@@ -106,6 +119,7 @@ class SimulationState:
             "entities_count": self.entities_count,
             "profiles_count": self.profiles_count,
             "entity_types": self.entity_types,
+            "profiles_generated": self.profiles_generated,
             "config_generated": self.config_generated,
             "error": self.error,
         }
@@ -177,6 +191,7 @@ class SimulationManager:
             entities_count=data.get("entities_count", 0),
             profiles_count=data.get("profiles_count", 0),
             entity_types=data.get("entity_types", []),
+            profiles_generated=data.get("profiles_generated", False),
             config_generated=data.get("config_generated", False),
             config_reasoning=data.get("config_reasoning", ""),
             current_round=data.get("current_round", 0),
@@ -264,18 +279,22 @@ class SimulationManager:
         
         try:
             state.status = SimulationStatus.PREPARING
+            state.error = None
+            state.profiles_generated = False
+            state.config_generated = False
+            state.config_reasoning = ""
             self._save_simulation_state(state)
             
             sim_dir = self._get_simulation_dir(simulation_id)
             
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
-                progress_callback("reading", 0, "正在连接Zep图谱...")
+                progress_callback("reading", 0, t('progress.connectingZepGraph'))
             
             reader = ZepEntityReader()
             
             if progress_callback:
-                progress_callback("reading", 30, "正在读取节点数据...")
+                progress_callback("reading", 30, t('progress.readingNodeData'))
             
             filtered = reader.filter_defined_entities(
                 graph_id=state.graph_id,
@@ -288,8 +307,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "reading", 100, 
-                    f"完成，共 {filtered.filtered_count} 个实体",
+                    "reading", 100,
+                    t('progress.readingComplete', count=filtered.filtered_count),
                     current=filtered.filtered_count,
                     total=filtered.filtered_count
                 )
@@ -298,15 +317,15 @@ class SimulationManager:
                 state.status = SimulationStatus.FAILED
                 state.error = "没有找到符合条件的实体，请检查图谱是否正确构建"
                 self._save_simulation_state(state)
-                return state
+                raise ValueError(state.error)
             
             # ========== 阶段2: 生成Agent Profile ==========
             total_entities = len(filtered.entities)
             
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 0, 
-                    "开始生成...",
+                    "generating_profiles", 0,
+                    t('progress.startGenerating'),
                     current=0,
                     total=total_entities
                 )
@@ -346,13 +365,15 @@ class SimulationManager:
             )
             
             state.profiles_count = len(profiles)
+            state.profiles_generated = len(profiles) > 0
+            self._save_simulation_state(state)
             
             # 保存Profile文件（注意：Twitter使用CSV格式，Reddit使用JSON格式）
             # Reddit 已经在生成过程中实时保存了，这里再保存一次确保完整性
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 95, 
-                    "保存Profile文件...",
+                    "generating_profiles", 95,
+                    t('progress.savingProfiles'),
                     current=total_entities,
                     total=total_entities
                 )
@@ -374,8 +395,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 100, 
-                    f"完成，共 {len(profiles)} 个Profile",
+                    "generating_profiles", 100,
+                    t('progress.profilesComplete', count=len(profiles)),
                     current=len(profiles),
                     total=len(profiles)
                 )
@@ -383,8 +404,8 @@ class SimulationManager:
             # ========== 阶段3: LLM智能生成模拟配置 ==========
             if progress_callback:
                 progress_callback(
-                    "generating_config", 0, 
-                    "正在分析模拟需求...",
+                    "generating_config", 0,
+                    t('progress.analyzingRequirements'),
                     current=0,
                     total=3
                 )
@@ -393,8 +414,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_config", 30, 
-                    "正在调用LLM生成配置...",
+                    "generating_config", 30,
+                    t('progress.callingLLMConfig'),
                     current=1,
                     total=3
                 )
@@ -412,8 +433,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_config", 70, 
-                    "正在保存配置文件...",
+                    "generating_config", 70,
+                    t('progress.savingConfigFiles'),
                     current=2,
                     total=3
                 )
@@ -428,8 +449,8 @@ class SimulationManager:
             
             if progress_callback:
                 progress_callback(
-                    "generating_config", 100, 
-                    "配置生成完成",
+                    "generating_config", 100,
+                    t('progress.configComplete'),
                     current=3,
                     total=3
                 )
@@ -477,18 +498,33 @@ class SimulationManager:
         
         return simulations
     
-    def get_profiles(self, simulation_id: str, platform: str = "reddit") -> List[Dict[str, Any]]:
+    def get_profiles(self, simulation_id: str, platform: str = None) -> List[Dict[str, Any]]:
         """获取模拟的Agent Profile"""
         state = self._load_simulation_state(simulation_id)
         if not state:
             raise ValueError(f"模拟不存在: {simulation_id}")
-        
+
+        if platform is None:
+            platform = state.get_default_platform()
+
+        if platform not in {"twitter", "reddit"}:
+            raise ValueError(f"不支持的平台: {platform}")
+
         sim_dir = self._get_simulation_dir(simulation_id)
-        profile_path = os.path.join(sim_dir, f"{platform}_profiles.json")
+        profile_path = os.path.join(
+            sim_dir,
+            "twitter_profiles.csv" if platform == "twitter" else "reddit_profiles.json",
+        )
         
         if not os.path.exists(profile_path):
             return []
-        
+
+        if platform == "twitter":
+            import csv
+
+            with open(profile_path, 'r', encoding='utf-8', newline='') as f:
+                return list(csv.DictReader(f))
+
         with open(profile_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     

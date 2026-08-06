@@ -16,13 +16,64 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
-
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from ..utils.zep import (
+    call_zep_read_with_retry,
+    get_zep_client,
+    is_retryable_zep_error,
+    normalize_zep_search_query,
+)
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
+
+
+def _coerce_to_str(value: Any) -> str:
+    """Coerce a value to a plain string.
+
+    Handles dict, list, and other non-string types that may be returned
+    by LLM JSON parsing.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ('text', 'value', 'description', 'content', 'summary', 'name'):
+            if key in value:
+                candidate = _coerce_to_str(value[key])
+                if candidate:
+                    return candidate
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        str_items = [_coerce_to_str(item) for item in value]
+        str_items = [item for item in str_items if item]
+        return ', '.join(str_items)
+    return str(value)
+
+
+def _coerce_to_str_list(value: Any) -> List[str]:
+    """Coerce a value to a list of strings.
+
+    Handles nested structures that may be returned by LLM JSON parsing.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        result: List[str] = []
+        for item in value:
+            if isinstance(item, (list, tuple)):
+                result.extend(_coerce_to_str_list(item))
+            else:
+                text = _coerce_to_str(item)
+                if text:
+                    result.append(text)
+        return result
+    text = _coerce_to_str(value)
+    return [text] if text else []
 
 
 @dataclass
@@ -34,7 +85,7 @@ class OasisAgentProfile:
     name: str
     bio: str
     persona: str
-    
+
     # 可选字段 - Reddit风格
     karma: int = 1000
     
@@ -57,6 +108,18 @@ class OasisAgentProfile:
     
     created_at: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
     
+    def __post_init__(self):
+        """Normalize structured LLM fields once at the profile boundary."""
+        self.bio = _coerce_to_str(self.bio) or self.name
+        self.persona = _coerce_to_str(self.persona) or (
+            f"{self.name} is a participant in social discussions."
+        )
+        self.country = _coerce_to_str(self.country) or None
+        self.profession = _coerce_to_str(self.profession) or None
+        self.gender = _coerce_to_str(self.gender) or None
+        self.mbti = _coerce_to_str(self.mbti) or None
+        self.interested_topics = _coerce_to_str_list(self.interested_topics)
+
     def to_reddit_format(self) -> Dict[str, Any]:
         """转换为Reddit平台格式"""
         profile = {
@@ -204,7 +267,7 @@ class OasisProfileGenerator:
         
         if self.zep_api_key:
             try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
+                self.zep_client = get_zep_client(self.zep_api_key)
             except Exception as e:
                 logger.warning(f"Zep客户端初始化失败: {e}")
     
@@ -313,57 +376,35 @@ class OasisProfileGenerator:
             logger.debug(f"跳过Zep检索：未设置graph_id")
             return results
         
-        comprehensive_query = f"关于{entity_name}的所有信息、活动、事件、关系和背景"
+        comprehensive_query = normalize_zep_search_query(
+            t('progress.zepSearchQuery', name=entity_name)
+        )
         
         def search_edges():
             """搜索边（事实/关系）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
+            return call_zep_read_with_retry(
+                lambda: self.zep_client.graph.search(
                         query=comprehensive_query,
                         graph_id=self.graph_id,
                         limit=30,
                         scope="edges",
                         reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep边搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep边搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
+                ),
+                operation_name=f"profile edge search ({entity.uuid})",
+            )
         
         def search_nodes():
             """搜索节点（实体摘要）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
+            return call_zep_read_with_retry(
+                lambda: self.zep_client.graph.search(
                         query=comprehensive_query,
                         graph_id=self.graph_id,
                         limit=20,
                         scope="nodes",
                         reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep节点搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep节点搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
+                ),
+                operation_name=f"profile node search ({entity.uuid})",
+            )
         
         try:
             # 并行执行edges和nodes搜索
@@ -372,8 +413,11 @@ class OasisProfileGenerator:
                 node_future = executor.submit(search_nodes)
                 
                 # 获取结果
-                edge_result = edge_future.result(timeout=30)
-                node_result = node_future.result(timeout=30)
+                # Each request already has the configured HTTP timeout and
+                # typed retry budget. A second hard-coded 30s future timeout
+                # discarded late successes while the executor still waited.
+                edge_result = edge_future.result()
+                node_result = node_future.result()
             
             # 处理边搜索结果
             all_facts = set()
@@ -403,10 +447,10 @@ class OasisProfileGenerator:
             
             logger.info(f"Zep混合检索完成: {entity_name}, 获取 {len(results['facts'])} 条事实, {len(results['node_summaries'])} 个相关节点")
             
-        except concurrent.futures.TimeoutError:
-            logger.warning(f"Zep检索超时 ({entity_name})")
         except Exception as e:
             logger.warning(f"Zep检索失败 ({entity_name}): {e}")
+            if not is_retryable_zep_error(e):
+                raise
         
         return results
     
@@ -526,18 +570,19 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
+                    temperature=0.7 - (attempt * 0.1),  # 每次重试降低温度
                     # 不设置max_tokens，让LLM自由发挥
                 )
                 
-                content = response.choices[0].message.content
+                content = extract_chat_completion_text(response)
                 
                 # 检查是否被截断（finish_reason不是'stop'）
                 finish_reason = response.choices[0].finish_reason
@@ -670,8 +715,8 @@ class OasisProfileGenerator:
     
     def _get_system_prompt(self, is_individual: bool) -> str:
         """获取系统提示词"""
-        base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。使用中文。"
-        return base_prompt
+        base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
+        return f"{base_prompt}\n\n{get_language_instruction()}"
     
     def _build_individual_persona_prompt(
         self,
@@ -717,7 +762,7 @@ class OasisProfileGenerator:
 重要:
 - 所有字段值必须是字符串或数字，不要使用换行符
 - persona必须是一段连贯的文字描述
-- 使用中文（除了gender字段必须用英文male/female）
+- {get_language_instruction()} (gender字段必须用英文male/female)
 - 内容要与实体信息保持一致
 - age必须是有效的整数，gender必须是"male"或"female"
 """
@@ -766,7 +811,7 @@ class OasisProfileGenerator:
 重要:
 - 所有字段值必须是字符串或数字，不允许null值
 - persona必须是一段连贯的文字描述，不要使用换行符
-- 使用中文（除了gender字段必须用英文"other"）
+- {get_language_instruction()} (gender字段必须用英文"other")
 - age必须是整数30，gender必须是字符串"other"
 - 机构账号发言要符合其身份定位"""
     
@@ -915,8 +960,12 @@ class OasisProfileGenerator:
                 except Exception as e:
                     logger.warning(f"实时保存 profiles 失败: {e}")
         
+        # Capture locale before spawning thread pool workers
+        current_locale = get_locale()
+
         def generate_single_profile(idx: int, entity: EntityNode) -> tuple:
             """生成单个profile的工作函数"""
+            set_locale(current_locale)
             entity_type = entity.get_entity_type() or "Entity"
             
             try:
@@ -1017,7 +1066,7 @@ class OasisProfileGenerator:
         
         output_lines = [
             f"\n{separator}",
-            f"[已生成] {entity_name} ({entity_type})",
+            t('progress.profileGenerated', name=entity_name, type=entity_type),
             f"{separator}",
             f"用户名: {profile.user_name}",
             f"",
@@ -1163,8 +1212,8 @@ class OasisProfileGenerator:
                 "user_id": profile.user_id if profile.user_id is not None else idx,  # 关键：必须包含 user_id
                 "username": profile.user_name,
                 "name": profile.name,
-                "bio": profile.bio[:150] if profile.bio else f"{profile.name}",
-                "persona": profile.persona or f"{profile.name} is a participant in social discussions.",
+                "bio": profile.bio[:150],
+                "persona": profile.persona,
                 "karma": profile.karma if profile.karma else 1000,
                 "created_at": profile.created_at,
                 # OASIS必需字段 - 确保都有默认值
@@ -1197,4 +1246,3 @@ class OasisProfileGenerator:
         """[已废弃] 请使用 save_profiles() 方法"""
         logger.warning("save_profiles_to_json已废弃，请使用save_profiles方法")
         self.save_profiles(profiles, file_path, platform)
-

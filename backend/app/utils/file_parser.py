@@ -64,6 +64,20 @@ class FileParser:
     SUPPORTED_EXTENSIONS = {'.pdf', '.md', '.markdown', '.txt'}
     
     @classmethod
+    def is_supported(cls, file_path: str) -> bool:
+        """
+        检查文件是否为支持的格式
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            如果文件格式受支持则返回 True
+        """
+        suffix = Path(file_path).suffix.lower()
+        return suffix in cls.SUPPORTED_EXTENSIONS
+    
+    @classmethod
     def extract_text(cls, file_path: str) -> str:
         """
         从文件中提取文本

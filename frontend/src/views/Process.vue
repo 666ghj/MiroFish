@@ -686,13 +686,21 @@ const startBuildGraph = async () => {
     const response = await buildGraph({ project_id: currentProjectId.value })
     
     if (response.success) {
+      if (response.data.reused && response.data.graph_id) {
+        currentPhase.value = 2
+        buildProgress.value = null
+        const projectResponse = await getProject(currentProjectId.value)
+        if (projectResponse.success) {
+          projectData.value = projectResponse.data
+        }
+        await loadGraph(response.data.graph_id)
+        return
+      }
+
       buildProgress.value.message = '图谱构建任务已启动...'
       
       // 保存 task_id 用于轮询
       const taskId = response.data.task_id
-      
-      // 启动图谱数据轮询（独立于任务状态轮询）
-      startGraphPolling()
       
       // 启动任务状态轮询
       startPollingTask(taskId)
