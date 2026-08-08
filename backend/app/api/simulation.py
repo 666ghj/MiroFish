@@ -273,7 +273,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     
     检查条件：
     1. state.json 存在且 status 为 "ready"
-    2. 必要文件存在：reddit_profiles.json, twitter_profiles.csv, simulation_config.json
+    2. simulation_config.json 和已启用平台对应的 Profile 文件存在
     
     注意：运行脚本(run_*.py)保留在 backend/scripts/ 目录，不再复制到模拟目录
     
@@ -295,10 +295,26 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     # 必要文件列表（不包括脚本，脚本位于 backend/scripts/）
     required_files = [
         "state.json",
-        "simulation_config.json",
-        "reddit_profiles.json",
-        "twitter_profiles.csv"
+        "simulation_config.json"
     ]
+
+    # Profile文件仅在对应平台启用时生成。旧状态文件没有平台字段，
+    # 此时继续按双平台处理以保持向后兼容。
+    state_file = os.path.join(simulation_dir, "state.json")
+    platform_state = {}
+    if os.path.exists(state_file):
+        try:
+            import json
+            with open(state_file, 'r', encoding='utf-8') as f:
+                platform_state = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            # 保留后续原有的缺失文件和状态文件错误处理。
+            pass
+
+    if platform_state.get("enable_reddit", True):
+        required_files.append("reddit_profiles.json")
+    if platform_state.get("enable_twitter", True):
+        required_files.append("twitter_profiles.csv")
     
     # 检查文件是否存在
     existing_files = []
@@ -318,7 +334,6 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         }
     
     # 检查state.json中的状态
-    state_file = os.path.join(simulation_dir, "state.json")
     try:
         import json
         with open(state_file, 'r', encoding='utf-8') as f:
@@ -341,14 +356,19 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
         if status in prepared_statuses and config_generated:
             # 获取文件统计信息
-            profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
             config_file = os.path.join(simulation_dir, "simulation_config.json")
             
-            profiles_count = 0
-            if os.path.exists(profiles_file):
+            profiles_count = state_data.get("profiles_count", 0)
+            if state_data.get("enable_reddit", True):
+                profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
                 with open(profiles_file, 'r', encoding='utf-8') as f:
                     profiles_data = json.load(f)
                     profiles_count = len(profiles_data) if isinstance(profiles_data, list) else 0
+            elif state_data.get("enable_twitter", True):
+                import csv
+                profiles_file = os.path.join(simulation_dir, "twitter_profiles.csv")
+                with open(profiles_file, 'r', encoding='utf-8', newline='') as f:
+                    profiles_count = sum(1 for _ in csv.DictReader(f))
             
             # 如果状态是preparing但文件已完成，自动更新状态为ready
             if status == "preparing":
