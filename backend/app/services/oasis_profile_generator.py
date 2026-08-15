@@ -272,31 +272,35 @@ class OasisProfileGenerator:
                 logger.warning(f"Zep客户端初始化失败: {e}")
     
     def generate_profile_from_entity(
-        self, 
-        entity: EntityNode, 
+        self,
+        entity: EntityNode,
         user_id: int,
-        use_llm: bool = True
+        use_llm: bool = True,
+        stance: str = "neutral",
+        sentiment_bias: float = 0.0
     ) -> OasisAgentProfile:
         """
         从Zep实体生成OASIS Agent Profile
-        
+
         Args:
             entity: Zep实体节点
             user_id: 用户ID（用于OASIS）
             use_llm: 是否使用LLM生成详细人设
-            
+            stance: 该Agent对模拟话题的立场（supportive/opposing/neutral/observer）
+            sentiment_bias: 情感倾向（-1.0负面 到 1.0正面）
+
         Returns:
             OasisAgentProfile
         """
         entity_type = entity.get_entity_type() or "Entity"
-        
+
         # 基础信息
         name = entity.name
         user_name = self._generate_username(name)
-        
+
         # 构建上下文信息
         context = self._build_entity_context(entity)
-        
+
         if use_llm:
             # 使用LLM生成详细人设
             profile_data = self._generate_profile_with_llm(
@@ -304,7 +308,9 @@ class OasisProfileGenerator:
                 entity_type=entity_type,
                 entity_summary=entity.summary,
                 entity_attributes=entity.attributes,
-                context=context
+                context=context,
+                stance=stance,
+                sentiment_bias=sentiment_bias
             )
         else:
             # 使用规则生成基础人设
@@ -543,25 +549,28 @@ class OasisProfileGenerator:
         entity_type: str,
         entity_summary: str,
         entity_attributes: Dict[str, Any],
-        context: str
+        context: str,
+        stance: str = "neutral",
+        sentiment_bias: float = 0.0
     ) -> Dict[str, Any]:
         """
         使用LLM生成非常详细的人设
-        
+
         根据实体类型区分：
         - 个人实体：生成具体的人物设定
         - 群体/机构实体：生成代表性账号设定
         """
-        
         is_individual = self._is_individual_entity(entity_type)
-        
+
         if is_individual:
             prompt = self._build_individual_persona_prompt(
-                entity_name, entity_type, entity_summary, entity_attributes, context
+                entity_name, entity_type, entity_summary, entity_attributes, context,
+                stance=stance, sentiment_bias=sentiment_bias
             )
         else:
             prompt = self._build_group_persona_prompt(
-                entity_name, entity_type, entity_summary, entity_attributes, context
+                entity_name, entity_type, entity_summary, entity_attributes, context,
+                stance=stance, sentiment_bias=sentiment_bias
             )
 
         # 尝试多次生成，直到成功或达到最大重试次数
@@ -724,13 +733,15 @@ class OasisProfileGenerator:
         entity_type: str,
         entity_summary: str,
         entity_attributes: Dict[str, Any],
-        context: str
+        context: str,
+        stance: str = "neutral",
+        sentiment_bias: float = 0.0
     ) -> str:
-        """构建个人实体的详细人设提示词"""
-        
+        """构建个人实体的详细人设提示词（stance/sentiment_bias 注入人设文本）"""
+
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
-        
+
         return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
@@ -741,6 +752,10 @@ class OasisProfileGenerator:
 上下文信息:
 {context_str}
 
+立场与情感设定（必须体现在人设中）:
+- stance: {stance}（对模拟话题的立场）
+- sentiment_bias: {sentiment_bias}（情感倾向，-1.0负面 到 1.0正面）
+
 请生成JSON，包含以下字段:
 
 1. bio: 社交媒体简介，200字
@@ -749,7 +764,7 @@ class OasisProfileGenerator:
    - 人物背景（重要经历、与事件的关联、社会关系）
    - 性格特征（MBTI类型、核心性格、情绪表达方式）
    - 社交媒体行为（发帖频率、内容偏好、互动风格、语言特点）
-   - 立场观点（对话题的态度、可能被激怒/感动的内容）
+   - 立场观点（对话题的态度、可能被激怒/感动的内容；**必须明确表达设定的 stance={stance} 与情感倾向 sentiment_bias={sentiment_bias}**）
    - 独特特征（口头禅、特殊经历、个人爱好）
    - 个人记忆（人设的重要部分，要介绍这个个体与事件的关联，以及这个个体在事件中的已有动作与反应）
 3. age: 年龄数字（必须是整数）
@@ -773,13 +788,15 @@ class OasisProfileGenerator:
         entity_type: str,
         entity_summary: str,
         entity_attributes: Dict[str, Any],
-        context: str
+        context: str,
+        stance: str = "neutral",
+        sentiment_bias: float = 0.0
     ) -> str:
-        """构建群体/机构实体的详细人设提示词"""
-        
+        """构建群体/机构实体的详细人设提示词（stance/sentiment_bias 注入人设文本）"""
+
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
-        
+
         return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
@@ -790,6 +807,10 @@ class OasisProfileGenerator:
 上下文信息:
 {context_str}
 
+立场与情感设定（必须体现在人设中）:
+- stance: {stance}（对模拟话题的立场）
+- sentiment_bias: {sentiment_bias}（情感倾向，-1.0负面 到 1.0正面）
+
 请生成JSON，包含以下字段:
 
 1. bio: 官方账号简介，200字，专业得体
@@ -798,7 +819,7 @@ class OasisProfileGenerator:
    - 账号定位（账号类型、目标受众、核心功能）
    - 发言风格（语言特点、常用表达、禁忌话题）
    - 发布内容特点（内容类型、发布频率、活跃时间段）
-   - 立场态度（对核心话题的官方立场、面对争议的处理方式）
+   - 立场态度（对核心话题的官方立场、面对争议的处理方式；**必须明确表达设定的 stance={stance} 与情感倾向 sentiment_bias={sentiment_bias}**）
    - 特殊说明（代表的群体画像、运营习惯）
    - 机构记忆（机构人设的重要部分，要介绍这个机构与事件的关联，以及这个机构在事件中的已有动作与反应）
 3. age: 固定填30（机构账号的虚拟年龄）
@@ -900,11 +921,12 @@ class OasisProfileGenerator:
         graph_id: Optional[str] = None,
         parallel_count: int = 5,
         realtime_output_path: Optional[str] = None,
-        output_platform: str = "reddit"
+        output_platform: str = "reddit",
+        agent_activity_map: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> List[OasisAgentProfile]:
         """
         批量从实体生成Agent Profile（支持并行生成）
-        
+
         Args:
             entities: 实体列表
             use_llm: 是否使用LLM生成详细人设
@@ -913,7 +935,9 @@ class OasisProfileGenerator:
             parallel_count: 并行生成数量，默认5
             realtime_output_path: 实时写入的文件路径（如果提供，每生成一个就写入一次）
             output_platform: 输出平台格式 ("reddit" 或 "twitter")
-            
+            agent_activity_map: 按实体名称索引的活动配置（含 stance / sentiment_bias），
+                用于把每个 Agent 的立场与情感倾向注入人设；未提供时使用中性默认值
+
         Returns:
             Agent Profile列表
         """
@@ -967,12 +991,17 @@ class OasisProfileGenerator:
             """生成单个profile的工作函数"""
             set_locale(current_locale)
             entity_type = entity.get_entity_type() or "Entity"
-            
+
+            # 查找该实体的立场与情感倾向（未提供时使用中性默认值）
+            activity = (agent_activity_map or {}).get(entity.name, {}) or {}
+
             try:
                 profile = self.generate_profile_from_entity(
                     entity=entity,
                     user_id=idx,
-                    use_llm=use_llm
+                    use_llm=use_llm,
+                    stance=activity.get("stance", "neutral"),
+                    sentiment_bias=activity.get("sentiment_bias", 0.0)
                 )
                 
                 # 实时输出生成的人设到控制台和日志

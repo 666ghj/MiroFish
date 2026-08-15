@@ -591,6 +591,14 @@ class RedditSimulationRunner:
         # 执行初始事件
         event_config = self.config.get("event_config", {})
         initial_posts = event_config.get("initial_posts", [])
+        # 读取定时事件并按轮次分组（轮次为 1 基：第 1 轮对应首个循环迭代）
+        scheduled_events = event_config.get("scheduled_events", [])
+        events_by_round: Dict[int, List[Dict[str, Any]]] = {}
+        for ev in scheduled_events:
+            try:
+                events_by_round.setdefault(int(ev.get("round", 0)), []).append(ev)
+            except (TypeError, ValueError):
+                print(f"  警告: 定时事件轮次无效，已跳过: {ev}")
         
         if initial_posts:
             print(f"执行初始事件 ({len(initial_posts)}条初始帖子)...")
@@ -627,7 +635,34 @@ class RedditSimulationRunner:
             simulated_minutes = round_num * minutes_per_round
             simulated_hour = (simulated_minutes // 60) % 24
             simulated_day = simulated_minutes // (60 * 24) + 1
-            
+
+            # 触发本轮的定时事件（在活跃 Agent 决策之前发布）
+            round_events = events_by_round.pop(round_num + 1, [])
+            if round_events:
+                event_actions = {}
+                for ev in round_events:
+                    agent_id = ev.get("poster_agent_id", 0)
+                    content = ev.get("content", "")
+                    try:
+                        agent = self.env.agent_graph.get_agent(agent_id)
+                        if agent in event_actions:
+                            if not isinstance(event_actions[agent], list):
+                                event_actions[agent] = [event_actions[agent]]
+                            event_actions[agent].append(ManualAction(
+                                action_type=ActionType.CREATE_POST,
+                                action_args={"content": content}
+                            ))
+                        else:
+                            event_actions[agent] = ManualAction(
+                                action_type=ActionType.CREATE_POST,
+                                action_args={"content": content}
+                            )
+                    except Exception as e:
+                        print(f"  警告: 无法为Agent {agent_id}创建定时事件帖子: {e}")
+                if event_actions:
+                    await self.env.step(event_actions)
+                    print(f"  第 {round_num + 1} 轮触发 {len(round_events)} 条定时事件")
+
             active_agents = self._get_active_agents_for_round(
                 self.env, simulated_hour, round_num
             )

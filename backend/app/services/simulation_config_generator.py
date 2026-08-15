@@ -689,6 +689,7 @@ class SimulationConfigGenerator:
 - 提取热点话题关键词
 - 描述舆论发展方向
 - 设计初始帖子内容，**每个帖子必须指定 poster_type（发布者类型）**
+- 设计若干需要在模拟中途发布的定时事件（scheduled_events），**每个事件的 round 必须落在模拟轮次范围内（不早于第1轮，不晚于最大轮次）**
 
 **重要**: poster_type 必须从上面的"可用实体类型"中选择，这样初始帖子才能分配给合适的 Agent 发布。
 例如：官方声明应由 Official/University 类型发布，新闻由 MediaOutlet 发布，学生观点由 Student 发布。
@@ -699,6 +700,10 @@ class SimulationConfigGenerator:
     "narrative_direction": "<舆论发展方向描述>",
     "initial_posts": [
         {{"content": "帖子内容", "poster_type": "实体类型（必须从可用类型中选择）"}},
+        ...
+    ],
+    "scheduled_events": [
+        {{"round": <轮次编号>, "content": "帖子内容", "poster_type": "实体类型（必须从可用类型中选择）"}},
         ...
     ],
     "reasoning": "<简要说明>"
@@ -715,6 +720,8 @@ class SimulationConfigGenerator:
                 "hot_topics": [],
                 "narrative_direction": "",
                 "initial_posts": [],
+                # 保持 fallback 与正常路径的字典结构一致（含定时事件）
+                "scheduled_events": [],
                 "reasoning": "使用默认配置"
             }
     
@@ -722,32 +729,35 @@ class SimulationConfigGenerator:
         """解析事件配置结果"""
         return EventConfig(
             initial_posts=result.get("initial_posts", []),
-            scheduled_events=[],
+            # 不再丢弃 LLM 生成的定时事件，缺省为空列表
+            scheduled_events=result.get("scheduled_events", []),
             hot_topics=result.get("hot_topics", []),
             narrative_direction=result.get("narrative_direction", "")
         )
     
-    def _assign_initial_post_agents(
+    def _assign_agents_to_posts(
         self,
-        event_config: EventConfig,
-        agent_configs: List[AgentActivityConfig]
-    ) -> EventConfig:
+        posts: List[Dict[str, Any]],
+        agent_configs: List[AgentActivityConfig],
+        agents_by_type: Optional[Dict[str, List[AgentActivityConfig]]] = None,
+        used_indices: Optional[Dict[str, int]] = None
+    ) -> List[Dict[str, Any]]:
         """
-        为初始帖子分配合适的发布者 Agent
-        
-        根据每个帖子的 poster_type 匹配最合适的 agent_id
+        为任意帖子列表分配合适的发布者 Agent（初始帖子与定时事件共用）
+
+        根据每个帖子的 poster_type 匹配最合适的 agent_id。
+        agents_by_type / used_indices 可由调用方传入，使多次调用之间
+        共享类型索引与防重复计数；未传入时在本调用内自行构建。
         """
-        if not event_config.initial_posts:
-            return event_config
-        
-        # 按实体类型建立 agent 索引
-        agents_by_type: Dict[str, List[AgentActivityConfig]] = {}
-        for agent in agent_configs:
-            etype = agent.entity_type.lower()
-            if etype not in agents_by_type:
-                agents_by_type[etype] = []
-            agents_by_type[etype].append(agent)
-        
+        if agents_by_type is None:
+            # 按实体类型建立 agent 索引
+            agents_by_type = {}
+            for agent in agent_configs:
+                etype = agent.entity_type.lower()
+                if etype not in agents_by_type:
+                    agents_by_type[etype] = []
+                agents_by_type[etype].append(agent)
+
         # 类型映射表（处理 LLM 可能输出的不同格式）
         type_aliases = {
             "official": ["official", "university", "governmentagency", "government"],
@@ -759,18 +769,19 @@ class SimulationConfigGenerator:
             "organization": ["organization", "ngo", "company", "group"],
             "person": ["person", "student", "alumni"],
         }
-        
-        # 记录每种类型已使用的 agent 索引，避免重复使用同一个 agent
-        used_indices: Dict[str, int] = {}
-        
+
+        if used_indices is None:
+            # 记录每种类型已使用的 agent 索引，避免重复使用同一个 agent
+            used_indices = {}
+
         updated_posts = []
-        for post in event_config.initial_posts:
+        for post in posts:
             poster_type = post.get("poster_type", "").lower()
             content = post.get("content", "")
-            
+
             # 尝试找到匹配的 agent
             matched_agent_id = None
-            
+
             # 1. 直接匹配
             if poster_type in agents_by_type:
                 agents = agents_by_type[poster_type]
@@ -790,7 +801,7 @@ class SimulationConfigGenerator:
                                 break
                     if matched_agent_id is not None:
                         break
-            
+
             # 3. 如果仍未找到，使用影响力最高的 agent
             if matched_agent_id is None:
                 logger.warning(f"未找到类型 '{poster_type}' 的匹配 Agent，使用影响力最高的 Agent")
@@ -800,16 +811,58 @@ class SimulationConfigGenerator:
                     matched_agent_id = sorted_agents[0].agent_id
                 else:
                     matched_agent_id = 0
-            
-            updated_posts.append({
+
+            updated_post = {
                 "content": content,
                 "poster_type": post.get("poster_type", "Unknown"),
                 "poster_agent_id": matched_agent_id
-            })
-            
-            logger.info(f"初始帖子分配: poster_type='{poster_type}' -> agent_id={matched_agent_id}")
-        
-        event_config.initial_posts = updated_posts
+            }
+            # 定时事件需保留其轮次信息
+            if "round" in post:
+                updated_post["round"] = post["round"]
+
+            updated_posts.append(updated_post)
+
+            logger.info(f"帖子分配: poster_type='{poster_type}' -> agent_id={matched_agent_id}")
+
+        return updated_posts
+
+    def _assign_initial_post_agents(
+        self,
+        event_config: EventConfig,
+        agent_configs: List[AgentActivityConfig]
+    ) -> EventConfig:
+        """
+        为初始帖子与定时事件分配合适的发布者 Agent
+
+        两个列表共享同一类型索引与防重复计数，避免同一 Agent 被重复分配
+        """
+        if not event_config.initial_posts and not event_config.scheduled_events:
+            return event_config
+
+        # 按实体类型建立 agent 索引（初始帖子与定时事件共享）
+        agents_by_type: Dict[str, List[AgentActivityConfig]] = {}
+        for agent in agent_configs:
+            etype = agent.entity_type.lower()
+            if etype not in agents_by_type:
+                agents_by_type[etype] = []
+            agents_by_type[etype].append(agent)
+
+        # 已用索引同样跨两个列表共享
+        used_indices: Dict[str, int] = {}
+
+        event_config.initial_posts = self._assign_agents_to_posts(
+            event_config.initial_posts,
+            agent_configs,
+            agents_by_type=agents_by_type,
+            used_indices=used_indices
+        )
+        event_config.scheduled_events = self._assign_agents_to_posts(
+            event_config.scheduled_events,
+            agent_configs,
+            agents_by_type=agents_by_type,
+            used_indices=used_indices
+        )
         return event_config
     
     def _generate_agent_configs_batch(
