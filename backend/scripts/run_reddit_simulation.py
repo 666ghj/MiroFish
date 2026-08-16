@@ -599,7 +599,13 @@ class RedditSimulationRunner:
                 events_by_round.setdefault(int(ev.get("round", 0)), []).append(ev)
             except (TypeError, ValueError):
                 print(f"  警告: 定时事件轮次无效，已跳过: {ev}")
-        
+        # 超出实际轮数的事件永远不会触发（total_rounds 可能已被 max_rounds 截断）：
+        # 明确告警，不要静默丢弃
+        out_of_range = sorted(r for r in events_by_round if r < 1 or r > total_rounds)
+        if out_of_range:
+            print(f"  警告: {len(out_of_range)} 条定时事件的轮次超出实际模拟轮数 "
+                  f"(total_rounds={total_rounds})，将不会触发: {out_of_range}")
+
         if initial_posts:
             print(f"执行初始事件 ({len(initial_posts)}条初始帖子)...")
             initial_actions = {}
