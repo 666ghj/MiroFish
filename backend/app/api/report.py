@@ -3,9 +3,11 @@ Report API路由
 提供模拟报告生成、获取、对话等接口
 """
 
+import json
 import os
 import traceback
 import threading
+from io import BytesIO
 from flask import request, jsonify, send_file
 
 from . import report_bp
@@ -517,40 +519,61 @@ def list_reports():
 @report_bp.route('/<report_id>/download', methods=['GET'])
 def download_report(report_id: str):
     """
-    下载报告（Markdown格式）
-    
-    返回Markdown文件
+    下载报告（Markdown或JSON格式）
+
+    Query参数：
+        format: 下载格式，支持 "markdown"（默认）或 "json"
+
+    返回对应格式的文件
     """
     try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
-        md_path = ReportManager._get_report_markdown_path(report_id)
-        
-        if not os.path.exists(md_path):
-            # 如果MD文件不存在，生成一个临时文件
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                f.write(report.markdown_content)
-                temp_path = f.name
-            
+
+        download_format = request.args.get('format', 'markdown').lower()
+
+        if download_format not in {'markdown', 'json'}:
+            return jsonify({
+                "success": False,
+                "error": "Unsupported report format. Use 'markdown' or 'json'."
+            }), 400
+
+        if download_format == 'json':
+            report_json = json.dumps(
+                report.to_dict(),
+                ensure_ascii=False,
+                indent=2
+            ).encode('utf-8')
+
             return send_file(
-                temp_path,
+                BytesIO(report_json),
                 as_attachment=True,
-                download_name=f"{report_id}.md"
+                download_name=f"{report_id}.json",
+                mimetype='application/json'
             )
-        
+
+        # Default: markdown format
+        md_path = ReportManager._get_report_markdown_path(report_id)
+
+        if not os.path.exists(md_path):
+            return send_file(
+                BytesIO(report.markdown_content.encode('utf-8')),
+                as_attachment=True,
+                download_name=f"{report_id}.md",
+                mimetype='text/markdown'
+            )
+
         return send_file(
             md_path,
             as_attachment=True,
             download_name=f"{report_id}.md"
         )
-        
+
     except Exception as e:
         logger.error(f"下载报告失败: {str(e)}")
         return jsonify({
