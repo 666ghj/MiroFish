@@ -564,6 +564,24 @@ const initProject = async () => {
   }
 }
 
+const formatProjectInitError = (err) => {
+  if (!err) return '未知错误'
+
+  if (err.code === 'ECONNABORTED' || String(err.message || '').includes('timeout')) {
+    return '请求超时（5分钟），请尝试减小文档体积或检查后端模型响应速度'
+  }
+
+  if (err.message === 'Network Error') {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'
+    return `无法连接后端服务（${apiBase}）。请检查后端是否已启动、跨域/反向代理配置及服务器网络连通性`
+  }
+
+  const backendMessage = err.response?.data?.error || err.response?.data?.message
+  if (backendMessage) return backendMessage
+
+  return err.message || '未知错误'
+}
+
 // 处理新建项目 - 调用 ontology/generate API
 const handleNewProject = async () => {
   const pending = getPendingUpload()
@@ -612,7 +630,7 @@ const handleNewProject = async () => {
     }
   } catch (err) {
     console.error('Handle new project error:', err)
-    error.value = '项目初始化失败: ' + (err.message || '未知错误')
+    error.value = '项目初始化失败: ' + formatProjectInitError(err)
   } finally {
     loading.value = false
   }
