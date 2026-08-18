@@ -2,8 +2,21 @@ import axios from 'axios'
 import i18n from '../i18n'
 
 // 创建axios实例
+// 优先级: VITE_API_BASE_URL > 生产环境相对路径 > 开发环境localhost
+const getBaseURL = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL
+  }
+  // 生产环境使用相对路径（同源部署）
+  if (import.meta.env.PROD) {
+    return ''  // 相对路径，使用当前域名
+  }
+  // 开发环境默认localhost
+  return 'http://localhost:5001'
+}
+
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001',
+  baseURL: getBaseURL(),
   timeout: 300000, // 5分钟超时（本体生成可能需要较长时间）
   headers: {
     'Content-Type': 'application/json'
