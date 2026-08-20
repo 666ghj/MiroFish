@@ -518,6 +518,7 @@ class SimulationRunner:
                 sys.executable,  # Python解释器
                 script_path,
                 "--config", config_path,  # 使用完整配置文件路径
+                "--no-wait",  # 模拟主循环完成后进程自然退出，避免 API 启动的模拟常驻内存
             ]
             
             # 如果指定了最大轮数，添加到命令行参数
