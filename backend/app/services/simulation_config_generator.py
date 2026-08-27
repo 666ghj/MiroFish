@@ -227,9 +227,12 @@ class SimulationConfigGenerator:
         base_url: Optional[str] = None,
         model_name: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
+        from .model_router import ModelRouter
+        from ..models.model_config import ModelRole
+        resolved = ModelRouter().resolve(ModelRole.HIGH_CAPABILITY)
+        self.api_key = api_key or resolved.get('api_key') or Config.LLM_API_KEY
+        self.base_url = base_url or resolved.get('base_url') or Config.LLM_BASE_URL
+        self.model_name = model_name or resolved.get('model') or Config.LLM_MODEL_NAME
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -984,4 +987,3 @@ class SimulationConfigGenerator:
                 "influence_weight": 1.0
             }
     
-

@@ -46,6 +46,7 @@ services:
       start_period: 30s
     restart: unless-stopped
     mem_limit: 512m
+    profiles: ["official-codex"]
 
   web:
     build:
@@ -76,11 +77,7 @@ services:
     depends_on:
       direct-oauth-gateway:
         condition: service_healthy
-      codex-gateway:
-        condition: service_healthy
       neo4j:
-        condition: service_healthy
-      embedding:
         condition: service_healthy
     healthcheck:
       test:
@@ -124,6 +121,8 @@ services:
 
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    platform: linux/amd64
+    profiles: ["bundled-embedding"]
     container_name: mirofish-embedding
     command:
       - --model-id

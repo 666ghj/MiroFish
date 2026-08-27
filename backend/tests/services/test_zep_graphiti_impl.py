@@ -157,6 +157,8 @@ def test_llm_ignores_dedicated_embedding_environment(monkeypatch):
     monkeypatch.setenv("GRAPHITI_EMBEDDING_API_KEY", "local-key")
     monkeypatch.setenv("GRAPHITI_EMBEDDING_BASE_URL", "http://embedding:80/v1")
     monkeypatch.setenv("GRAPHITI_LLM_MODEL", "deepseek-v4-flash")
+    monkeypatch.delenv("GRAPHITI_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("GRAPHITI_LLM_BASE_URL", raising=False)
 
     graphiti_client, captured = _load_graphiti_client(monkeypatch)
     client = graphiti_client.__new__(graphiti_client)
@@ -189,6 +191,8 @@ def test_deepseek_base_url_selects_compatible_client(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "deepseek-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
     monkeypatch.setenv("GRAPHITI_LLM_MODEL", "deepseek-v4-flash")
+    monkeypatch.delenv("GRAPHITI_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("GRAPHITI_LLM_BASE_URL", raising=False)
 
     graphiti_client, _ = _load_graphiti_client(monkeypatch)
     client = graphiti_client.__new__(graphiti_client)

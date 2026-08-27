@@ -54,7 +54,13 @@ def create_app(config_class=Config):
         logger = get_logger('mirofish.request')
         logger.debug(f"请求: {request.method} {request.path}")
         if request.content_type and 'json' in request.content_type:
-            logger.debug(f"请求体: {request.get_json(silent=True)}")
+            body = request.get_json(silent=True)
+            if isinstance(body, dict):
+                body = {
+                    key: "[REDACTED]" if key.lower() in {"api_key", "token", "secret"} else value
+                    for key, value in body.items()
+                }
+            logger.debug(f"请求体: {body}")
     
     @app.after_request
     def log_response(response):
@@ -63,10 +69,11 @@ def create_app(config_class=Config):
         return response
     
     # 注册蓝图
-    from .api import graph_bp, simulation_bp, report_bp
+    from .api import graph_bp, simulation_bp, report_bp, model_settings_bp
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
+    app.register_blueprint(model_settings_bp, url_prefix='/api/settings/models')
     
     # 健康检查
     @app.route('/health')
@@ -77,4 +84,3 @@ def create_app(config_class=Config):
         logger.info("MiroFish Backend 启动完成")
     
     return app
-

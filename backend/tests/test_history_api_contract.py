@@ -10,6 +10,8 @@ def test_task_list_supports_status_and_bounded_limit():
     assert "TaskStatus(status)" in graph_api
     assert "max(1, min(limit, 500))" in graph_api
     assert "list_tasks(status=status, limit=limit)" in graph_api
+    assert '"data": tasks' in graph_api
+    assert '[t.to_dict() for t in tasks]' not in graph_api
 
 
 def test_graph_and_report_tasks_include_project_metadata():

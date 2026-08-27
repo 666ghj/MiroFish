@@ -41,7 +41,9 @@
           :graphData="graphData"
           :loading="graphLoading"
           :currentPhase="currentPhase"
+          :realtimeEnabled="graphRealtimeEnabled"
           @refresh="refreshGraph"
+          @toggle-realtime="toggleGraphRealtime"
           @toggle-maximize="toggleMaximize('graph')"
         />
       </div>
@@ -75,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
@@ -104,6 +106,7 @@ const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
+const graphRealtimeEnabled = ref(true)
 
 // Polling timers
 let pollTimer = null
@@ -290,6 +293,11 @@ const startBuildGraph = async () => {
 }
 
 const startGraphPolling = () => {
+  if (!graphRealtimeEnabled.value) {
+    addLog('Graph real-time updates are paused; task progress polling continues.')
+    return
+  }
+  if (graphPollTimer) return
   addLog('Started polling for graph data...')
   fetchGraphData()
   graphPollTimer = setInterval(fetchGraphData, 10000)
@@ -345,6 +353,7 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
+        stopGraphPolling()
         error.value = task.error
         addLog(`Graph build task failed: ${task.error}`)
       }
@@ -378,6 +387,32 @@ const refreshGraph = () => {
     loadGraph(projectData.value.graph_id)
   }
 }
+
+const graphRealtimeStorageKey = () => `mirofish:graph-realtime:${currentProjectId.value}`
+
+const loadGraphRealtimePreference = () => {
+  if (!currentProjectId.value || currentProjectId.value === 'new') {
+    graphRealtimeEnabled.value = true
+    return
+  }
+  graphRealtimeEnabled.value = localStorage.getItem(graphRealtimeStorageKey()) !== 'false'
+}
+
+const toggleGraphRealtime = () => {
+  graphRealtimeEnabled.value = !graphRealtimeEnabled.value
+  if (currentProjectId.value && currentProjectId.value !== 'new') {
+    localStorage.setItem(graphRealtimeStorageKey(), String(graphRealtimeEnabled.value))
+  }
+  if (graphRealtimeEnabled.value) {
+    addLog('Graph real-time updates resumed.')
+    startGraphPolling()
+  } else {
+    stopGraphPolling()
+    addLog('Graph real-time updates paused; task progress polling continues.')
+  }
+}
+
+watch(currentProjectId, loadGraphRealtimePreference, { immediate: true })
 
 const stopPolling = () => {
   if (pollTimer) {
@@ -431,6 +466,9 @@ onUnmounted(() => {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .brand {

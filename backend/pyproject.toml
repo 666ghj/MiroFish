@@ -15,6 +15,7 @@ dependencies = [
 
     # LLM 相关
     "openai>=1.0.0",
+    "cryptography>=46.0.0",
 
     # Zep Cloud (默认后端)
     "zep-cloud==3.13.0",

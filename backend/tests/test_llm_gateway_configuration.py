@@ -21,12 +21,12 @@ def test_text_llm_uses_gateway_while_embedding_stays_local():
     assert values["FALLBACK_LLM_BASE_URL"] == "https://api.deepseek.com"
 
 
-def test_backend_depends_on_healthy_gateway():
+def test_backend_depends_on_healthy_direct_gateway():
     path = Path(__file__).resolve().parents[2] / "docker-compose.production.yml"
     compose = path.read_text()
     backend_section = compose.split("\n  backend:\n", 1)[1].split("\n  neo4j:", 1)[0]
 
-    assert "codex-gateway:" in backend_section
+    assert "direct-oauth-gateway:" in backend_section
     assert "condition: service_healthy" in backend_section
 
 
@@ -39,10 +39,10 @@ def test_gateway_has_threads_for_queue_and_health_checks():
     assert values["GRAPHITI_OPERATION_TIMEOUT_SECONDS"] == "3600"
 
 
-def test_graph_build_batch_size_is_configurable_for_codex():
+def test_graph_build_batch_size_restores_three_way_throughput():
     root = Path(__file__).resolve().parents[2]
     graph_api = (root / "backend" / "app" / "api" / "graph.py").read_text()
     values = _read_env_template()
 
     assert "batch_size=Config.GRAPH_BUILD_BATCH_SIZE" in graph_api
-    assert values["GRAPH_BUILD_BATCH_SIZE"] == "1"
+    assert values["GRAPH_BUILD_BATCH_SIZE"] == "3"

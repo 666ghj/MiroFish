@@ -4,10 +4,16 @@
       <span class="panel-title">Graph Relationship Visualization</span>
       <!-- 顶部工具栏 (Internal Top Right) -->
       <div class="header-tools">
-        <button class="tool-btn" @click="$emit('refresh')" :disabled="loading" title="刷新图谱">
-          <span class="icon-refresh" :class="{ 'spinning': loading }">↻</span>
-          <span class="btn-text">Refresh</span>
-        </button>
+        <div class="refresh-combo" role="group" aria-label="图谱刷新设置">
+          <button class="tool-btn refresh-main" @click="$emit('refresh')" :disabled="loading" title="立即刷新图谱">
+            <span class="icon-refresh" :class="{ 'spinning': loading }">↻</span>
+            <span class="btn-text">Refresh</span>
+          </button>
+          <button class="realtime-part" :class="{ active: realtimeEnabled }" role="switch" :aria-checked="realtimeEnabled" @click="$emit('toggle-realtime')" :title="realtimeEnabled ? '暂停实时更新' : '开启实时更新'">
+            <span class="mini-track"><span class="mini-thumb"></span></span>
+            <span>{{ realtimeEnabled ? 'Live' : 'Paused' }}</span>
+          </button>
+        </div>
         <button class="tool-btn" @click="$emit('toggle-maximize')" title="最大化/还原">
           <span class="icon-maximize">⛶</span>
         </button>
@@ -20,7 +26,7 @@
         <svg ref="graphSvg" class="graph-svg"></svg>
         
         <!-- 构建中/模拟中提示 -->
-        <div v-if="currentPhase === 1 || isSimulating" class="graph-building-hint">
+        <div v-if="(currentPhase === 1 && realtimeEnabled) || isSimulating" class="graph-building-hint">
           <div class="memory-icon-wrapper">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="memory-icon">
               <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-4.04z" />
@@ -243,10 +249,11 @@ const props = defineProps({
   graphData: Object,
   loading: Boolean,
   currentPhase: Number,
-  isSimulating: Boolean
+  isSimulating: Boolean,
+  realtimeEnabled: { type: Boolean, default: true }
 })
 
-const emit = defineEmits(['refresh', 'toggle-maximize'])
+const emit = defineEmits(['refresh', 'toggle-realtime', 'toggle-maximize'])
 
 const graphContainer = ref(null)
 const graphSvg = ref(null)
@@ -831,6 +838,60 @@ onUnmounted(() => {
   gap: 10px;
   align-items: center;
 }
+
+.refresh-combo {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  background: #FFF;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  overflow: hidden;
+}
+
+.refresh-combo .tool-btn {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.realtime-part {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 0;
+  border-left: 1px solid #E0E0E0;
+  background: #FFF;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #777;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.realtime-part:hover { background: #F5F5F5; color: #000; }
+.realtime-part:focus-visible { outline: 2px solid #E85D18; outline-offset: -2px; }
+
+.mini-track {
+  width: 24px;
+  height: 14px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #B8B8B8;
+}
+
+.mini-thumb {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #FFF;
+  transition: transform .2s ease;
+}
+
+.realtime-part.active { color: #B44712; }
+.realtime-part.active .mini-track { background: #E85D18; }
+.realtime-part.active .mini-thumb { transform: translateX(10px); }
 
 .tool-btn {
   height: 32px;

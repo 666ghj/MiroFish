@@ -265,9 +265,12 @@ class GraphitiClient(ZepClientAdapter):
         from graphiti_core.llm_client.config import LLMConfig
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
-        api_key = os.environ.get('GRAPHITI_LLM_API_KEY') or os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('GRAPHITI_LLM_BASE_URL') or os.environ.get('OPENAI_BASE_URL')
-        model = os.environ.get('GRAPHITI_LLM_MODEL') or os.environ.get('LLM_MODEL_NAME')
+        from .model_router import ModelRouter
+        from ..models.model_config import ModelRole
+        resolved = ModelRouter().resolve(ModelRole.HIGH_THROUGHPUT)
+        api_key = resolved.get('api_key') or os.environ.get('OPENAI_API_KEY')
+        base_url = resolved.get('base_url') or os.environ.get('OPENAI_BASE_URL')
+        model = resolved.get('model') or os.environ.get('LLM_MODEL_NAME')
         small_model = os.environ.get('GRAPHITI_LLM_SMALL_MODEL') or None
 
         temperature = float(os.environ.get('GRAPHITI_LLM_TEMPERATURE', '0') or '0')
@@ -285,6 +288,10 @@ class GraphitiClient(ZepClientAdapter):
             from .deepseek_graphiti_client import DeepSeekGraphitiClient
 
             return DeepSeekGraphitiClient(config=config)
+        if base_url and any(indicator in base_url.lower() for indicator in ('host.docker.internal:1234', 'localhost:1234', '127.0.0.1:1234')):
+            from .lmstudio_graphiti_client import LMStudioGraphitiClient
+
+            return LMStudioGraphitiClient(config=config, max_tokens=max_tokens)
         return OpenAIGenericClient(config=config)
 
     def _build_default_embedder(self) -> Any:
@@ -302,9 +309,12 @@ class GraphitiClient(ZepClientAdapter):
         """
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 
-        api_key = os.environ.get('GRAPHITI_EMBEDDING_API_KEY') or os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('GRAPHITI_EMBEDDING_BASE_URL') or os.environ.get('OPENAI_BASE_URL')
-        embedding_model = os.environ.get('GRAPHITI_EMBEDDING_MODEL')
+        from .model_router import ModelRouter
+        from ..models.model_config import ModelRole
+        resolved = ModelRouter().resolve(ModelRole.EMBEDDING)
+        api_key = resolved.get('api_key') or os.environ.get('OPENAI_API_KEY')
+        base_url = resolved.get('base_url') or os.environ.get('OPENAI_BASE_URL')
+        embedding_model = resolved.get('model') or os.environ.get('GRAPHITI_EMBEDDING_MODEL')
 
         if embedding_model:
             config = OpenAIEmbedderConfig(

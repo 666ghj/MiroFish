@@ -1,0 +1,16 @@
+.git
+.env
+**/.DS_Store
+**/._*
+backend/.venv
+backend/.venv-simulation
+backend/.pytest_cache
+backend/**/__pycache__
+backend/uploads
+backend/logs
+codex_gateway/.venv
+codex_gateway/**/__pycache__
+direct_gateway/.venv
+direct_gateway/**/__pycache__
+frontend/node_modules
+frontend/dist

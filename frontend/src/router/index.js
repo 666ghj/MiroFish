@@ -6,6 +6,7 @@ import SimulationRunView from '../views/SimulationRunView.vue'
 import ReportView from '../views/ReportView.vue'
 import InteractionView from '../views/InteractionView.vue'
 import HistoryView from '../views/HistoryView.vue'
+import ModelSettingsView from '../views/ModelSettingsView.vue'
 
 const routes = [
   {
@@ -17,6 +18,11 @@ const routes = [
     path: '/history',
     name: 'History',
     component: HistoryView
+  },
+  {
+    path: '/settings/models',
+    name: 'ModelSettings',
+    component: ModelSettingsView
   },
   {
     path: '/process/:projectId',

@@ -1,10 +1,12 @@
 import json
 
 import pytest
+import httpx
+from types import SimpleNamespace
 
 from app.messages import build_responses_payload
 from app.schema import normalize_output_schema
-from app.responses_client import parse_responses_sse
+from app.responses_client import ResponsesClient, parse_responses_sse
 
 
 def test_build_payload_preserves_conversation_and_separates_instructions():
@@ -14,6 +16,15 @@ def test_build_payload_preserves_conversation_and_separates_instructions():
     assert [item["role"] for item in payload["input"]] == ["user", "assistant"]
     assert payload["store"] is False and payload["stream"] is True
     assert "temperature" not in payload
+
+
+def test_json_object_uses_instruction_instead_of_unsupported_format():
+    payload = build_responses_payload(
+        {"messages": [{"role": "user", "content": "Return data"}], "response_format": {"type": "json_object"}},
+        "gpt-test",
+    )
+    assert "text" not in payload
+    assert "valid JSON object" in payload["instructions"]
 
 
 def test_schema_is_strict_without_mutating_input():
@@ -38,3 +49,26 @@ def test_sse_rejects_failed_or_incomplete_response():
         parse_responses_sse(["data: " + json.dumps({"type": "response.failed"})])
     with pytest.raises(RuntimeError, match="incomplete"):
         parse_responses_sse(["data: " + json.dumps({"type": "response.output_text.delta", "delta": "x"})])
+
+
+def test_client_refreshes_once_after_401():
+    calls = []
+    completed = "\n".join([
+        "data: " + json.dumps({"type": "response.output_text.delta", "delta": "OK"}),
+        "data: " + json.dumps({"type": "response.completed", "response": {"model": "gpt", "usage": {}}}),
+    ])
+    def handler(request):
+        calls.append(request.headers["Authorization"])
+        if len(calls) == 1:
+            return httpx.Response(401, json={"error": "expired"})
+        return httpx.Response(200, text=completed)
+    class Manager:
+        def __init__(self): self.refreshes = 0
+        def fresh(self): return SimpleNamespace(access_token="new" if self.refreshes else "old"), {"account_id": "acct", "residency": None}
+        def force_refresh(self): self.refreshes += 1
+    manager = Manager()
+    client = ResponsesClient(endpoint="https://example.test/responses", model="gpt", token_manager=manager, http=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.complete({"messages": [{"role": "user", "content": "hi"}]})
+    assert result.content == "OK"
+    assert manager.refreshes == 1
+    assert len(calls) == 2

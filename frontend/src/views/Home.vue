@@ -4,6 +4,7 @@
     <nav class="navbar">
       <div class="nav-brand">MIROFISH</div>
       <div class="nav-links">
+        <router-link to="/settings/models" class="history-link">模型配置 <span class="arrow">→</span></router-link>
         <router-link to="/history" class="history-link">
           历史记录 <span class="arrow">→</span>
         </router-link>

@@ -57,10 +57,15 @@ class ResponsesClient:
 
     def complete(self, request: dict) -> DirectProviderResult:
         with self._slots:
-            tokens, metadata = self.token_manager.fresh()
-            headers = {"Authorization": f"Bearer {tokens.access_token}", "ChatGPT-Account-Id": metadata["account_id"], "Accept": "text/event-stream", "Content-Type": "application/json", "originator": "mirofish-direct-oauth", "User-Agent": "mirofish-direct-oauth/0.1.0"}
-            if metadata.get("residency"):
-                headers["x-openai-internal-codex-residency"] = metadata["residency"]
-            with self.http.stream("POST", self.endpoint, headers=headers, json=build_responses_payload(request, self.model)) as response:
-                response.raise_for_status()
-                return parse_responses_sse(response.iter_lines())
+            for attempt in range(2):
+                tokens, metadata = self.token_manager.fresh()
+                headers = {"Authorization": f"Bearer {tokens.access_token}", "ChatGPT-Account-Id": metadata["account_id"], "Accept": "text/event-stream", "Content-Type": "application/json", "originator": "mirofish-direct-oauth", "User-Agent": "mirofish-direct-oauth/0.1.0"}
+                if metadata.get("residency"):
+                    headers["x-openai-internal-codex-residency"] = metadata["residency"]
+                with self.http.stream("POST", self.endpoint, headers=headers, json=build_responses_payload(request, request.get("model") or self.model)) as response:
+                    if response.status_code == 401 and attempt == 0:
+                        self.token_manager.force_refresh()
+                        continue
+                    response.raise_for_status()
+                    return parse_responses_sse(response.iter_lines())
+            raise RuntimeError("authentication_refresh_failed")

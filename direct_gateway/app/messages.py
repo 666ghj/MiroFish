@@ -22,7 +22,8 @@ def build_responses_payload(request: dict[str, Any], model: str) -> dict[str, An
     payload = {"model": model, "instructions": "\n\n".join(instructions), "input": items, "store": False, "stream": True}
     response_format = request.get("response_format") or {"type": "text"}
     if response_format.get("type") == "json_object":
-        payload["text"] = {"format": {"type": "json_object"}}
+        json_instruction = "Return only one valid JSON object without Markdown fences or explanatory text."
+        payload["instructions"] = "\n\n".join(part for part in (payload["instructions"], json_instruction) if part)
     elif response_format.get("type") == "json_schema":
         details = response_format.get("json_schema") or {}
         schema = details.get("schema")

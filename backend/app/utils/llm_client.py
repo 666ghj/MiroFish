@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
+from ..models.model_config import ModelRole
 
 
 class LLMClient:
@@ -17,11 +18,15 @@ class LLMClient:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        role: ModelRole = ModelRole.HIGH_CAPABILITY,
+        project_id: Optional[str] = None,
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model = model or Config.LLM_MODEL_NAME
+        from ..services.model_router import ModelRouter
+        resolved = ModelRouter().resolve(role, project_id)
+        self.api_key = api_key or resolved.get("api_key") or Config.LLM_API_KEY
+        self.base_url = base_url or resolved.get("base_url") or Config.LLM_BASE_URL
+        self.model = model or resolved.get("model") or Config.LLM_MODEL_NAME
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -88,4 +93,3 @@ class LLMClient:
         )
         
         return json.loads(response)
-

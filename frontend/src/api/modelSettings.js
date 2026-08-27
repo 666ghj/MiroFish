@@ -1,0 +1,17 @@
+import service from './index'
+
+export const getModelConnections = () => service.get('/api/settings/models/connections')
+export const createModelConnection = data => service.post('/api/settings/models/connections', data)
+export const updateModelConnection = (id, data) => service.patch(`/api/settings/models/connections/${id}`, data)
+export const deleteModelConnection = id => service.delete(`/api/settings/models/connections/${id}`)
+export const getModelDraft = () => service.get('/api/settings/models/draft')
+export const saveModelDraft = data => service.put('/api/settings/models/draft', data)
+export const applyModelDraft = () => service.post('/api/settings/models/apply')
+export const getActiveModelConfig = () => service.get('/api/settings/models/active')
+export const testModelConnection = connection_id => service.post('/api/settings/models/test', { connection_id })
+export const getChatGptAccount = () => service.get('/api/settings/models/oauth/account')
+export const startChatGptLogin = () => service.post('/api/settings/models/oauth/device/start')
+export const getChatGptLoginStatus = loginId => service.get(`/api/settings/models/oauth/device/${loginId}`)
+export const cancelChatGptLogin = loginId => service.post(`/api/settings/models/oauth/device/${loginId}/cancel`)
+export const logoutChatGpt = () => service.post('/api/settings/models/oauth/logout')
+export const getConnectionModels = (connectionId, role) => service.get(`/api/settings/models/connections/${connectionId}/models`, { params: { role } })

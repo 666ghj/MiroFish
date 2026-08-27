@@ -459,6 +459,8 @@ class SimulationRunner:
             # 设置子进程环境变量，确保 Windows 上使用 UTF-8 编码
             # 这可以修复第三方库（如 OASIS）读取文件时未指定编码的问题
             env = os.environ.copy()
+            from .model_router import ModelRouter
+            env.update(ModelRouter().build_simulation_environment(state.project_id))
             env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
             env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
             
@@ -1790,4 +1792,3 @@ class SimulationRunner:
             results = results[:limit]
         
         return results
-

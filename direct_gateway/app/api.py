@@ -13,7 +13,7 @@ def _error(message, status):
     return jsonify({"error": {"message": message, "type": "gateway_error"}}), status
 
 
-def create_app(*, router, config, account_reader=None):
+def create_app(*, router, config, account_reader=None, device_logins=None, logout=None):
     app = Flask(__name__)
 
     def authorized():
@@ -28,6 +28,34 @@ def create_app(*, router, config, account_reader=None):
         if not authorized():
             return _error("unauthorized", 401)
         return account_reader() if account_reader else {"authenticated": False}
+
+    @app.get("/v1/models")
+    def models():
+        if not authorized(): return _error("unauthorized", 401)
+        return {"object": "list", "data": [{"id": config.model, "object": "model", "owned_by": "chatgpt-subscription"}]}
+
+    @app.post("/oauth/device/start")
+    def oauth_start():
+        if not authorized(): return _error("unauthorized", 401)
+        return device_logins.start() if device_logins else _error("oauth unavailable", 503)
+
+    @app.get("/oauth/device/<login_id>")
+    def oauth_status(login_id):
+        if not authorized(): return _error("unauthorized", 401)
+        try: return device_logins.status(login_id)
+        except KeyError: return _error("login not found", 404)
+
+    @app.post("/oauth/device/<login_id>/cancel")
+    def oauth_cancel(login_id):
+        if not authorized(): return _error("unauthorized", 401)
+        try: return device_logins.cancel(login_id)
+        except KeyError: return _error("login not found", 404)
+
+    @app.post("/oauth/logout")
+    def oauth_logout():
+        if not authorized(): return _error("unauthorized", 401)
+        if logout: logout()
+        return {"authenticated": False}
 
     @app.post("/v1/chat/completions")
     def completions():
