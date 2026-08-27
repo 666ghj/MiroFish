@@ -34,7 +34,7 @@ class GatewayConfig:
 
         max_concurrency = int(values.get("CODEX_MAX_CONCURRENCY", "1"))
         queue_size = int(values.get("CODEX_QUEUE_SIZE", "20"))
-        timeout = int(values.get("CODEX_REQUEST_TIMEOUT_SECONDS", "300"))
+        timeout = int(values.get("CODEX_REQUEST_TIMEOUT_SECONDS", "600"))
         if max_concurrency <= 0 or max_concurrency > 4:
             raise ValueError("CODEX_MAX_CONCURRENCY must be between 1 and 4")
         if queue_size < 0:

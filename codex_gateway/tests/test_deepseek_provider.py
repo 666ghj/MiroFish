@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.deepseek_provider import DeepSeekProvider
+from app.deepseek_provider import DeepSeekProvider, FallbackUnavailableError
 
 
 def test_deepseek_provider_forwards_supported_request_fields():
@@ -78,3 +78,31 @@ def test_deepseek_provider_downgrades_json_schema_to_json_object():
     assert captured["response_format"] == {"type": "json_object"}
     assert "JSON Schema" in captured["messages"][-1]["content"]
     assert messages == [{"role": "user", "content": "Return status"}]
+
+
+def test_insufficient_balance_opens_circuit_after_first_request():
+    calls = []
+
+    class InsufficientBalanceError(RuntimeError):
+        status_code = 402
+
+    class Completions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            raise InsufficientBalanceError("Insufficient Balance")
+
+    provider = DeepSeekProvider(
+        client=SimpleNamespace(chat=SimpleNamespace(completions=Completions())),
+        model="deepseek-v4-flash",
+    )
+    request = {"messages": [{"role": "user", "content": "hello"}]}
+
+    for _ in range(2):
+        try:
+            provider.complete(request)
+        except FallbackUnavailableError as error:
+            assert error.reason == "insufficient_balance"
+        else:
+            raise AssertionError("402 should open the DeepSeek circuit")
+
+    assert len(calls) == 1

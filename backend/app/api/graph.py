@@ -6,6 +6,8 @@
 import os
 import traceback
 import threading
+from datetime import date
+from pathlib import Path
 from flask import request, jsonify
 
 from . import graph_bp
@@ -13,6 +15,11 @@ from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
 from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
+from ..services.corpus_slimmer import (
+    build_recent_corpus,
+    subtract_years,
+    write_recent_corpus,
+)
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 from ..models.task import TaskManager, TaskStatus
@@ -113,6 +120,74 @@ def reset_project(project_id: str):
         "success": True,
         "message": f"项目已重置: {project_id}",
         "data": project.to_dict()
+    })
+
+
+@graph_bp.route('/project/<project_id>/corpus/recent', methods=['POST'])
+def generate_recent_corpus(project_id: str):
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({
+            "success": False,
+            "error": f"项目不存在: {project_id}"
+        }), 404
+
+    data = request.get_json(silent=True) or {}
+    years = data.get('years', 3)
+    exclude_full_reports = data.get('exclude_full_reports', True)
+    if not isinstance(years, int) or years <= 0:
+        return jsonify({
+            "success": False,
+            "error": "years必须为正整数"
+        }), 400
+    if not isinstance(exclude_full_reports, bool):
+        return jsonify({
+            "success": False,
+            "error": "exclude_full_reports必须为布尔值"
+        }), 400
+
+    source = ProjectManager.get_extracted_text(project_id)
+    if not source:
+        return jsonify({
+            "success": False,
+            "error": "未找到提取的文本内容"
+        }), 404
+
+    try:
+        cutoff = subtract_years(date.today(), years)
+        result = build_recent_corpus(
+            source,
+            cutoff=cutoff,
+            exclude_full_reports=exclude_full_reports,
+        )
+        artifacts = write_recent_corpus(
+            Path(ProjectManager._get_project_dir(project_id)),
+            result,
+            cutoff=cutoff,
+        )
+    except ValueError as error:
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 400
+
+    manifest_summary = {
+        **artifacts.summary,
+        "cutoff_date": cutoff.isoformat(),
+        "output_file": artifacts.output_path.name,
+        "manifest_file": artifacts.manifest_path.name,
+    }
+    project.active_corpus = 'recent_3y'
+    project.corpus_manifest = manifest_summary
+    ProjectManager.save_project(project)
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "project_id": project_id,
+            "corpus": "recent_3y",
+            **manifest_summary,
+        }
     })
 
 
@@ -340,14 +415,22 @@ def build_graph():
         # 更新项目配置
         project.chunk_size = chunk_size
         project.chunk_overlap = chunk_overlap
-        
-        # 获取提取的文本
-        text = ProjectManager.get_extracted_text(project_id)
+
+        # 获取指定语料
+        corpus = data.get('corpus', project.active_corpus or 'full')
+        try:
+            text = ProjectManager.get_corpus_text(project_id, corpus)
+        except ValueError as error:
+            return jsonify({
+                "success": False,
+                "error": str(error)
+            }), 400
         if not text:
             return jsonify({
                 "success": False,
-                "error": "未找到提取的文本内容"
+                "error": f"未找到语料: {corpus}"
             }), 400
+        project.active_corpus = corpus
         
         # 获取本体
         ontology = project.ontology
@@ -359,7 +442,10 @@ def build_graph():
         
         # 创建异步任务
         task_manager = TaskManager()
-        task_id = task_manager.create_task(f"构建图谱: {graph_name}")
+        task_id = task_manager.create_task(
+            f"构建图谱: {graph_name}",
+            metadata={'project_id': project_id},
+        )
         logger.info(f"创建图谱构建任务: task_id={task_id}, project_id={project_id}")
         
         # 更新项目状态
@@ -432,7 +518,7 @@ def build_graph():
                 episode_uuids = builder.add_text_batches(
                     graph_id, 
                     chunks,
-                    batch_size=3,
+                    batch_size=Config.GRAPH_BUILD_BATCH_SIZE,
                     progress_callback=add_progress_callback
                 )
                 
@@ -480,7 +566,9 @@ def build_graph():
                         "graph_id": graph_id,
                         "node_count": node_count,
                         "edge_count": edge_count,
-                        "chunk_count": total_chunks
+                        "chunk_count": total_chunks,
+                        "corpus": corpus,
+                        "corpus_characters": len(text)
                     }
                 )
                 
@@ -547,7 +635,18 @@ def list_tasks():
     """
     列出所有任务
     """
-    tasks = TaskManager().list_tasks()
+    status = request.args.get('status')
+    limit = request.args.get('limit', 100, type=int)
+    if status:
+        try:
+            TaskStatus(status)
+        except ValueError:
+            return jsonify({
+                "success": False,
+                "error": f"不支持的任务状态: {status}"
+            }), 400
+    limit = max(1, min(limit, 500))
+    tasks = TaskManager().list_tasks(status=status, limit=limit)
     
     return jsonify({
         "success": True,

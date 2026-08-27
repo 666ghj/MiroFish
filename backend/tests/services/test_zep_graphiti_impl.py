@@ -125,6 +125,14 @@ def test_local_embedding_endpoint_splits_batches_at_provider_limit(monkeypatch):
     assert len(result) == 47
 
 
+def test_graphiti_operation_timeout_is_configurable(monkeypatch):
+    monkeypatch.setenv("GRAPHITI_OPERATION_TIMEOUT_SECONDS", "3600")
+    _load_graphiti_client(monkeypatch)
+    module = sys.modules["app.services.zep_graphiti_impl"]
+
+    assert module._operation_timeout_seconds() == 3600
+
+
 def test_embedder_falls_back_to_openai_environment(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "shared-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://shared.example/v1")
@@ -158,6 +166,23 @@ def test_llm_ignores_dedicated_embedding_environment(monkeypatch):
     assert captured["llm"]["api_key"] == "deepseek-key"
     assert captured["llm"]["base_url"] == "https://api.deepseek.com"
     assert captured["llm"]["model"] == "deepseek-v4-flash"
+
+
+def test_llm_prefers_dedicated_graphiti_environment(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "official-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://codex-gateway:8080/v1")
+    monkeypatch.setenv("LLM_MODEL_NAME", "official-model")
+    monkeypatch.setenv("GRAPHITI_LLM_API_KEY", "direct-key")
+    monkeypatch.setenv("GRAPHITI_LLM_BASE_URL", "http://direct-oauth-gateway:8090/v1")
+    monkeypatch.setenv("GRAPHITI_LLM_MODEL", "gpt-5.6-luna")
+
+    graphiti_client, captured = _load_graphiti_client(monkeypatch)
+    client = graphiti_client.__new__(graphiti_client)
+    client._build_default_llm_client()
+
+    assert captured["llm"]["api_key"] == "direct-key"
+    assert captured["llm"]["base_url"] == "http://direct-oauth-gateway:8090/v1"
+    assert captured["llm"]["model"] == "gpt-5.6-luna"
 
 
 def test_deepseek_base_url_selects_compatible_client(monkeypatch):

@@ -28,3 +28,21 @@ def test_backend_depends_on_healthy_gateway():
 
     assert "codex-gateway:" in backend_section
     assert "condition: service_healthy" in backend_section
+
+
+def test_gateway_has_threads_for_queue_and_health_checks():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "codex_gateway" / "Dockerfile").read_text()
+    values = _read_env_template()
+
+    assert '"--threads", "24"' in dockerfile
+    assert values["GRAPHITI_OPERATION_TIMEOUT_SECONDS"] == "3600"
+
+
+def test_graph_build_batch_size_is_configurable_for_codex():
+    root = Path(__file__).resolve().parents[2]
+    graph_api = (root / "backend" / "app" / "api" / "graph.py").read_text()
+    values = _read_env_template()
+
+    assert "batch_size=Config.GRAPH_BUILD_BATCH_SIZE" in graph_api
+    assert values["GRAPH_BUILD_BATCH_SIZE"] == "1"

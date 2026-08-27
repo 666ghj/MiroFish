@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import copy
 import json
+import threading
 from typing import Any
 
 from .codex_provider import ProviderResult
+
+
+class FallbackUnavailableError(RuntimeError):
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"fallback unavailable: {reason}")
+        self.reason = reason
 
 
 class DeepSeekProvider:
@@ -23,8 +30,14 @@ class DeepSeekProvider:
     def __init__(self, *, client: Any, model: str) -> None:
         self._client = client
         self._model = model
+        self._circuit_reason: str | None = None
+        self._circuit_lock = threading.Lock()
 
     def complete(self, request: dict[str, Any]) -> ProviderResult:
+        with self._circuit_lock:
+            if self._circuit_reason is not None:
+                raise FallbackUnavailableError(self._circuit_reason)
+
         kwargs = {
             key: value
             for key, value in request.items()
@@ -50,7 +63,14 @@ class DeepSeekProvider:
             kwargs["messages"] = messages
             kwargs["response_format"] = {"type": "json_object"}
 
-        response = self._client.chat.completions.create(**kwargs)
+        try:
+            response = self._client.chat.completions.create(**kwargs)
+        except Exception as error:
+            if getattr(error, "status_code", None) == 402:
+                with self._circuit_lock:
+                    self._circuit_reason = "insufficient_balance"
+                raise FallbackUnavailableError("insufficient_balance") from error
+            raise
         content = response.choices[0].message.content or ""
         if not content.strip():
             raise ValueError("DeepSeek returned an empty response")

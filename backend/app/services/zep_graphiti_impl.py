@@ -71,6 +71,13 @@ def _ensure_async_loop():
                     time.sleep(0.01)
 
 
+def _operation_timeout_seconds() -> int:
+    timeout = int(os.environ.get('GRAPHITI_OPERATION_TIMEOUT_SECONDS', '3600'))
+    if timeout <= 0:
+        raise ValueError("GRAPHITI_OPERATION_TIMEOUT_SECONDS must be greater than 0")
+    return timeout
+
+
 def _run_async(coro):
     """
     在同步上下文中运行异步协程
@@ -80,7 +87,7 @@ def _run_async(coro):
     """
     _ensure_async_loop()
     future = asyncio.run_coroutine_threadsafe(coro, _async_loop)
-    return future.result(timeout=300)  # 5分钟超时
+    return future.result(timeout=_operation_timeout_seconds())
 
 
 class DashScopeEmbedderWrapper:
@@ -258,8 +265,8 @@ class GraphitiClient(ZepClientAdapter):
         from graphiti_core.llm_client.config import LLMConfig
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
-        api_key = os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('OPENAI_BASE_URL')
+        api_key = os.environ.get('GRAPHITI_LLM_API_KEY') or os.environ.get('OPENAI_API_KEY')
+        base_url = os.environ.get('GRAPHITI_LLM_BASE_URL') or os.environ.get('OPENAI_BASE_URL')
         model = os.environ.get('GRAPHITI_LLM_MODEL') or os.environ.get('LLM_MODEL_NAME')
         small_model = os.environ.get('GRAPHITI_LLM_SMALL_MODEL') or None
 

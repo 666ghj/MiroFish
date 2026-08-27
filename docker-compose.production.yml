@@ -1,4 +1,24 @@
 services:
+  direct-oauth-gateway:
+    build:
+      context: .
+      dockerfile: direct_gateway/Dockerfile
+    container_name: mirofish-direct-oauth-gateway
+    env_file:
+      - .env
+    expose:
+      - "8090"
+    volumes:
+      - direct_oauth_credentials:/var/lib/direct-oauth
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: 384m
+
   codex-gateway:
     build:
       context: .
@@ -54,6 +74,8 @@ services:
     volumes:
       - mirofish_uploads:/app/backend/uploads
     depends_on:
+      direct-oauth-gateway:
+        condition: service_healthy
       codex-gateway:
         condition: service_healthy
       neo4j:
@@ -122,6 +144,7 @@ services:
     mem_limit: 1024m
 
 volumes:
+  direct_oauth_credentials:
   codex_auth:
   neo4j_data:
   neo4j_logs:

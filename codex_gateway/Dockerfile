@@ -17,4 +17,4 @@ RUN install -d -m 0700 /var/lib/codex /workspace
 
 EXPOSE 8080
 
-CMD [".venv/bin/gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:8080", "app:create_app()"]
+CMD [".venv/bin/gunicorn", "--workers", "1", "--threads", "24", "--bind", "0.0.0.0:8080", "app:create_app()"]

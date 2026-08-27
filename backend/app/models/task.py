@@ -3,12 +3,20 @@
 用于跟踪长时间运行的任务（如图谱构建）
 """
 
-import uuid
+import logging
+import os
 import threading
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
+
+from ..config import Config
+from .task_store import TaskStore
+
+
+logger = logging.getLogger("mirofish.task_manager")
 
 
 class TaskStatus(str, Enum):
@@ -17,6 +25,7 @@ class TaskStatus(str, Enum):
     PROCESSING = "processing"    # 处理中
     COMPLETED = "completed"      # 已完成
     FAILED = "failed"            # 失败
+    INTERRUPTED = "interrupted"  # 服务重启后中断
 
 
 @dataclass
@@ -59,6 +68,7 @@ class TaskManager:
     
     _instance = None
     _lock = threading.Lock()
+    _store = TaskStore(os.path.join(Config.UPLOAD_FOLDER, "tasks", "tasks.db"))
     
     def __new__(cls):
         """单例模式"""
@@ -68,7 +78,64 @@ class TaskManager:
                     cls._instance = super().__new__(cls)
                     cls._instance._tasks: Dict[str, Task] = {}
                     cls._instance._task_lock = threading.Lock()
+                    cls._instance._persist_lock = threading.Lock()
+                    cls._instance._load_from_store()
         return cls._instance
+
+    @classmethod
+    def configure_store(cls, path: Optional[str]) -> None:
+        """配置持久化文件；测试可借此隔离数据。"""
+        cls._store = TaskStore(
+            path or os.path.join(Config.UPLOAD_FOLDER, "tasks", "tasks.db")
+        )
+        if cls._instance is not None:
+            cls._instance._load_from_store()
+
+    @classmethod
+    def reload_from_store(cls) -> None:
+        """从存储重新加载任务，用于进程启动与测试。"""
+        cls()._load_from_store()
+
+    def _load_from_store(self) -> None:
+        loaded: Dict[str, Task] = {}
+        interrupted = False
+        for record in self._store.load():
+            try:
+                status = TaskStatus(record["status"])
+                message = str(record.get("message", ""))
+                if status in {TaskStatus.PENDING, TaskStatus.PROCESSING}:
+                    status = TaskStatus.INTERRUPTED
+                    message = "服务重启，任务已中断"
+                    interrupted = True
+                task = Task(
+                    task_id=str(record["task_id"]),
+                    task_type=str(record["task_type"]),
+                    status=status,
+                    created_at=datetime.fromisoformat(record["created_at"]),
+                    updated_at=datetime.fromisoformat(record["updated_at"]),
+                    progress=int(record.get("progress", 0)),
+                    message=message,
+                    result=record.get("result"),
+                    error=record.get("error"),
+                    metadata=record.get("metadata") if isinstance(record.get("metadata"), dict) else {},
+                    progress_detail=record.get("progress_detail") if isinstance(record.get("progress_detail"), dict) else {},
+                )
+                loaded[task.task_id] = task
+            except (KeyError, TypeError, ValueError) as error:
+                logger.warning("跳过损坏的任务记录 error_type=%s", type(error).__name__)
+        with self._task_lock:
+            self._tasks = loaded
+        if interrupted:
+            self._persist()
+
+    def _persist(self) -> None:
+        with self._persist_lock:
+            with self._task_lock:
+                records = [task.to_dict() for task in self._tasks.values()]
+            try:
+                self._store.save(records)
+            except Exception as error:
+                logger.error("保存任务历史失败 error_type=%s", type(error).__name__)
     
     def create_task(self, task_type: str, metadata: Optional[Dict] = None) -> str:
         """
@@ -95,6 +162,7 @@ class TaskManager:
         
         with self._task_lock:
             self._tasks[task_id] = task
+        self._persist()
         
         return task_id
     
@@ -141,6 +209,7 @@ class TaskManager:
                     task.error = error
                 if progress_detail is not None:
                     task.progress_detail = progress_detail
+        self._persist()
     
     def complete_task(self, task_id: str, result: Dict):
         """标记任务完成"""
@@ -161,13 +230,23 @@ class TaskManager:
             error=error
         )
     
-    def list_tasks(self, task_type: Optional[str] = None) -> list:
+    def list_tasks(
+        self,
+        task_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list:
         """列出任务"""
         with self._task_lock:
             tasks = list(self._tasks.values())
             if task_type:
                 tasks = [t for t in tasks if t.task_type == task_type]
-            return [t.to_dict() for t in sorted(tasks, key=lambda x: x.created_at, reverse=True)]
+            if status:
+                tasks = [t for t in tasks if t.status.value == status]
+            tasks = sorted(tasks, key=lambda x: x.created_at, reverse=True)
+            if limit is not None:
+                tasks = tasks[:limit]
+            return [t.to_dict() for t in tasks]
     
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """清理旧任务"""
@@ -177,8 +256,8 @@ class TaskManager:
         with self._task_lock:
             old_ids = [
                 tid for tid, task in self._tasks.items()
-                if task.created_at < cutoff and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]
+                if task.created_at < cutoff and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.INTERRUPTED]
             ]
             for tid in old_ids:
                 del self._tasks[tid]
-
+        self._persist()
