@@ -287,7 +287,11 @@ class GraphitiClient(ZepClientAdapter):
         默认 embedding model 是 `text-embedding-3-small`（OpenAI），DashScope 下需要显式配置：
         - GRAPHITI_EMBEDDING_MODEL=text-embedding-v4
 
-        注意：DashScope API 有批次大小限制（max 10），使用 DashScopeEmbedderWrapper 处理。
+        非标准 OpenAI-compatible embedding API 通常有批次大小限制：
+        - DashScope 默认 max 10
+        - 本地 TEI 等兼容服务默认 max 32
+
+        可通过 GRAPHITI_EMBEDDING_MAX_BATCH_SIZE 显式覆盖。
         """
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 
@@ -309,10 +313,29 @@ class GraphitiClient(ZepClientAdapter):
 
         base_embedder = OpenAIEmbedder(config=config)
 
-        # DashScope API 有批次大小限制，需要包装
-        if self._is_openai_compatible_only():
-            logger.info("检测到非标准 OpenAI API，启用 DashScope Embedder 分块处理")
-            return _create_dashscope_embedder_wrapper(base_embedder, max_batch_size=10)
+        configured_batch_size = os.environ.get('GRAPHITI_EMBEDDING_MAX_BATCH_SIZE')
+        if configured_batch_size:
+            max_batch_size = int(configured_batch_size)
+            if max_batch_size <= 0:
+                raise ValueError("GRAPHITI_EMBEDDING_MAX_BATCH_SIZE must be greater than 0")
+        elif base_url and any(
+            indicator in base_url.lower() for indicator in ('dashscope', 'aliyun')
+        ):
+            max_batch_size = 10
+        elif base_url and 'api.openai.com' not in base_url.lower():
+            max_batch_size = 32
+        else:
+            max_batch_size = None
+
+        if max_batch_size is not None:
+            logger.info(
+                "检测到受限的 OpenAI-compatible Embedding API，"
+                f"启用分块处理: max_batch_size={max_batch_size}"
+            )
+            return _create_dashscope_embedder_wrapper(
+                base_embedder,
+                max_batch_size=max_batch_size,
+            )
 
         return base_embedder
 

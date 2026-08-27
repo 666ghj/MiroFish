@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import sys
 import types
@@ -35,6 +36,11 @@ def _load_graphiti_client(monkeypatch):
     class FakeOpenAIEmbedder:
         def __init__(self, config):
             self.config = config
+            self.batch_sizes = []
+
+        async def create_batch(self, input_data_list):
+            self.batch_sizes.append(len(input_data_list))
+            return [[float(index)] for index, _ in enumerate(input_data_list)]
 
     graphiti_package = types.ModuleType("graphiti_core")
     embedder_package = types.ModuleType("graphiti_core.embedder")
@@ -98,6 +104,25 @@ def test_embedder_prefers_dedicated_environment(monkeypatch):
     assert captured["embedder"]["api_key"] == "local-key"
     assert captured["embedder"]["base_url"] == "http://embedding:80/v1"
     assert captured["embedder"]["embedding_model"] == "multilingual-minilm"
+
+
+def test_local_embedding_endpoint_splits_batches_at_provider_limit(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "deepseek-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("GRAPHITI_EMBEDDING_API_KEY", "local-key")
+    monkeypatch.setenv("GRAPHITI_EMBEDDING_BASE_URL", "http://embedding:80/v1")
+    monkeypatch.setenv("GRAPHITI_EMBEDDING_MODEL", "multilingual-minilm")
+    monkeypatch.delenv("GRAPHITI_EMBEDDING_MAX_BATCH_SIZE", raising=False)
+
+    graphiti_client, _ = _load_graphiti_client(monkeypatch)
+    client = graphiti_client.__new__(graphiti_client)
+
+    embedder = client._build_default_embedder()
+    result = asyncio.run(embedder.create_batch([str(index) for index in range(47)]))
+
+    assert embedder.max_batch_size == 32
+    assert embedder._embedder.batch_sizes == [32, 15]
+    assert len(result) == 47
 
 
 def test_embedder_falls_back_to_openai_environment(monkeypatch):
