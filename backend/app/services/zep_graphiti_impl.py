@@ -274,6 +274,10 @@ class GraphitiClient(ZepClientAdapter):
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        if base_url and 'api.deepseek.com' in base_url.lower():
+            from .deepseek_graphiti_client import DeepSeekGraphitiClient
+
+            return DeepSeekGraphitiClient(config=config)
         return OpenAIGenericClient(config=config)
 
     def _build_default_embedder(self) -> Any:
@@ -287,8 +291,8 @@ class GraphitiClient(ZepClientAdapter):
         """
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 
-        api_key = os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('OPENAI_BASE_URL')
+        api_key = os.environ.get('GRAPHITI_EMBEDDING_API_KEY') or os.environ.get('OPENAI_API_KEY')
+        base_url = os.environ.get('GRAPHITI_EMBEDDING_BASE_URL') or os.environ.get('OPENAI_BASE_URL')
         embedding_model = os.environ.get('GRAPHITI_EMBEDDING_MODEL')
 
         if embedding_model:
