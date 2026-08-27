@@ -1,0 +1,152 @@
+services:
+  direct-oauth-gateway:
+    build:
+      context: .
+      dockerfile: direct_gateway/Dockerfile
+    container_name: mirofish-direct-oauth-gateway
+    env_file:
+      - .env
+    expose:
+      - "8090"
+    volumes:
+      - direct_oauth_credentials:/var/lib/direct-oauth
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: 384m
+
+  codex-gateway:
+    build:
+      context: .
+      dockerfile: codex_gateway/Dockerfile
+    container_name: mirofish-codex-gateway
+    env_file:
+      - .env
+    environment:
+      CODEX_HOME: /var/lib/codex
+      CODEX_DISABLE_PROJECT_DOC: "1"
+      RUST_LOG: warn
+    expose:
+      - "8080"
+    volumes:
+      - codex_auth:/var/lib/codex
+    healthcheck:
+      test:
+        - CMD
+        - .venv/bin/python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: 512m
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: /
+    container_name: mirofish-web
+    ports:
+      - "3003:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 128m
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: mirofish-backend
+    env_file:
+      - .env
+    expose:
+      - "5001"
+    volumes:
+      - mirofish_uploads:/app/backend/uploads
+    depends_on:
+      direct-oauth-gateway:
+        condition: service_healthy
+      codex-gateway:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - .venv/bin/python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: 900m
+
+  neo4j:
+    image: neo4j:5.26
+    container_name: mirofish-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_import_file_use__neo4j__config: "true"
+    expose:
+      - "7474"
+      - "7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:7474 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    restart: unless-stopped
+    mem_limit: 1200m
+
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    container_name: mirofish-embedding
+    command:
+      - --model-id
+      - sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      - --port
+      - "80"
+    expose:
+      - "80"
+    volumes:
+      - embedding_cache:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: unless-stopped
+    mem_limit: 1024m
+
+volumes:
+  direct_oauth_credentials:
+  codex_auth:
+  neo4j_data:
+  neo4j_logs:
+  embedding_cache:
+  mirofish_uploads:

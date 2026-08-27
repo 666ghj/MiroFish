@@ -71,6 +71,13 @@ def _ensure_async_loop():
                     time.sleep(0.01)
 
 
+def _operation_timeout_seconds() -> int:
+    timeout = int(os.environ.get('GRAPHITI_OPERATION_TIMEOUT_SECONDS', '3600'))
+    if timeout <= 0:
+        raise ValueError("GRAPHITI_OPERATION_TIMEOUT_SECONDS must be greater than 0")
+    return timeout
+
+
 def _run_async(coro):
     """
     在同步上下文中运行异步协程
@@ -80,7 +87,7 @@ def _run_async(coro):
     """
     _ensure_async_loop()
     future = asyncio.run_coroutine_threadsafe(coro, _async_loop)
-    return future.result(timeout=300)  # 5分钟超时
+    return future.result(timeout=_operation_timeout_seconds())
 
 
 class DashScopeEmbedderWrapper:
@@ -258,8 +265,8 @@ class GraphitiClient(ZepClientAdapter):
         from graphiti_core.llm_client.config import LLMConfig
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
-        api_key = os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('OPENAI_BASE_URL')
+        api_key = os.environ.get('GRAPHITI_LLM_API_KEY') or os.environ.get('OPENAI_API_KEY')
+        base_url = os.environ.get('GRAPHITI_LLM_BASE_URL') or os.environ.get('OPENAI_BASE_URL')
         model = os.environ.get('GRAPHITI_LLM_MODEL') or os.environ.get('LLM_MODEL_NAME')
         small_model = os.environ.get('GRAPHITI_LLM_SMALL_MODEL') or None
 
@@ -274,6 +281,10 @@ class GraphitiClient(ZepClientAdapter):
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        if base_url and 'api.deepseek.com' in base_url.lower():
+            from .deepseek_graphiti_client import DeepSeekGraphitiClient
+
+            return DeepSeekGraphitiClient(config=config)
         return OpenAIGenericClient(config=config)
 
     def _build_default_embedder(self) -> Any:
@@ -283,12 +294,16 @@ class GraphitiClient(ZepClientAdapter):
         默认 embedding model 是 `text-embedding-3-small`（OpenAI），DashScope 下需要显式配置：
         - GRAPHITI_EMBEDDING_MODEL=text-embedding-v4
 
-        注意：DashScope API 有批次大小限制（max 10），使用 DashScopeEmbedderWrapper 处理。
+        非标准 OpenAI-compatible embedding API 通常有批次大小限制：
+        - DashScope 默认 max 10
+        - 本地 TEI 等兼容服务默认 max 32
+
+        可通过 GRAPHITI_EMBEDDING_MAX_BATCH_SIZE 显式覆盖。
         """
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 
-        api_key = os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('OPENAI_BASE_URL')
+        api_key = os.environ.get('GRAPHITI_EMBEDDING_API_KEY') or os.environ.get('OPENAI_API_KEY')
+        base_url = os.environ.get('GRAPHITI_EMBEDDING_BASE_URL') or os.environ.get('OPENAI_BASE_URL')
         embedding_model = os.environ.get('GRAPHITI_EMBEDDING_MODEL')
 
         if embedding_model:
@@ -305,10 +320,29 @@ class GraphitiClient(ZepClientAdapter):
 
         base_embedder = OpenAIEmbedder(config=config)
 
-        # DashScope API 有批次大小限制，需要包装
-        if self._is_openai_compatible_only():
-            logger.info("检测到非标准 OpenAI API，启用 DashScope Embedder 分块处理")
-            return _create_dashscope_embedder_wrapper(base_embedder, max_batch_size=10)
+        configured_batch_size = os.environ.get('GRAPHITI_EMBEDDING_MAX_BATCH_SIZE')
+        if configured_batch_size:
+            max_batch_size = int(configured_batch_size)
+            if max_batch_size <= 0:
+                raise ValueError("GRAPHITI_EMBEDDING_MAX_BATCH_SIZE must be greater than 0")
+        elif base_url and any(
+            indicator in base_url.lower() for indicator in ('dashscope', 'aliyun')
+        ):
+            max_batch_size = 10
+        elif base_url and 'api.openai.com' not in base_url.lower():
+            max_batch_size = 32
+        else:
+            max_batch_size = None
+
+        if max_batch_size is not None:
+            logger.info(
+                "检测到受限的 OpenAI-compatible Embedding API，"
+                f"启用分块处理: max_batch_size={max_batch_size}"
+            )
+            return _create_dashscope_embedder_wrapper(
+                base_embedder,
+                max_batch_size=max_batch_size,
+            )
 
         return base_embedder
 

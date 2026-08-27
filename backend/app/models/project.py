@@ -48,6 +48,8 @@ class Project:
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
+    active_corpus: str = "full"
+    corpus_manifest: Optional[Dict[str, Any]] = None
     
     # 错误信息
     error: Optional[str] = None
@@ -69,6 +71,8 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
+            "active_corpus": self.active_corpus,
+            "corpus_manifest": self.corpus_manifest,
             "error": self.error
         }
     
@@ -94,6 +98,8 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
+            active_corpus=data.get('active_corpus', 'full'),
+            corpus_manifest=data.get('corpus_manifest'),
             error=data.get('error')
         )
 
@@ -128,6 +134,10 @@ class ProjectManager:
     def _get_project_text_path(cls, project_id: str) -> str:
         """获取项目提取文本存储路径"""
         return os.path.join(cls._get_project_dir(project_id), 'extracted_text.txt')
+
+    @classmethod
+    def _get_recent_corpus_path(cls, project_id: str) -> str:
+        return os.path.join(cls._get_project_dir(project_id), 'extracted_text_recent_3y.txt')
     
     @classmethod
     def create_project(cls, name: str = "Unnamed Project") -> Project:
@@ -288,6 +298,20 @@ class ProjectManager:
         
         with open(text_path, 'r', encoding='utf-8') as f:
             return f.read()
+
+    @classmethod
+    def get_corpus_text(cls, project_id: str, corpus: str) -> Optional[str]:
+        paths = {
+            'full': cls._get_project_text_path(project_id),
+            'recent_3y': cls._get_recent_corpus_path(project_id),
+        }
+        if corpus not in paths:
+            raise ValueError(f"unknown corpus: {corpus}")
+        path = paths[corpus]
+        if not os.path.exists(path):
+            return None
+        with open(path, 'r', encoding='utf-8') as file:
+            return file.read()
     
     @classmethod
     def get_project_files(cls, project_id: str) -> List[str]:
@@ -302,4 +326,3 @@ class ProjectManager:
             for f in os.listdir(files_dir) 
             if os.path.isfile(os.path.join(files_dir, f))
         ]
-

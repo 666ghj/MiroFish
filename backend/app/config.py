@@ -56,6 +56,7 @@ class Config:
     # 文本处理配置
     DEFAULT_CHUNK_SIZE = 500  # 默认切块大小
     DEFAULT_CHUNK_OVERLAP = 50  # 默认重叠大小
+    GRAPH_BUILD_BATCH_SIZE = max(1, int(os.environ.get('GRAPH_BUILD_BATCH_SIZE', '3')))
     
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
@@ -90,4 +91,3 @@ class Config:
             if not all([cls.NEO4J_URI, cls.NEO4J_USER, cls.NEO4J_PASSWORD]):
                 errors.append("Neo4j 配置不完整（ZEP_BACKEND=graphiti 时必需）")
         return errors
-

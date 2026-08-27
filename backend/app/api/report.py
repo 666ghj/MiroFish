@@ -114,6 +114,7 @@ def generate_report():
         task_id = task_manager.create_task(
             task_type="report_generate",
             metadata={
+                "project_id": state.project_id,
                 "simulation_id": simulation_id,
                 "graph_id": graph_id,
                 "report_id": report_id
