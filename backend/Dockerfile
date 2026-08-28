@@ -11,6 +11,7 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --extra graphiti --no-dev
 
 COPY backend/ ./
+COPY locales/ /app/locales/
 
 EXPOSE 5001
 

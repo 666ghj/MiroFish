@@ -247,6 +247,47 @@ class TaskManager:
             if limit is not None:
                 tasks = tasks[:limit]
             return [t.to_dict() for t in tasks]
+
+    def update_display(self, task_id: str, task_type: str, note: str = "") -> bool:
+        """只更新任务的展示字段，不触碰运行状态和执行结果。"""
+        normalized_type = str(task_type).strip()
+        if not normalized_type:
+            raise ValueError("任务名称不能为空")
+
+        with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return False
+            task.task_type = normalized_type
+            task.metadata = {**task.metadata, "note": str(note).strip()}
+            task.updated_at = datetime.now()
+        self._persist()
+        return True
+
+    def delete_task(self, task_id: str) -> bool:
+        """删除终态任务；运行中或等待中的任务不能删除。"""
+        with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status in {TaskStatus.PENDING, TaskStatus.PROCESSING}:
+                return False
+            del self._tasks[task_id]
+        self._persist()
+        return True
+
+    def delete_project_tasks(self, project_id: str) -> int:
+        """删除指定项目关联的全部终态任务。"""
+        with self._task_lock:
+            task_ids = [
+                task_id
+                for task_id, task in self._tasks.items()
+                if task.metadata.get("project_id") == project_id
+                and task.status not in {TaskStatus.PENDING, TaskStatus.PROCESSING}
+            ]
+            for task_id in task_ids:
+                del self._tasks[task_id]
+        if task_ids:
+            self._persist()
+        return len(task_ids)
     
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """清理旧任务"""

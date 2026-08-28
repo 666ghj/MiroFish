@@ -44,6 +44,7 @@ htmlcov/
 
 # Cursor
 .cursor/
+.claude/
 
 # 文档与测试程序
 mydoc/

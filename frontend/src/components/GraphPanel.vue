@@ -1,11 +1,11 @@
 <template>
   <div class="graph-panel">
     <div class="panel-header">
-      <span class="panel-title">Graph Relationship Visualization</span>
+      <span class="panel-title">{{ $t('graph.panelTitle') }}</span>
       <!-- 顶部工具栏 (Internal Top Right) -->
       <div class="header-tools">
         <div class="refresh-combo" role="group" aria-label="图谱刷新设置">
-          <button class="tool-btn refresh-main" @click="$emit('refresh')" :disabled="loading" title="立即刷新图谱">
+          <button class="tool-btn refresh-main" @click="$emit('refresh')" :disabled="loading" :title="$t('graph.refreshGraph')">
             <span class="icon-refresh" :class="{ 'spinning': loading }">↻</span>
             <span class="btn-text">Refresh</span>
           </button>
@@ -14,17 +14,17 @@
             <span>{{ realtimeEnabled ? 'Live' : 'Paused' }}</span>
           </button>
         </div>
-        <button class="tool-btn" @click="$emit('toggle-maximize')" title="最大化/还原">
+        <button class="tool-btn" @click="$emit('toggle-maximize')" :title="$t('graph.toggleMaximize')">
           <span class="icon-maximize">⛶</span>
         </button>
       </div>
     </div>
-    
+
     <div class="graph-container" ref="graphContainer">
       <!-- 图谱可视化 -->
       <div v-if="graphData" class="graph-view">
         <svg ref="graphSvg" class="graph-svg"></svg>
-        
+
         <!-- 构建中/模拟中提示 -->
         <div v-if="(currentPhase === 1 && realtimeEnabled) || isSimulating" class="graph-building-hint">
           <div class="memory-icon-wrapper">
@@ -33,9 +33,9 @@
               <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-4.04z" />
             </svg>
           </div>
-          {{ isSimulating ? 'GraphRAG长短期记忆实时更新中' : '实时更新中...' }}
+          {{ isSimulating ? $t('graph.graphMemoryRealtime') : $t('graph.realtimeUpdating') }}
         </div>
-        
+
         <!-- 模拟结束后的提示 -->
         <div v-if="showSimulationFinishedHint" class="graph-building-hint finished-hint">
           <div class="hint-icon-wrapper">
@@ -45,25 +45,25 @@
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
           </div>
-          <span class="hint-text">还有少量内容处理中，建议稍后手动刷新图谱</span>
-          <button class="hint-close-btn" @click="dismissFinishedHint" title="关闭提示">
+          <span class="hint-text">{{ $t('graph.pendingContentHint') }}</span>
+          <button class="hint-close-btn" @click="dismissFinishedHint" :title="$t('graph.closeHint')">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
         </div>
-        
+
         <!-- 节点/边详情面板 -->
         <div v-if="selectedItem" class="detail-panel">
           <div class="detail-panel-header">
-            <span class="detail-title">{{ selectedItem.type === 'node' ? 'Node Details' : 'Relationship' }}</span>
+            <span class="detail-title">{{ selectedItem.type === 'node' ? $t('graph.nodeDetails') : $t('graph.relationship') }}</span>
             <span v-if="selectedItem.type === 'node'" class="detail-type-badge" :style="{ background: selectedItem.color, color: '#fff' }">
               {{ selectedItem.entityType }}
             </span>
             <button class="detail-close" @click="closeDetailPanel">×</button>
           </div>
-          
+
           <!-- 节点详情 -->
           <div v-if="selectedItem.type === 'node'" class="detail-content">
             <div class="detail-row">
@@ -78,7 +78,7 @@
               <span class="detail-label">Created:</span>
               <span class="detail-value">{{ formatDateTime(selectedItem.data.created_at) }}</span>
             </div>
-            
+
             <!-- Properties -->
             <div class="detail-section" v-if="selectedItem.data.attributes && Object.keys(selectedItem.data.attributes).length > 0">
               <div class="section-title">Properties:</div>
@@ -89,13 +89,13 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Summary -->
             <div class="detail-section" v-if="selectedItem.data.summary">
               <div class="section-title">Summary:</div>
               <div class="summary-text">{{ selectedItem.data.summary }}</div>
             </div>
-            
+
             <!-- Labels -->
             <div class="detail-section" v-if="selectedItem.data.labels && selectedItem.data.labels.length > 0">
               <div class="section-title">Labels:</div>
@@ -106,7 +106,7 @@
               </div>
             </div>
           </div>
-          
+
           <!-- 边详情 -->
           <div v-else class="detail-content">
             <!-- 自环组详情 -->
@@ -115,15 +115,15 @@
                 {{ selectedItem.data.source_name }} - Self Relations
                 <span class="self-loop-count">{{ selectedItem.data.selfLoopCount }} items</span>
               </div>
-              
+
               <div class="self-loop-list">
-                <div 
-                  v-for="(loop, idx) in selectedItem.data.selfLoopEdges" 
-                  :key="loop.uuid || idx" 
+                <div
+                  v-for="(loop, idx) in selectedItem.data.selfLoopEdges"
+                  :key="loop.uuid || idx"
                   class="self-loop-item"
                   :class="{ expanded: expandedSelfLoops.has(loop.uuid || idx) }"
                 >
-                  <div 
+                  <div
                     class="self-loop-item-header"
                     @click="toggleSelfLoop(loop.uuid || idx)"
                   >
@@ -131,7 +131,7 @@
                     <span class="self-loop-name">{{ loop.name || loop.fact_type || 'RELATED' }}</span>
                     <span class="self-loop-toggle">{{ expandedSelfLoops.has(loop.uuid || idx) ? '−' : '+' }}</span>
                   </div>
-                  
+
                   <div class="self-loop-item-content" v-show="expandedSelfLoops.has(loop.uuid || idx)">
                     <div class="detail-row" v-if="loop.uuid">
                       <span class="detail-label">UUID:</span>
@@ -159,13 +159,13 @@
                 </div>
               </div>
             </template>
-            
+
             <!-- 普通边详情 -->
             <template v-else>
               <div class="edge-relation-header">
                 {{ selectedItem.data.source_name }} → {{ selectedItem.data.name || 'RELATED_TO' }} → {{ selectedItem.data.target_name }}
               </div>
-              
+
               <div class="detail-row">
                 <span class="detail-label">UUID:</span>
                 <span class="detail-value uuid-text">{{ selectedItem.data.uuid }}</span>
@@ -182,7 +182,7 @@
                 <span class="detail-label">Fact:</span>
                 <span class="detail-value fact-text">{{ selectedItem.data.fact }}</span>
               </div>
-              
+
               <!-- Episodes -->
               <div class="detail-section" v-if="selectedItem.data.episodes && selectedItem.data.episodes.length > 0">
                 <div class="section-title">Episodes:</div>
@@ -192,7 +192,7 @@
                   </span>
                 </div>
               </div>
-              
+
               <div class="detail-row" v-if="selectedItem.data.created_at">
                 <span class="detail-label">Created:</span>
                 <span class="detail-value">{{ formatDateTime(selectedItem.data.created_at) }}</span>
@@ -205,17 +205,17 @@
           </div>
         </div>
       </div>
-      
+
       <!-- 加载状态 -->
       <div v-else-if="loading" class="graph-state">
         <div class="loading-spinner"></div>
-        <p>图谱数据加载中...</p>
+        <p>{{ $t('graph.graphDataLoading') }}</p>
       </div>
-      
+
       <!-- 等待/空状态 -->
       <div v-else class="graph-state">
         <div class="empty-icon">❖</div>
-        <p class="empty-text">等待本体生成...</p>
+        <p class="empty-text">{{ $t('graph.waitingOntology') }}</p>
       </div>
     </div>
 
@@ -229,7 +229,7 @@
         </div>
       </div>
     </div>
-    
+
     <!-- 显示边标签开关 -->
     <div v-if="graphData" class="edge-labels-toggle">
       <label class="toggle-switch">
@@ -294,7 +294,7 @@ const entityTypes = computed(() => {
   const typeMap = {}
   // 美观的颜色调色板
   const colors = ['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C', '#3498db', '#9b59b6', '#27ae60', '#f39c12']
-  
+
   props.graphData.nodes.forEach(node => {
     const type = node.labels?.find(l => l !== 'Entity') || 'Entity'
     if (!typeMap[type]) {
@@ -310,13 +310,13 @@ const formatDateTime = (dateStr) => {
   if (!dateStr) return ''
   try {
     const date = new Date(dateStr)
-    return date.toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
       year: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
-      hour12: true 
+      hour12: true
     })
   } catch {
     return dateStr
@@ -334,47 +334,47 @@ let linkLabelBgRef = null
 
 const renderGraph = () => {
   if (!graphSvg.value || !props.graphData) return
-  
+
   // 停止之前的仿真
   if (currentSimulation) {
     currentSimulation.stop()
   }
-  
+
   const container = graphContainer.value
   const width = container.clientWidth
   const height = container.clientHeight
-  
+
   const svg = d3.select(graphSvg.value)
     .attr('width', width)
     .attr('height', height)
     .attr('viewBox', `0 0 ${width} ${height}`)
-    
+
   svg.selectAll('*').remove()
-  
+
   const nodesData = props.graphData.nodes || []
   const edgesData = props.graphData.edges || []
-  
+
   if (nodesData.length === 0) return
 
   // Prep data
   const nodeMap = {}
   nodesData.forEach(n => nodeMap[n.uuid] = n)
-  
+
   const nodes = nodesData.map(n => ({
     id: n.uuid,
     name: n.name || 'Unnamed',
     type: n.labels?.find(l => l !== 'Entity') || 'Entity',
     rawData: n
   }))
-  
+
   const nodeIds = new Set(nodes.map(n => n.id))
-  
+
   // 处理边数据，计算同一对节点间的边数量和索引
   const edgePairCount = {}
   const selfLoopEdges = {} // 按节点分组的自环边
   const tempEdges = edgesData
     .filter(e => nodeIds.has(e.source_node_uuid) && nodeIds.has(e.target_node_uuid))
-  
+
   // 统计每对节点之间的边数量，收集自环边
   tempEdges.forEach(e => {
     if (e.source_node_uuid === e.target_node_uuid) {
@@ -392,26 +392,26 @@ const renderGraph = () => {
       edgePairCount[pairKey] = (edgePairCount[pairKey] || 0) + 1
     }
   })
-  
+
   // 记录当前处理到每对节点的第几条边
   const edgePairIndex = {}
   const processedSelfLoopNodes = new Set() // 已处理的自环节点
-  
+
   const edges = []
-  
+
   tempEdges.forEach(e => {
     const isSelfLoop = e.source_node_uuid === e.target_node_uuid
-    
+
     if (isSelfLoop) {
       // 自环边 - 每个节点只添加一条合并的自环
       if (processedSelfLoopNodes.has(e.source_node_uuid)) {
         return // 已处理过，跳过
       }
       processedSelfLoopNodes.add(e.source_node_uuid)
-      
+
       const allSelfLoops = selfLoopEdges[e.source_node_uuid]
       const nodeName = nodeMap[e.source_node_uuid]?.name || 'Unknown'
-      
+
       edges.push({
         source: e.source_node_uuid,
         target: e.target_node_uuid,
@@ -429,15 +429,15 @@ const renderGraph = () => {
       })
       return
     }
-    
+
     const pairKey = [e.source_node_uuid, e.target_node_uuid].sort().join('_')
     const totalCount = edgePairCount[pairKey]
     const currentIndex = edgePairIndex[pairKey] || 0
     edgePairIndex[pairKey] = currentIndex + 1
-    
+
     // 判断边的方向是否与标准化方向一致（源UUID < 目标UUID）
     const isReversed = e.source_node_uuid > e.target_node_uuid
-    
+
     // 计算曲率：多条边时分散开，单条边为直线
     let curvature = 0
     if (totalCount > 1) {
@@ -445,14 +445,14 @@ const renderGraph = () => {
       // 曲率范围根据边数量增加，边越多曲率范围越大
       const curvatureRange = Math.min(1.2, 0.6 + totalCount * 0.15)
       curvature = ((currentIndex / (totalCount - 1)) - 0.5) * curvatureRange * 2
-      
+
       // 如果边的方向与标准化方向相反，翻转曲率
       // 这样确保所有边在同一参考系下分布，不会因方向不同而重叠
       if (isReversed) {
         curvature = -curvature
       }
     }
-    
+
     edges.push({
       source: e.source_node_uuid,
       target: e.target_node_uuid,
@@ -469,7 +469,7 @@ const renderGraph = () => {
       }
     })
   })
-    
+
   // Color scale
   const colorMap = {}
   entityTypes.value.forEach(t => colorMap[t.name] = t.color)
@@ -490,11 +490,11 @@ const renderGraph = () => {
     // 添加向中心的引力，让独立的节点群聚集到中心区域
     .force('x', d3.forceX(width / 2).strength(0.04))
     .force('y', d3.forceY(height / 2).strength(0.04))
-  
+
   currentSimulation = simulation
 
   const g = svg.append('g')
-  
+
   // Zoom
   svg.call(d3.zoom().extent([[0, 0], [width, height]]).scaleExtent([0.1, 4]).on('zoom', (event) => {
     g.attr('transform', event.transform)
@@ -502,12 +502,12 @@ const renderGraph = () => {
 
   // Links - 使用 path 支持曲线
   const linkGroup = g.append('g').attr('class', 'links')
-  
+
   // 计算曲线路径
   const getLinkPath = (d) => {
     const sx = d.source.x, sy = d.source.y
     const tx = d.target.x, ty = d.target.y
-    
+
     // 检测自环
     if (d.isSelfLoop) {
       // 自环：绘制一个圆弧从节点出发再返回
@@ -520,12 +520,12 @@ const renderGraph = () => {
       // 使用圆弧绘制自环（sweep-flag=1 顺时针）
       return `M${x1},${y1} A${loopRadius},${loopRadius} 0 1,1 ${x2},${y2}`
     }
-    
+
     if (d.curvature === 0) {
       // 直线
       return `M${sx},${sy} L${tx},${ty}`
     }
-    
+
     // 计算曲线控制点 - 根据边数量和距离动态调整
     const dx = tx - sx, dy = ty - sy
     const dist = Math.sqrt(dx * dx + dy * dy)
@@ -538,25 +538,25 @@ const renderGraph = () => {
     const offsetY = dx / dist * d.curvature * baseOffset
     const cx = (sx + tx) / 2 + offsetX
     const cy = (sy + ty) / 2 + offsetY
-    
+
     return `M${sx},${sy} Q${cx},${cy} ${tx},${ty}`
   }
-  
+
   // 计算曲线中点（用于标签定位）
   const getLinkMidpoint = (d) => {
     const sx = d.source.x, sy = d.source.y
     const tx = d.target.x, ty = d.target.y
-    
+
     // 检测自环
     if (d.isSelfLoop) {
       // 自环标签位置：节点右侧
       return { x: sx + 70, y: sy }
     }
-    
+
     if (d.curvature === 0) {
       return { x: (sx + tx) / 2, y: (sy + ty) / 2 }
     }
-    
+
     // 二次贝塞尔曲线的中点 t=0.5
     const dx = tx - sx, dy = ty - sy
     const dist = Math.sqrt(dx * dx + dy * dy)
@@ -567,14 +567,14 @@ const renderGraph = () => {
     const offsetY = dx / dist * d.curvature * baseOffset
     const cx = (sx + tx) / 2 + offsetX
     const cy = (sy + ty) / 2 + offsetY
-    
+
     // 二次贝塞尔曲线公式 B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2, t=0.5
     const midX = 0.25 * sx + 0.5 * cx + 0.25 * tx
     const midY = 0.25 * sy + 0.5 * cy + 0.25 * ty
-    
+
     return { x: midX, y: midY }
   }
-  
+
   const link = linkGroup.selectAll('path')
     .data(edges)
     .enter().append('path')
@@ -590,7 +590,7 @@ const renderGraph = () => {
       linkLabels.attr('fill', '#666')
       // 高亮当前选中的边
       d3.select(event.target).attr('stroke', '#3498db').attr('stroke-width', 3)
-      
+
       selectedItem.value = {
         type: 'edge',
         data: d.rawData
@@ -615,7 +615,7 @@ const renderGraph = () => {
       // 高亮对应的边
       link.filter(l => l === d).attr('stroke', '#3498db').attr('stroke-width', 3)
       d3.select(event.target).attr('fill', 'rgba(52, 152, 219, 0.1)')
-      
+
       selectedItem.value = {
         type: 'edge',
         data: d.rawData
@@ -643,20 +643,20 @@ const renderGraph = () => {
       // 高亮对应的边
       link.filter(l => l === d).attr('stroke', '#3498db').attr('stroke-width', 3)
       d3.select(event.target).attr('fill', '#3498db')
-      
+
       selectedItem.value = {
         type: 'edge',
         data: d.rawData
       }
     })
-  
+
   // 保存引用供外部控制显隐
   linkLabelsRef = linkLabels
   linkLabelBgRef = linkLabelBg
 
   // Nodes group
   const nodeGroup = g.append('g').attr('class', 'nodes')
-  
+
   // Node circles
   const node = nodeGroup.selectAll('circle')
     .data(nodes)
@@ -668,18 +668,29 @@ const renderGraph = () => {
     .style('cursor', 'pointer')
     .call(d3.drag()
       .on('start', (event, d) => {
-        if (!event.active) simulation.alphaTarget(0.3).restart()
         d.fx = d.x
         d.fy = d.y
+        d._dragStartX = event.x
+        d._dragStartY = event.y
+        d._isDragging = false
       })
       .on('drag', (event, d) => {
-        d.fx = event.x
-        d.fy = event.y
+        const dx = event.x - d._dragStartX
+        const dy = event.y - d._dragStartY
+        if (!d._isDragging && Math.sqrt(dx * dx + dy * dy) > 3) {
+          d._isDragging = true
+          simulation.alphaTarget(0.3).restart()
+        }
+        if (d._isDragging) {
+          d.fx = event.x
+          d.fy = event.y
+        }
       })
       .on('end', (event, d) => {
-        if (!event.active) simulation.alphaTarget(0)
+        if (d._isDragging) simulation.alphaTarget(0)
         d.fx = null
         d.fy = null
+        d._isDragging = false
       })
     )
     .on('click', (event, d) => {
@@ -693,7 +704,7 @@ const renderGraph = () => {
       link.filter(l => l.source.id === d.id || l.target.id === d.id)
         .attr('stroke', '#E91E63')
         .attr('stroke-width', 2.5)
-      
+
       selectedItem.value = {
         type: 'node',
         data: d.rawData,
@@ -728,7 +739,7 @@ const renderGraph = () => {
   simulation.on('tick', () => {
     // 更新曲线路径
     link.attr('d', d => getLinkPath(d))
-    
+
     // 更新边标签位置（无旋转，水平显示更清晰）
     linkLabels.each(function(d) {
       const mid = getLinkMidpoint(d)
@@ -737,7 +748,7 @@ const renderGraph = () => {
         .attr('y', mid.y)
         .attr('transform', '') // 移除旋转，保持水平
     })
-    
+
     // 更新边标签背景
     linkLabelBg.each(function(d, i) {
       const mid = getLinkMidpoint(d)
@@ -759,7 +770,7 @@ const renderGraph = () => {
       .attr('x', d => d.x)
       .attr('y', d => d.y)
   })
-  
+
   // 点击空白处关闭详情面板
   svg.on('click', () => {
     selectedItem.value = null

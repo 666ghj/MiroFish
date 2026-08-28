@@ -1,4 +1,7 @@
 .git
+.github
+.gitignore
+.cursor
 .env
 **/.DS_Store
 **/._*
@@ -14,3 +17,10 @@ direct_gateway/.venv
 direct_gateway/**/__pycache__
 frontend/node_modules
 frontend/dist
+frontend/.vite
+node_modules
+.venv
+.python-version
+**/*.pyc
+**/.mypy_cache
+**/.ruff_cache

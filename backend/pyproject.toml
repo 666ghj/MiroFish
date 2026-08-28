@@ -2,7 +2,7 @@
 name = "mirofish-backend"
 version = "0.1.0"
 description = "MiroFish - 简洁通用的群体智能引擎，预测万物"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 license = { text = "AGPL-3.0" }
 authors = [
     { name = "MiroFish Team" }
@@ -17,11 +17,14 @@ dependencies = [
     "openai>=1.0.0",
     "cryptography>=46.0.0",
 
-    # Zep Cloud (默认后端)
-    "zep-cloud==3.13.0",
+    # Zep Cloud
+    "zep-cloud==3.25.0",
+    "httpx>=0.27.0",
 
     # 文件处理
     "PyMuPDF>=1.24.0",
+    "charset-normalizer>=3.0.0",
+    "chardet>=5.0.0",
 
     # 工具库
     "python-dotenv>=1.0.0",
