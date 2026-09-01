@@ -31,6 +31,9 @@ class Config:
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    # UXE fork: empty => Zep Cloud. Set to the local Graphiti-backed shim, e.g.
+    # http://127.0.0.1:8088/api/v2 — see third_party/graphiti/server/graph_service/zep_compat.
+    ZEP_BASE_URL = os.environ.get('ZEP_BASE_URL')
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -67,9 +70,13 @@ class Config:
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
         if not cls.ZEP_API_KEY:
+            # Still required when ZEP_BASE_URL points at the local shim: the SDK
+            # refuses to construct without a key. Any non-empty value works there.
             errors.append("ZEP_API_KEY 未配置")
         if os.environ.get("ZEP_API_URL"):
-            errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
+            errors.append(
+                "ZEP_API_URL 不受支持；请改用 ZEP_BASE_URL 指向本地 Zep 兼容服务"
+            )
         if cls.DEBUG:
             import warnings
             warnings.warn("Flask DEBUG mode is enabled. Do not use in production.", RuntimeWarning)

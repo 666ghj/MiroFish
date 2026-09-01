@@ -91,7 +91,28 @@ MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 4. **报告生成**：ReportAgent拥有丰富的工具集与模拟后环境进行深度交互
 5. **深度互动**：与模拟世界中的任意一位进行对话 & 与ReportAgent进行对话
 
-## 🚀 快速开始
+## 🔒 全本地部署（UXE fork）
+
+本 fork 支持**完全本地运行**，不依赖任何在线服务（无需 LLM API，无需 Zep Cloud）。
+包括模型推理在内的全部组件都在同一台机器上运行，目标硬件为 NVIDIA DGX Spark
+(GB10, aarch64, 128GB 统一内存)。
+
+```bash
+git clone --recurse-submodules git@github.com:uxe-security-solutions/MiroFish.git
+cd MiroFish
+./scripts/provision_local.sh all
+```
+
+**只需在网络上开放一个端口：`3000`**（前端 Vite，它会把 `/api` 代理到后端）。
+其余服务（后端 5001、Zep 兼容层 8088、vLLM 8000、向量模型 8081、FalkorDB 6379）
+均绑定在 `127.0.0.1`，不要对外暴露。
+
+改动说明、端口清单、模型选型与已知限制详见英文文档：
+[Fully Local Deployment (UXE fork)](./README.md#-fully-local-deployment-uxe-fork)。
+
+## 🚀 快速开始（上游方式：在线 LLM + Zep Cloud）
+
+> 全本地部署请参见上方 [全本地部署](#-全本地部署uxe-fork)。
 
 ### 一、源码部署（推荐）
 

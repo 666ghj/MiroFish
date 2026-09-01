@@ -2,9 +2,14 @@
 <html lang="zh">
   <head>
     <script>document.documentElement.lang = localStorage.getItem('locale') || 'zh'</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100..800&family=Noto+Sans+SC:wght@300;400;500;700;800;900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+    <!-- UXE fork: Google Fonts removed so the app works fully offline. It was
+         the only external request the frontend made, and on an air-gapped box
+         it stalls first paint until the request times out.
+         The CSS asks for Inter / JetBrains Mono / Noto Sans SC / Space Grotesk
+         by name and every rule already declares a local fallback, so install
+         the matching system fonts to keep the intended look:
+           apt-get install -y fonts-inter fonts-jetbrains-mono fonts-noto-cjk
+         (fonts-noto-cjk is what makes Chinese text render correctly.) -->
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
