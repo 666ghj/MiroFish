@@ -3,7 +3,14 @@ import i18n from '../i18n'
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001',
+  // UXE fork: default to same-origin. The previous default
+  // ('http://localhost:5001') is resolved by the BROWSER, so opening the UI
+  // from any machine other than the server hit that machine's own port 5001
+  // and failed. Every request path already starts with '/api', which Vite's
+  // dev proxy (vite.config.js) — or any reverse proxy — forwards to the
+  // backend. Consequence: only the frontend port needs to be exposed.
+  // Set VITE_API_BASE_URL only to target a backend on a different origin.
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '',
   timeout: 300000, // 5分钟超时（本体生成可能需要较长时间）
   headers: {
     'Content-Type': 'application/json'

@@ -72,14 +72,71 @@ def test_zep_client_is_shared_and_uses_an_explicit_timeout(monkeypatch):
     zep.clear_zep_client_cache()
 
 
-def test_zep_client_rejects_self_hosted_endpoint_override(monkeypatch):
+def test_zep_client_rejects_the_sdk_api_url_override(monkeypatch):
+    """ZEP_API_URL takes precedence over an explicit base_url inside the SDK, so
+    it stays rejected. ZEP_BASE_URL is the supported way to retarget."""
     monkeypatch.setenv("ZEP_API_URL", "https://example.invalid")
 
     with pytest.raises(ValueError, match="ZEP_API_URL"):
         zep.get_zep_client("test-key")
 
 
-def test_zep_client_uses_internal_timeout_and_ignores_env_overrides(monkeypatch):
+def test_base_url_defaults_to_cloud(monkeypatch):
+    monkeypatch.delenv("ZEP_BASE_URL", raising=False)
+    assert zep.resolve_zep_base_url() == zep.ZEP_CLOUD_BASE_URL
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_base_url_falls_back_to_cloud(monkeypatch, blank):
+    monkeypatch.setenv("ZEP_BASE_URL", blank)
+    assert zep.resolve_zep_base_url() == zep.ZEP_CLOUD_BASE_URL
+
+
+def test_zep_base_url_retargets_the_client(monkeypatch):
+    """UXE fork: ZEP_BASE_URL points the SDK at the local Graphiti-backed shim."""
+    created = []
+
+    def fake_zep(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(kwargs=kwargs)
+
+    monkeypatch.delenv("ZEP_API_URL", raising=False)
+    monkeypatch.setenv("ZEP_BASE_URL", " http://127.0.0.1:8088/api/v2 ")
+    monkeypatch.setattr(zep, "Zep", fake_zep)
+    zep.clear_zep_client_cache()
+
+    zep.get_zep_client("test-key", timeout=5)
+
+    assert created == [{
+        "api_key": "test-key",
+        "base_url": "http://127.0.0.1:8088/api/v2",
+        "timeout": 5.0,
+    }]
+    zep.clear_zep_client_cache()
+
+
+def test_clients_for_different_base_urls_are_not_shared(monkeypatch):
+    """base_url is part of the cache key, so switching endpoints cannot hand
+    back a client still pointed at the old one."""
+    monkeypatch.delenv("ZEP_API_URL", raising=False)
+    monkeypatch.setattr(zep, "Zep", lambda **kwargs: SimpleNamespace(kwargs=kwargs))
+    zep.clear_zep_client_cache()
+
+    monkeypatch.setenv("ZEP_BASE_URL", "http://127.0.0.1:8088/api/v2")
+    local = zep.get_zep_client("test-key", timeout=5)
+    monkeypatch.delenv("ZEP_BASE_URL", raising=False)
+    cloud = zep.get_zep_client("test-key", timeout=5)
+
+    assert local is not cloud
+    assert local.kwargs["base_url"] == "http://127.0.0.1:8088/api/v2"
+    assert cloud.kwargs["base_url"] == zep.ZEP_CLOUD_BASE_URL
+    zep.clear_zep_client_cache()
+
+
+def test_zep_client_ignores_legacy_timeout_env_names(monkeypatch):
+    """The supported override names are ZEP_HTTP_REQUEST_TIMEOUT_SECONDS and
+    ZEP_INGESTION_WAIT_TIMEOUT_SECONDS, read at import. These older names were
+    never wired up and must stay inert."""
     created = []
 
     def fake_zep(**kwargs):

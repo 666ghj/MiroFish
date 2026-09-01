@@ -1,0 +1,4 @@
+[submodule "third_party/graphiti"]
+	path = third_party/graphiti
+	url = git@github.com:uxe-security-solutions/graphiti.git
+	branch = feat/zep-compat-layer
