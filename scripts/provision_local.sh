@@ -29,7 +29,12 @@ HF_CACHE="${HF_CACHE_DIR:-$DATA_DIR/hf-cache}"
 # been reported broken on this chip (its bundled torch compiles only through
 # sm_120; GB10 is sm_121) — `doctor` checks for that explicitly.
 VLLM_IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.05.post1-py3}"
-TEI_IMAGE="${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9}"
+# Embeddings run on the SAME vLLM image. HuggingFace TEI was the obvious
+# choice but publishes no arm64 image at all — every cpu-* tag is amd64-only
+# (checked against the registry), and the arm64 CUDA tag its docs mention does
+# not resolve. Reusing the vLLM image means one fewer dependency and a
+# guaranteed arm64 build.
+EMBED_IMAGE="${EMBED_IMAGE:-$VLLM_IMAGE}"
 FALKORDB_IMAGE="${FALKORDB_IMAGE:-falkordb/falkordb:latest}"
 
 LLM_MODEL_REPO="${LLM_MODEL_REPO:-RedHatAI/Qwen3.6-35B-A3B-NVFP4}"
@@ -48,7 +53,13 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 # the container runtime and the page cache. Published DGX Spark recipes range
 # 0.4–0.87; 0.90 has been observed getting the engine SIGTERM'd by earlyoom,
 # which does NOT look like an OOM in the logs. Start conservative.
-GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.75}"
+# NOTE: this is a fraction of TOTAL device memory, and the embeddings server is
+# a second vLLM process on the same pool, so the two must sum well under 1.0
+# alongside the OS and page cache.
+GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.70}"
+# bge-m3 is ~2.2GB of weights; it needs very little.
+EMBED_GPU_MEM_UTIL="${EMBED_GPU_MEM_UTIL:-0.08}"
+EMBED_MAX_MODEL_LEN="${EMBED_MAX_MODEL_LEN:-8192}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 # vLLM will admit this many concurrent sequences. Decode on GB10 is
 # bandwidth-bound (~273 GB/s) and divides across sequences, so admitting 32
@@ -75,6 +86,37 @@ note() { printf '    %s%s%s\n' "$D" "$*" "$N"; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Run a command with a hard deadline. Every probe in this script goes through
+# this: an unbounded `docker run` probe is what made an earlier version of the
+# script appear to hang forever with no output.
+run_bounded() {
+  local seconds="$1"; shift
+  if have timeout; then
+    timeout "$seconds" "$@"
+    return $?
+  fi
+  # Fallback for hosts without coreutils timeout.
+  "$@" & local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= seconds )); then
+      kill -TERM "$pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 1; waited=$((waited + 1))
+  done
+  wait "$pid"
+}
+
+# Ask the embeddings server for one vector and report its width.
+probe_embedding_dim() {
+  local body
+  body=$(printf '{"model":"%s","input":"dimension probe"}' "$EMBED_MODEL_REPO")
+  run_bounded 30 curl -fsS "http://127.0.0.1:$EMBED_PORT/v1/embeddings" \
+    -H 'Content-Type: application/json' -d "$body" 2>/dev/null \
+    | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"][0]["embedding"]))' 2>/dev/null
+}
+
 # =============================================================================
 # preflight
 # =============================================================================
@@ -91,15 +133,24 @@ preflight() {
 
   if have nvidia-smi; then
     ok "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
-    if ! docker run --rm --gpus all "$FALKORDB_IMAGE" true >/dev/null 2>&1; then
-      note "could not verify --gpus passthrough with a trivial container; vLLM may still work"
+    # Check the runtime is registered by asking the daemon. Do NOT probe by
+    # running a container: `docker run --rm --gpus all <image> true` looks
+    # harmless but pulls the image and, for any image with an ENTRYPOINT (e.g.
+    # falkordb's run.sh), `true` becomes an argument that the entrypoint
+    # ignores — so the container starts its real service and never exits.
+    if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia; then
+      ok "nvidia container runtime registered"
+    else
+      warn "nvidia runtime not listed by 'docker info'. Install nvidia-container-toolkit,"
+      warn "or the LLM container will fail to see the GPU. Continuing anyway."
     fi
   else
     warn "nvidia-smi not found. The LLM container needs a working NVIDIA container runtime."
   fi
 
+  # -Pk is POSIX and works on both GNU and BSD df; --output=avail is GNU-only.
   local free_gb
-  free_gb=$(df -BG --output=avail "$ROOT" 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)
+  free_gb=$(df -Pk "$ROOT" 2>/dev/null | awk 'NR==2 {printf "%d", $4/1048576}')
   if [[ -n "$free_gb" && "$free_gb" -lt 120 ]]; then
     warn "only ${free_gb}GB free here. Model weights alone run 25–65GB; 120GB+ recommended."
   else
@@ -128,8 +179,9 @@ install_system_deps() {
   done
   if [[ ${#missing[@]} -eq 0 ]]; then ok "all present"; return; fi
   note "installing: ${missing[*]}"
+  note "this needs sudo — enter your password if prompted"
   sudo apt-get update -qq
-  sudo apt-get install -y -qq "${missing[@]}" || warn "some packages failed; continuing"
+  sudo apt-get install -y "${missing[@]}" || warn "some packages failed; continuing"
   ok "installed"
 }
 
@@ -153,8 +205,9 @@ install_node() {
   # about the mismatch, so an 18.x box installs cleanly and then misbehaves.
   warn "node ${major:-none} is too old (vite 7 needs >= $NODE_MAJOR_REQUIRED). Installing Node 22 LTS."
   if have apt-get; then
+    note "this needs sudo — enter your password if prompted"
     curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-    sudo apt-get install -y -qq nodejs
+    sudo apt-get install -y nodejs
   else
     die "install Node 22 LTS manually, then re-run."
   fi
@@ -200,8 +253,9 @@ install_python_deps() {
 
 install_node_deps() {
   step "Frontend dependencies"
-  npm ci --silent
-  npm ci --prefix frontend --silent
+  note "npm ci for the root workspace, then the frontend (a few minutes)"
+  npm ci --no-audit --no-fund
+  npm ci --prefix frontend --no-audit --no-fund
   ok "installed"
 }
 
@@ -237,9 +291,15 @@ fetch_models() {
 
 pull_images() {
   step "Container images"
-  for image in "$FALKORDB_IMAGE" "$TEI_IMAGE" "$VLLM_IMAGE"; do
-    note "pulling $image"
-    docker pull -q "$image" || warn "could not pull $image"
+  note "the vLLM image is several GB; progress is shown so a long pull is not"
+  note "mistaken for a hang"
+  for image in $(printf '%s\n' "$FALKORDB_IMAGE" "$VLLM_IMAGE" "$EMBED_IMAGE" | sort -u); do
+    printf '\n  --- %s\n' "$image"
+    if docker image inspect "$image" >/dev/null 2>&1; then
+      ok "already present"
+      continue
+    fi
+    docker pull "$image" || warn "could not pull $image"
   done
   ok "done"
 }
@@ -288,8 +348,10 @@ start_llm() {
   docker rm -f mirofish-llm >/dev/null 2>&1 || true
 
   # Unified memory means the OS page cache eats into the KV cache budget.
-  sync; sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null || \
-    note "could not drop caches (needs root); fine, just less headroom"
+  note "dropping the page cache to free unified memory (sudo; skipped if refused)"
+  sync
+  run_bounded 20 sudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null || \
+    note "page cache not dropped (needs passwordless sudo); fine, just less headroom"
 
   # Two independent needs, both served by this one endpoint:
   #  - OASIS agents use native OpenAI tool calling  -> the tool-call flags
@@ -316,14 +378,22 @@ start_embeddings() {
   step "Embeddings server"
   if container_up mirofish-embed; then ok "already running"; return; fi
   docker rm -f mirofish-embed >/dev/null 2>&1 || true
-  # TEI on the Grace CPU cores keeps the entire GPU budget for the LLM. bge-m3
-  # is small and embedding is not the bottleneck here.
+  # vLLM in pooling mode exposes an OpenAI-compatible /v1/embeddings.
+  # `--runner pooling` supersedes the older `--task embed`; copying an older
+  # recipe with --task embed will fail on a current image.
   docker run -d --name mirofish-embed --restart unless-stopped \
-    -p "127.0.0.1:$EMBED_PORT:80" \
-    -v "$HF_CACHE:/data" \
-    -e HF_HOME=/data -e HF_HUB_OFFLINE=1 -e HF_HUB_DISABLE_TELEMETRY=1 \
-    "$TEI_IMAGE" --model-id "$EMBED_MODEL_REPO" >/dev/null
-  ok "starting on 127.0.0.1:$EMBED_PORT"
+    --gpus all --ipc=host \
+    -p "127.0.0.1:$EMBED_PORT:8000" \
+    -v "$HF_CACHE:/hf" \
+    -e HF_HOME=/hf -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
+    -e HF_HUB_DISABLE_TELEMETRY=1 \
+    "$EMBED_IMAGE" \
+    vllm serve "$EMBED_MODEL_REPO" \
+      --runner pooling \
+      --host 0.0.0.0 --port 8000 \
+      --gpu-memory-utilization "$EMBED_GPU_MEM_UTIL" \
+      --max-model-len "$EMBED_MAX_MODEL_LEN" >/dev/null
+  ok "starting on 127.0.0.1:$EMBED_PORT (model id: $EMBED_MODEL_REPO)"
 }
 
 pidfile() { echo "$RUN_DIR/$1.pid"; }
@@ -375,8 +445,8 @@ do_start() {
   start_falkordb
   start_embeddings
   start_llm
-  wait_for_http "http://127.0.0.1:$EMBED_PORT/health" "embeddings" 90 || \
-    warn "embeddings not healthy; the shim will fail to ingest"
+  wait_for_http "http://127.0.0.1:$EMBED_PORT/v1/models" "embeddings" 180 || \
+    warn "embeddings not healthy — check: $0 logs embed"
   wait_for_http "http://127.0.0.1:$LLM_PORT/v1/models" "LLM" 300 || \
     warn "LLM not healthy — check: $0 logs llm"
   start_shim
@@ -414,7 +484,7 @@ do_status() {
   step "Status"
   printf '  %-12s %-9s %s\n' SERVICE STATE ENDPOINT
   for row in "falkordb:mirofish-falkordb:127.0.0.1:$FALKORDB_PORT" \
-             "embeddings:mirofish-embed:http://127.0.0.1:$EMBED_PORT/health" \
+             "embeddings:mirofish-embed:http://127.0.0.1:$EMBED_PORT/v1/models" \
              "llm:mirofish-llm:http://127.0.0.1:$LLM_PORT/v1/models"; do
     IFS=: read -r label container rest <<<"$row"
     local endpoint="${row#"$label:$container:"}"
@@ -443,6 +513,7 @@ do_logs() {
   case "$svc" in
     llm)        docker logs -f --tail 200 mirofish-llm ;;
     embed*)     docker logs -f --tail 200 mirofish-embed ;;
+    emb)        docker logs -f --tail 200 mirofish-embed ;;
     falkor*)    docker logs -f --tail 200 mirofish-falkordb ;;
     ''|all)     tail -n 100 -f "$LOG_DIR"/*.log ;;
     *)          tail -n 200 -f "$LOG_DIR/$svc.log" ;;
@@ -456,15 +527,17 @@ do_test() {
     .venv/bin/python -m pytest tests/ -q --asyncio-mode=auto ) || warn "shim tests failed"
 }
 
-do_doctor() {
-  step "Doctor"
-  preflight
-
+check_gpu_arch() {
   step "GPU architecture support in $VLLM_IMAGE"
   # GB10 is sm_121. A torch that only compiles through sm_120 fails at runtime
   # with errors that do not mention the architecture at all.
   local arches
-  if arches=$(docker run --rm --gpus all "$VLLM_IMAGE" \
+  if ! docker image inspect "$VLLM_IMAGE" >/dev/null 2>&1; then
+    warn "$VLLM_IMAGE not pulled yet; run '$0 setup' first to check this"
+    return 0
+  fi
+  # Bounded, and only against an image already on disk — see run_bounded.
+  if arches=$(run_bounded 180 docker run --rm --gpus all "$VLLM_IMAGE" \
       python -c 'import torch; print(" ".join(torch.cuda.get_arch_list()))' 2>/dev/null); then
     note "torch arch list: $arches"
     if [[ "$arches" == *sm_121* || "$arches" == *sm_121a* ]]; then
@@ -475,15 +548,44 @@ do_doctor() {
   else
     warn "could not query the image (not pulled yet, or no GPU access)"
   fi
+}
+
+do_doctor() {
+  step "Doctor"
+  preflight
+  check_gpu_arch
 
   step "arm64 manifests"
-  for image in "$FALKORDB_IMAGE" "$TEI_IMAGE"; do
-    if docker manifest inspect "$image" 2>/dev/null | grep -q 'arm64'; then
-      ok "$image has an arm64 manifest"
+  for image in $(printf '%s\n' "$FALKORDB_IMAGE" "$VLLM_IMAGE" "$EMBED_IMAGE" | sort -u); do
+    local manifest
+    manifest=$(run_bounded 60 docker manifest inspect "$image" 2>&1) || manifest=""
+    if [[ -z "$manifest" || "$manifest" == *"manifest unknown"* || "$manifest" == *"no such manifest"* ]]; then
+      warn "$image: manifest not found — that tag probably does not exist"
+    elif grep -q '"architecture": *"arm64"' <<<"$manifest"; then
+      ok "$image has an arm64 build"
+    elif ! grep -q '"manifests"' <<<"$manifest"; then
+      ok "$image is a single-arch image (assuming it matches this host)"
     else
-      warn "$image: no arm64 entry found. Pin an explicit -arm64v8 tag."
+      warn "$image has NO arm64 build. It will not run on this host."
+      warn "  architectures offered: $(grep -o '"architecture": *"[a-z0-9]*"' <<<"$manifest" \
+            | grep -v unknown | sed 's/.*"\([a-z0-9]*\)"$/\1/' | sort -u | tr '\n' ' ')"
     fi
   done
+
+  step "Embedding dimension"
+  # EMBEDDING_DIM is a one-way door: the vector index is created with it, so a
+  # mismatch means re-embedding every graph later. And Graphiti TRUNCATES longer
+  # vectors silently rather than erroring. Check it live while that is cheap.
+  local dim
+  dim=$(probe_embedding_dim) || dim=""
+  if [[ -z "$dim" ]]; then
+    note "embeddings server not reachable; start the stack and re-run doctor"
+  elif [[ "$dim" == "${EMBEDDING_DIM:-1024}" ]]; then
+    ok "server returns $dim dims, matching EMBEDDING_DIM"
+  else
+    warn "server returns $dim dims but EMBEDDING_DIM=${EMBEDDING_DIM:-1024}."
+    warn "Fix this BEFORE ingesting anything — Graphiti truncates silently."
+  fi
 
   step "Config sanity"
   load_env

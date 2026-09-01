@@ -161,7 +161,7 @@ overwritten.
 | 5001 | Backend API (Flask) | No — reached through the frontend proxy |
 | 8088 | Zep-compatible shim | No |
 | 8000 | vLLM (OpenAI-compatible) | No |
-| 8081 | Embeddings (TEI) | No |
+| 8081 | Embeddings (vLLM, pooling mode) | No |
 | 6379 | FalkorDB | No |
 | 3001 | FalkorDB browser UI | No — handy over an SSH tunnel |
 
@@ -186,7 +186,7 @@ its own: whoever reaches the UI can drive simulations.
 browser ──▶ :3000 Vite ──/api──▶ :5001 backend ──▶ :8088 Zep shim ──▶ :6379 FalkorDB
                                       │                   │
                                       └───────────────────┴──▶ :8000 vLLM  (agents + extraction)
-                                                          └──▶ :8081 TEI   (embeddings)
+                                                          └──▶ :8081 vLLM  (embeddings, pooling)
 ```
 
 The shim needs an embeddings endpoint because Zep Cloud did embedding server-side
@@ -201,8 +201,13 @@ Defaults are set in `scripts/provision_local.sh` and overridable by environment:
 - **LLM** — `RedHatAI/Qwen3.6-35B-A3B-NVFP4`. A Mixture-of-Experts model is the
   right shape here: GB10 has ~273 GB/s of bandwidth, decode is bandwidth-bound, and
   MoE reads far fewer weights per token.
-- **Embeddings** — `BAAI/bge-m3` on TEI, on the Grace CPU cores, leaving the whole
-  GPU budget to the LLM.
+- **Embeddings** — `BAAI/bge-m3` on a second vLLM container in pooling mode.
+  HuggingFace TEI would have been the obvious choice but publishes **no arm64
+  image at all** — every `cpu-*` tag is amd64-only. Reusing the vLLM image means
+  one fewer dependency and a guaranteed arm64 build. It takes a small slice of
+  GPU memory (`EMBED_GPU_MEM_UTIL`, default `0.08`); `GPU_MEM_UTIL` for the main
+  LLM is correspondingly `0.70`, and the two must sum well under 1.0 because
+  each is a fraction of *total* memory.
 - **Graph DB** — FalkorDB (Redis-based, no JVM). Neo4j works too:
   `GRAPHITI_DB_BACKEND=neo4j`.
 
@@ -216,7 +221,7 @@ Two different requirements land on that one LLM endpoint, and both matter:
 
 ### Sizing and expectations, honestly
 
-- `GPU_MEM_UTIL` defaults to a conservative `0.75`. It is a fraction of *total*
+- `GPU_MEM_UTIL` defaults to a conservative `0.70`. It is a fraction of *total*
   device memory, and on unified memory that competes with the OS, the container
   runtime and the page cache. `0.90` has been reported getting the engine
   SIGTERM'd by `earlyoom`, which does **not** look like an OOM in the logs.
