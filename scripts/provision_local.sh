@@ -10,6 +10,12 @@
 #   ./scripts/provision_local.sh all       # setup + start
 #   ./scripts/provision_local.sh status | logs [svc] | stop | doctor | test
 #
+# Add -v (or VERBOSE=1) to echo every external command as it runs.
+#
+# Failures never pass silently: each one is printed as it happens, the offending
+# service's log tail is dumped, and every failure is listed again at exit with a
+# non-zero status.
+#
 # Nothing here talks to a hosted API at runtime. `setup` is the only stage that
 # needs the internet, and only to download packages and model weights.
 #
@@ -71,6 +77,14 @@ TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-hermes}"
 
 NODE_MAJOR_REQUIRED=20   # vite 7 needs ^20.19 || >=22.12
 
+# Health-gate patience, in 2-second polls. Raise these on slower storage (a
+# first model load reads tens of GB); lower them to fail fast while testing.
+EMBED_WAIT_TRIES="${EMBED_WAIT_TRIES:-180}"      # ~6 min
+LLM_WAIT_TRIES="${LLM_WAIT_TRIES:-300}"          # ~10 min
+SHIM_WAIT_TRIES="${SHIM_WAIT_TRIES:-90}"         # ~3 min
+BACKEND_WAIT_TRIES="${BACKEND_WAIT_TRIES:-90}"
+FRONTEND_WAIT_TRIES="${FRONTEND_WAIT_TRIES:-90}"
+
 # --- output helpers ----------------------------------------------------------
 
 if [[ -t 1 ]]; then
@@ -84,7 +98,85 @@ warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*" >&2; }
 die()  { printf '\n%sERROR:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 note() { printf '    %s%s%s\n' "$D" "$*" "$N"; }
 
+# VERBOSE=1 (or -v / --verbose) echoes every external command before it runs.
+VERBOSE="${VERBOSE:-0}"
+
+# Every non-fatal failure is recorded here and reprinted at exit, so a problem
+# 200 lines up the scrollback cannot be missed, and the exit code reflects it.
+FAILURES=()
+
+fail() {
+  FAILURES+=("$*")
+  printf '  %s✗ FAILED:%s %s\n' "$R" "$N" "$*" >&2
+}
+
+vrun() {
+  if [[ "$VERBOSE" == 1 ]]; then
+    printf '    %s$ %s%s\n' "$D" "$*" "$N"
+  fi
+  "$@"
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Print the tail of a service's log. This is what turns "it timed out" into
+# something actionable without the operator having to go hunting.
+dump_log() {
+  local name="$1" lines="${2:-60}"
+  printf '\n  %s--- last %s lines of %s ---%s\n' "$Y" "$lines" "$name" "$N" >&2
+  case "$name" in
+    llm|embed|falkordb)
+      docker logs --tail "$lines" "mirofish-$name" 2>&1 | sed 's/^/  | /' >&2 \
+        || printf '  | (no container logs; was it ever created?)\n' >&2
+      ;;
+    *)
+      if [[ -f "$LOG_DIR/$name.log" ]]; then
+        tail -n "$lines" "$LOG_DIR/$name.log" | sed 's/^/  | /' >&2
+      else
+        printf '  | (no log file at data/logs/%s.log)\n' "$name" >&2
+      fi
+      ;;
+  esac
+  printf '  %s--- end %s ---%s\n\n' "$Y" "$name" "$N" >&2
+}
+
+# A container that dies on startup (bad flag, wrong arch, OOM) otherwise only
+# surfaces as a health-check timeout minutes later. Catch it immediately.
+assert_container_alive() {
+  local name="$1" grace="${2:-4}"
+  sleep "$grace"
+  if container_up "mirofish-$name"; then
+    ok "$name container is running"
+    return 0
+  fi
+  local state
+  state=$(docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} {{.State.Error}}' \
+          "mirofish-$name" 2>/dev/null || echo 'never created')
+  fail "$name container is not running ($state)"
+  dump_log "$name" 80
+  return 1
+}
+
+report_failures() {
+  if (( ${#FAILURES[@]} == 0 )); then
+    return 0
+  fi
+  printf '\n%s================ %s FAILURE(S) ================%s\n' \
+    "$R" "${#FAILURES[@]}" "$N" >&2
+  local i=1
+  for f in "${FAILURES[@]}"; do
+    printf '  %s%s.%s %s\n' "$R" "$i" "$N" "$f" >&2
+    i=$((i + 1))
+  done
+  printf '\n  Inspect a service:  %s logs [llm|embed|falkordb|zep-shim|backend|frontend]\n' "$0" >&2
+  printf '  Re-check config:    %s doctor\n\n' "$0" >&2
+  return 1
+}
+
+# Report the exact line and command on an unexpected abort, and always print the
+# failure summary on the way out.
+trap 'rc=$?; if (( rc != 0 )); then printf "\n%sABORTED%s line %s: %s (exit %s)\n" "$R" "$N" "$LINENO" "$BASH_COMMAND" "$rc" >&2; fi' ERR
+trap 'rc=$?; report_failures || rc=1; exit $rc' EXIT
 
 # Run a command with a hard deadline. Every probe in this script goes through
 # this: an unbounded `docker run` probe is what made an earlier version of the
@@ -180,8 +272,9 @@ install_system_deps() {
   if [[ ${#missing[@]} -eq 0 ]]; then ok "all present"; return; fi
   note "installing: ${missing[*]}"
   note "this needs sudo — enter your password if prompted"
-  sudo apt-get update -qq
-  sudo apt-get install -y "${missing[@]}" || warn "some packages failed; continuing"
+  vrun sudo apt-get update -qq || fail "apt-get update failed"
+  vrun sudo apt-get install -y "${missing[@]}" \
+    || fail "apt-get install failed for: ${missing[*]}"
   ok "installed"
 }
 
@@ -221,8 +314,9 @@ init_submodule() {
   else
     git submodule update --init --recursive --remote=false
   fi
-  [[ -f "$ROOT/third_party/graphiti/server/graph_service/zep_compat/router.py" ]] \
-    || die "submodule is missing the zep_compat layer. Is third_party/graphiti on the right commit?"
+  if [[ ! -f "$ROOT/third_party/graphiti/server/graph_service/zep_compat/router.py" ]]; then
+    die "submodule is missing the zep_compat layer. Is third_party/graphiti on the right commit? Try: git submodule update --init --recursive"
+  fi
   ok "graphiti @ $(git -C third_party/graphiti rev-parse --short HEAD)"
 }
 
@@ -244,18 +338,25 @@ make_env() {
 install_python_deps() {
   step "Python dependencies"
   note "backend (this compiles psutil from source on aarch64; be patient)"
-  (cd "$ROOT/backend" && uv sync --frozen)
-  ok "backend"
+  if ( cd "$ROOT/backend" && vrun uv sync --frozen ); then
+    ok "backend"
+  else
+    fail "backend dependency install failed (uv sync --frozen in backend/)"
+  fi
   note "zep-compat shim"
-  (cd "$ROOT/third_party/graphiti/server" && uv sync --extra dev)
-  ok "shim"
+  if ( cd "$ROOT/third_party/graphiti/server" && vrun uv sync --extra dev ); then
+    ok "shim"
+  else
+    fail "shim dependency install failed (uv sync --extra dev in third_party/graphiti/server/)"
+  fi
 }
 
 install_node_deps() {
   step "Frontend dependencies"
   note "npm ci for the root workspace, then the frontend (a few minutes)"
-  npm ci --no-audit --no-fund
-  npm ci --prefix frontend --no-audit --no-fund
+  vrun npm ci --no-audit --no-fund || fail "npm ci failed in the repo root"
+  vrun npm ci --prefix frontend --no-audit --no-fund || fail "npm ci failed in frontend/"
+  [[ -d "$ROOT/frontend/node_modules" ]] || fail "frontend/node_modules is missing after npm ci"
   ok "installed"
 }
 
@@ -273,13 +374,14 @@ fetch_models() {
 
   for repo in "$LLM_MODEL_REPO" "$EMBED_MODEL_REPO"; do
     note "downloading $repo"
-    HF_HUB_OFFLINE=0 "$hf_bin" download "$repo" || warn "failed to download $repo"
+    HF_HUB_OFFLINE=0 vrun "$hf_bin" download "$repo" \
+      || fail "failed to download model weights: $repo"
   done
 
   # A Twitter simulation loads this at runtime; a Reddit-only run never does.
   # Fetch it now or the first Twitter run fails with HF_HUB_OFFLINE=1 set.
   note "downloading Twitter/twhin-bert-base (OASIS Twitter recommender, ~1GB)"
-  HF_HUB_OFFLINE=0 "$hf_bin" download Twitter/twhin-bert-base || \
+  HF_HUB_OFFLINE=0 vrun "$hf_bin" download Twitter/twhin-bert-base || \
     warn "twhin-bert-base not cached — Twitter simulations will fail offline (Reddit is fine)"
 
   if grep -q '^GRAPHITI_RERANKER=bge' "$ROOT/.env" 2>/dev/null; then
@@ -299,7 +401,7 @@ pull_images() {
       ok "already present"
       continue
     fi
-    docker pull "$image" || warn "could not pull $image"
+    vrun docker pull "$image" || fail "could not pull $image"
   done
   ok "done"
 }
@@ -317,14 +419,26 @@ load_env() {
   export HF_HOME="${HF_HOME:-$HF_CACHE}"
 }
 
+# Wait for an HTTP endpoint. On failure the caller gets a dumped log, so a
+# timeout always comes with a reason attached.
 wait_for_http() {
-  local url="$1" name="$2" tries="${3:-120}"
-  printf '    waiting for %s ' "$name"
+  local url="$1" name="$2" tries="${3:-120}" logname="${4:-}"
+  printf '    waiting for %s (%s, up to %ss) ' "$name" "$url" "$((tries * 2))"
   for _ in $(seq "$tries"); do
-    if curl -fsS -o /dev/null --max-time 2 "$url"; then printf ' %sup%s\n' "$G" "$N"; return 0; fi
+    # Quiet while polling: -S would print a connection error on every attempt
+    # and bury the progress dots. The real error is reported once, below.
+    if curl -fsS -o /dev/null --max-time 2 "$url" 2>/dev/null; then
+      printf ' %sup%s\n' "$G" "$N"
+      return 0
+    fi
     printf '.'; sleep 2
   done
-  printf ' %stimeout%s\n' "$R" "$N"
+  printf ' %sTIMEOUT%s\n' "$R" "$N"
+  local last_error
+  last_error=$(curl -sS -o /dev/null --max-time 2 "$url" 2>&1 || true)
+  [[ -n "$last_error" ]] && note "curl says: $last_error"
+  fail "$name did not become healthy at $url within $((tries * 2))s"
+  [[ -n "$logname" ]] && dump_log "$logname" 80
   return 1
 }
 
@@ -332,14 +446,18 @@ container_up() { [[ -n "$(docker ps -q -f "name=^$1$" 2>/dev/null)" ]]; }
 
 start_falkordb() {
   step "FalkorDB"
-  if container_up mirofish-falkordb; then ok "already running"; return; fi
+  if container_up mirofish-falkordb; then ok "already running"; return 0; fi
   docker rm -f mirofish-falkordb >/dev/null 2>&1 || true
-  docker run -d --name mirofish-falkordb --restart unless-stopped \
+  if ! vrun docker run -d --name mirofish-falkordb --restart unless-stopped \
     -p "127.0.0.1:$FALKORDB_PORT:6379" -p "127.0.0.1:$FALKORDB_UI_PORT:3000" \
     -v mirofish_falkordb:/var/lib/falkordb/data \
     -e BROWSER=1 \
-    "$FALKORDB_IMAGE" >/dev/null
-  ok "started on 127.0.0.1:$FALKORDB_PORT"
+    "$FALKORDB_IMAGE" >/dev/null; then
+    fail "could not create the FalkorDB container"
+    return 1
+  fi
+  note "started on 127.0.0.1:$FALKORDB_PORT"
+  assert_container_alive falkordb 3
 }
 
 start_llm() {
@@ -356,7 +474,9 @@ start_llm() {
   # Two independent needs, both served by this one endpoint:
   #  - OASIS agents use native OpenAI tool calling  -> the tool-call flags
   #  - Graphiti uses response_format json_schema    -> constrained decoding
-  docker run -d --name mirofish-llm --restart unless-stopped \
+  note "model=$LLM_MODEL_REPO  gpu-mem=$GPU_MEM_UTIL  max-len=$MAX_MODEL_LEN"
+  note "max-num-seqs=$MAX_NUM_SEQS  tool-call-parser=$TOOL_CALL_PARSER"
+  if ! vrun docker run -d --name mirofish-llm --restart unless-stopped \
     --gpus all --ipc=host \
     -p "127.0.0.1:$LLM_PORT:8000" \
     -v "$HF_CACHE:/hf" \
@@ -370,8 +490,13 @@ start_llm() {
       --max-model-len "$MAX_MODEL_LEN" \
       --max-num-seqs "$MAX_NUM_SEQS" \
       --enable-auto-tool-choice \
-      --tool-call-parser "$TOOL_CALL_PARSER" >/dev/null
-  ok "starting (first load can take several minutes)"
+      --tool-call-parser "$TOOL_CALL_PARSER" >/dev/null; then
+    fail "could not create the vLLM container"
+    return 1
+  fi
+  note "starting (first load can take several minutes)"
+  # 12s: long enough for an immediate flag/arch rejection to show up.
+  assert_container_alive llm 12
 }
 
 start_embeddings() {
@@ -381,7 +506,8 @@ start_embeddings() {
   # vLLM in pooling mode exposes an OpenAI-compatible /v1/embeddings.
   # `--runner pooling` supersedes the older `--task embed`; copying an older
   # recipe with --task embed will fail on a current image.
-  docker run -d --name mirofish-embed --restart unless-stopped \
+  note "model=$EMBED_MODEL_REPO  gpu-mem=$EMBED_GPU_MEM_UTIL"
+  if ! vrun docker run -d --name mirofish-embed --restart unless-stopped \
     --gpus all --ipc=host \
     -p "127.0.0.1:$EMBED_PORT:8000" \
     -v "$HF_CACHE:/hf" \
@@ -392,14 +518,22 @@ start_embeddings() {
       --runner pooling \
       --host 0.0.0.0 --port 8000 \
       --gpu-memory-utilization "$EMBED_GPU_MEM_UTIL" \
-      --max-model-len "$EMBED_MAX_MODEL_LEN" >/dev/null
-  ok "starting on 127.0.0.1:$EMBED_PORT (model id: $EMBED_MODEL_REPO)"
+      --max-model-len "$EMBED_MAX_MODEL_LEN" >/dev/null; then
+    fail "could not create the embeddings container"
+    return 1
+  fi
+  note "starting on 127.0.0.1:$EMBED_PORT (model id: $EMBED_MODEL_REPO)"
+  assert_container_alive embed 12
 }
 
 pidfile() { echo "$RUN_DIR/$1.pid"; }
 
+# start_bg <name> <cwd> <command...>
+# The cwd is an argument rather than the caller using ( cd X && start_bg ... ):
+# a subshell would discard everything fail() appends to FAILURES, and swallow
+# the return code too.
 start_bg() {
-  local name="$1"; shift
+  local name="$1" cwd="$2"; shift 2
   local pf; pf="$(pidfile "$name")"
   if [[ -f "$pf" ]] && kill -0 "$(cat "$pf")" 2>/dev/null; then
     ok "$name already running (pid $(cat "$pf"))"
@@ -410,19 +544,47 @@ start_bg() {
   # runner spawns OASIS children with start_new_session=True and cleans them
   # up via killpg on SIGTERM. A hard kill of the parent orphans that whole
   # group, which keeps holding the sqlite DB and burning LLM capacity.
-  setsid "$@" >>"$LOG_DIR/$name.log" 2>&1 &
-  echo $! >"$pf"
-  ok "$name started (pid $(cat "$pf")), logging to data/logs/$name.log"
+  if [[ "$VERBOSE" == 1 ]]; then
+    printf '    %s$ %s%s\n' "$D" "$*" "$N"
+  fi
+  printf '=== started %s at %s in %s: %s\n' \
+    "$name" "$(date -u +%FT%TZ)" "$cwd" "$*" >>"$LOG_DIR/$name.log"
+  # setsid gives the child its own process group so do_stop can signal the
+  # whole tree (see the killpg note above). Not every host ships it (macOS does
+  # not), so branch rather than expanding a possibly-empty array — that trips
+  # `set -u` on bash 3.2.
+  if have setsid; then
+    ( cd "$cwd" && exec setsid "$@" ) >>"$LOG_DIR/$name.log" 2>&1 &
+  else
+    warn "setsid not found; $name will not get its own process group"
+    ( cd "$cwd" && exec "$@" ) >>"$LOG_DIR/$name.log" 2>&1 &
+  fi
+  local pid=$!
+  echo "$pid" >"$pf"
+  # A process that exits immediately (bad interpreter, import error, port in
+  # use) would otherwise only show up as a health-check timeout.
+  sleep 2
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$pf"
+    fail "$name exited immediately after launch"
+    dump_log "$name" 80
+    return 1
+  fi
+  ok "$name started (pid $pid), logging to data/logs/$name.log"
 }
 
 start_shim() {
   step "Zep-compatible shim (Graphiti-backed)"
   local venv="$ROOT/third_party/graphiti/server/.venv/bin/python"
-  [[ -x "$venv" ]] || die "shim venv missing. Run: $0 setup"
-  ( cd "$ROOT/third_party/graphiti/server" && \
-    ZEP_COMPAT_DB_PATH="${ZEP_COMPAT_DB_PATH:-$DATA_DIR/zep_compat.sqlite3}" \
-    start_bg zep-shim "$venv" -m uvicorn graph_service.zep_compat.app:app \
-      --host 127.0.0.1 --port "$SHIM_PORT" )
+  if [[ ! -x "$venv" ]]; then
+    fail "shim venv missing at $venv — run: $0 setup"
+    return 1
+  fi
+  export ZEP_COMPAT_DB_PATH="${ZEP_COMPAT_DB_PATH:-$DATA_DIR/zep_compat.sqlite3}"
+  note "sqlite state: $ZEP_COMPAT_DB_PATH"
+  start_bg zep-shim "$ROOT/third_party/graphiti/server" \
+    "$venv" -m uvicorn graph_service.zep_compat.app:app \
+    --host 127.0.0.1 --port "$SHIM_PORT"
 }
 
 start_backend() {
@@ -431,34 +593,51 @@ start_backend() {
   # sys.executable, so a system python here means every simulation child dies
   # on `import oasis`.
   local venv="$ROOT/backend/.venv/bin/python"
-  [[ -x "$venv" ]] || die "backend venv missing. Run: $0 setup"
-  ( cd "$ROOT/backend" && start_bg backend "$venv" run.py )
+  if [[ ! -x "$venv" ]]; then
+    fail "backend venv missing at $venv — run: $0 setup"
+    return 1
+  fi
+  start_bg backend "$ROOT/backend" "$venv" run.py
 }
 
 start_frontend() {
   step "Frontend"
-  ( cd "$ROOT/frontend" && start_bg frontend npm run dev -- --port "$FRONTEND_PORT" )
+  start_bg frontend "$ROOT/frontend" npm run dev -- --port "$FRONTEND_PORT"
 }
 
 do_start() {
   load_env
-  start_falkordb
-  start_embeddings
-  start_llm
-  wait_for_http "http://127.0.0.1:$EMBED_PORT/v1/models" "embeddings" 180 || \
-    warn "embeddings not healthy — check: $0 logs embed"
-  wait_for_http "http://127.0.0.1:$LLM_PORT/v1/models" "LLM" 300 || \
-    warn "LLM not healthy — check: $0 logs llm"
-  start_shim
-  wait_for_http "http://127.0.0.1:$SHIM_PORT/healthcheck" "shim" 90 || \
-    warn "shim not healthy — check: $0 logs zep-shim"
-  start_backend
-  wait_for_http "http://127.0.0.1:$BACKEND_PORT/health" "backend" 90 || \
-    warn "backend not healthy — check: $0 logs backend"
-  start_frontend
-  wait_for_http "http://127.0.0.1:$FRONTEND_PORT" "frontend" 90 || \
-    warn "frontend not healthy — check: $0 logs frontend"
-  summary
+  # Each step records its own failures and we deliberately continue, so one
+  # broken service still yields a full picture instead of stopping at the first
+  # problem. report_failures() (EXIT trap) sets the exit code.
+  start_falkordb        || true
+  start_embeddings      || true
+  start_llm             || true
+
+  wait_for_http "http://127.0.0.1:$EMBED_PORT/v1/models" "embeddings" \
+    "$EMBED_WAIT_TRIES" embed || true
+  wait_for_http "http://127.0.0.1:$LLM_PORT/v1/models" "LLM" \
+    "$LLM_WAIT_TRIES" llm || true
+
+  start_shim || true
+  wait_for_http "http://127.0.0.1:$SHIM_PORT/healthcheck" "shim" \
+    "$SHIM_WAIT_TRIES" zep-shim || true
+
+  start_backend || true
+  wait_for_http "http://127.0.0.1:$BACKEND_PORT/health" "backend" \
+    "$BACKEND_WAIT_TRIES" backend || true
+
+  start_frontend || true
+  wait_for_http "http://127.0.0.1:$FRONTEND_PORT" "frontend" \
+    "$FRONTEND_WAIT_TRIES" frontend || true
+
+  if (( ${#FAILURES[@]} == 0 )); then
+    summary
+  else
+    step "Started with errors"
+    warn "the stack is NOT fully up; see the failure list below"
+    do_status
+  fi
 }
 
 do_stop() {
@@ -522,9 +701,20 @@ do_logs() {
 
 do_test() {
   step "Test suites (no GPU, no network, no database)"
-  ( cd "$ROOT/backend" && .venv/bin/python -m pytest tests/ -q ) || warn "backend tests failed"
-  ( cd "$ROOT/third_party/graphiti/server" && \
-    .venv/bin/python -m pytest tests/ -q --asyncio-mode=auto ) || warn "shim tests failed"
+  local suite
+  for suite in "backend:$ROOT/backend" "shim:$ROOT/third_party/graphiti/server"; do
+    local label="${suite%%:*}" dir="${suite#*:}"
+    if [[ ! -x "$dir/.venv/bin/python" ]]; then
+      fail "$label venv missing at $dir/.venv — run: $0 setup"
+      continue
+    fi
+    printf '\n  --- %s\n' "$label"
+    if ( cd "$dir" && vrun .venv/bin/python -m pytest tests/ -q ); then
+      ok "$label suite passed"
+    else
+      fail "$label test suite failed (see the pytest output above)"
+    fi
+  done
 }
 
 check_gpu_arch() {
@@ -632,7 +822,21 @@ EOF
 
 # =============================================================================
 
-usage() { sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# -v/--verbose anywhere in the arguments echoes every external command.
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    -v|--verbose) VERBOSE=1 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+set -- "${ARGS[@]:-}"
+
+if [[ "$VERBOSE" == 1 ]]; then
+  note "verbose mode: every external command is echoed before it runs"
+fi
 
 case "${1:-all}" in
   setup)

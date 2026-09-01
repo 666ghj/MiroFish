@@ -144,6 +144,29 @@ itself. `all` = `setup` then `start`:
 ./scripts/provision_local.sh stop
 ```
 
+Add `-v` (or `VERBOSE=1`) to echo every external command as it runs.
+
+### Reading the output when something breaks
+
+Failures are designed to be impossible to miss from the console alone:
+
+- Each one prints `✗ FAILED: <what>` the moment it happens.
+- **The relevant log tail is dumped inline** — a service that dies on startup
+  shows you *why* (`sh: vite: command not found`, a vLLM flag rejection, an OOM)
+  rather than only surfacing as a health-check timeout minutes later.
+- Every container is checked for liveness a few seconds after launch, and every
+  background process is checked 2s after launch, so an instant exit is caught at
+  the point it happens.
+- `start` deliberately **continues past a failure** so you get the whole picture
+  in one run instead of stopping at the first problem.
+- All failures are listed again at exit, and the script **exits non-zero** — so
+  it composes with CI or `&&`.
+
+Health-gate patience is tunable, which matters on slower storage (a first model
+load reads tens of GB) and for failing fast while testing:
+`EMBED_WAIT_TRIES`, `LLM_WAIT_TRIES`, `SHIM_WAIT_TRIES`, `BACKEND_WAIT_TRIES`,
+`FRONTEND_WAIT_TRIES` — each counts 2-second polls.
+
 `setup` is the only stage that touches the internet. After it completes the machine
 can be disconnected: `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` and
 `GRAPHITI_TELEMETRY_ENABLED=false` are set in `.env.example`.
