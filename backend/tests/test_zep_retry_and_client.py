@@ -57,6 +57,10 @@ def test_zep_client_is_shared_and_uses_an_explicit_timeout(monkeypatch):
         return SimpleNamespace(kwargs=kwargs)
 
     monkeypatch.delenv("ZEP_API_URL", raising=False)
+    # Assert the documented default, independent of the operator's .env — which
+    # config.py loads with override=True at import time. A local deployment sets
+    # ZEP_BASE_URL, and without this the test would fail on that machine only.
+    monkeypatch.delenv("ZEP_BASE_URL", raising=False)
     monkeypatch.setattr(zep, "Zep", fake_zep)
     zep.clear_zep_client_cache()
 
@@ -144,6 +148,7 @@ def test_zep_client_ignores_legacy_timeout_env_names(monkeypatch):
         return SimpleNamespace(kwargs=kwargs)
 
     monkeypatch.delenv("ZEP_API_URL", raising=False)
+    monkeypatch.delenv("ZEP_BASE_URL", raising=False)
     monkeypatch.setenv("ZEP_REQUEST_TIMEOUT_SECONDS", "1")
     monkeypatch.setenv("ZEP_INGESTION_TIMEOUT_SECONDS", "1")
     monkeypatch.setattr(zep, "Zep", fake_zep)
@@ -156,9 +161,43 @@ def test_zep_client_ignores_legacy_timeout_env_names(monkeypatch):
         "base_url": zep.ZEP_CLOUD_BASE_URL,
         "timeout": zep.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS,
     }]
-    assert zep.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS == 60.0
-    assert zep.ZEP_INGESTION_WAIT_TIMEOUT_SECONDS == 600
+    # Assert the legacy names had no effect, rather than hard-coding the
+    # defaults: a local deployment legitimately raises the ingestion timeout in
+    # .env, and config.py loads that with override=True at import time.
+    assert zep.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS != 1
+    assert zep.ZEP_INGESTION_WAIT_TIMEOUT_SECONDS != 1
     zep.clear_zep_client_cache()
+
+
+def test_supported_timeout_env_names_are_honoured(monkeypatch):
+    """The timeouts are module constants read at import, so verify the
+    documented override names really are wired up."""
+    import importlib
+
+    monkeypatch.setenv("ZEP_HTTP_REQUEST_TIMEOUT_SECONDS", "12.5")
+    monkeypatch.setenv("ZEP_INGESTION_WAIT_TIMEOUT_SECONDS", "4242")
+    reloaded = importlib.reload(zep)
+    try:
+        assert reloaded.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS == 12.5
+        assert reloaded.ZEP_INGESTION_WAIT_TIMEOUT_SECONDS == 4242
+    finally:
+        # Restore the module for every other test in the session.
+        monkeypatch.undo()
+        importlib.reload(zep)
+
+
+def test_default_timeouts_when_env_is_clean(monkeypatch):
+    import importlib
+
+    monkeypatch.delenv("ZEP_HTTP_REQUEST_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("ZEP_INGESTION_WAIT_TIMEOUT_SECONDS", raising=False)
+    reloaded = importlib.reload(zep)
+    try:
+        assert reloaded.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS == 60.0
+        assert reloaded.ZEP_INGESTION_WAIT_TIMEOUT_SECONDS == 600
+    finally:
+        monkeypatch.undo()
+        importlib.reload(zep)
 
 
 def test_zep_timeout_policy_is_not_exposed_in_env_example():
