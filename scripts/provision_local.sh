@@ -24,6 +24,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# uv and `uv tool install` put binaries here. Export unconditionally: doing it
+# only inside install_uv meant that on a second run (uv already present) the
+# path was never added, and the `hf` CLI installed later could not be found.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+
 DATA_DIR="$ROOT/data"
 RUN_DIR="$DATA_DIR/run"
 LOG_DIR="$DATA_DIR/logs"
@@ -74,6 +82,12 @@ MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
 # Qwen3 family. NVIDIA's playbook uses qwen3_xml for some Qwen3.6 builds;
 # if tool calls come back malformed, try that instead.
 TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-hermes}"
+
+# How containers are given the GPU. `--gpus all` suits the legacy nvidia
+# runtime; hosts wired up through CDI may need `--device nvidia.com/gpu=all`
+# instead. Override if the LLM container reports "could not select device
+# driver".
+GPU_FLAGS="${GPU_FLAGS:---gpus all}"
 
 NODE_MAJOR_REQUIRED=20   # vite 7 needs ^20.19 || >=22.12
 
@@ -230,12 +244,25 @@ preflight() {
     # harmless but pulls the image and, for any image with an ENTRYPOINT (e.g.
     # falkordb's run.sh), `true` becomes an argument that the entrypoint
     # ignores — so the container starts its real service and never exits.
-    if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia; then
-      ok "nvidia container runtime registered"
+    # Report the evidence rather than guessing. Not finding the legacy runtime
+    # is NOT conclusive: hosts wired up through CDI expose the GPU without it.
+    # The definitive test is the LLM container itself, and if `docker run`
+    # cannot get a device it says so and start_llm reports the failure.
+    local gpu_evidence=()
+    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia \
+      && gpu_evidence+=("docker runtime")
+    have nvidia-container-runtime && gpu_evidence+=("nvidia-container-runtime")
+    have nvidia-ctk && gpu_evidence+=("nvidia-ctk")
+    compgen -G "/etc/cdi/*.yaml" >/dev/null 2>&1 && gpu_evidence+=("CDI /etc/cdi")
+    compgen -G "/var/run/cdi/*.yaml" >/dev/null 2>&1 && gpu_evidence+=("CDI /var/run/cdi")
+    if (( ${#gpu_evidence[@]} > 0 )); then
+      ok "GPU container support: ${gpu_evidence[*]}"
     else
-      warn "nvidia runtime not listed by 'docker info'. Install nvidia-container-toolkit,"
-      warn "or the LLM container will fail to see the GPU. Continuing anyway."
+      warn "no nvidia container runtime or CDI spec found. If the LLM container"
+      warn "reports 'could not select device driver', install nvidia-container-toolkit"
+      warn "or set GPU_FLAGS (e.g. GPU_FLAGS='--device nvidia.com/gpu=all')."
     fi
+    note "containers will request the GPU with: $GPU_FLAGS"
   else
     warn "nvidia-smi not found. The LLM container needs a working NVIDIA container runtime."
   fi
@@ -280,18 +307,22 @@ install_system_deps() {
 
 install_uv() {
   step "uv"
-  if have uv; then ok "uv $(uv --version | cut -d' ' -f2)"; return; fi
+  if have uv; then ok "uv $(uv --version | cut -d' ' -f2)"; return 0; fi
   curl -fsSL https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
+  hash -r 2>/dev/null || true
   have uv || die "uv install failed; add \$HOME/.local/bin to PATH and re-run."
   ok "installed uv"
 }
 
 install_node() {
   step "Node.js"
-  local major=0
-  if have node; then major=$(node -v | sed 's/^v\([0-9]*\).*/\1/'); fi
-  if (( major >= NODE_MAJOR_REQUIRED )); then ok "node $(node -v)"; return; fi
+  local major=0 current="not installed"
+  if have node; then
+    current=$(node -v)
+    major=$(node -v | sed 's/^v\([0-9]*\).*/\1/')
+  fi
+  if (( major >= NODE_MAJOR_REQUIRED )); then ok "node $current"; return 0; fi
+  warn "node: $current (need >= $NODE_MAJOR_REQUIRED)"
 
   # The repo's package.json claims node>=18, but the pinned vite@7 and
   # @vitejs/plugin-vue@6 both require ^20.19 || >=22.12. npm ci only warns
@@ -309,13 +340,20 @@ install_node() {
 
 init_submodule() {
   step "Graphiti submodule"
-  if [[ ! -f "$ROOT/third_party/graphiti/pyproject.toml" ]]; then
-    git submodule update --init --recursive
-  else
-    git submodule update --init --recursive --remote=false
+  # Checks out the commit this repo records — which is what we want, and is
+  # already the default. Do NOT add --remote: that advances the submodule to the
+  # tip of its branch, silently moving off the pinned commit. (An earlier
+  # version wrote `--remote=false` trying to be explicit; --remote is a boolean
+  # flag with no value, so git rejected the entire command with a usage error.)
+  if ! vrun git submodule update --init --recursive; then
+    fail "git submodule update failed — check SSH access to the graphiti fork"
+    return 1
   fi
   if [[ ! -f "$ROOT/third_party/graphiti/server/graph_service/zep_compat/router.py" ]]; then
-    die "submodule is missing the zep_compat layer. Is third_party/graphiti on the right commit? Try: git submodule update --init --recursive"
+    fail "submodule is present but has no zep_compat layer; third_party/graphiti is on the wrong commit"
+    note "expected the commit recorded by this repo: $(git ls-tree HEAD third_party/graphiti | awk '{print substr($3,1,12)}')"
+    note "got: $(git -C third_party/graphiti rev-parse --short=12 HEAD 2>/dev/null || echo '<none>')"
+    return 1
   fi
   ok "graphiti @ $(git -C third_party/graphiti rev-parse --short HEAD)"
 }
@@ -367,10 +405,21 @@ fetch_models() {
   if have hf; then hf_bin=hf
   elif have huggingface-cli; then hf_bin=huggingface-cli
   else
-    note "installing huggingface_hub CLI"
-    uv tool install -q "huggingface_hub[cli]" || pip install -q --user "huggingface_hub[cli]"
-    hf_bin=$(have hf && echo hf || echo huggingface-cli)
+    note "installing the huggingface_hub CLI"
+    uv tool install -q "huggingface_hub[cli]" \
+      || pip install -q --user "huggingface_hub[cli]" \
+      || fail "could not install the huggingface_hub CLI"
+    hash -r 2>/dev/null || true
+    if have hf; then
+      hf_bin=hf
+    elif have huggingface-cli; then
+      hf_bin=huggingface-cli
+    else
+      fail "no hf/huggingface-cli on PATH after install; model weights not downloaded"
+      return 1
+    fi
   fi
+  note "using: $hf_bin"
 
   for repo in "$LLM_MODEL_REPO" "$EMBED_MODEL_REPO"; do
     note "downloading $repo"
@@ -477,7 +526,7 @@ start_llm() {
   note "model=$LLM_MODEL_REPO  gpu-mem=$GPU_MEM_UTIL  max-len=$MAX_MODEL_LEN"
   note "max-num-seqs=$MAX_NUM_SEQS  tool-call-parser=$TOOL_CALL_PARSER"
   if ! vrun docker run -d --name mirofish-llm --restart unless-stopped \
-    --gpus all --ipc=host \
+    $GPU_FLAGS --ipc=host \
     -p "127.0.0.1:$LLM_PORT:8000" \
     -v "$HF_CACHE:/hf" \
     -e HF_HOME=/hf -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
@@ -508,7 +557,7 @@ start_embeddings() {
   # recipe with --task embed will fail on a current image.
   note "model=$EMBED_MODEL_REPO  gpu-mem=$EMBED_GPU_MEM_UTIL"
   if ! vrun docker run -d --name mirofish-embed --restart unless-stopped \
-    --gpus all --ipc=host \
+    $GPU_FLAGS --ipc=host \
     -p "127.0.0.1:$EMBED_PORT:8000" \
     -v "$HF_CACHE:/hf" \
     -e HF_HOME=/hf -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
@@ -727,7 +776,7 @@ check_gpu_arch() {
     return 0
   fi
   # Bounded, and only against an image already on disk — see run_bounded.
-  if arches=$(run_bounded 180 docker run --rm --gpus all "$VLLM_IMAGE" \
+  if arches=$(run_bounded 180 docker run --rm $GPU_FLAGS "$VLLM_IMAGE" \
       python -c 'import torch; print(" ".join(torch.cuda.get_arch_list()))' 2>/dev/null); then
     note "torch arch list: $arches"
     if [[ "$arches" == *sm_121* || "$arches" == *sm_121a* ]]; then
@@ -736,7 +785,9 @@ check_gpu_arch() {
       warn "sm_121 NOT in the arch list — this image may fail on GB10. Try another tag."
     fi
   else
-    warn "could not query the image (not pulled yet, or no GPU access)"
+    warn "could not run the image with GPU access ($GPU_FLAGS)."
+    warn "This doubles as the GPU passthrough test. If the LLM container also"
+    warn "fails, try: GPU_FLAGS='--device nvidia.com/gpu=all' $0 start"
   fi
 }
 
