@@ -161,16 +161,25 @@
                 <span class="btn-icon">◇</span>
                 <span class="btn-text">{{ $t('history.step1Button') }}</span>
               </button>
-              <button 
-                class="modal-btn btn-simulation" 
+              <button
+                class="modal-btn btn-simulation"
                 @click="goToSimulation"
               >
                 <span class="btn-step">Step2</span>
                 <span class="btn-icon">◈</span>
                 <span class="btn-text">{{ $t('history.step2Button') }}</span>
               </button>
-              <button 
-                class="modal-btn btn-report" 
+              <button
+                class="modal-btn btn-simulation"
+                @click="goToSimulationRun"
+                :disabled="!selectedProject.simulation_id"
+              >
+                <span class="btn-step">Step3</span>
+                <span class="btn-icon">◈</span>
+                <span class="btn-text">{{ $t('history.step3Button') }}</span>
+              </button>
+              <button
+                class="modal-btn btn-report"
                 @click="goToReport"
                 :disabled="!selectedProject.report_id"
               >
@@ -425,6 +434,17 @@ const goToSimulation = () => {
   if (selectedProject.value?.simulation_id) {
     router.push({
       name: 'Simulation',
+      params: { simulationId: selectedProject.value.simulation_id }
+    })
+    closeModal()
+  }
+}
+
+// 导航到模拟运行/对话时间轴页面（Step3，已完成的模拟为只读查看）
+const goToSimulationRun = () => {
+  if (selectedProject.value?.simulation_id) {
+    router.push({
+      name: 'SimulationRun',
       params: { simulationId: selectedProject.value.simulation_id }
     })
     closeModal()
