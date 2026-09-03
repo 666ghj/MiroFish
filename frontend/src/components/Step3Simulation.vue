@@ -398,7 +398,9 @@ const doStartSimulation = async () => {
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: true,  // 强制重新开始
+      // 只在确认没有可丢失的运行数据后才会走到这里，因此无需强制重启。
+      // force=true 会让后端删除 actions.jsonl 与 *_simulation.db，绝不能作为隐式默认值。
+      force: false,
       enable_graph_memory_update: true  // 开启动态图谱更新
     }
     
@@ -434,6 +436,62 @@ const doStartSimulation = async () => {
     emit('update-status', 'error')
   } finally {
     isStarting.value = false
+  }
+}
+
+// 判断后端是否已存在不可再生的运行数据
+// run_state 缺失时后端返回 runner_status='idle'，此时才认为是全新的模拟
+const hasRecoverableRun = (status) => {
+  if (!status) return false
+  if (status.runner_status && status.runner_status !== 'idle') return true
+  return (status.total_actions_count || 0) > 0
+}
+
+// 组件挂载入口：先探测后端真实状态，再决定是接管还是新建
+// 页面刷新会重新挂载本组件，直接启动会让后端删除既有的模拟数据
+const resumeOrStartSimulation = async () => {
+  if (!props.simulationId) {
+    addLog(t('log.errorMissingSimId'))
+    return
+  }
+
+  let status = null
+  try {
+    const res = await getRunStatus(props.simulationId)
+    if (!res.success || !res.data) {
+      throw new Error(res.error || t('common.unknownError'))
+    }
+    status = res.data
+  } catch (err) {
+    // 探测失败时保持观望：宁可什么都不做，也不能覆盖可能存在的运行数据
+    startError.value = err.message
+    addLog(t('log.resumeCheckFailed', { error: err.message }))
+    emit('update-status', 'error')
+    return
+  }
+
+  if (!hasRecoverableRun(status)) {
+    await doStartSimulation()
+    return
+  }
+
+  // 已有运行数据：接管现有运行，不重启、不清理
+  runStatus.value = status
+  prevTwitterRound.value = status.twitter_current_round || 0
+  prevRedditRound.value = status.reddit_current_round || 0
+  await fetchRunStatusDetail()
+
+  const isLive = ['starting', 'running', 'paused', 'stopping'].includes(status.runner_status)
+  if (isLive) {
+    phase.value = 1
+    addLog(t('log.resumedRunningSim', { round: status.current_round || 0 }))
+    emit('update-status', 'processing')
+    startStatusPolling()
+    startDetailPolling()
+  } else {
+    phase.value = 2
+    addLog(t('log.loadedExistingSim', { actions: status.total_actions_count || 0 }))
+    emit('update-status', status.runner_status === 'failed' ? 'error' : 'completed')
   }
 }
 
@@ -691,7 +749,7 @@ watch(() => props.systemLogs?.length, () => {
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    resumeOrStartSimulation()
   }
 })
 
