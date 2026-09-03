@@ -3,7 +3,14 @@
 </template>
 
 <script setup>
-// 使用 Vue Router 来管理页面
+import { watchEffect } from 'vue'
+import i18n from './i18n'
+
+watchEffect(() => {
+  document.title = i18n.global.t('meta.title')
+  document.querySelector('meta[name="description"]')?.setAttribute('content', i18n.global.t('meta.description'))
+  document.documentElement.lang = i18n.global.locale.value
+})
 </script>
 
 <style>
