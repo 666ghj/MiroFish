@@ -1,6 +1,7 @@
 import csv
 import json
 
+from app.utils.locale import get_language_instruction
 from app.services.oasis_profile_generator import (
     OasisAgentProfile,
     OasisProfileGenerator,
@@ -69,8 +70,16 @@ def test_normalized_profile_serializes_to_twitter_and_reddit(tmp_path):
     reddit = json.loads(reddit_path.read_text(encoding="utf-8"))[0]
 
     assert twitter["description"] == "Public bio"
-    assert twitter["user_char"] == "Public bio Detailed, persona"
+    # Both OASIS-facing fields carry the normalized persona AND the language
+    # directive: OASIS builds the agent system prompt itself and its template
+    # says nothing about language, so the persona is the only channel we have.
+    # See OasisAgentProfile.oasis_persona.
+    assert twitter["user_char"].startswith("Public bio Detailed, persona")
+    assert get_language_instruction() in twitter["user_char"]
     assert reddit["bio"] == "Public bio"
-    assert reddit["persona"] == "Detailed, persona"
+    assert reddit["persona"].startswith("Detailed, persona")
+    assert get_language_instruction() in reddit["persona"]
+    # The stored profile keeps the persona the model actually wrote.
+    assert profile.to_dict()["persona"] == "Detailed, persona"
     assert reddit["mbti"] == "ENFP"
     assert reddit["interested_topics"] == ["AI", "policy"]
