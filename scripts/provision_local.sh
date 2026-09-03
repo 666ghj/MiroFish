@@ -384,6 +384,42 @@ make_env() {
   if ! grep -q "^LLM_MODEL_NAME=$LLM_SERVED_NAME$" "$ROOT/.env" 2>/dev/null; then
     note "check LLM_MODEL_NAME in .env matches LLM_SERVED_NAME ($LLM_SERVED_NAME)"
   fi
+
+  # Couple the simulation's concurrency to what this vLLM will actually run at
+  # once. Both platforms run together, so the endpoint sees twice the
+  # per-platform cap; half of --max-num-seqs keeps the running batch full with
+  # no standing queue. Left uncoupled, the client default (30 per platform, 60
+  # total) floods a 16-slot server and every request times out waiting in line.
+  local want_semaphore=$(( MAX_NUM_SEQS / 2 ))
+  (( want_semaphore >= 1 )) || want_semaphore=1
+  ensure_env_key SIM_LLM_SEMAPHORE "$want_semaphore" \
+    "half of vLLM --max-num-seqs=$MAX_NUM_SEQS, and both platforms run at once"
+  ensure_env_key SIM_MODEL_TIMEOUT 300 \
+    "a queued request's wait counts against this"
+  ensure_env_key SIM_MODEL_MAX_RETRIES 1 \
+    "a retry re-enters the same queue, so retries multiply load"
+}
+
+# ensure_env_key <key> <value> [why]
+# Add the key with this value when .env does not set it at all. An existing
+# value is never overwritten — it may have been tuned deliberately — but a
+# disagreement is reported, because a silent mismatch here is what makes a
+# simulation die on timeouts.
+ensure_env_key() {
+  local key="$1" value="$2" why="${3:-}" current
+  if grep -qE "^${key}=" "$ROOT/.env" 2>/dev/null; then
+    current=$(grep -E "^${key}=" "$ROOT/.env" | head -1 | cut -d= -f2-)
+    if [[ "$current" != "$value" ]]; then
+      note "$key=$current in .env (this host suggests $value)"
+    fi
+    return 0
+  fi
+  {
+    printf '\n# Added by provision_local.sh'
+    [[ -n "$why" ]] && printf ' — %s' "$why"
+    printf '\n%s=%s\n' "$key" "$value"
+  } >> "$ROOT/.env"
+  ok "set $key=$value in .env"
 }
 
 install_python_deps() {
