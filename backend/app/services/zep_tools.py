@@ -20,7 +20,7 @@ from zep_cloud import NotFoundError
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
-from ..utils.locale import t
+from ..utils.locale import get_language_instruction, t
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from ..utils.zep import (
     call_zep_read_with_retry,
@@ -1198,6 +1198,7 @@ Break the following question into {max_queries} sub-questions:
 {query}
 
 Return the sub-questions as JSON."""
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
 
         try:
             response = self.llm.chat_json(
@@ -1687,6 +1688,7 @@ Available agents ({len(agent_summaries)} in total):
 {json.dumps(agent_summaries, ensure_ascii=False, indent=2)}
 
 Choose at most {max_agents} agents to interview and explain the choice."""
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
 
         try:
             response = self.llm.chat_json(
@@ -1746,6 +1748,7 @@ Simulation background: {simulation_requirement if simulation_requirement else "N
 Roles being interviewed: {', '.join(agent_roles)}
 
 Write three to five interview questions."""
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
 
         try:
             response = self.llm.chat_json(
@@ -1807,6 +1810,7 @@ Interview transcript:
 {"".join(interview_texts)}
 
 Write the interview summary."""
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
 
         try:
             summary = self.llm.chat(

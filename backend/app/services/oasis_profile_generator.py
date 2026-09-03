@@ -120,6 +120,27 @@ class OasisAgentProfile:
         self.mbti = _coerce_to_str(self.mbti) or None
         self.interested_topics = _coerce_to_str_list(self.interested_topics)
 
+    def oasis_persona(self) -> str:
+        """The persona as OASIS should see it, carrying the language directive.
+
+        OASIS builds each agent's system prompt itself, from `name` and
+        `other_info["user_profile"]` -- and its template says nothing about
+        language (see oasis/social_platform/config/user.py:to_system_message).
+        Every other LLM call in this project appends get_language_instruction()
+        to its own system prompt; the simulation runtime is the one path that
+        cannot, because the prompt is built inside the library. So the directive
+        rides in on the persona, which is the only free-text field of ours that
+        reaches the agent.
+
+        Without it the agents' output language is left to the model and to
+        whatever language the seed posts happen to be in, and a multilingual
+        model drifts to the language of its context.
+
+        Kept out of `persona` itself so the stored profile, the UI and the
+        reports show the persona the model actually wrote.
+        """
+        return f"{self.persona}\n\n{get_language_instruction()}"
+
     def to_reddit_format(self) -> Dict[str, Any]:
         """Render this profile in the Reddit shape OASIS reads."""
         profile = {
@@ -128,7 +149,7 @@ class OasisAgentProfile:
             "username": self.user_name,
             "name": self.name,
             "bio": self.bio,
-            "persona": self.persona,
+            "persona": self.oasis_persona(),
             "karma": self.karma,
             "created_at": self.created_at,
         }
@@ -156,7 +177,7 @@ class OasisAgentProfile:
             "username": self.user_name,
             "name": self.name,
             "bio": self.bio,
-            "persona": self.persona,
+            "persona": self.oasis_persona(),
             "friend_count": self.friend_count,
             "follower_count": self.follower_count,
             "statuses_count": self.statuses_count,
@@ -1089,10 +1110,14 @@ Requirements:
             writer.writerow(headers)
 
             for idx, profile in enumerate(profiles):
-                # user_char is the bio and persona together.
+                # user_char is the bio and persona together, and it is what OASIS
+                # injects into the agent's system prompt -- so it carries the
+                # language directive too. See OasisAgentProfile.oasis_persona.
                 user_char = profile.bio
                 if profile.persona and profile.persona != profile.bio:
-                    user_char = f"{profile.bio} {profile.persona}"
+                    user_char = f"{profile.bio} {profile.oasis_persona()}"
+                else:
+                    user_char = f"{profile.bio}\n\n{get_language_instruction()}"
                 # Newlines would break the CSV row.
                 user_char = user_char.replace('\n', ' ').replace('\r', ' ')
 
@@ -1147,7 +1172,7 @@ Requirements:
                 "username": profile.user_name,
                 "name": profile.name,
                 "bio": profile.bio[:150],
-                "persona": profile.persona,
+                "persona": profile.oasis_persona(),
                 "karma": profile.karma if profile.karma else 1000,
                 "created_at": profile.created_at,
                 # OASIS requires these, so every one carries a default.
