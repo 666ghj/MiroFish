@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-# Capture the caller-supplied key before importing MiroFish modules. app.config
+# Capture the caller-supplied key before importing SoSim modules. app.config
 # deliberately loads the repository .env with override=True, which must not
 # silently replace the account selected for this explicit validation process.
 _PROCESS_ZEP_API_KEY = os.environ.get("ZEP_API_KEY", "").strip()
@@ -49,62 +49,76 @@ class SourceEpisode:
 BASELINE_EPISODES = [
     SourceEpisode(
         "2026-01-05T09:00:00Z",
-        "澜舟科技（企业稳定标识 LZ-TECH）是一家风电智能运维公司。"
-        "公司总部位于星港市，周岚自 2024 年起担任首席执行官（CEO）。",
+        "Blue Harbor Technologies (stable company id BH-TECH) is a wind-power "
+        "intelligent maintenance company. Its headquarters is in Starport City, "
+        "and Nadia Vance has been chief executive officer (CEO) since 2024.",
         "baseline",
     ),
     SourceEpisode(
         "2026-01-12T10:00:00Z",
-        "澜舟科技研发了产品智巡平台（产品稳定标识 ZHIXUN-01）。"
-        "智巡平台当前处于试点阶段，用于识别风机叶片异常。",
+        "Blue Harbor Technologies developed the SmartPatrol platform (stable "
+        "product id SMARTPATROL-01). The SmartPatrol platform is in its pilot "
+        "stage and identifies wind-turbine blade defects.",
         "baseline",
     ),
     SourceEpisode(
         "2026-01-20T14:00:00Z",
-        "澜舟科技与海岳能源（企业稳定标识 HY-ENERGY）签署 HY-2026-01 合作协议。"
-        "双方将在东湾风场联合部署智巡平台，协议有效期至 2026 年 12 月 31 日。",
+        "Blue Harbor Technologies and Seacrest Energy (stable company id "
+        "SC-ENERGY) signed cooperation agreement SC-2026-01. The two companies "
+        "will jointly deploy the SmartPatrol platform at the East Bay wind farm, "
+        "and the agreement runs until 31 December 2026.",
         "baseline",
     ),
     SourceEpisode(
         "2026-02-02T09:30:00Z",
-        "陈屿担任澜舟科技智巡平台的项目负责人，负责东湾风场部署。"
-        "公司经营仍由首席执行官周岚负责。",
+        "Owen Reid is the SmartPatrol platform project lead at Blue Harbor "
+        "Technologies and owns the East Bay wind farm deployment. Company "
+        "operations remain with chief executive officer Nadia Vance.",
         "baseline",
     ),
     SourceEpisode(
         "2026-02-20T18:00:00Z",
-        "东湾风场的智巡平台试点发现了 12 处叶片异常，"
-        "使海岳能源的非计划停机时间降低了 18%。",
+        "The SmartPatrol pilot at the East Bay wind farm found 12 blade defects "
+        "and cut the unplanned downtime of Seacrest Energy by 18%.",
         "baseline",
     ),
     SourceEpisode(
         "2026-03-05T11:00:00Z",
-        "海岳能源确认澜舟科技是智巡平台的开发方，陈屿是实施项目负责人。"
-        "海岳能源计划在试点验收后成为首批商业客户。",
+        "Seacrest Energy confirmed that Blue Harbor Technologies develops the "
+        "SmartPatrol platform and that Owen Reid is the implementation project "
+        "lead. Seacrest Energy plans to become one of the first commercial "
+        "customers once the pilot is accepted.",
         "baseline",
     ),
     SourceEpisode(
         "2026-03-15T16:00:00Z",
-        "澜舟科技董事会批准智巡平台在 2026 年 4 月 1 日从试点阶段转为商业发布。"
-        "周岚以首席执行官身份签署了发布决议。",
+        "The Blue Harbor Technologies board approved moving the SmartPatrol "
+        "platform from pilot to commercial release on 1 April 2026. Nadia Vance "
+        "signed the release resolution as chief executive officer.",
         "baseline",
     ),
     SourceEpisode(
         "2026-04-01T08:00:00Z",
-        "智巡平台今天正式商业发布，不再处于试点阶段。"
-        "海岳能源成为智巡平台首个商业客户，陈屿继续负责交付。",
+        "The SmartPatrol platform was released commercially today and is no "
+        "longer in its pilot stage. Seacrest Energy became the first commercial "
+        "customer of the SmartPatrol platform, and Owen Reid still leads "
+        "delivery.",
         "baseline",
     ),
     SourceEpisode(
         "2026-04-18T13:00:00Z",
-        "澜舟科技在星港市总部公布运营数据：智巡平台已覆盖 60 台风机，"
-        "海岳能源仍是 HY-2026-01 协议下的合作伙伴和客户。",
+        "Blue Harbor Technologies published operating figures at its Starport "
+        "City headquarters: the SmartPatrol platform now covers 60 turbines, and "
+        "Seacrest Energy remains both a partner and a customer under agreement "
+        "SC-2026-01.",
         "baseline",
     ),
     SourceEpisode(
         "2026-04-30T17:00:00Z",
-        "截至 2026 年 4 月 30 日，周岚仍担任澜舟科技首席执行官，"
-        "澜舟科技总部仍在星港市；陈屿担任智巡平台项目负责人。",
+        "As of 30 April 2026, Nadia Vance is still the chief executive officer "
+        "of Blue Harbor Technologies, the Blue Harbor Technologies headquarters "
+        "is still in Starport City, and Owen Reid is the SmartPatrol platform "
+        "project lead.",
         "baseline",
     ),
 ]
@@ -113,20 +127,26 @@ BASELINE_EPISODES = [
 TEMPORAL_UPDATES = [
     SourceEpisode(
         "2026-05-10T09:00:00Z",
-        "澜舟科技董事会宣布，自 2026 年 5 月 10 日起，周岚不再担任首席执行官。"
-        "陈屿正式接任澜舟科技首席执行官，周岚转任首席战略顾问。",
+        "The Blue Harbor Technologies board announced that Nadia Vance stepped "
+        "down as chief executive officer on 10 May 2026. Owen Reid formally "
+        "became chief executive officer of Blue Harbor Technologies, and Nadia "
+        "Vance moved to chief strategy advisor.",
         "leadership_change",
     ),
     SourceEpisode(
         "2026-06-01T09:00:00Z",
-        "自 2026 年 6 月 1 日起，澜舟科技总部已从星港市迁至海城市。"
-        "星港市原总部不再是公司总部，现改为澜舟科技研发中心。",
+        "As of 1 June 2026 the Blue Harbor Technologies headquarters moved from "
+        "Starport City to Seaford City. The former Starport City site is no "
+        "longer the company headquarters and is now the Blue Harbor "
+        "Technologies research and development center.",
         "headquarters_change",
     ),
     SourceEpisode(
         "2026-06-15T12:00:00Z",
-        "澜舟科技与海岳能源已于 2026 年 6 月 15 日提前终止 HY-2026-01 联合部署协议。"
-        "海岳能源不再是澜舟科技的联合部署合作伙伴，但仍是智巡平台客户。",
+        "Blue Harbor Technologies and Seacrest Energy ended the SC-2026-01 joint "
+        "deployment agreement early, on 15 June 2026. Seacrest Energy is no "
+        "longer a joint deployment partner of Blue Harbor Technologies, but it "
+        "is still a SmartPatrol platform customer.",
         "partnership_change",
     ),
     SourceEpisode(
@@ -134,12 +154,12 @@ TEMPORAL_UPDATES = [
         json.dumps(
             {
                 "event": "product_metrics_update",
-                "company_id": "LZ-TECH",
-                "product_id": "ZHIXUN-01",
-                "product_name": "智巡平台",
+                "company_id": "BH-TECH",
+                "product_id": "SMARTPATROL-01",
+                "product_name": "SmartPatrol platform",
                 "commercial_status": "commercial",
                 "covered_turbines": 120,
-                "active_customer": "海岳能源",
+                "active_customer": "Seacrest Energy",
                 "as_of": "2026-06-20",
             },
             ensure_ascii=False,
@@ -378,9 +398,9 @@ def _episode_to_batch_item(graph_id: str, item: SourceEpisode, index: int) -> Ba
         data=item.data,
         data_type=item.data_type,
         created_at=item.created_at,
-        source_description="MiroFish deep Zep Cloud validation corpus",
+        source_description="SoSim deep Zep Cloud validation corpus",
         metadata={
-            "source": "mirofish_zep_deep_validation",
+            "source": "sosim_zep_deep_validation",
             "phase": item.phase,
             "sequence": index,
         },
@@ -393,8 +413,8 @@ def _add_and_wait(client: Any, graph_id: str, item: SourceEpisode, timeout: int)
         type=item.data_type,
         data=item.data,
         created_at=item.created_at,
-        source_description="MiroFish temporal Zep Cloud validation update",
-        metadata={"source": "mirofish_zep_deep_validation", "phase": item.phase},
+        source_description="SoSim temporal Zep Cloud validation update",
+        metadata={"source": "sosim_zep_deep_validation", "phase": item.phase},
     )
     episode_uuid = _uuid(episode)
     if not episode_uuid:
@@ -404,25 +424,32 @@ def _add_and_wait(client: Any, graph_id: str, item: SourceEpisode, timeout: int)
 
 
 def _activities() -> Iterable[AgentActivity]:
+    post_content = (
+        "The new Seaford City headquarters opened today and SmartPatrol "
+        "commercial service is running normally."
+    )
     return [
         AgentActivity(
             platform="twitter",
             agent_id=101,
-            agent_name="陈屿",
+            agent_name="Owen Reid",
             action_type="CREATE_POST",
-            action_args={"content": "海城市新总部今天启用，智巡平台商业服务正常运行。"},
+            action_args={"content": post_content},
             round_num=1,
             timestamp="2026-07-01T09:00:00Z",
         ),
         AgentActivity(
             platform="twitter",
             agent_id=102,
-            agent_name="周岚",
+            agent_name="Nadia Vance",
             action_type="QUOTE_POST",
             action_args={
-                "original_author_name": "陈屿",
-                "original_content": "海城市新总部今天启用，智巡平台商业服务正常运行。",
-                "quote_content": "作为首席战略顾问，我支持陈屿和新的管理团队。",
+                "original_author_name": "Owen Reid",
+                "original_content": post_content,
+                "quote_content": (
+                    "As chief strategy advisor I support Owen Reid and the new "
+                    "leadership team."
+                ),
             },
             round_num=1,
             timestamp="2026-07-01T09:05:00Z",
@@ -430,11 +457,11 @@ def _activities() -> Iterable[AgentActivity]:
         AgentActivity(
             platform="twitter",
             agent_id=201,
-            agent_name="海岳能源",
+            agent_name="Seacrest Energy",
             action_type="LIKE_POST",
             action_args={
-                "post_author_name": "陈屿",
-                "post_content": "海城市新总部今天启用，智巡平台商业服务正常运行。",
+                "post_author_name": "Owen Reid",
+                "post_content": post_content,
             },
             round_num=1,
             timestamp="2026-07-01T09:06:00Z",
@@ -442,12 +469,15 @@ def _activities() -> Iterable[AgentActivity]:
         AgentActivity(
             platform="twitter",
             agent_id=201,
-            agent_name="海岳能源",
+            agent_name="Seacrest Energy",
             action_type="CREATE_COMMENT",
             action_args={
-                "post_author_name": "陈屿",
-                "post_content": "海城市新总部今天启用，智巡平台商业服务正常运行。",
-                "content": "联合部署协议虽已终止，但我们仍是智巡平台客户。",
+                "post_author_name": "Owen Reid",
+                "post_content": post_content,
+                "content": (
+                    "The joint deployment agreement has ended, but we are still "
+                    "a SmartPatrol platform customer."
+                ),
             },
             round_num=2,
             timestamp="2026-07-01T09:10:00Z",
@@ -455,9 +485,9 @@ def _activities() -> Iterable[AgentActivity]:
         AgentActivity(
             platform="twitter",
             agent_id=101,
-            agent_name="陈屿",
+            agent_name="Owen Reid",
             action_type="FOLLOW",
-            action_args={"target_user_name": "海岳能源"},
+            action_args={"target_user_name": "Seacrest Energy"},
             round_num=2,
             timestamp="2026-07-01T09:12:00Z",
         ),
@@ -468,7 +498,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     api_key = _require_process_api_key()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    graph_id = args.graph_id or f"mirofish_zep_deep_{stamp}"
+    graph_id = args.graph_id or f"sosim_zep_deep_{stamp}"
     builder = GraphBuilderService(api_key=api_key)
     client = builder.client
     created = False
@@ -484,7 +514,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     print(f"[zep-deep] graph_id={graph_id}", flush=True)
     try:
-        builder.create_graph("MiroFish Zep Cloud Deep Validation", graph_id=graph_id)
+        builder.create_graph("SoSim Zep Cloud Deep Validation", graph_id=graph_id)
         created = True
         print("[zep-deep] graph created", flush=True)
 
@@ -493,7 +523,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ontology_probe = {"entity_types": [{"name": "ProbeEntity", "attributes": []}], "edge_types": []}
         try:
             builder.set_ontology(graph_id, ontology_probe)
-            result["empty_attribute_ontology_probe"] = "accepted_after_mirofish_normalization"
+            result["empty_attribute_ontology_probe"] = "accepted_after_sosim_normalization"
         except Exception as error:
             result["empty_attribute_ontology_probe"] = {
                 "error_type": type(error).__name__,
@@ -507,7 +537,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         operation_id = f"deep-validation-{stamp}"
         batch = client.batch.create(
             metadata={
-                "mirofish_operation_id": operation_id,
+                "sosim_operation_id": operation_id,
                 "graph_id": graph_id,
                 "suite": "zep_deep_validation",
             }
@@ -563,7 +593,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         baseline_names = {_uuid(node): node.name for node in baseline_nodes}
         baseline_ceo = client.graph.search(
             graph_id=graph_id,
-            query="截至2026年4月底，谁担任澜舟科技首席执行官？",
+            query=(
+                "Who was the chief executive officer of Blue Harbor "
+                "Technologies at the end of April 2026?"
+            ),
             scope="edges",
             reranker="cross_encoder",
             limit=10,
@@ -602,9 +635,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         updater_drained = True
         updater_stats = updater.get_stats()
         if updater_stats["items_sent"] != 5 or updater_stats["pending_episode_count"] != 0:
-            raise AssertionError(f"unexpected MiroFish updater stats: {updater_stats}")
-        result["mirofish_updater"] = updater_stats
-        print("[zep-deep] MiroFish updater processed 5 mock activities", flush=True)
+            raise AssertionError(f"unexpected SoSim updater stats: {updater_stats}")
+        result["sosim_updater"] = updater_stats
+        print("[zep-deep] SoSim updater processed 5 mock activities", flush=True)
 
         final_nodes = fetch_all_nodes(client, graph_id, page_size=2)
         final_edges = fetch_all_edges(client, graph_id, page_size=2)
@@ -614,14 +647,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
         edge_search = client.graph.search(
             graph_id=graph_id,
-            query="澜舟科技当前首席执行官、当前总部以及与海岳能源的当前合作关系是什么？",
+            query=(
+                "Who is the current chief executive officer of Blue Harbor "
+                "Technologies, where is its current headquarters, and what is "
+                "its current relationship with Seacrest Energy?"
+            ),
             scope="edges",
             reranker="cross_encoder",
             limit=20,
         )
         node_search = client.graph.search(
             graph_id=graph_id,
-            query="澜舟科技管理层人物",
+            query="Blue Harbor Technologies leadership figures",
             scope="nodes",
             reranker="rrf",
             limit=10,
@@ -629,7 +666,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         typed_edge_search = client.graph.search(
             graph_id=graph_id,
-            query="公司管理职位发生了什么变化？",
+            query="What changed in the company leadership roles?",
             scope="edges",
             reranker="rrf",
             limit=10,
@@ -637,14 +674,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         auto_search = client.graph.search(
             graph_id=graph_id,
-            query="总结澜舟科技最新的管理层、总部、产品与海岳能源关系。",
+            query=(
+                "Summarize the latest Blue Harbor Technologies leadership, "
+                "headquarters, product, and Seacrest Energy relationship."
+            ),
             scope="auto",
             max_characters=3000,
             return_raw_results=True,
         )
         episode_search = client.graph.search(
             graph_id=graph_id,
-            query="海岳能源为什么仍是客户但不再是联合部署伙伴？",
+            query=(
+                "Why is Seacrest Energy still a customer but no longer a "
+                "joint deployment partner?"
+            ),
             scope="episodes",
             reranker="rrf",
             limit=10,
@@ -654,7 +697,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             (
                 node
                 for node in final_nodes
-                if node.name == "澜舟科技" and "Company" in (node.labels or [])
+                if node.name == "Blue Harbor Technologies"
+                and "Company" in (node.labels or [])
             ),
             max(
                 final_nodes,
@@ -715,7 +759,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
         if len(entity_context.related_edges) != len(complete_node_edges):
             raise AssertionError(
-                "MiroFish entity context omitted incoming or outgoing node edges"
+                "SoSim entity context omitted incoming or outgoing node edges"
             )
 
         result["runtime_assertions"] = {
@@ -846,7 +890,7 @@ def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
         "temporal_update_episode_count": len(
             result.get("temporal_update_episode_uuids", [])
         ),
-        "mirofish_updater": result.get("mirofish_updater"),
+        "sosim_updater": result.get("sosim_updater"),
         "final": {
             key: final.get(key)
             for key in (

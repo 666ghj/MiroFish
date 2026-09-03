@@ -1,7 +1,7 @@
 <template>
   <div class="env-setup-panel">
     <div class="scroll-container">
-      <!-- Step 01: 模拟实例 -->
+      <!-- Step 01: simulation instance -->
       <div class="step-card" :class="{ 'active': phase === 0, 'completed': phase > 0 }">
         <div class="card-header">
           <div class="step-info">
@@ -41,7 +41,7 @@
         </div>
       </div>
 
-      <!-- Step 02: 生成 Agent 人设 -->
+      <!-- Step 02: agent profiles -->
       <div class="step-card" :class="{ 'active': phase === 1, 'completed': phase > 1 }">
         <div class="card-header">
           <div class="step-info">
@@ -113,7 +113,7 @@
         </div>
       </div>
 
-      <!-- Step 03: 生成双平台模拟配置 -->
+      <!-- Step 03: dual-platform simulation config -->
       <div class="step-card" :class="{ 'active': phase === 2, 'completed': phase > 2 }">
         <div class="card-header">
           <div class="step-info">
@@ -135,7 +135,7 @@
           
           <!-- Config Preview -->
           <div v-if="simulationConfig" class="config-detail-panel">
-            <!-- 时间配置 -->
+            <!-- Time config -->
             <div class="config-block">
               <div class="config-grid">
                 <div class="config-item">
@@ -179,7 +179,7 @@
               </div>
             </div>
 
-            <!-- Agent 配置 -->
+            <!-- Agent config -->
             <div class="config-block">
               <div class="config-block-header">
                 <span class="config-block-title">{{ $t('step2.agentConfig') }}</span>
@@ -191,7 +191,7 @@
                   :key="agent.agent_id" 
                   class="agent-card"
                 >
-                  <!-- 卡片头部 -->
+                  <!-- Card header -->
                   <div class="agent-card-header">
                     <div class="agent-identity">
                       <span class="agent-id">Agent {{ agent.agent_id }}</span>
@@ -203,7 +203,7 @@
                     </div>
                   </div>
                   
-                  <!-- 活跃时间轴 -->
+                  <!-- Active-hours timeline -->
                   <div class="agent-timeline">
                     <span class="timeline-label">{{ $t('step2.activeTimePeriod') }}</span>
                     <div class="mini-timeline">
@@ -224,7 +224,7 @@
                     </div>
                   </div>
 
-                  <!-- 行为参数 -->
+                  <!-- Behavior parameters -->
                   <div class="agent-params">
                     <div class="param-group">
                       <div class="param-item">
@@ -264,7 +264,7 @@
               </div>
             </div>
 
-            <!-- 平台配置 -->
+            <!-- Platform config -->
             <div class="config-block">
               <div class="config-block-header">
                 <span class="config-block-title">{{ $t('step2.recommendAlgoConfig') }}</span>
@@ -327,7 +327,7 @@
               </div>
             </div>
 
-            <!-- LLM 配置推理 -->
+            <!-- LLM config reasoning -->
             <div v-if="simulationConfig.generation_reasoning" class="config-block">
               <div class="config-block-header">
                 <span class="config-block-title">{{ $t('step2.llmConfigReasoning') }}</span>
@@ -346,7 +346,7 @@
         </div>
       </div>
 
-      <!-- Step 04: 初始激活编排 -->
+      <!-- Step 04: initial activation orchestration -->
       <div class="step-card" :class="{ 'active': phase === 3, 'completed': phase > 3 }">
         <div class="card-header">
           <div class="step-info">
@@ -367,25 +367,19 @@
           </p>
 
           <div v-if="simulationConfig?.event_config" class="orchestration-content">
-            <!-- 叙事方向 -->
+            <!-- Narrative direction -->
             <div class="narrative-box">
               <span class="box-label narrative-label">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="special-icon">
-                  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="url(#paint0_linear)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88L16.24 7.76Z" fill="url(#paint0_linear)" stroke="url(#paint0_linear)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <defs>
-                    <linearGradient id="paint0_linear" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                      <stop stop-color="#FF5722"/>
-                      <stop offset="1" stop-color="#FF9800"/>
-                    </linearGradient>
-                  </defs>
+                  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88L16.24 7.76Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
                 {{ $t('step2.narrativeDirection') }}
               </span>
               <p class="narrative-text">{{ simulationConfig.event_config.narrative_direction }}</p>
             </div>
 
-            <!-- 热点话题 -->
+            <!-- Hot topics -->
             <div class="topics-section">
               <span class="box-label">{{ $t('step2.initialHotTopics') }}</span>
               <div class="hot-topics-grid">
@@ -395,7 +389,7 @@
               </div>
             </div>
 
-            <!-- 初始帖子流 -->
+            <!-- Initial post stream -->
             <div class="initial-posts-section">
               <span class="box-label">{{ $t('step2.initialActivationSeq', { count: simulationConfig.event_config.initial_posts.length }) }}</span>
               <div class="posts-timeline">
@@ -418,7 +412,7 @@
         </div>
       </div>
 
-      <!-- Step 05: 准备完成 -->
+      <!-- Step 05: setup complete -->
       <div class="step-card" :class="{ 'active': phase === 4 }">
         <div class="card-header">
           <div class="step-info">
@@ -435,7 +429,7 @@
           <p class="api-note">POST /api/simulation/start</p>
           <p class="description">{{ $t('step2.setupCompleteDesc') }}</p>
           
-          <!-- 模拟轮数配置 - 只有在配置生成完成且轮数计算出来后才显示 -->
+          <!-- Round-count configuration, shown only once the config exists and the round count can be derived -->
           <div v-if="simulationConfig && autoGeneratedRounds" class="rounds-config-section">
             <div class="rounds-header">
               <div class="header-left">
@@ -544,7 +538,7 @@
         </div>
         
         <div class="modal-body">
-          <!-- 基本信息 -->
+          <!-- Basic information -->
           <div class="modal-info-grid">
             <div class="info-item">
               <span class="info-label">{{ $t('step2.profileModalAge') }}</span>
@@ -564,13 +558,13 @@
             </div>
           </div>
 
-          <!-- 简介 -->
+          <!-- Bio -->
           <div class="modal-section">
             <span class="section-label">{{ $t('step2.profileModalBio') }}</span>
             <p class="section-bio">{{ selectedProfile.bio || $t('step2.noBio') }}</p>
           </div>
 
-          <!-- 关注话题 -->
+          <!-- Topics of interest -->
           <div class="modal-section" v-if="selectedProfile.interested_topics?.length">
             <span class="section-label">{{ $t('step2.profileModalTopics') }}</span>
             <div class="topics-grid">
@@ -582,11 +576,11 @@
             </div>
           </div>
 
-          <!-- 详细人设 -->
+          <!-- Detailed persona -->
           <div class="modal-section" v-if="selectedProfile.persona">
             <span class="section-label">{{ $t('step2.profileModalPersona') }}</span>
             
-            <!-- 人设维度概览 -->
+            <!-- Persona dimensions overview -->
             <div class="persona-dimensions">
               <div class="dimension-card">
                 <span class="dim-title">{{ $t('step2.personaDimExperience') }}</span>
@@ -645,7 +639,7 @@ import {
 const { t } = useI18n()
 
 const props = defineProps({
-  simulationId: String,  // 从父组件传入
+  simulationId: String,
   projectData: Object,
   graphData: Object,
   systemLogs: Array
@@ -654,7 +648,7 @@ const props = defineProps({
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
 
 // State
-const phase = ref(0) // 0: 初始化, 1: 生成人设, 2: 生成配置, 3: 完成
+const phase = ref(0) // 0 creating, 1 generating profiles, 2 generating config, 4 ready to start
 const taskId = ref(null)
 const prepareProgress = ref(0)
 const currentStage = ref('')
@@ -666,43 +660,47 @@ const simulationConfig = ref(null)
 const selectedProfile = ref(null)
 const showProfilesDetail = ref(true)
 
-// 日志去重：记录上一次输出的关键信息
+// Polling repeats the same payload until something changes, so the last value
+// written to the log well is remembered and identical lines are dropped.
 let lastLoggedMessage = ''
 let lastLoggedProfileCount = 0
 let lastLoggedConfigStage = ''
 
-// 模拟轮数配置
-const useCustomRounds = ref(false) // 默认使用自动配置轮数
-const customMaxRounds = ref(40)   // 默认推荐40轮
+// Round-count configuration
+const useCustomRounds = ref(false) // the auto-planned round count is the default
+const customMaxRounds = ref(40)   // 40 rounds is the recommended starting point
 
-// Watch stage to update phase
+// currentStage carries the backend's stage slug, never its display name. The
+// display name is translated copy, so matching on it would silently freeze the
+// card sequence the moment that copy changed.
 watch(currentStage, (newStage) => {
-  if (newStage === '生成Agent人设' || newStage === 'generating_profiles') {
+  if (newStage === 'generating_profiles') {
     phase.value = 1
-  } else if (newStage === '生成模拟配置' || newStage === 'generating_config') {
+  } else if (newStage === 'generating_config') {
     phase.value = 2
-    // 进入配置生成阶段，开始轮询配置
     if (!configTimer) {
       addLog(t('log.startGeneratingConfig'))
       startConfigPolling()
     }
-  } else if (newStage === '准备模拟脚本' || newStage === 'copying_scripts') {
-    phase.value = 2 // 仍属于配置阶段
+  } else if (newStage === 'copying_scripts') {
+    phase.value = 2 // copying scripts is still part of the config stage
   }
 })
 
-// 从配置中计算自动生成的轮数（不使用硬编码默认值）
+// Derived from the generated config with no hardcoded fallback, so the round
+// controls stay hidden until the backend has actually planned the run.
 const autoGeneratedRounds = computed(() => {
   if (!simulationConfig.value?.time_config) {
-    return null // 配置未生成时返回 null
+    return null
   }
   const totalHours = simulationConfig.value.time_config.total_simulation_hours
   const minutesPerRound = simulationConfig.value.time_config.minutes_per_round
   if (!totalHours || !minutesPerRound) {
-    return null // 配置数据不完整时返回 null
+    return null
   }
   const calculatedRounds = Math.floor((totalHours * 60) / minutesPerRound)
-  // 确保最大轮数不小于40（推荐值），避免滑动条范围异常
+  // The slider runs from 10 up to this value and marks 40 as recommended, so a
+  // plan shorter than 40 rounds would invert the range.
   return Math.max(calculatedRounds, 40)
 })
 
@@ -719,7 +717,7 @@ const displayProfiles = computed(() => {
   return profiles.value.slice(0, 6)
 })
 
-// 根据agent_id获取对应的username
+// Profiles are stored in agent_id order, so the id doubles as the index.
 const getAgentUsername = (agentId) => {
   if (profiles.value && profiles.value.length > agentId && agentId >= 0) {
     const profile = profiles.value[agentId]
@@ -728,7 +726,6 @@ const getAgentUsername = (agentId) => {
   return `agent_${agentId}`
 }
 
-// 计算所有人设的关联话题总数
 const totalTopicsCount = computed(() => {
   return profiles.value.reduce((sum, p) => {
     return sum + (p.interested_topics?.length || 0)
@@ -748,17 +745,14 @@ const handlePrepareFailure = (message) => {
   emit('update-status', 'error')
 }
 
-// 处理开始模拟按钮点击
 const handleStartSimulation = () => {
-  // 构建传递给父组件的参数
   const params = {}
   
   if (useCustomRounds.value) {
-    // 用户自定义轮数，传递 max_rounds 参数
     params.maxRounds = customMaxRounds.value
     addLog(t('log.startSimCustomRounds', { rounds: customMaxRounds.value }))
   } else {
-    // 用户选择保持自动生成的轮数，不传递 max_rounds 参数
+    // Omitting maxRounds leaves the backend on its own auto-planned count.
     addLog(t('log.startSimAutoRounds', { rounds: autoGeneratedRounds.value }))
   }
   
@@ -776,7 +770,6 @@ const selectProfile = (profile) => {
   selectedProfile.value = profile
 }
 
-// 自动开始准备模拟
 const startPrepareSimulation = async () => {
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
@@ -784,7 +777,7 @@ const startPrepareSimulation = async () => {
     return
   }
   
-  // 标记第一步完成，开始第二步
+  // Step 01 is complete the moment the instance exists; step 02 starts here.
   phase.value = 1
   addLog(t('log.simInstanceCreated', { id: props.simulationId }))
   addLog(t('log.preparingSimEnv'))
@@ -808,7 +801,8 @@ const startPrepareSimulation = async () => {
       addLog(t('log.prepareTaskStarted'))
       addLog(t('log.prepareTaskId', { taskId: res.data.task_id }))
       
-      // 立即设置预期Agent总数（从prepare接口返回值获取）
+      // The expected total comes back with the prepare response, long before
+      // the first profile does, so the stat card is never blank while it waits.
       if (res.data.expected_entities_count) {
         expectedTotal.value = res.data.expected_entities_count
         addLog(t('log.zepEntitiesFound', { count: res.data.expected_entities_count }))
@@ -818,9 +812,7 @@ const startPrepareSimulation = async () => {
       }
       
       addLog(t('log.startPollingProgress'))
-      // 开始轮询进度
       startPolling()
-      // 开始实时获取 Profiles
       startProfilesPolling()
     } else {
       addLog(t('log.prepareFailed', { error: res.error || t('common.unknownError') }))
@@ -866,15 +858,12 @@ const pollPrepareStatus = async () => {
     if (res.success && res.data) {
       const data = res.data
       
-      // 更新进度
       prepareProgress.value = data.progress || 0
       progressMessage.value = data.message || ''
       
-      // 解析阶段信息并输出详细日志
       if (data.progress_detail) {
-        currentStage.value = data.progress_detail.current_stage_name || ''
+        currentStage.value = data.progress_detail.current_stage || ''
         
-        // 输出详细进度日志（避免重复）
         const detail = data.progress_detail
         const logKey = `${detail.current_stage}-${detail.current_item}-${detail.total_items}`
         if (logKey !== lastLoggedMessage && detail.item_description) {
@@ -887,19 +876,15 @@ const pollPrepareStatus = async () => {
           }
         }
       } else if (data.message) {
-        // 从消息中提取阶段
-        const match = data.message.match(/\[(\d+)\/(\d+)\]\s*([^:]+)/)
-        if (match) {
-          currentStage.value = match[3].trim()
-        }
-        // 输出消息日志（避免重复）
+        // This poll carried no structured detail. The message still belongs in
+        // the log well, but it holds a display name rather than a stage slug
+        // and so cannot drive currentStage.
         if (data.message !== lastLoggedMessage) {
           lastLoggedMessage = data.message
           addLog(data.message)
         }
       }
       
-      // 检查是否完成
       if (data.status === 'completed' || data.status === 'ready' || data.already_prepared) {
         addLog(t('log.prepareComplete'))
         stopPolling()
@@ -910,7 +895,7 @@ const pollPrepareStatus = async () => {
       }
     }
   } catch (err) {
-    console.warn('轮询状态失败:', err)
+    console.warn('Failed to poll preparation status:', err)
   }
 }
 
@@ -923,19 +908,18 @@ const fetchProfilesRealtime = async () => {
     if (res.success && res.data) {
       const prevCount = profiles.value.length
       profiles.value = res.data.profiles || []
-      // 只有当 API 返回有效值时才更新，避免覆盖已有的有效值
+      // Only overwrite when the API returns a value: a later poll can omit it
+      // and must not blank out a total that is already known.
       if (res.data.total_expected) {
         expectedTotal.value = res.data.total_expected
       }
       
-      // 提取实体类型
       const types = new Set()
       profiles.value.forEach(p => {
         if (p.entity_type) types.add(p.entity_type)
       })
       entityTypes.value = Array.from(types)
       
-      // 输出 Profile 生成进度日志（仅当数量变化时）
       const currentCount = profiles.value.length
       if (currentCount > 0 && currentCount !== lastLoggedProfileCount) {
         lastLoggedProfileCount = currentCount
@@ -947,18 +931,16 @@ const fetchProfilesRealtime = async () => {
         }
         addLog(t('log.agentProfile', { current: currentCount, total: total, name: profileName, profession: latestProfile?.profession || t('step2.unknownProfession') }))
 
-        // 如果全部生成完成
         if (expectedTotal.value && currentCount >= expectedTotal.value) {
           addLog(t('log.allProfilesComplete', { count: currentCount }))
         }
       }
     }
   } catch (err) {
-    console.warn('获取 Profiles 失败:', err)
+    console.warn('Failed to fetch agent profiles:', err)
   }
 }
 
-// 配置轮询
 const startConfigPolling = () => {
   configTimer = setInterval(fetchConfigRealtime, 2000)
 }
@@ -984,7 +966,6 @@ const fetchConfigRealtime = async () => {
         return
       }
       
-      // 输出配置生成阶段日志（避免重复）
       if (data.generation_stage && data.generation_stage !== lastLoggedConfigStage) {
         lastLoggedConfigStage = data.generation_stage
         if (data.generation_stage === 'generating_profiles') {
@@ -994,12 +975,10 @@ const fetchConfigRealtime = async () => {
         }
       }
       
-      // 如果配置已生成
       if (data.config_generated && data.config) {
         simulationConfig.value = data.config
         addLog(t('log.configComplete'))
 
-        // 显示详细配置摘要
         if (data.summary) {
           addLog(t('log.configSummaryAgents', { count: data.summary.total_agents }))
           addLog(t('log.configSummaryHours', { hours: data.summary.simulation_hours }))
@@ -1008,13 +987,11 @@ const fetchConfigRealtime = async () => {
           addLog(t('log.configSummaryPlatforms', { twitter: data.summary.has_twitter_config ? '✓' : '✗', reddit: data.summary.has_reddit_config ? '✓' : '✗' }))
         }
         
-        // 显示时间配置详情
         if (data.config.time_config) {
           const tc = data.config.time_config
           addLog(t('log.timeConfigDetail', { minutes: tc.minutes_per_round, rounds: Math.floor((tc.total_simulation_hours * 60) / tc.minutes_per_round) }))
         }
         
-        // 显示事件配置
         if (data.config.event_config?.narrative_direction) {
           const narrative = data.config.event_config.narrative_direction
           addLog(t('log.narrativeDirection', { direction: narrative.length > 50 ? narrative.substring(0, 50) + '...' : narrative }))
@@ -1027,7 +1004,7 @@ const fetchConfigRealtime = async () => {
       }
     }
   } catch (err) {
-    console.warn('获取 Config 失败:', err)
+    console.warn('Failed to fetch simulation config:', err)
   }
 }
 
@@ -1035,11 +1012,10 @@ const loadPreparedData = async () => {
   phase.value = 2
   addLog(t('log.loadingExistingConfig'))
 
-  // 最后获取一次 Profiles
+  // One final fetch, so the list matches what was actually prepared.
   await fetchProfilesRealtime()
   addLog(t('log.loadedAgentProfiles', { count: profiles.value.length }))
 
-  // 获取配置（使用实时接口）
   try {
     const res = await getSimulationConfigRealtime(props.simulationId)
     if (res.success && res.data) {
@@ -1054,7 +1030,6 @@ const loadPreparedData = async () => {
         simulationConfig.value = configState.config
         addLog(t('log.configLoadSuccess'))
 
-        // 显示详细配置摘要
         if (configState.summary) {
           addLog(t('log.configSummaryAgents', { count: configState.summary.total_agents }))
           addLog(t('log.configSummaryHours', { hours: configState.summary.simulation_hours }))
@@ -1087,7 +1062,6 @@ watch(() => props.systemLogs?.length, () => {
 })
 
 onMounted(() => {
-  // 自动开始准备流程
   if (props.simulationId) {
     addLog(t('log.step2Init'))
     startPrepareSimulation()
@@ -1106,12 +1080,13 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #FAFAFA;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  background: var(--bg-canvas);
+  font-family: var(--font-sans);
 }
 
 .scroll-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px;
   display: flex;
@@ -1121,18 +1096,18 @@ onUnmounted(() => {
 
 /* Step Card */
 .step-card {
-  background: #FFF;
-  border-radius: 8px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
-  transition: all 0.3s ease;
+  box-shadow: var(--shadow-sm), var(--edge-highlight);
+  border: 1px solid var(--border-subtle);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
   position: relative;
 }
 
 .step-card.active {
-  border-color: #FF5722;
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-accent);
 }
 
 .card-header {
@@ -1149,93 +1124,87 @@ onUnmounted(() => {
 }
 
 .step-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 20px;
   font-weight: 700;
-  color: #E0E0E0;
+  color: var(--text-disabled);
 }
 
 .step-card.active .step-num,
 .step-card.completed .step-num {
-  color: #000;
+  color: var(--text-primary);
 }
 
 .step-title {
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.5px;
+  color: var(--text-primary);
 }
 
 .badge {
   font-size: 10px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
-.badge.pending { background: #F5F5F5; color: #999; }
-.badge.accent { background: #E3F2FD; color: #1565C0; }
-
-.card-content {
-  /* No extra padding - uses step-card's padding */
-}
+.badge.success { background: var(--success-soft); color: var(--success); }
+.badge.processing { background: var(--accent); color: var(--text-on-accent); }
+.badge.pending { background: var(--bg-inset); color: var(--text-muted); }
 
 .api-note {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #999;
+  color: var(--text-muted);
   margin-bottom: 8px;
 }
 
 .description {
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
 }
 
 /* Action Section */
-.action-section {
-  margin-top: 16px;
-}
-
 .action-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 12px 24px;
   font-size: 14px;
   font-weight: 600;
   border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  border-radius: var(--radius-md);
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .action-btn.primary {
-  background: #000;
-  color: #FFF;
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .action-btn.primary:hover:not(:disabled) {
-  opacity: 0.8;
+  background: var(--accent-hover);
 }
 
 .action-btn.secondary {
-  background: #F5F5F5;
-  color: #333;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
 }
 
 .action-btn.secondary:hover:not(:disabled) {
-  background: #E5E5E5;
+  background: var(--bg-overlay);
+  border-color: var(--border-strong);
 }
 
 .action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  background: var(--bg-raised);
+  color: var(--text-disabled);
 }
 
 .action-group {
@@ -1255,8 +1224,8 @@ onUnmounted(() => {
 
 /* Info Card */
 .info-card {
-  background: #F5F5F5;
-  border-radius: 6px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
   padding: 16px;
   margin-top: 16px;
 }
@@ -1266,7 +1235,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 0;
-  border-bottom: 1px dashed #E0E0E0;
+  border-bottom: 1px dashed var(--border-default);
 }
 
 .info-row:last-child {
@@ -1275,16 +1244,17 @@ onUnmounted(() => {
 
 .info-label {
   font-size: 12px;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .info-value {
   font-size: 13px;
   font-weight: 500;
+  color: var(--text-primary);
 }
 
 .info-value.mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -1293,9 +1263,9 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
-  background: #F9F9F9;
+  background: var(--bg-inset);
   padding: 16px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .stat-card {
@@ -1306,13 +1276,13 @@ onUnmounted(() => {
   display: block;
   font-size: 20px;
   font-weight: 700;
-  color: #000;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 .stat-label {
   font-size: 9px;
-  color: #999;
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-top: 4px;
   display: block;
@@ -1321,7 +1291,7 @@ onUnmounted(() => {
 /* Profiles Preview */
 .profiles-preview {
   margin-top: 20px;
-  border-top: 1px solid #E5E5E5;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 16px;
 }
 
@@ -1335,7 +1305,7 @@ onUnmounted(() => {
 .preview-title {
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1349,31 +1319,18 @@ onUnmounted(() => {
   padding-right: 4px;
 }
 
-.profiles-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.profiles-list::-webkit-scrollbar-thumb {
-  background: #DDD;
-  border-radius: 2px;
-}
-
-.profiles-list::-webkit-scrollbar-thumb:hover {
-  background: #CCC;
-}
-
 .profile-card {
-  background: #FAFAFA;
-  border: 1px solid #E5E5E5;
-  border-radius: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
   padding: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .profile-card:hover {
-  border-color: #999;
-  background: #FFF;
+  border-color: var(--border-accent);
+  background: var(--bg-overlay);
 }
 
 .profile-header {
@@ -1386,13 +1343,13 @@ onUnmounted(() => {
 .profile-realname {
   font-size: 14px;
   font-weight: 700;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .profile-username {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .profile-meta {
@@ -1401,15 +1358,15 @@ onUnmounted(() => {
 
 .profile-profession {
   font-size: 11px;
-  color: #666;
-  background: #F0F0F0;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
   padding: 2px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .profile-bio {
   font-size: 12px;
-  color: #444;
+  color: var(--text-secondary);
   line-height: 1.6;
   margin: 0 0 10px 0;
   display: -webkit-box;
@@ -1426,19 +1383,18 @@ onUnmounted(() => {
 
 .topic-tag {
   font-size: 10px;
-  color: #1565C0;
-  background: #E3F2FD;
+  color: var(--info);
+  background: var(--info-soft);
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-pill);
 }
 
 .topic-more {
   font-size: 10px;
-  color: #999;
+  color: var(--text-muted);
   padding: 2px 6px;
 }
 
-/* Config Preview */
 /* Config Detail Panel */
 .config-detail-panel {
   margin-top: 16px;
@@ -1446,7 +1402,7 @@ onUnmounted(() => {
 
 .config-block {
   margin-top: 16px;
-  border-top: 1px solid #E5E5E5;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 12px;
 }
 
@@ -1466,18 +1422,18 @@ onUnmounted(() => {
 .config-block-title {
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .config-block-badge {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
-  background: #F1F5F9;
-  color: #475569;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-pill);
 }
 
 /* Config Grid */
@@ -1488,9 +1444,9 @@ onUnmounted(() => {
 }
 
 .config-item {
-  background: #F9F9F9;
+  background: var(--bg-inset);
   padding: 12px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1498,14 +1454,14 @@ onUnmounted(() => {
 
 .config-item-label {
   font-size: 11px;
-  color: #94A3B8;
+  color: var(--text-muted);
 }
 
 .config-item-value {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 16px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 /* Time Periods */
@@ -1521,32 +1477,32 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: #F9F9F9;
-  border-radius: 6px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
 }
 
 .period-label {
   font-size: 12px;
   font-weight: 500;
-  color: #64748B;
+  color: var(--text-secondary);
   min-width: 70px;
 }
 
 .period-hours {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: #475569;
+  color: var(--text-secondary);
   flex: 1;
 }
 
 .period-multiplier {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  color: #6366F1;
-  background: #EEF2FF;
+  color: var(--info);
+  background: var(--info-soft);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 /* Agents Cards */
@@ -1559,30 +1515,17 @@ onUnmounted(() => {
   padding-right: 4px;
 }
 
-.agents-cards::-webkit-scrollbar {
-  width: 4px;
-}
-
-.agents-cards::-webkit-scrollbar-thumb {
-  background: #DDD;
-  border-radius: 2px;
-}
-
-.agents-cards::-webkit-scrollbar-thumb:hover {
-  background: #CCC;
-}
-
 .agent-card {
-  background: #F9F9F9;
-  border: 1px solid #E5E5E5;
-  border-radius: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
   padding: 14px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .agent-card:hover {
-  border-color: #999;
-  background: #FFF;
+  border-color: var(--border-strong);
+  background: var(--bg-overlay);
 }
 
 /* Agent Card Header */
@@ -1592,7 +1535,7 @@ onUnmounted(() => {
   align-items: flex-start;
   margin-bottom: 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #F1F5F9;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .agent-identity {
@@ -1602,15 +1545,15 @@ onUnmounted(() => {
 }
 
 .agent-id {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--text-muted);
 }
 
 .agent-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 .agent-tags {
@@ -1620,10 +1563,10 @@ onUnmounted(() => {
 
 .agent-type {
   font-size: 10px;
-  color: #64748B;
-  background: #F1F5F9;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .agent-stance {
@@ -1631,27 +1574,27 @@ onUnmounted(() => {
   font-weight: 500;
   text-transform: uppercase;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .stance-neutral {
-  background: #F1F5F9;
-  color: #64748B;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
 }
 
 .stance-supportive {
-  background: #DCFCE7;
-  color: #16A34A;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .stance-opposing {
-  background: #FEE2E2;
-  color: #DC2626;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .stance-observer {
-  background: #FEF3C7;
-  color: #D97706;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 /* Agent Timeline */
@@ -1662,7 +1605,7 @@ onUnmounted(() => {
 .timeline-label {
   display: block;
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--text-muted);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1672,29 +1615,29 @@ onUnmounted(() => {
   display: flex;
   gap: 2px;
   height: 16px;
-  background: #F8FAFC;
-  border-radius: 4px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
   padding: 3px;
 }
 
 .timeline-hour {
   flex: 1;
-  background: #E2E8F0;
-  border-radius: 2px;
-  transition: all 0.2s;
+  background: var(--bg-active);
+  border-radius: var(--radius-xs);
+  transition: background 0.2s;
 }
 
 .timeline-hour.active {
-  background: linear-gradient(180deg, #6366F1, #818CF8);
+  background: var(--accent);
 }
 
 .timeline-marks {
   display: flex;
   justify-content: space-between;
   margin-top: 4px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px;
-  color: #94A3B8;
+  color: var(--text-muted);
 }
 
 /* Agent Params */
@@ -1718,14 +1661,14 @@ onUnmounted(() => {
 
 .param-item .param-label {
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--text-muted);
 }
 
 .param-item .param-value {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-primary);
 }
 
 .param-value.with-bar {
@@ -1736,26 +1679,26 @@ onUnmounted(() => {
 
 .mini-bar {
   height: 4px;
-  background: linear-gradient(90deg, #6366F1, #A855F7);
-  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  border-radius: var(--radius-xs);
   min-width: 4px;
   max-width: 40px;
 }
 
 .param-value.positive {
-  color: #16A34A;
+  color: var(--success);
 }
 
 .param-value.negative {
-  color: #DC2626;
+  color: var(--danger);
 }
 
 .param-value.neutral {
-  color: #64748B;
+  color: var(--text-secondary);
 }
 
 .param-value.highlight {
-  color: #6366F1;
+  color: var(--accent);
 }
 
 /* Platforms Grid */
@@ -1766,21 +1709,21 @@ onUnmounted(() => {
 }
 
 .platform-card {
-  background: #F9F9F9;
+  background: var(--bg-inset);
   padding: 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .platform-card-header {
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #E5E5E5;
+  border-bottom: 1px solid var(--border-default);
 }
 
 .platform-name {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .platform-params {
@@ -1797,14 +1740,14 @@ onUnmounted(() => {
 
 .param-label {
   font-size: 12px;
-  color: #64748B;
+  color: var(--text-secondary);
 }
 
 .param-value {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 /* Reasoning Content */
@@ -1816,13 +1759,13 @@ onUnmounted(() => {
 
 .reasoning-item {
   padding: 12px 14px;
-  background: #F9F9F9;
-  border-radius: 6px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
 }
 
 .reasoning-text {
   font-size: 13px;
-  color: #555;
+  color: var(--text-secondary);
   line-height: 1.7;
   margin: 0;
 }
@@ -1834,7 +1777,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--bg-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1843,15 +1786,16 @@ onUnmounted(() => {
 }
 
 .profile-modal {
-  background: #FFF;
-  border-radius: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   width: 90%;
   max-width: 600px;
   max-height: 85vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg);
 }
 
 .modal-header {
@@ -1859,8 +1803,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   padding: 24px;
-  background: #FFF;
-  border-bottom: 1px solid #F0F0F0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .modal-header-info {
@@ -1877,21 +1821,21 @@ onUnmounted(() => {
 .modal-realname {
   font-size: 20px;
   font-weight: 700;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .modal-username {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .modal-profession {
   font-size: 12px;
-  color: #666;
-  background: #F5F5F5;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
   padding: 4px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: inline-block;
   font-weight: 500;
 }
@@ -1901,37 +1845,35 @@ onUnmounted(() => {
   height: 32px;
   border: none;
   background: none;
-  color: #999;
+  color: var(--text-muted);
   border-radius: 50%;
   font-size: 24px;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  transition: color 0.2s;
+  transition: color 0.2s, background 0.2s;
   padding: 0;
 }
 
 .close-btn:hover {
-  color: #333;
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .modal-body {
   padding: 24px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 
-/* 基本信息网格 */
+/* Basic information grid */
 .modal-info-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 24px 16px;
   margin-bottom: 32px;
-  padding: 0;
-  background: transparent;
-  border-radius: 0;
 }
 
 .info-item {
@@ -1942,7 +1884,7 @@ onUnmounted(() => {
 
 .info-label {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
@@ -1951,15 +1893,15 @@ onUnmounted(() => {
 .info-value {
   font-size: 15px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .info-value.mbti {
-  font-family: 'JetBrains Mono', monospace;
-  color: #FF5722;
+  font-family: var(--font-mono);
+  color: var(--accent);
 }
 
-/* 模块区域 */
+/* Modal sections */
 .modal-section {
   margin-bottom: 28px;
 }
@@ -1968,7 +1910,7 @@ onUnmounted(() => {
   display: block;
   font-size: 11px;
   font-weight: 600;
-  color: #999;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
@@ -1976,16 +1918,16 @@ onUnmounted(() => {
 
 .section-bio {
   font-size: 14px;
-  color: #333;
+  color: var(--text-secondary);
   line-height: 1.6;
   margin: 0;
   padding: 16px;
-  background: #F9F9F9;
-  border-radius: 6px;
-  border-left: 3px solid #E0E0E0;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--accent);
 }
 
-/* 话题标签 */
+/* Topic tags */
 .topics-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1994,20 +1936,20 @@ onUnmounted(() => {
 
 .topic-item {
   font-size: 11px;
-  color: #1565C0;
-  background: #E3F2FD;
+  color: var(--info);
+  background: var(--info-soft);
   padding: 4px 10px;
-  border-radius: 12px;
-  transition: all 0.2s;
+  border-radius: var(--radius-pill);
+  transition: background 0.2s;
   border: none;
 }
 
 .topic-item:hover {
-  background: #BBDEFB;
-  color: #0D47A1;
+  background: var(--info-border);
+  color: var(--text-primary);
 }
 
-/* 详细人设 */
+/* Detailed persona */
 .persona-dimensions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -2016,30 +1958,30 @@ onUnmounted(() => {
 }
 
 .dimension-card {
-  background: #F8F9FA;
+  background: var(--bg-inset);
   padding: 12px;
-  border-radius: 6px;
-  border-left: 3px solid #DDD;
-  transition: all 0.2s;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--border-strong);
+  transition: background 0.2s, border-left-color 0.2s;
 }
 
 .dimension-card:hover {
-  background: #F0F0F0;
-  border-left-color: #999;
+  background: var(--bg-hover);
+  border-left-color: var(--accent);
 }
 
 .dim-title {
   display: block;
   font-size: 12px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .dim-desc {
   display: block;
   font-size: 10px;
-  color: #888;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 
@@ -2052,18 +1994,9 @@ onUnmounted(() => {
   border-radius: 0;
 }
 
-.persona-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.persona-content::-webkit-scrollbar-thumb {
-  background: #DDD;
-  border-radius: 2px;
-}
-
 .section-persona {
   font-size: 13px;
-  color: #555;
+  color: var(--text-secondary);
   line-height: 1.8;
   margin: 0;
   text-align: justify;
@@ -2071,29 +2004,29 @@ onUnmounted(() => {
 
 /* System Logs */
 .system-logs {
-  background: #000;
-  color: #DDD;
+  background: var(--term-bg);
+  color: var(--term-fg);
   padding: 16px;
-  font-family: 'JetBrains Mono', monospace;
-  border-top: 1px solid #222;
+  font-family: var(--font-mono);
+  border-top: 1px solid var(--term-rule);
   flex-shrink: 0;
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--term-rule);
   padding-bottom: 8px;
   margin-bottom: 8px;
   font-size: 10px;
-  color: #888;
+  color: var(--term-dim);
 }
 
 .log-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  height: 80px; /* Approx 4 lines visible */
+  height: 80px; /* about four lines */
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -2103,8 +2036,8 @@ onUnmounted(() => {
 }
 
 .log-content::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 2px;
+  background: var(--term-rule);
+  border-radius: var(--radius-xs);
 }
 
 .log-line {
@@ -2115,12 +2048,12 @@ onUnmounted(() => {
 }
 
 .log-time {
-  color: #666;
+  color: var(--term-dim);
   min-width: 75px;
 }
 
 .log-msg {
-  color: #CCC;
+  color: var(--term-fg);
   word-break: break-all;
 }
 
@@ -2128,8 +2061,8 @@ onUnmounted(() => {
 .spinner-sm {
   width: 16px;
   height: 16px;
-  border: 2px solid #E5E5E5;
-  border-top-color: #FF5722;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -2137,6 +2070,7 @@ onUnmounted(() => {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
 /* Orchestration Content */
 .orchestration-content {
   display: flex;
@@ -2149,26 +2083,26 @@ onUnmounted(() => {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
 }
 
 .narrative-box {
-  background: #FFFFFF;
+  background: var(--bg-raised);
   padding: 20px 24px;
-  border-radius: 12px;
-  border: 1px solid #EEF2F6;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.03);
-  transition: all 0.3s ease;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.3s ease;
 }
 
 .narrative-box .box-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 13px;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
@@ -2176,7 +2110,8 @@ onUnmounted(() => {
 }
 
 .special-icon {
-  filter: drop-shadow(0 2px 4px rgba(255, 87, 34, 0.2));
+  color: var(--accent);
+  filter: drop-shadow(0 2px 4px var(--accent-soft));
   transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -2185,17 +2120,13 @@ onUnmounted(() => {
 }
 
 .narrative-text {
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: #334155;
+  color: var(--text-primary);
   line-height: 1.8;
   margin: 0;
   text-align: justify;
   letter-spacing: 0.01em;
-}
-
-.topics-section {
-  background: #FFF;
 }
 
 .hot-topics-grid {
@@ -2206,21 +2137,15 @@ onUnmounted(() => {
 
 .hot-topic-tag {
   font-size: 12px;
-  color:rgba(255, 86, 34, 0.88);
-  background: #FFF3E0;
+  color: var(--accent);
+  background: var(--accent-soft);
   padding: 4px 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   font-weight: 500;
 }
 
-.hot-topic-more {
-  font-size: 11px;
-  color: #999;
-  padding: 4px 6px;
-}
-
 .initial-posts-section {
-  border-top: 1px solid #EAEAEA;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 16px;
 }
 
@@ -2229,7 +2154,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
   padding-left: 8px;
-  border-left: 2px solid #F0F0F0;
+  border-left: 2px solid var(--border-subtle);
   margin-top: 12px;
 }
 
@@ -2244,14 +2169,14 @@ onUnmounted(() => {
   top: 14px;
   width: 12px;
   height: 2px;
-  background: #DDD;
+  background: var(--border-strong);
 }
 
 .timeline-content {
-  background: #F9F9F9;
+  background: var(--bg-inset);
   padding: 12px;
-  border-radius: 6px;
-  border: 1px solid #EEE;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
 }
 
 .post-header {
@@ -2263,7 +2188,7 @@ onUnmounted(() => {
 .post-role {
   font-size: 11px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
   text-transform: uppercase;
 }
 
@@ -2275,9 +2200,9 @@ onUnmounted(() => {
 
 .post-id,
 .post-username {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #666;
+  color: var(--text-muted);
   line-height: 1;
   vertical-align: baseline;
 }
@@ -2288,16 +2213,16 @@ onUnmounted(() => {
 
 .post-text {
   font-size: 12px;
-  color: #555;
+  color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
 }
 
-/* 模拟轮数配置样式 */
+/* Round-count configuration */
 .rounds-config-section {
   margin: 24px 0;
   padding-top: 24px;
-  border-top: 1px solid #EAEAEA;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .rounds-header {
@@ -2316,22 +2241,12 @@ onUnmounted(() => {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 .section-desc {
   font-size: 12px;
-  color: #94A3B8;
-}
-
-.desc-highlight {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 600;
-  color: #1E293B;
-  background: #F1F5F9;
-  padding: 1px 6px;
-  border-radius: 4px;
-  margin: 0 2px;
+  color: var(--text-muted);
 }
 
 /* Switch Control */
@@ -2341,12 +2256,12 @@ onUnmounted(() => {
   gap: 8px;
   cursor: pointer;
   padding: 4px 8px 4px 4px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   transition: background 0.2s;
 }
 
 .switch-control:hover {
-  background: #F8FAFC;
+  background: var(--bg-hover);
 }
 
 .switch-control input {
@@ -2356,10 +2271,10 @@ onUnmounted(() => {
 .switch-track {
   width: 36px;
   height: 20px;
-  background: #E2E8F0;
-  border-radius: 10px;
+  background: var(--bg-active);
+  border-radius: var(--radius-pill);
   position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transition: background 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
 .switch-track::after {
@@ -2369,28 +2284,29 @@ onUnmounted(() => {
   top: 2px;
   width: 16px;
   height: 16px;
-  background: #FFF;
+  background: var(--text-primary);
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-xs);
   transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
 .switch-control input:checked + .switch-track {
-  background: #000;
+  background: var(--accent);
 }
 
 .switch-control input:checked + .switch-track::after {
   transform: translateX(16px);
+  background: var(--text-on-accent);
 }
 
 .switch-label {
   font-size: 12px;
   font-weight: 500;
-  color: #64748B;
+  color: var(--text-muted);
 }
 
 .switch-control input:checked ~ .switch-label {
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 /* Slider Content */
@@ -2412,25 +2328,25 @@ onUnmounted(() => {
 }
 
 .val-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 24px;
   font-weight: 700;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .val-unit {
   font-size: 12px;
-  color: #666;
+  color: var(--text-muted);
   font-weight: 500;
 }
 
 .slider-meta-info {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: #64748B;
-  background: #F1F5F9;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .range-wrapper {
@@ -2442,10 +2358,10 @@ onUnmounted(() => {
   -webkit-appearance: none;
   width: 100%;
   height: 4px;
-  background: #E2E8F0;
-  border-radius: 2px;
+  background: var(--bg-active);
+  border-radius: var(--radius-xs);
   outline: none;
-  background-image: linear-gradient(#000, #000);
+  background-image: linear-gradient(var(--accent), var(--accent));
   background-size: var(--percent, 0%) 100%;
   background-repeat: no-repeat;
   cursor: pointer;
@@ -2456,12 +2372,12 @@ onUnmounted(() => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #FFF;
-  border: 2px solid #000;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-xs);
   transition: transform 0.1s;
-  margin-top: -6px; /* Center thumb */
+  margin-top: -6px; /* centres the thumb on the track */
 }
 
 .minimal-slider::-webkit-slider-thumb:hover {
@@ -2470,16 +2386,16 @@ onUnmounted(() => {
 
 .minimal-slider::-webkit-slider-runnable-track {
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .range-marks {
   display: flex;
   justify-content: space-between;
   margin-top: 8px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--text-muted);
   position: relative;
 }
 
@@ -2490,11 +2406,11 @@ onUnmounted(() => {
 }
 
 .mark-recommend:hover {
-  color: #000;
+  color: var(--text-primary);
 }
 
 .mark-recommend.active {
-  color: #000;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -2506,7 +2422,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: 1px;
   height: 4px;
-  background: #CBD5E1;
+  background: var(--border-strong);
 }
 
 /* Auto Info */
@@ -2514,9 +2430,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 24px;
-  background: #F8FAFC;
+  background: var(--bg-inset);
   padding: 16px 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .auto-value {
@@ -2525,7 +2441,7 @@ onUnmounted(() => {
   align-items: baseline;
   gap: 4px;
   padding-right: 24px;
-  border-right: 1px solid #E2E8F0;
+  border-right: 1px solid var(--border-default);
 }
 
 .auto-content {
@@ -2545,15 +2461,15 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
-  color: #64748B;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   padding: 3px 8px;
-  border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
 }
 
 .auto-desc {
@@ -2565,14 +2481,14 @@ onUnmounted(() => {
 .auto-desc p {
   margin: 0;
   font-size: 13px;
-  color: #64748B;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
 .highlight-tip {
   margin-top: 4px !important;
   font-size: 12px !important;
-  color: #000 !important;
+  color: var(--text-link) !important;
   font-weight: 500;
   cursor: pointer;
 }

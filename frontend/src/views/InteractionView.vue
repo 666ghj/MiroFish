@@ -1,45 +1,27 @@
 <template>
   <div class="main-view">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH</div>
+    <teleport to="#nav-context">
+      <div class="view-switcher">
+        <button
+          v-for="mode in ['graph', 'split', 'workbench']"
+          :key="mode"
+          class="switch-btn"
+          :class="{ active: viewMode === mode }"
+          @click="viewMode = mode"
+        >
+          {{ { graph: $t('main.layoutGraph'), split: $t('main.layoutSplit'), workbench: $t('main.layoutWorkbench') }[mode] }}
+        </button>
       </div>
-      
-      <div class="header-center">
-        <div class="view-switcher">
-          <button 
-            v-for="mode in ['graph', 'split', 'workbench']" 
-            :key="mode"
-            class="switch-btn"
-            :class="{ active: viewMode === mode }"
-            @click="viewMode = mode"
-          >
-            {{ { graph: $t('main.layoutGraph'), split: $t('main.layoutSplit'), workbench: $t('main.layoutWorkbench') }[mode] }}
-          </button>
-        </div>
-      </div>
-
-      <div class="header-right">
-        <LanguageSwitcher />
-        <div class="step-divider"></div>
-        <div class="workflow-step">
-          <span class="step-num">Step 5/5</span>
-          <span class="step-name">{{ $tm('main.stepNames')[4] }}</span>
-        </div>
-        <div class="step-divider"></div>
-        <span class="status-indicator" :class="statusClass">
-          <span class="dot"></span>
-          {{ statusText }}
-        </span>
-      </div>
-    </header>
+      <span class="nav-step">Step 5/5</span>
+      <span class="nav-step-name">{{ $tm('main.stepNames')[4] }}</span>
+      <span class="nav-status" :class="statusClass"><i class="dot" />{{ statusText }}</span>
+    </teleport>
 
     <!-- Main Content Area -->
     <main class="content-area">
       <!-- Left Panel: Graph -->
       <div class="panel-wrapper left" :style="leftPanelStyle">
-        <GraphPanel 
+        <GraphPanel
           :graphData="graphData"
           :loading="graphLoading"
           :currentPhase="5"
@@ -49,7 +31,7 @@
         />
       </div>
 
-      <!-- Right Panel: Step5 深度互动 -->
+      <!-- Right Panel: Step 5, deep interaction -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <Step5Interaction
           :reportId="currentReportId"
@@ -65,25 +47,23 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step5Interaction from '../components/Step5Interaction.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation } from '../api/simulation'
 import { getReport } from '../api/report'
-import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
 const route = useRoute()
-const router = useRouter()
 const { t } = useI18n()
 
 // Props
-const props = defineProps({
+defineProps({
   reportId: String
 })
 
-// Layout State - 默认切换到工作台视角
+// Layout State. The conversation is text, so the workbench opens maximised.
 const viewMode = ref('workbench')
 
 // Data State
@@ -147,26 +127,23 @@ const loadReportData = async () => {
   try {
     addLog(t('log.loadReportData', { id: currentReportId.value }))
 
-    // 获取 report 信息以获取 simulation_id
+    // The report carries the simulation id, which in turn carries the project.
     const reportRes = await getReport(currentReportId.value)
     if (reportRes.success && reportRes.data) {
       const reportData = reportRes.data
       simulationId.value = reportData.simulation_id
 
       if (simulationId.value) {
-        // 获取 simulation 信息
         const simRes = await getSimulation(simulationId.value)
         if (simRes.success && simRes.data) {
           const simData = simRes.data
 
-          // 获取 project 信息
           if (simData.project_id) {
             const projRes = await getProject(simData.project_id)
             if (projRes.success && projRes.data) {
               projectData.value = projRes.data
               addLog(t('log.projectLoadSuccess', { id: projRes.data.project_id }))
 
-              // 获取 graph 数据
               if (projRes.data.graph_id) {
                 await loadGraph(projRes.data.graph_id)
               }
@@ -184,7 +161,7 @@ const loadReportData = async () => {
 
 const loadGraph = async (graphId) => {
   graphLoading.value = true
-  
+
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
@@ -220,47 +197,20 @@ onMounted(() => {
 
 <style scoped>
 .main-view {
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: #FFF;
   overflow: hidden;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
 }
 
-/* Header */
-.app-header {
-  height: 60px;
-  border-bottom: 1px solid #EAEAEA;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  background: #FFF;
-  z-index: 100;
-  position: relative;
-}
-
-.header-center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.brand {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 1px;
-  cursor: pointer;
-}
-
+/* Nav context, teleported into the shell's #nav-context region. The block is
+   deliberately identical in every routed view so the bar never shifts. */
 .view-switcher {
   display: flex;
-  background: #F5F5F5;
-  padding: 4px;
-  border-radius: 6px;
   gap: 4px;
+  padding: 4px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
 }
 
 .switch-btn {
@@ -269,74 +219,62 @@ onMounted(() => {
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.switch-btn:hover {
+  color: var(--text-primary);
 }
 
 .switch-btn.active {
-  background: #FFF;
-  color: #000;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.nav-step {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
-.workflow-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.nav-step-name {
   font-size: 14px;
-}
-
-.step-num {
-  font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
-  color: #999;
+  color: var(--text-primary);
+  margin-left: -8px;
 }
 
-.step-name {
-  font-weight: 700;
-  color: #000;
-}
-
-.step-divider {
-  width: 1px;
-  height: 14px;
-  background-color: #E0E0E0;
-}
-
-.status-indicator {
+.nav-status {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #666;
   font-weight: 500;
+  color: var(--text-secondary);
 }
 
-.dot {
+.nav-status .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: #CCC;
+  border-radius: var(--radius-pill);
+  background: var(--neutral-dot);
 }
 
-.status-indicator.ready .dot { background: #4CAF50; }
-.status-indicator.processing .dot { background: #FF9800; animation: pulse 1s infinite; }
-.status-indicator.completed .dot { background: #4CAF50; }
-.status-indicator.error .dot { background: #F44336; }
+.nav-status.processing .dot { background: var(--accent); animation: pulse 1s infinite; }
+.nav-status.completed .dot { background: var(--success); }
+.nav-status.error .dot { background: var(--danger); }
+.nav-status.ready .dot { background: var(--info); }
 
 @keyframes pulse { 50% { opacity: 0.5; } }
 
 /* Content */
 .content-area {
   flex: 1;
+  min-height: 0;
   display: flex;
   position: relative;
   overflow: hidden;
@@ -350,6 +288,6 @@ onMounted(() => {
 }
 
 .panel-wrapper.left {
-  border-right: 1px solid #EAEAEA;
+  border-right: 1px solid var(--border-subtle);
 }
 </style>

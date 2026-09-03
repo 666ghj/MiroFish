@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# provision_local.sh — bring up MiroFish entirely on this machine.
+# provision_local.sh — bring up SoSim entirely on this machine.
 #
 # Target: NVIDIA DGX Spark (GB10, aarch64, 128GB unified memory), Ubuntu-based.
 # Works on any aarch64/x86_64 Linux box with Docker + an NVIDIA runtime.
@@ -50,6 +50,16 @@ VLLM_IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.05.post1-py3}"
 # guaranteed arm64 build.
 EMBED_IMAGE="${EMBED_IMAGE:-$VLLM_IMAGE}"
 FALKORDB_IMAGE="${FALKORDB_IMAGE:-falkordb/falkordb:latest}"
+FALKORDB_VOLUME="${FALKORDB_VOLUME:-sosim_falkordb}"
+
+# Names this stack used before the product was renamed to SoSim. The containers
+# ran with --restart unless-stopped, so they come back after a reboot and keep
+# holding the GPU and ports 8000/8081/6379; the sosim-* containers cannot bind
+# while they are alive, so retire_legacy_infra removes them before start. The
+# volume is only reported, never removed — deleting an operator's disk is not
+# this script's call, even when the data in it is already written off.
+LEGACY_CONTAINERS=(mirofish-llm mirofish-embed mirofish-falkordb)
+LEGACY_VOLUME=mirofish_falkordb
 
 LLM_MODEL_REPO="${LLM_MODEL_REPO:-RedHatAI/Qwen3.6-35B-A3B-NVFP4}"
 LLM_SERVED_NAME="${LLM_SERVED_NAME:-local-llm}"
@@ -140,7 +150,7 @@ dump_log() {
   printf '\n  %s--- last %s lines of %s ---%s\n' "$Y" "$lines" "$name" "$N" >&2
   case "$name" in
     llm|embed|falkordb)
-      docker logs --tail "$lines" "mirofish-$name" 2>&1 | sed 's/^/  | /' >&2 \
+      docker logs --tail "$lines" "sosim-$name" 2>&1 | sed 's/^/  | /' >&2 \
         || printf '  | (no container logs; was it ever created?)\n' >&2
       ;;
     *)
@@ -159,13 +169,13 @@ dump_log() {
 assert_container_alive() {
   local name="$1" grace="${2:-4}"
   sleep "$grace"
-  if container_up "mirofish-$name"; then
+  if container_up "sosim-$name"; then
     ok "$name container is running"
     return 0
   fi
   local state
   state=$(docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} {{.State.Error}}' \
-          "mirofish-$name" 2>/dev/null || echo 'never created')
+          "sosim-$name" 2>/dev/null || echo 'never created')
   fail "$name container is not running ($state)"
   dump_log "$name" 80
   return 1
@@ -284,14 +294,17 @@ preflight() {
 install_system_deps() {
   step "System packages"
   if ! have apt-get; then
-    warn "no apt-get; install the equivalents of: build-essential python3-dev git curl fonts-noto-cjk"
+    warn "no apt-get; install the equivalents of: build-essential python3-dev git curl fonts-inter"
     return
   fi
   # build-essential + python3-dev are NOT optional: psutil is pinned to 5.9.8,
   # which publishes no linux-aarch64 wheel, so uv builds it from source. It is
   # the only package in the lockfile that does.
+  # The UI ships no webfont (an air-gapped box cannot fetch one), so the font
+  # stack falls back to whatever is installed. fonts-inter and
+  # fonts-jetbrains-mono are what the design tokens ask for.
   local pkgs=(build-essential python3-dev git curl ca-certificates
-              fonts-noto-cjk fonts-jetbrains-mono)
+              fonts-inter fonts-jetbrains-mono)
   local missing=()
   for p in "${pkgs[@]}"; do
     dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
@@ -492,14 +505,59 @@ wait_for_http() {
 }
 
 container_up() { [[ -n "$(docker ps -q -f "name=^$1$" 2>/dev/null)" ]]; }
+container_exists() { [[ -n "$(docker ps -aq -f "name=^$1$" 2>/dev/null)" ]]; }
+volume_exists() { docker volume inspect "$1" >/dev/null 2>&1; }
+
+# The containers and the FalkorDB volume were renamed mirofish-* -> sosim-* with
+# no data migration. Two consequences, and both are handled here rather than
+# left for the operator to discover:
+#
+#   1. The old containers must go, or the new ones cannot bind their ports. They
+#      are removed, not stopped: --restart unless-stopped would revive a stopped
+#      one on the next boot.
+#   2. The old volume is now unreferenced and every graph in it is unreachable.
+#      That is by design, but it is not something to discover from a mysteriously
+#      empty graph list, so it is stated plainly and the reclaim command printed.
+#
+# Idempotent: a machine that never ran the old names sees a single "none found".
+retire_legacy_infra() {
+  step "Pre-rename containers and volume"
+
+  local stale=()
+  local c
+  for c in "${LEGACY_CONTAINERS[@]}"; do
+    container_exists "$c" && stale+=("$c")
+  done
+
+  if (( ${#stale[@]} == 0 )); then
+    ok "none found"
+  else
+    note "these predate the SoSim rename and hold ports $LLM_PORT, $EMBED_PORT and $FALKORDB_PORT"
+    for c in "${stale[@]}"; do
+      if vrun docker rm -f "$c" >/dev/null 2>&1; then
+        ok "removed $c"
+      else
+        fail "could not remove the pre-rename container $c; sosim-${c#mirofish-} cannot bind its port while it exists"
+      fi
+    done
+  fi
+
+  if volume_exists "$LEGACY_VOLUME"; then
+    warn "the pre-rename volume '$LEGACY_VOLUME' is now orphaned."
+    warn "FalkorDB starts on '$FALKORDB_VOLUME', which is empty, so EVERY graph built"
+    warn "before the rename is gone. That is deliberate: there is no data migration."
+    warn "Nothing reads '$LEGACY_VOLUME' again. To reclaim the disk it holds, run:"
+    warn "    docker volume rm $LEGACY_VOLUME"
+  fi
+}
 
 start_falkordb() {
   step "FalkorDB"
-  if container_up mirofish-falkordb; then ok "already running"; return 0; fi
-  docker rm -f mirofish-falkordb >/dev/null 2>&1 || true
-  if ! vrun docker run -d --name mirofish-falkordb --restart unless-stopped \
+  if container_up sosim-falkordb; then ok "already running"; return 0; fi
+  docker rm -f sosim-falkordb >/dev/null 2>&1 || true
+  if ! vrun docker run -d --name sosim-falkordb --restart unless-stopped \
     -p "127.0.0.1:$FALKORDB_PORT:6379" -p "127.0.0.1:$FALKORDB_UI_PORT:3000" \
-    -v mirofish_falkordb:/var/lib/falkordb/data \
+    -v "$FALKORDB_VOLUME:/var/lib/falkordb/data" \
     -e BROWSER=1 \
     "$FALKORDB_IMAGE" >/dev/null; then
     fail "could not create the FalkorDB container"
@@ -511,8 +569,8 @@ start_falkordb() {
 
 start_llm() {
   step "LLM server (vLLM)"
-  if container_up mirofish-llm; then ok "already running"; return; fi
-  docker rm -f mirofish-llm >/dev/null 2>&1 || true
+  if container_up sosim-llm; then ok "already running"; return; fi
+  docker rm -f sosim-llm >/dev/null 2>&1 || true
 
   # Unified memory means the OS page cache eats into the KV cache budget.
   note "dropping the page cache to free unified memory (sudo; skipped if refused)"
@@ -525,7 +583,7 @@ start_llm() {
   #  - Graphiti uses response_format json_schema    -> constrained decoding
   note "model=$LLM_MODEL_REPO  gpu-mem=$GPU_MEM_UTIL  max-len=$MAX_MODEL_LEN"
   note "max-num-seqs=$MAX_NUM_SEQS  tool-call-parser=$TOOL_CALL_PARSER"
-  if ! vrun docker run -d --name mirofish-llm --restart unless-stopped \
+  if ! vrun docker run -d --name sosim-llm --restart unless-stopped \
     $GPU_FLAGS --ipc=host \
     -p "127.0.0.1:$LLM_PORT:8000" \
     -v "$HF_CACHE:/hf" \
@@ -550,13 +608,13 @@ start_llm() {
 
 start_embeddings() {
   step "Embeddings server"
-  if container_up mirofish-embed; then ok "already running"; return; fi
-  docker rm -f mirofish-embed >/dev/null 2>&1 || true
+  if container_up sosim-embed; then ok "already running"; return; fi
+  docker rm -f sosim-embed >/dev/null 2>&1 || true
   # vLLM in pooling mode exposes an OpenAI-compatible /v1/embeddings.
   # `--runner pooling` supersedes the older `--task embed`; copying an older
   # recipe with --task embed will fail on a current image.
   note "model=$EMBED_MODEL_REPO  gpu-mem=$EMBED_GPU_MEM_UTIL"
-  if ! vrun docker run -d --name mirofish-embed --restart unless-stopped \
+  if ! vrun docker run -d --name sosim-embed --restart unless-stopped \
     $GPU_FLAGS --ipc=host \
     -p "127.0.0.1:$EMBED_PORT:8000" \
     -v "$HF_CACHE:/hf" \
@@ -589,7 +647,7 @@ start_bg() {
     return
   fi
   mkdir -p "$RUN_DIR" "$LOG_DIR"
-  # setsid so the child gets its own process group: MiroFish's simulation
+  # setsid so the child gets its own process group: SoSim's simulation
   # runner spawns OASIS children with start_new_session=True and cleans them
   # up via killpg on SIGTERM. A hard kill of the parent orphans that whole
   # group, which keeps holding the sqlite DB and burning LLM capacity.
@@ -637,7 +695,7 @@ start_shim() {
 }
 
 start_backend() {
-  step "MiroFish backend"
+  step "SoSim backend"
   # Must be the venv interpreter: simulation_runner spawns children with
   # sys.executable, so a system python here means every simulation child dies
   # on `import oasis`.
@@ -656,6 +714,9 @@ start_frontend() {
 
 do_start() {
   load_env
+  # Must run before anything binds a port: the pre-rename containers are still
+  # holding 8000, 8081 and 6379 on any machine that ran this stack before.
+  retire_legacy_infra || true
   # Each step records its own failures and we deliberately continue, so one
   # broken service still yields a full picture instead of stopping at the first
   # problem. report_failures() (EXIT trap) sets the exit code.
@@ -703,7 +764,7 @@ do_stop() {
       ok "$name stopped"
     fi
   done
-  for c in mirofish-llm mirofish-embed mirofish-falkordb; do
+  for c in sosim-llm sosim-embed sosim-falkordb; do
     docker stop "$c" >/dev/null 2>&1 && ok "$c stopped" || true
   done
 }
@@ -711,9 +772,9 @@ do_stop() {
 do_status() {
   step "Status"
   printf '  %-12s %-9s %s\n' SERVICE STATE ENDPOINT
-  for row in "falkordb:mirofish-falkordb:127.0.0.1:$FALKORDB_PORT" \
-             "embeddings:mirofish-embed:http://127.0.0.1:$EMBED_PORT/v1/models" \
-             "llm:mirofish-llm:http://127.0.0.1:$LLM_PORT/v1/models"; do
+  for row in "falkordb:sosim-falkordb:127.0.0.1:$FALKORDB_PORT" \
+             "embeddings:sosim-embed:http://127.0.0.1:$EMBED_PORT/v1/models" \
+             "llm:sosim-llm:http://127.0.0.1:$LLM_PORT/v1/models"; do
     IFS=: read -r label container rest <<<"$row"
     local endpoint="${row#"$label:$container:"}"
     if container_up "$container"; then
@@ -739,10 +800,10 @@ do_status() {
 do_logs() {
   local svc="${1:-}"
   case "$svc" in
-    llm)        docker logs -f --tail 200 mirofish-llm ;;
-    embed*)     docker logs -f --tail 200 mirofish-embed ;;
-    emb)        docker logs -f --tail 200 mirofish-embed ;;
-    falkor*)    docker logs -f --tail 200 mirofish-falkordb ;;
+    llm)        docker logs -f --tail 200 sosim-llm ;;
+    embed*)     docker logs -f --tail 200 sosim-embed ;;
+    emb)        docker logs -f --tail 200 sosim-embed ;;
+    falkor*)    docker logs -f --tail 200 sosim-falkordb ;;
     ''|all)     tail -n 100 -f "$LOG_DIR"/*.log ;;
     *)          tail -n 200 -f "$LOG_DIR/$svc.log" ;;
   esac
@@ -791,9 +852,29 @@ check_gpu_arch() {
   fi
 }
 
+# Read-only counterpart to retire_legacy_infra: doctor reports, start removes.
+report_legacy_infra() {
+  step "Pre-rename leftovers"
+  local found=0 c
+  for c in "${LEGACY_CONTAINERS[@]}"; do
+    if container_exists "$c"; then
+      warn "$c still exists and blocks the matching sosim-* container; '$0 start' removes it"
+      found=1
+    fi
+  done
+  if volume_exists "$LEGACY_VOLUME"; then
+    warn "volume '$LEGACY_VOLUME' is orphaned; its graphs are gone by design."
+    warn "Reclaim the disk with:  docker volume rm $LEGACY_VOLUME"
+    found=1
+  fi
+  (( found == 0 )) && ok "nothing left from the pre-rename names"
+  return 0
+}
+
 do_doctor() {
   step "Doctor"
   preflight
+  report_legacy_infra
   check_gpu_arch
 
   step "arm64 manifests"
@@ -831,7 +912,7 @@ do_doctor() {
   step "Config sanity"
   load_env
   [[ -n "${ZEP_BASE_URL:-}" ]] && ok "ZEP_BASE_URL=$ZEP_BASE_URL" \
-    || warn "ZEP_BASE_URL unset — MiroFish would talk to Zep Cloud."
+    || warn "ZEP_BASE_URL unset — SoSim would talk to Zep Cloud."
   [[ -z "${ZEP_API_URL:-}" ]] && ok "ZEP_API_URL unset (required)" \
     || die "ZEP_API_URL is set; the app refuses to boot. Use ZEP_BASE_URL."
   [[ "${GRAPHITI_TELEMETRY_ENABLED:-}" == "false" ]] && ok "Graphiti telemetry off" \
@@ -849,7 +930,7 @@ summary() {
   local ip; ip=$(hostname -I 2>/dev/null | awk '{print $1}'); ip="${ip:-<this-host>}"
   cat <<EOF
 
-$(printf '%s' "$G")MiroFish is up.$(printf '%s' "$N")
+$(printf '%s' "$G")SoSim is up.$(printf '%s' "$N")
 
   Open:  http://$ip:$FRONTEND_PORT
 
@@ -861,7 +942,7 @@ $(printf '%s' "$G")MiroFish is up.$(printf '%s' "$N")
   Everything else is bound to 127.0.0.1 and must NOT be exposed:
 
     $BACKEND_PORT   backend API        $SHIM_PORT   Zep-compatible shim
-    $LLM_PORT   vLLM (OpenAI API)  $EMBED_PORT   embeddings (TEI)
+    $LLM_PORT   vLLM (OpenAI API)  $EMBED_PORT   embeddings (vLLM)
     $FALKORDB_PORT   FalkorDB           $FALKORDB_UI_PORT   FalkorDB browser UI
 
   To reach the UI by hostname rather than IP, set VITE_ALLOWED_HOSTS in .env.

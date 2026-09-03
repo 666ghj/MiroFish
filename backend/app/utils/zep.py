@@ -14,14 +14,14 @@ from zep_cloud.core.api_error import ApiError as ZepApiError
 from ..config import Config
 from .logger import get_logger
 
-logger = get_logger("mirofish.zep")
+logger = get_logger("sosim.zep")
 
 T = TypeVar("T")
 
 ZEP_CLOUD_BASE_URL = "https://api.getzep.com/api/v2"
 
 # Keep request behavior aligned with the zep-cloud 3.25.0 SDK default that
-# MiroFish used before introducing the shared client. This is an internal
+# SoSim used before introducing the shared client. This is an internal
 # integration policy, not a deployment setting users need to tune.
 ZEP_HTTP_REQUEST_TIMEOUT_SECONDS = float(
     os.environ.get("ZEP_HTTP_REQUEST_TIMEOUT_SECONDS") or 60.0
@@ -101,7 +101,7 @@ def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> 
 
     normalized_key = (api_key or Config.ZEP_API_KEY or "").strip()
     if not normalized_key:
-        raise ValueError("ZEP_API_KEY 未配置")
+        raise ValueError("ZEP_API_KEY is not configured.")
 
     request_timeout = float(
         timeout if timeout is not None else ZEP_HTTP_REQUEST_TIMEOUT_SECONDS
