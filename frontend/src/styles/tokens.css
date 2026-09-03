@@ -1,0 +1,154 @@
+/* frontend/src/styles/tokens.css - imported from main.js BEFORE App.vue.
+   Single committed dark-navy theme.
+
+   CONTRAST IS MEASURED AGAINST FOUR OPAQUE SURFACES, in this column order:
+
+     canvas  #071952   page ground
+     panel   #0D2668   cards, sidebars, the workflow shell
+     raised  #12307D   inputs, chips, table rows, secondary buttons
+     overlay #163A8E   dropdown menus, toasts, popovers, hover-lifted cards
+
+   Every ratio in this file is a WCAG 2.1 relative-luminance ratio, recomputed
+   for the values actually committed here. A four-number comment means
+   canvas / panel / raised / overlay.
+
+   TRANSLUCENT WASHES are not surfaces of their own; --bg-hover and --bg-active
+   composite over whatever is underneath and always LOWER the ratio. The worst
+   composite the app can currently produce is --bg-hover over --bg-overlay
+   (resolves to #244695, inside SimulationRowActions' .menu). Reference values
+   on that composite: --text-primary 8.80, --text-secondary 6.03,
+   --text-muted 4.75, --text-faint 4.05, --text-link 4.42, --accent 3.75.
+   RULE: on a washed overlay use --text-secondary or brighter for body text.
+
+   Verified: #FFFFFF on #FF8B00 is 2.35:1 and FAILS AA and AA-Large.
+   Never put white type on the accent. Use --text-on-accent (7.04:1). */
+
+:root {
+  color-scheme: dark;
+
+  /* SURFACES */
+  --bg-canvas:  #071952;
+  --bg-sunken:  #04102F;
+  --bg-panel:   #0D2668;
+  --bg-raised:  #12307D;
+  --bg-overlay: #163A8E;
+  --bg-scrim:   rgba(3, 8, 26, 0.72);
+  --bg-inset:   rgba(255, 255, 255, 0.04);
+  --bg-hover:   rgba(255, 255, 255, 0.06);
+  --bg-active:  rgba(255, 255, 255, 0.10);
+
+  /* BORDERS */
+  --border-subtle:  #16307A;
+  --border-default: #1E3D8F;
+  --border-strong:  #2A4E99;
+  --border-accent:  #FF8B00;
+
+  /* TEXT  (canvas / panel / raised / overlay)
+     Four tones are cleared for body copy at any size. --text-disabled is not,
+     and is the only text token in this file that carries an exemption. */
+  --text-primary:   #FFFFFF; /* 16.54 / 14.05 / 12.04 / 10.35  AAA */
+  --text-secondary: #C9D6F2; /* 11.33 /  9.63 /  8.24 /  7.09  AAA */
+  --text-muted:     #AFBEE5; /*  8.91 /  7.58 /  6.49 /  5.58  AA at any size */
+  --text-faint:     #99AFE8; /*  7.60 /  6.46 /  5.53 /  4.75  AA at any size.
+       Was #7186BE, which measured 4.61 / 3.92 / 3.36 / 2.88 and was annotated
+       "large text only" while 51 call sites used it at 10-16px. Raised here
+       rather than audited at every site. The floor is --bg-overlay (4.75). */
+  --text-disabled:  #5F74AC; /*  3.61 /  3.07 /  2.63 /  2.26  FAILS AA on every
+       surface. Legitimate ONLY on the greyed-out label of a control that is
+       genuinely inert - a :disabled button or input - which WCAG 1.4.3 exempts.
+       It is NOT a "quiet text" tone: any live text, any hover-target, any
+       status label and any icon that a user is meant to read must use
+       --text-faint or brighter. Known deviations to migrate, all live text:
+       Step5Interaction .section-number (16px) and .is-pending section titles,
+       Step4Report .is-pending .section-title and .interview-display .stat-label
+       (11px), Step1GraphBuild and Step2EnvSetup .step-num (20px).
+       Its non-text uses (scrollbar thumb hover, .fact-number.historical
+       background, .stat-divider) are decoration and carry no contrast duty. */
+  --text-on-accent: #071952; /*  7.04 on #FF8B00 */
+  --text-inverse:   #071952;
+  --text-link:      #FFA333; /*  8.30 /  7.05 /  6.04 /  5.19  AA */
+
+  /* ACCENT */
+  --accent:        #FF8B00;  /* as TEXT on navy: 7.04 / 5.99 / 5.13 / 4.41.
+     AA on canvas, panel and raised; 4.41 on --bg-overlay is BELOW AA. Brand
+     colour, so it does not move: for accent-coloured text on an overlay
+     surface use --text-link (#FFA333, 5.19) instead. No site does this today. */
+  --accent-hover:  #FFA333;
+  --accent-active: #E07A00;
+  --accent-soft:   rgba(255, 139, 0, 0.14);
+  --accent-border: rgba(255, 139, 0, 0.42);
+
+  /* STATUS - each clears 4.5:1 on all four surfaces */
+  --success:        #34D399; /* 8.60 / 7.31 / 6.26 / 5.38 */
+  --success-soft:   rgba(52, 211, 153, 0.14);
+  --success-border: rgba(52, 211, 153, 0.38);
+  --warning:        #FBBF24; /* 9.91 / 8.42 / 7.21 / 6.20 */
+  --warning-soft:   rgba(251, 191, 36, 0.14);
+  --warning-border: rgba(251, 191, 36, 0.38);
+  --danger:         #FF8FA3; /* 7.65 / 6.50 / 5.57 / 4.78 - NOT #F87171 (4.35 on raised) */
+  --danger-soft:    rgba(255, 143, 163, 0.14);
+  --danger-border:  rgba(255, 143, 163, 0.38);
+  --info:           #38BDF8; /* 7.72 / 6.56 / 5.62 / 4.83 */
+  --info-soft:      rgba(56, 189, 248, 0.14);
+  --info-border:    rgba(56, 189, 248, 0.38);
+  --neutral-dot:    #9AAEDB; /* 7.44 / 6.33 / 5.42 / 4.66. Was #6E89C4, which
+     measured 2.97 on --bg-overlay - under the 3:1 floor for a non-text
+     indicator, and the only status dot that failed it. */
+
+  /* FOCUS */
+  --focus-ring: #FFA333;
+  --focus-ring-width: 2px;
+  --focus-shadow: 0 0 0 3px rgba(255, 163, 51, 0.45);
+
+  /* ELEVATION - on navy the top hairline reads as 'raised', not the shadow */
+  --shadow-xs: 0 1px 2px rgba(2, 6, 23, 0.40);
+  --shadow-sm: 0 2px 6px rgba(2, 6, 23, 0.45);
+  --shadow-md: 0 6px 16px rgba(2, 6, 23, 0.50);
+  --shadow-lg: 0 16px 40px rgba(2, 6, 23, 0.58);
+  --shadow-accent: 0 4px 14px rgba(255, 139, 0, 0.28);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* TERMINAL / LOG WELL */
+  --term-bg: #030B22;
+  --term-fg: #C9D6F2;   /* 13.38 on --term-bg */
+  --term-dim: #7186BE;  /*  5.45 on --term-bg. Same hex the old --text-faint
+     used, but the log well is #030B22, far darker than any UI surface, so this
+     one clears AA where --text-faint did not. Not interchangeable. */
+  --term-rule: #16307A;
+  --term-error: #FF8FA3;
+  --term-warn: #FBBF24;
+  --term-success: #34D399;
+
+  /* GRAPH - all >= 6:1 on --bg-canvas. Mirrored in styles/tokens.js for d3. */
+  --graph-1:  #FF8B00;
+  --graph-2:  #38BDF8;
+  --graph-3:  #A78BFA;
+  --graph-4:  #34D399;
+  --graph-5:  #FF8FA3;
+  --graph-6:  #FBBF24;
+  --graph-7:  #22D3EE;
+  --graph-8:  #F472B6;
+  --graph-9:  #93C5FD;
+  --graph-10: #FDBA74;
+  --graph-edge: #4A67AB;
+  --graph-edge-highlight: #38BDF8;
+  --graph-node-stroke: #071952;
+  --graph-label: #C9D6F2;
+
+  /* TYPE - no 'Noto Sans SC' anywhere; no fonts.googleapis.com link.
+     index.html documents an air-gap constraint: self-host woff2 under
+     frontend/public/fonts/ with font-display:swap, or rely on fallbacks. */
+  --font-sans:  'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', Times, serif;
+  --font-brand: var(--font-sans);
+
+  /* SHAPE */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+  --nav-h: 56px;
+}

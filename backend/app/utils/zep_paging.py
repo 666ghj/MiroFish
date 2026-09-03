@@ -10,7 +10,7 @@ from zep_cloud.client import Zep
 from .logger import get_logger
 from .zep import call_zep_read_with_retry
 
-logger = get_logger("mirofish.zep_paging")
+logger = get_logger("sosim.zep_paging")
 
 _DEFAULT_PAGE_SIZE = 100
 _DEFAULT_MAX_RETRIES = 3

@@ -1,6 +1,7 @@
 import csv
 import json
 
+from app.utils.locale import get_language_instruction
 from app.services.oasis_profile_generator import (
     OasisAgentProfile,
     OasisProfileGenerator,
@@ -11,7 +12,7 @@ from app.services.oasis_profile_generator import (
 
 def test_text_coercion_handles_none_nested_objects_and_lists():
     assert _coerce_to_str(None) == ""
-    assert _coerce_to_str({"text": {"value": "中文"}}) == "中文"
+    assert _coerce_to_str({"text": {"value": "nested text"}}) == "nested text"
     assert _coerce_to_str([None, {"description": "alpha"}, ["beta"]]) == "alpha, beta"
     assert _coerce_to_str({"unexpected": None}) == '{"unexpected": null}'
 
@@ -29,21 +30,21 @@ def test_profile_construction_is_the_single_normalization_boundary():
         user_name="agent",
         name="Agent Name",
         bio=None,
-        persona={"text": {"value": "详细人设"}},
+        persona={"text": {"value": "Detailed persona"}},
         gender=["female"],
         mbti={"value": "INTJ"},
-        country={"name": "中国"},
-        profession={"description": "研究员"},
-        interested_topics=["AI", ["政策", None], {"name": "社会"}],
+        country={"name": "Canada"},
+        profession={"description": "Researcher"},
+        interested_topics=["AI", ["policy", None], {"name": "society"}],
     )
 
     assert profile.bio == "Agent Name"
-    assert profile.persona == "详细人设"
+    assert profile.persona == "Detailed persona"
     assert profile.gender == "female"
     assert profile.mbti == "INTJ"
-    assert profile.country == "中国"
-    assert profile.profession == "研究员"
-    assert profile.interested_topics == ["AI", "政策", "社会"]
+    assert profile.country == "Canada"
+    assert profile.profession == "Researcher"
+    assert profile.interested_topics == ["AI", "policy", "society"]
     assert "None" not in json.dumps(profile.to_dict(), ensure_ascii=False)
 
 
@@ -52,10 +53,10 @@ def test_normalized_profile_serializes_to_twitter_and_reddit(tmp_path):
         user_id=1,
         user_name="agent",
         name="Agent Name",
-        bio={"summary": "公开简介"},
-        persona=["详细", "人设"],
+        bio={"summary": "Public bio"},
+        persona=["Detailed", "persona"],
         mbti={"text": "ENFP"},
-        interested_topics=["AI", ["政策"]],
+        interested_topics=["AI", ["policy"]],
     )
     generator = object.__new__(OasisProfileGenerator)
     twitter_path = tmp_path / "twitter_profiles.csv"
@@ -68,9 +69,17 @@ def test_normalized_profile_serializes_to_twitter_and_reddit(tmp_path):
         twitter = next(csv.DictReader(handle))
     reddit = json.loads(reddit_path.read_text(encoding="utf-8"))[0]
 
-    assert twitter["description"] == "公开简介"
-    assert twitter["user_char"] == "公开简介 详细, 人设"
-    assert reddit["bio"] == "公开简介"
-    assert reddit["persona"] == "详细, 人设"
+    assert twitter["description"] == "Public bio"
+    # Both OASIS-facing fields carry the normalized persona AND the language
+    # directive: OASIS builds the agent system prompt itself and its template
+    # says nothing about language, so the persona is the only channel we have.
+    # See OasisAgentProfile.oasis_persona.
+    assert twitter["user_char"].startswith("Public bio Detailed, persona")
+    assert get_language_instruction() in twitter["user_char"]
+    assert reddit["bio"] == "Public bio"
+    assert reddit["persona"].startswith("Detailed, persona")
+    assert get_language_instruction() in reddit["persona"]
+    # The stored profile keeps the persona the model actually wrote.
+    assert profile.to_dict()["persona"] == "Detailed, persona"
     assert reddit["mbti"] == "ENFP"
-    assert reddit["interested_topics"] == ["AI", "政策"]
+    assert reddit["interested_topics"] == ["AI", "policy"]

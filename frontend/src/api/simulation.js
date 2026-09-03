@@ -1,7 +1,7 @@
 import service from './index'
 
 /**
- * 创建模拟
+ * Create a simulation.
  * @param {Object} data - { project_id, graph_id?, enable_twitter?, enable_reddit? }
  */
 export const createSimulation = (data) => {
@@ -9,7 +9,7 @@ export const createSimulation = (data) => {
 }
 
 /**
- * 准备模拟环境（异步任务）
+ * Prepare a simulation environment. Runs as a background task.
  * @param {Object} data - { simulation_id, entity_types?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
  */
 export const prepareSimulation = (data) => {
@@ -17,7 +17,7 @@ export const prepareSimulation = (data) => {
 }
 
 /**
- * 查询准备任务进度
+ * Read the progress of a preparation task.
  * @param {Object} data - { task_id?, simulation_id? }
  */
 export const getPrepareStatus = (data) => {
@@ -25,7 +25,7 @@ export const getPrepareStatus = (data) => {
 }
 
 /**
- * 获取模拟状态
+ * Read a simulation's state.
  * @param {string} simulationId
  */
 export const getSimulation = (simulationId) => {
@@ -33,9 +33,10 @@ export const getSimulation = (simulationId) => {
 }
 
 /**
- * 获取模拟的 Agent Profiles
+ * Read a simulation's agent profiles.
  * @param {string} simulationId
- * @param {string} [platform] - 'reddit' | 'twitter'（省略时由后端根据模拟配置自动选择）
+ * @param {string} [platform] - 'reddit' or 'twitter'. Omit to let the backend
+ *   choose from the simulation's own configuration.
  */
 export const getSimulationProfiles = (simulationId, platform) => {
   const params = platform ? { platform } : {}
@@ -43,9 +44,10 @@ export const getSimulationProfiles = (simulationId, platform) => {
 }
 
 /**
- * 实时获取生成中的 Agent Profiles
+ * Read the agent profiles generated so far, while generation is still running.
  * @param {string} simulationId
- * @param {string} [platform] - 'reddit' | 'twitter'（省略时由后端根据模拟配置自动选择）
+ * @param {string} [platform] - 'reddit' or 'twitter'. Omit to let the backend
+ *   choose from the simulation's own configuration.
  */
 export const getSimulationProfilesRealtime = (simulationId, platform) => {
   const params = platform ? { platform } : {}
@@ -53,7 +55,7 @@ export const getSimulationProfilesRealtime = (simulationId, platform) => {
 }
 
 /**
- * 获取模拟配置
+ * Read a simulation's configuration.
  * @param {string} simulationId
  */
 export const getSimulationConfig = (simulationId) => {
@@ -61,17 +63,17 @@ export const getSimulationConfig = (simulationId) => {
 }
 
 /**
- * 实时获取生成中的模拟配置
+ * Read the configuration being generated, before generation has finished.
  * @param {string} simulationId
- * @returns {Promise} 返回配置信息，包含元数据和配置内容
+ * @returns {Promise} The configuration and its metadata
  */
 export const getSimulationConfigRealtime = (simulationId) => {
   return service.get(`/api/simulation/${simulationId}/config/realtime`)
 }
 
 /**
- * 列出所有模拟
- * @param {string} projectId - 可选，按项目ID过滤
+ * List simulations.
+ * @param {string} [projectId] - Only simulations belonging to this project
  */
 export const listSimulations = (projectId) => {
   const params = projectId ? { project_id: projectId } : {}
@@ -79,15 +81,40 @@ export const listSimulations = (projectId) => {
 }
 
 /**
- * 启动模拟
- * @param {Object} data - { simulation_id, platform?, max_rounds?, enable_graph_memory_update? }
+ * Start a simulation.
+ *
+ * The backend clears the previous run's logs, action databases and run state
+ * whenever this is called with force:true, so it must never be used to open a
+ * run that is already live. Attach to those instead - see the attach flag on
+ * the SimulationRun route.
+ *
+ * @param {Object} data - { simulation_id, platform?, max_rounds?, enable_graph_memory_update?, force? }
  */
 export const startSimulation = (data) => {
   return service.post('/api/simulation/start', data)
 }
 
 /**
- * 停止模拟
+ * Restart a simulation from a clean slate.
+ *
+ * Always quiesces the previous run and clears its output before relaunching,
+ * and rescues a simulation stranded in 'preparing' on the way. Answers 409
+ * with pending:true when a preparation is genuinely in flight; read
+ * err.response.data.pending to tell that from a real failure.
+ *
+ * @param {Object} data - { simulation_id, platform?, max_rounds?, enable_graph_memory_update? }
+ */
+export const restartSimulation = (data) => {
+  return service.post('/api/simulation/restart', data)
+}
+
+/**
+ * Stop a simulation.
+ *
+ * Answers 202 with pending:true while the previous monitor is still publishing
+ * the run's terminal state. That is not an error: the run settles on its own
+ * shortly afterwards. Read err.response.data.pending to tell the two apart.
+ *
  * @param {Object} data - { simulation_id }
  */
 export const stopSimulation = (data) => {
@@ -95,7 +122,37 @@ export const stopSimulation = (data) => {
 }
 
 /**
- * 获取模拟运行实时状态
+ * Delete a simulation, its on-disk artifacts and its reports. Permanent.
+ *
+ * An active run is refused unless force is set, which reaps it first. A
+ * preparation or a report still in flight is always refused.
+ *
+ * @param {string} simulationId
+ * @param {Object} [options] - { force }
+ */
+export const deleteSimulation = (simulationId, { force = false } = {}) => {
+  return service.delete(`/api/simulation/${simulationId}`, {
+    params: { force: force ? 'true' : 'false' }
+  })
+}
+
+/**
+ * Read a bounded window of one of a simulation's logs.
+ *
+ * A long run writes hundreds of megabytes of actions.jsonl, so the file is
+ * never read whole: omit the offset for the tail, then poll forward by passing
+ * back the next_offset of the previous response.
+ *
+ * @param {string} simulationId
+ * @param {Object} [params] - { source, offset, max_lines, max_bytes }
+ *   source is one of 'main', 'twitter', 'reddit' or 'backend'
+ */
+export const getSimulationLogs = (simulationId, params = {}) => {
+  return service.get(`/api/simulation/${simulationId}/logs`, { params })
+}
+
+/**
+ * Read a simulation's live run status.
  * @param {string} simulationId
  */
 export const getRunStatus = (simulationId) => {
@@ -103,7 +160,7 @@ export const getRunStatus = (simulationId) => {
 }
 
 /**
- * 获取模拟运行详细状态（包含最近动作）
+ * Read a simulation's live run status together with its recent actions.
  * @param {string} simulationId
  */
 export const getRunStatusDetail = (simulationId) => {
@@ -111,11 +168,12 @@ export const getRunStatusDetail = (simulationId) => {
 }
 
 /**
- * 获取模拟中的帖子
+ * Read the posts a simulation produced.
  * @param {string} simulationId
- * @param {string} [platform] - 'reddit' | 'twitter'（省略时由后端根据模拟配置自动选择）
- * @param {number} limit - 返回数量
- * @param {number} offset - 偏移量
+ * @param {string} [platform] - 'reddit' or 'twitter'. Omit to let the backend
+ *   choose from the simulation's own configuration.
+ * @param {number} limit
+ * @param {number} offset
  */
 export const getSimulationPosts = (simulationId, platform, limit = 50, offset = 0) => {
   const params = { limit, offset }
@@ -124,10 +182,10 @@ export const getSimulationPosts = (simulationId, platform, limit = 50, offset = 
 }
 
 /**
- * 获取模拟时间线（按轮次汇总）
+ * Read a simulation's timeline, aggregated by round.
  * @param {string} simulationId
- * @param {number} startRound - 起始轮次
- * @param {number} endRound - 结束轮次
+ * @param {number} startRound
+ * @param {number} [endRound]
  */
 export const getSimulationTimeline = (simulationId, startRound = 0, endRound = null) => {
   const params = { start_round: startRound }
@@ -138,7 +196,7 @@ export const getSimulationTimeline = (simulationId, startRound = 0, endRound = n
 }
 
 /**
- * 获取Agent统计信息
+ * Read per-agent statistics for a simulation.
  * @param {string} simulationId
  */
 export const getAgentStats = (simulationId) => {
@@ -146,7 +204,7 @@ export const getAgentStats = (simulationId) => {
 }
 
 /**
- * 获取模拟动作历史
+ * Read a simulation's action history.
  * @param {string} simulationId
  * @param {Object} params - { limit, offset, platform, agent_id, round_num }
  */
@@ -155,7 +213,7 @@ export const getSimulationActions = (simulationId, params = {}) => {
 }
 
 /**
- * 关闭模拟环境（优雅退出）
+ * Shut a simulation environment down gracefully.
  * @param {Object} data - { simulation_id, timeout? }
  */
 export const closeSimulationEnv = (data) => {
@@ -163,7 +221,7 @@ export const closeSimulationEnv = (data) => {
 }
 
 /**
- * 获取模拟环境状态
+ * Read the state of a simulation environment.
  * @param {Object} data - { simulation_id }
  */
 export const getEnvStatus = (data) => {
@@ -171,7 +229,7 @@ export const getEnvStatus = (data) => {
 }
 
 /**
- * 批量采访 Agent
+ * Interview several agents in one call.
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */
 export const interviewAgents = (data) => {
@@ -179,10 +237,16 @@ export const interviewAgents = (data) => {
 }
 
 /**
- * 获取历史模拟列表（带项目详情）
- * 用于首页历史项目展示
- * @param {number} limit - 返回数量限制
+ * Read the simulation history, enriched with project detail.
+ *
+ * Backs the Simulations menu and the history list on the landing page. Rows
+ * come back newest first.
+ *
+ * @param {number} limit
+ * @param {string} [projectId] - Only simulations belonging to this project
  */
-export const getSimulationHistory = (limit = 20) => {
-  return service.get('/api/simulation/history', { params: { limit } })
+export const getSimulationHistory = (limit = 20, projectId) => {
+  const params = { limit }
+  if (projectId) params.project_id = projectId
+  return service.get('/api/simulation/history', { params })
 }

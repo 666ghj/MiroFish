@@ -282,7 +282,7 @@ def test_batch_create_timeout_is_reconciled_by_operation_metadata(monkeypatch):
                 batches=[SimpleNamespace(
                     batch_id="batch-recovered",
                     metadata={
-                        "mirofish_operation_id": GraphBuilderService.build_operation_id(
+                        "sosim_operation_id": GraphBuilderService.build_operation_id(
                             "graph-id", ["chunk"]
                         ),
                         "graph_id": "graph-id",
@@ -496,6 +496,6 @@ def test_installed_sdk_serializes_the_batch_325_contract():
         "data_type": "text",
         "graph_id": "graph-id",
         "metadata": add_payload["items"][0]["metadata"],
-        "source_description": "MiroFish source document chunk",
+        "source_description": "SoSim source document chunk",
         "type": "graph_episode",
     }

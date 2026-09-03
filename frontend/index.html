@@ -1,17 +1,32 @@
 <!doctype html>
-<html lang="zh">
+<!-- The background is inlined on the root element rather than left to the
+     stylesheet so first paint is navy. Without it the browser paints its
+     default white for the few frames before the CSS bundle arrives. -->
+<html lang="en" style="background:#071952">
   <head>
-    <script>document.documentElement.lang = localStorage.getItem('locale') || 'zh'</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100..800&family=Noto+Sans+SC:wght@300;400;500;700;800;900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/icon.png" />
+    <!-- Evict the language preference left behind by the removed switcher.
+         The app is English-only now, and a stored 'zh' is no longer a locale
+         any bundle can resolve. Runs before the module bundle so nothing ever
+         reads it. -->
+    <script>try { localStorage.removeItem('locale') } catch (e) { /* storage disabled */ }</script>
+    <!-- UXE fork: Google Fonts removed so the app works fully offline. It was
+         the only external request the frontend made, and on an air-gapped box
+         it stalls first paint until the request times out.
+         The tokens ask for Space Grotesk, Inter and JetBrains Mono by name and
+         every stack declares system fallbacks, so either install the matching
+         system fonts:
+           apt-get install -y fonts-inter fonts-jetbrains-mono
+         or self-host the woff2 files under frontend/public/fonts/ and declare
+         them with @font-face and font-display: swap. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="MiroFish - 社交媒体舆论模拟系统" />
-    <title>MiroFish - 预测万物</title>
+    <meta name="theme-color" content="#071952" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="SoSim - Social Simulator. Model how an opinion spreads across social media using populations of generative agents." />
+    <title>SoSim - Social Simulator</title>
   </head>
-  <body>
+  <body style="background:#071952">
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
