@@ -178,7 +178,7 @@ class SimulationManager:
         if not os.path.exists(state_file):
             return None
         
-        with open(state_file, 'r', encoding='utf-8') as f:
+        with open(state_file, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
         
         state = SimulationState(

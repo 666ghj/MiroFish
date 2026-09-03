@@ -106,9 +106,9 @@
     <!-- Main Content: Dual Timeline -->
     <div class="main-content-area" ref="scrollContainer">
       <!-- Timeline Header -->
-      <div class="timeline-header" v-if="allActions.length > 0">
+      <div class="timeline-header" v-if="chronologicalActions.length > 0">
         <div class="timeline-stats">
-          <span class="total-count">TOTAL EVENTS: <span class="mono">{{ allActions.length }}</span></span>
+          <span class="total-count">TOTAL EVENTS: <span class="mono">{{ chronologicalActions.length }}</span></span>
           <span class="platform-breakdown">
             <span class="breakdown-item twitter">
               <svg class="mini-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
@@ -189,14 +189,31 @@
                   </div>
                 </template>
 
-                <!-- LIKE_POST: 点赞帖子 -->
-                <template v-if="action.action_type === 'LIKE_POST'">
+                <!-- LIKE_POST / DISLIKE_POST: 点赞/踩帖子 -->
+                <template v-if="action.action_type === 'LIKE_POST' || action.action_type === 'DISLIKE_POST'">
                   <div class="like-info">
                     <svg class="icon-small filled" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                    <span class="like-label">Liked @{{ action.action_args?.post_author_name || 'User' }}'s post</span>
+                    <span class="like-label">{{ action.action_type === 'DISLIKE_POST' ? 'Disliked' : 'Liked' }} @{{ action.action_args?.post_author_name || 'User' }}'s post</span>
                   </div>
                   <div v-if="action.action_args?.post_content" class="liked-content">
                     "{{ truncateContent(action.action_args.post_content, 120) }}"
+                  </div>
+                  <div v-else-if="action.action_args?.post_id" class="comment-context">
+                    <span>Post #{{ action.action_args.post_id }}</span>
+                  </div>
+                </template>
+
+                <!-- LIKE_COMMENT / DISLIKE_COMMENT: 点赞/踩评论 -->
+                <template v-if="action.action_type === 'LIKE_COMMENT' || action.action_type === 'DISLIKE_COMMENT'">
+                  <div class="like-info">
+                    <svg class="icon-small filled" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    <span class="like-label">{{ action.action_type === 'DISLIKE_COMMENT' ? 'Disliked' : 'Liked' }} @{{ action.action_args?.comment_author_name || 'User' }}'s comment</span>
+                  </div>
+                  <div v-if="action.action_args?.comment_content" class="liked-content">
+                    "{{ truncateContent(action.action_args.comment_content, 120) }}"
+                  </div>
+                  <div v-else-if="action.action_args?.comment_id" class="comment-context">
+                    <span>Comment #{{ action.action_args.comment_id }}</span>
                   </div>
                 </template>
 
@@ -224,7 +241,7 @@
                 <template v-if="action.action_type === 'FOLLOW'">
                   <div class="follow-info">
                     <svg class="icon-small" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-                    <span class="follow-label">Followed @{{ action.action_args?.target_user || action.action_args?.user_id || 'User' }}</span>
+                    <span class="follow-label">Followed @{{ action.action_args?.target_user_name || action.action_args?.target_user || action.action_args?.user_id || 'User' }}</span>
                   </div>
                 </template>
 
@@ -249,7 +266,7 @@
                 </template>
 
                 <!-- 通用回退：未知类型或有 content 但未被上述处理 -->
-                <div v-if="!['CREATE_POST', 'QUOTE_POST', 'REPOST', 'LIKE_POST', 'CREATE_COMMENT', 'SEARCH_POSTS', 'FOLLOW', 'UPVOTE_POST', 'DOWNVOTE_POST', 'DO_NOTHING'].includes(action.action_type) && action.action_args?.content" class="content-text">
+                <div v-if="!['CREATE_POST', 'QUOTE_POST', 'REPOST', 'LIKE_POST', 'DISLIKE_POST', 'LIKE_COMMENT', 'DISLIKE_COMMENT', 'CREATE_COMMENT', 'SEARCH_POSTS', 'FOLLOW', 'UPVOTE_POST', 'DOWNVOTE_POST', 'DO_NOTHING'].includes(action.action_type) && action.action_args?.content" class="content-text">
                   {{ action.action_args.content }}
                 </div>
               </div>
@@ -262,7 +279,7 @@
           </div>
         </TransitionGroup>
 
-        <div v-if="allActions.length === 0" class="waiting-state">
+        <div v-if="chronologicalActions.length === 0" class="waiting-state">
           <div class="pulse-ring"></div>
           <span>Waiting for agent actions...</span>
         </div>
@@ -326,19 +343,21 @@ const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
 
+const isDisplayableAction = (action) => action?.action_type !== 'DO_NOTHING'
+
 // Computed
 // 按时间顺序显示动作（最新的在最后面，即底部）
 const chronologicalActions = computed(() => {
-  return allActions.value
+  return allActions.value.filter(isDisplayableAction)
 })
 
 // 各平台动作计数
 const twitterActionsCount = computed(() => {
-  return allActions.value.filter(a => a.platform === 'twitter').length
+  return chronologicalActions.value.filter(a => a.platform === 'twitter').length
 })
 
 const redditActionsCount = computed(() => {
-  return allActions.value.filter(a => a.platform === 'reddit').length
+  return chronologicalActions.value.filter(a => a.platform === 'reddit').length
 })
 
 // 格式化模拟流逝时间（根据轮次和每轮分钟数计算）
@@ -598,8 +617,10 @@ const getActionTypeLabel = (type) => {
     'CREATE_POST': 'POST',
     'REPOST': 'REPOST',
     'LIKE_POST': 'LIKE',
+    'DISLIKE_POST': 'DISLIKE',
     'CREATE_COMMENT': 'COMMENT',
     'LIKE_COMMENT': 'LIKE',
+    'DISLIKE_COMMENT': 'DISLIKE',
     'DO_NOTHING': 'IDLE',
     'FOLLOW': 'FOLLOW',
     'SEARCH_POSTS': 'SEARCH',
@@ -615,8 +636,10 @@ const getActionTypeClass = (type) => {
     'CREATE_POST': 'badge-post',
     'REPOST': 'badge-action',
     'LIKE_POST': 'badge-action',
+    'DISLIKE_POST': 'badge-action',
     'CREATE_COMMENT': 'badge-comment',
     'LIKE_COMMENT': 'badge-action',
+    'DISLIKE_COMMENT': 'badge-action',
     'QUOTE_POST': 'badge-post',
     'FOLLOW': 'badge-meta',
     'SEARCH_POSTS': 'badge-meta',
@@ -1125,7 +1148,7 @@ onUnmounted(() => {
 }
 
 /* Info Blocks (Quote, Repost, etc) */
-.quoted-block, .repost-content {
+.quoted-block, .repost-content, .liked-content, .voted-content {
   background: #F9F9F9;
   border: 1px solid #EEE;
   padding: 10px 12px;

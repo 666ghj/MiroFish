@@ -457,6 +457,9 @@ class TwitterSimulationRunner:
         return ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
             model_type=llm_model,
+            api_key=llm_api_key or None,
+            url=llm_base_url or None,
+            default_headers={"User-Agent": "python-requests/2.32.5"},
         )
     
     def _get_active_agents_for_round(
@@ -615,16 +618,23 @@ class TwitterSimulationRunner:
                 content = post.get("content", "")
                 try:
                     agent = self.env.agent_graph.get_agent(agent_id)
-                    initial_actions[agent] = ManualAction(
+                    manual_action = ManualAction(
                         action_type=ActionType.CREATE_POST,
                         action_args={"content": content}
                     )
+                    if agent in initial_actions:
+                        if not isinstance(initial_actions[agent], list):
+                            initial_actions[agent] = [initial_actions[agent]]
+                        initial_actions[agent].append(manual_action)
+                    else:
+                        initial_actions[agent] = manual_action
                 except Exception as e:
                     print(f"  警告: 无法为Agent {agent_id}创建初始帖子: {e}")
             
             if initial_actions:
                 await self.env.step(initial_actions)
-                print(f"  已发布 {len(initial_actions)} 条初始帖子")
+                posted_count = sum(len(action) if isinstance(action, list) else 1 for action in initial_actions.values())
+                print(f"  已发布 {posted_count} 条初始帖子")
         
         # 主模拟循环
         print("\n开始模拟循环...")
