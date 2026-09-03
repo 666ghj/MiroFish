@@ -1,45 +1,27 @@
 <template>
   <div class="main-view">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH</div>
+    <teleport to="#nav-context">
+      <div class="view-switcher">
+        <button
+          v-for="mode in ['graph', 'split', 'workbench']"
+          :key="mode"
+          class="switch-btn"
+          :class="{ active: viewMode === mode }"
+          @click="viewMode = mode"
+        >
+          {{ { graph: $t('main.layoutGraph'), split: $t('main.layoutSplit'), workbench: $t('main.layoutWorkbench') }[mode] }}
+        </button>
       </div>
-      
-      <div class="header-center">
-        <div class="view-switcher">
-          <button 
-            v-for="mode in ['graph', 'split', 'workbench']" 
-            :key="mode"
-            class="switch-btn"
-            :class="{ active: viewMode === mode }"
-            @click="viewMode = mode"
-          >
-            {{ { graph: $t('main.layoutGraph'), split: $t('main.layoutSplit'), workbench: $t('main.layoutWorkbench') }[mode] }}
-          </button>
-        </div>
-      </div>
-
-      <div class="header-right">
-        <LanguageSwitcher />
-        <div class="step-divider"></div>
-        <div class="workflow-step">
-          <span class="step-num">Step 2/5</span>
-          <span class="step-name">{{ $tm('main.stepNames')[1] }}</span>
-        </div>
-        <div class="step-divider"></div>
-        <span class="status-indicator" :class="statusClass">
-          <span class="dot"></span>
-          {{ statusText }}
-        </span>
-      </div>
-    </header>
+      <span class="nav-step">Step 2/5</span>
+      <span class="nav-step-name">{{ $tm('main.stepNames')[1] }}</span>
+      <span class="nav-status" :class="statusClass"><i class="dot" />{{ statusText }}</span>
+    </teleport>
 
     <!-- Main Content Area -->
     <main class="content-area">
       <!-- Left Panel: Graph -->
       <div class="panel-wrapper left" :style="leftPanelStyle">
-        <GraphPanel 
+        <GraphPanel
           :graphData="graphData"
           :loading="graphLoading"
           :currentPhase="2"
@@ -48,7 +30,7 @@
         />
       </div>
 
-      <!-- Right Panel: Step2 环境搭建 -->
+      <!-- Right Panel: Step 2, environment setup -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <Step2EnvSetup
           :simulationId="currentSimulationId"
@@ -66,13 +48,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from '../api/simulation'
-import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -80,7 +61,7 @@ const route = useRoute()
 const router = useRouter()
 
 // Props
-const props = defineProps({
+defineProps({
   simulationId: String
 })
 
@@ -142,7 +123,7 @@ const toggleMaximize = (target) => {
 }
 
 const handleGoBack = () => {
-  // 返回到 process 页面
+  // Back to the project view
   if (projectData.value?.project_id) {
     router.push({ name: 'Process', params: { projectId: projectData.value.project_id } })
   } else {
@@ -153,65 +134,62 @@ const handleGoBack = () => {
 const handleNextStep = (params = {}) => {
   addLog(t('log.enterStep3'))
 
-  // 记录模拟轮数配置
+  // Record the round count the user chose, if any.
   if (params.maxRounds) {
     addLog(t('log.customRoundsConfig', { rounds: params.maxRounds }))
   } else {
     addLog(t('log.useAutoRounds'))
   }
-  
-  // 构建路由参数
+
   const routeParams = {
     name: 'SimulationRun',
     params: { simulationId: currentSimulationId.value }
   }
-  
-  // 如果有自定义轮数，通过 query 参数传递
+
+  // A custom round count travels to Step 3 as a query parameter.
   if (params.maxRounds) {
     routeParams.query = { maxRounds: params.maxRounds }
   }
-  
-  // 跳转到 Step 3 页面
+
   router.push(routeParams)
 }
 
 // --- Data Logic ---
 
 /**
- * 检查并关闭正在运行的模拟
- * 当用户从 Step 3 返回到 Step 2 时，默认用户要退出模拟
+ * Stop a simulation that is still running.
+ * Arriving back on Step 2 from Step 3 means the user is done with the run, so
+ * the environment is closed rather than left holding the ports.
  */
 const checkAndStopRunningSimulation = async () => {
   if (!currentSimulationId.value) return
-  
+
   try {
-    // 先检查模拟环境是否存活
+    // The environment is checked first: it can be alive even when the
+    // simulation process has already exited.
     const envStatusRes = await getEnvStatus({ simulation_id: currentSimulationId.value })
-    
+
     if (envStatusRes.success && envStatusRes.data?.env_alive) {
       addLog(t('log.detectedSimEnvRunning'))
-      
-      // 尝试优雅关闭模拟环境
+
       try {
-        const closeRes = await closeSimulationEnv({ 
+        const closeRes = await closeSimulationEnv({
           simulation_id: currentSimulationId.value,
-          timeout: 10  // 10秒超时
+          timeout: 10
         })
-        
+
         if (closeRes.success) {
           addLog(t('log.simEnvClosed'))
         } else {
           addLog(t('log.closeSimEnvFailedWithError', { error: closeRes.error || t('common.unknownError') }))
-          // 如果优雅关闭失败，尝试强制停止
           await forceStopSimulation()
         }
       } catch (closeErr) {
         addLog(t('log.closeSimEnvException', { error: closeErr.message }))
-        // 如果优雅关闭异常，尝试强制停止
         await forceStopSimulation()
       }
     } else {
-      // 环境未运行，但可能进程还在，检查模拟状态
+      // No live environment, but the simulation process may still be up.
       const simRes = await getSimulation(currentSimulationId.value)
       if (simRes.success && simRes.data?.status === 'running') {
         addLog(t('log.detectedSimRunning'))
@@ -219,13 +197,13 @@ const checkAndStopRunningSimulation = async () => {
       }
     }
   } catch (err) {
-    // 检查环境状态失败不影响后续流程
-    console.warn('检查模拟状态失败:', err)
+    // A failed status check must not block the rest of the view from loading.
+    console.warn('Failed to check the simulation status:', err)
   }
 }
 
 /**
- * 强制停止模拟
+ * Stop the simulation process outright.
  */
 const forceStopSimulation = async () => {
   try {
@@ -244,19 +222,16 @@ const loadSimulationData = async () => {
   try {
     addLog(t('log.loadingSimData', { id: currentSimulationId.value }))
 
-    // 获取 simulation 信息
     const simRes = await getSimulation(currentSimulationId.value)
     if (simRes.success && simRes.data) {
       const simData = simRes.data
 
-      // 获取 project 信息
       if (simData.project_id) {
         const projRes = await getProject(simData.project_id)
         if (projRes.success && projRes.data) {
           projectData.value = projRes.data
           addLog(t('log.projectLoadSuccess', { id: projRes.data.project_id }))
-          
-          // 获取 graph 数据
+
           if (projRes.data.graph_id) {
             await loadGraph(projRes.data.graph_id)
           }
@@ -293,58 +268,30 @@ const refreshGraph = () => {
 
 onMounted(async () => {
   addLog(t('log.simViewInit'))
-  
-  // 检查并关闭正在运行的模拟（用户从 Step 3 返回时）
+
+  // The user has come back from Step 3, so any live run is torn down first.
   await checkAndStopRunningSimulation()
-  
-  // 加载模拟数据
+
   loadSimulationData()
 })
 </script>
 
 <style scoped>
 .main-view {
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: #FFF;
   overflow: hidden;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
 }
 
-/* Header */
-.app-header {
-  height: 60px;
-  border-bottom: 1px solid #EAEAEA;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  background: #FFF;
-  z-index: 100;
-  position: relative;
-}
-
-.brand {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 1px;
-  cursor: pointer;
-}
-
-.header-center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
+/* Nav context, teleported into the shell's #nav-context region. The block is
+   deliberately identical in every routed view so the bar never shifts. */
 .view-switcher {
   display: flex;
-  background: #F5F5F5;
-  padding: 4px;
-  border-radius: 6px;
   gap: 4px;
+  padding: 4px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
 }
 
 .switch-btn {
@@ -353,73 +300,62 @@ onMounted(async () => {
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.switch-btn:hover {
+  color: var(--text-primary);
 }
 
 .switch-btn.active {
-  background: #FFF;
-  color: #000;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.nav-step {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
-.workflow-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.nav-step-name {
   font-size: 14px;
-}
-
-.step-num {
-  font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
-  color: #999;
+  color: var(--text-primary);
+  margin-left: -8px;
 }
 
-.step-name {
-  font-weight: 700;
-  color: #000;
-}
-
-.step-divider {
-  width: 1px;
-  height: 14px;
-  background-color: #E0E0E0;
-}
-
-.status-indicator {
+.nav-status {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #666;
   font-weight: 500;
+  color: var(--text-secondary);
 }
 
-.dot {
+.nav-status .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: #CCC;
+  border-radius: var(--radius-pill);
+  background: var(--neutral-dot);
 }
 
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
-.status-indicator.completed .dot { background: #4CAF50; }
-.status-indicator.error .dot { background: #F44336; }
+.nav-status.processing .dot { background: var(--accent); animation: pulse 1s infinite; }
+.nav-status.completed .dot { background: var(--success); }
+.nav-status.error .dot { background: var(--danger); }
+.nav-status.ready .dot { background: var(--info); }
 
 @keyframes pulse { 50% { opacity: 0.5; } }
 
 /* Content */
 .content-area {
   flex: 1;
+  min-height: 0;
   display: flex;
   position: relative;
   overflow: hidden;
@@ -433,7 +369,6 @@ onMounted(async () => {
 }
 
 .panel-wrapper.left {
-  border-right: 1px solid #EAEAEA;
+  border-right: 1px solid var(--border-subtle);
 }
 </style>
-

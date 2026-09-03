@@ -41,6 +41,25 @@ const routes = [
     name: 'Interaction',
     component: InteractionView,
     props: true
+  },
+  {
+    // Lazily loaded: the menu pulls in the log viewer and the confirmation
+    // dialog, and neither of those belongs in the bundle that paints the
+    // landing page.
+    path: '/simulations',
+    name: 'Simulations',
+    component: () => import('../views/SimulationsView.vue')
+  },
+  {
+    path: '/reports',
+    name: 'Reports',
+    component: () => import('../views/ReportsView.vue')
+  },
+  {
+    // There is no 404 page, so an unknown path lands on Projects rather than
+    // on an empty router-view.
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
   }
 ]
 

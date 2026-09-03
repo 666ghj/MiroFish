@@ -100,7 +100,7 @@ def test_activity_episode_has_provenance_time_and_a_safe_size(monkeypatch):
     write = writes[0]
     assert len(write["data"]) <= updater.MAX_EPISODE_CHARS
     assert write["created_at"] == "2026-07-22T12:00:00+08:00"
-    assert write["source_description"] == "MiroFish simulation activity batch"
+    assert write["source_description"] == "SoSim simulation activity batch"
     assert write["metadata"]["simulation_id"] == "sim-provenance"
     assert write["metadata"]["platform"] == "twitter"
     assert write["metadata"]["activity_count"] == 1

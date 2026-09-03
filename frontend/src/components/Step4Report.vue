@@ -18,11 +18,11 @@
 
           <!-- Sections List -->
           <div class="sections-list">
-            <div 
-              v-for="(section, idx) in reportOutline.sections" 
+            <div
+              v-for="(section, idx) in reportOutline.sections"
               :key="idx"
               class="report-section-item"
-              :class="{ 
+              :class="{
                 'is-active': currentSectionIndex === idx + 1,
                 'is-completed': isSectionCompleted(idx + 1),
                 'is-pending': !isSectionCompleted(idx + 1) && currentSectionIndex !== idx + 1
@@ -31,31 +31,31 @@
               <div class="section-header-row" @click="toggleSectionCollapse(idx)" :class="{ 'clickable': isSectionCompleted(idx + 1) }">
                 <span class="section-number">{{ String(idx + 1).padStart(2, '0') }}</span>
                 <h3 class="section-title">{{ section.title }}</h3>
-                <svg 
-                  v-if="isSectionCompleted(idx + 1)" 
-                  class="collapse-icon" 
+                <svg
+                  v-if="isSectionCompleted(idx + 1)"
+                  class="collapse-icon"
                   :class="{ 'is-collapsed': collapsedSections.has(idx) }"
-                  viewBox="0 0 24 24" 
-                  width="20" 
-                  height="20" 
-                  fill="none" 
-                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
                   stroke-width="2"
                 >
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
               </div>
-              
+
               <div class="section-body" v-show="!collapsedSections.has(idx)">
                 <!-- Completed Content -->
                 <div v-if="generatedSections[idx + 1]" class="generated-content" v-html="renderMarkdown(generatedSections[idx + 1])"></div>
-                
+
                 <!-- Loading State -->
                 <div v-else-if="currentSectionIndex === idx + 1" class="loading-state">
                   <div class="loading-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="12" r="10" stroke-width="4" stroke="#E5E7EB"></circle>
-                      <path d="M12 2a10 10 0 0 1 10 10" stroke-width="4" stroke="#4B5563" stroke-linecap="round"></path>
+                      <circle class="spinner-track" cx="12" cy="12" r="10" stroke-width="4"></circle>
+                      <path class="spinner-arc" d="M12 2a10 10 0 0 1 10 10" stroke-width="4" stroke-linecap="round"></path>
                     </svg>
                   </div>
                   <span class="loading-text">{{ $t('step4.generatingSection', { title: section.title }) }}</span>
@@ -72,7 +72,7 @@
             <div class="waiting-ring"></div>
             <div class="waiting-ring"></div>
           </div>
-          <span class="waiting-text">Waiting for Report Agent...</span>
+          <span class="waiting-text">{{ $t('step4.waitingForReportAgent') }}</span>
         </div>
       </div>
 
@@ -127,7 +127,7 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
+          <!-- Next Step Button - shown once the report is complete -->
           <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
             <span>{{ $t('step4.goToInteraction') }}</span>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -141,8 +141,8 @@
 
         <div class="workflow-timeline">
           <TransitionGroup name="timeline-item">
-            <div 
-              v-for="(log, idx) in displayLogs" 
+            <div
+              v-for="(log, idx) in displayLogs"
               :key="log.timestamp + '-' + idx"
               class="timeline-item"
               :class="getTimelineItemClass(log, idx, displayLogs.length)"
@@ -152,17 +152,17 @@
                 <div class="connector-dot" :class="getConnectorClass(log, idx, displayLogs.length)"></div>
                 <div class="connector-line" v-if="idx < displayLogs.length - 1"></div>
               </div>
-              
+
               <!-- Timeline Content -->
               <div class="timeline-content">
                 <div class="timeline-header">
                   <span class="action-label">{{ getActionLabel(log.action) }}</span>
                   <span class="action-time">{{ formatTime(log.timestamp) }}</span>
                 </div>
-                
+
                 <!-- Action Body - Different for each type -->
                 <div class="timeline-body" :class="{ 'collapsed': isLogCollapsed(log) }" @click="toggleLogExpand(log)">
-                  
+
                   <!-- Report Start -->
                   <template v-if="log.action === 'report_start'">
                     <div class="info-row">
@@ -193,8 +193,8 @@
                       <span class="tag-title">{{ log.section_title }}</span>
                     </div>
                   </template>
-                  
-                  <!-- Section Content Generated (内容生成完成，但整个章节可能还没完成) -->
+
+                  <!-- Section Content Generated - the body text is ready, the section may still be finishing -->
                   <template v-if="log.action === 'section_content'">
                     <div class="section-tag content-ready">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -205,7 +205,7 @@
                     </div>
                   </template>
 
-                  <!-- Section Complete (章节生成完成) -->
+                  <!-- Section Complete -->
                   <template v-if="log.action === 'section_complete'">
                     <div class="section-tag completed">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -268,35 +268,35 @@
                         <span class="result-tool">{{ getToolDisplayName(log.details?.tool_name) }}</span>
                         <span class="result-size">{{ formatResultSize(log.details?.result_length) }}</span>
                       </div>
-                      
+
                       <!-- Structured Result Display -->
                       <div v-if="!showRawResult[log.timestamp]" class="result-structured">
                         <!-- Interview Agents - Special Display -->
                         <template v-if="log.details?.tool_name === 'interview_agents'">
                           <InterviewDisplay :result="parseInterview(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
+
                         <!-- Insight Forge -->
                         <template v-else-if="log.details?.tool_name === 'insight_forge'">
                           <InsightDisplay :result="parseInsightForge(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
+
                         <!-- Panorama Search -->
                         <template v-else-if="log.details?.tool_name === 'panorama_search'">
                           <PanoramaDisplay :result="parsePanorama(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
+
                         <!-- Quick Search -->
                         <template v-else-if="log.details?.tool_name === 'quick_search'">
                           <QuickSearchDisplay :result="parseQuickSearch(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
+
                         <!-- Default -->
                         <template v-else>
                           <pre class="raw-preview">{{ truncateText(log.details?.result, 300) }}</pre>
                         </template>
                       </div>
-                      
+
                       <!-- Raw Result -->
                       <div v-else class="result-raw">
                         <pre>{{ log.details?.result }}</pre>
@@ -315,7 +315,7 @@
                         Final: {{ log.details?.has_final_answer ? 'Yes' : 'No' }}
                       </span>
                     </div>
-                    <!-- 当是最终答案时，显示特殊提示 -->
+                    <!-- The final answer gets its own confirmation line -->
                     <div v-if="log.details?.has_final_answer" class="final-answer-hint">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="20 6 9 17 4 12"></polyline>
@@ -343,18 +343,18 @@
                 <div class="timeline-footer" v-if="log.elapsed_seconds || (log.action === 'tool_call' && log.details?.parameters) || log.action === 'tool_result' || (log.action === 'llm_response' && log.details?.response)">
                   <span v-if="log.elapsed_seconds" class="elapsed-badge">+{{ log.elapsed_seconds.toFixed(1) }}s</span>
                   <span v-else class="elapsed-placeholder"></span>
-                  
+
                   <div class="footer-actions">
                     <!-- Tool Call: Show/Hide Params -->
                     <button v-if="log.action === 'tool_call' && log.details?.parameters" class="action-btn" @click.stop="toggleLogExpand(log)">
                       {{ expandedLogs.has(log.timestamp) ? 'Hide Params' : 'Show Params' }}
                     </button>
-                    
+
                     <!-- Tool Result: Raw/Structured View -->
                     <button v-if="log.action === 'tool_result'" class="action-btn" @click.stop="toggleRawResult(log.timestamp, $event)">
                       {{ showRawResult[log.timestamp] ? 'Structured View' : 'Raw Output' }}
                     </button>
-                    
+
                     <!-- LLM Response: Show/Hide Response -->
                     <button v-if="log.action === 'llm_response' && log.details?.response" class="action-btn" @click.stop="toggleLogExpand(log)">
                       {{ expandedLogs.has(log.timestamp) ? 'Hide Response' : 'Show Response' }}
@@ -433,22 +433,20 @@ const showRawResult = reactive({})
 
 // Toggle functions
 const toggleRawResult = (timestamp, event) => {
-  // 保存按钮相对于视口的位置
+  // The button's viewport position is captured first so the scroll can be
+  // corrected afterwards and the button stays under the pointer.
   const button = event?.target
   const buttonRect = button?.getBoundingClientRect()
   const buttonTopBeforeToggle = buttonRect?.top
-  
-  // 切换状态
+
   showRawResult[timestamp] = !showRawResult[timestamp]
-  
-  // 等待 DOM 更新后，调整滚动位置以保持按钮在相同位置
+
   if (button && buttonTopBeforeToggle !== undefined && rightPanel.value) {
     nextTick(() => {
       const newButtonRect = button.getBoundingClientRect()
       const buttonTopAfterToggle = newButtonRect.top
       const scrollDelta = buttonTopAfterToggle - buttonTopBeforeToggle
-      
-      // 调整滚动位置
+
       rightPanel.value.scrollTop += scrollDelta
     })
   }
@@ -466,7 +464,7 @@ const toggleSectionContent = (idx) => {
 }
 
 const toggleSectionCollapse = (idx) => {
-  // 只有已完成的章节才能折叠
+  // Only a completed section can be collapsed.
   if (!generatedSections.value[idx + 1]) return
   const newSet = new Set(collapsedSections.value)
   if (newSet.has(idx)) {
@@ -499,32 +497,32 @@ const toolConfig = {
   'insight_forge': {
     name: 'Deep Insight',
     color: 'purple',
-    icon: 'lightbulb' // 灯泡图标 - 代表洞察
+    icon: 'lightbulb'
   },
   'panorama_search': {
     name: 'Panorama Search',
     color: 'blue',
-    icon: 'globe' // 地球图标 - 代表全景搜索
+    icon: 'globe'
   },
   'interview_agents': {
     name: 'Agent Interview',
     color: 'green',
-    icon: 'users' // 用户图标 - 代表对话
+    icon: 'users'
   },
   'quick_search': {
     name: 'Quick Search',
     color: 'orange',
-    icon: 'zap' // 闪电图标 - 代表快速
+    icon: 'zap'
   },
   'get_graph_statistics': {
     name: 'Graph Stats',
     color: 'cyan',
-    icon: 'chart' // 图表图标 - 代表统计
+    icon: 'chart'
   },
   'get_entities_by_type': {
     name: 'Entity Query',
     color: 'pink',
-    icon: 'database' // 数据库图标 - 代表实体
+    icon: 'database'
   }
 }
 
@@ -540,6 +538,26 @@ const getToolIcon = (toolName) => {
   return toolConfig[toolName]?.icon || 'tool'
 }
 
+// ---------------------------------------------------------------------------
+// Report wire format
+//
+// The markers below are protocol, not copy: backend/app/services/zep_tools.py
+// emits them and these parsers read them back. They are English only, and the
+// backend emits exactly these strings - change one side and the matching panel
+// goes empty, so change both together.
+// ---------------------------------------------------------------------------
+
+// The empty-answer sentinel zep_tools.py substitutes when a platform returned
+// nothing for an interview question.
+const PLACEHOLDER_ANSWERS = [
+  '(No response from this platform)'
+]
+
+const isPlaceholderText = (text) => {
+  if (!text) return true
+  return PLACEHOLDER_ANSWERS.includes(text.trim())
+}
+
 // Parse functions
 const parseInsightForge = (text) => {
   const result = {
@@ -551,33 +569,29 @@ const parseInsightForge = (text) => {
     entities: [],
     relations: []
   }
-  
+
   try {
-    // 提取分析问题
-    const queryMatch = text.match(/分析问题:\s*(.+?)(?:\n|$)/)
+    const queryMatch = text.match(/Analysis Question\s*:\s*(.+?)(?:\n|$)/i)
     if (queryMatch) result.query = queryMatch[1].trim()
-    
-    // 提取预测场景
-    const reqMatch = text.match(/预测场景:\s*(.+?)(?:\n|$)/)
+
+    const reqMatch = text.match(/Prediction Scenario\s*:\s*(.+?)(?:\n|$)/i)
     if (reqMatch) result.simulationRequirement = reqMatch[1].trim()
-    
-    // 提取统计数据 - 匹配"相关预测事实: X条"格式
-    const factMatch = text.match(/相关预测事实:\s*(\d+)/)
-    const entityMatch = text.match(/涉及实体:\s*(\d+)/)
-    const relMatch = text.match(/关系链:\s*(\d+)/)
+
+    // The three counters under "### Prediction Data Statistics".
+    const factMatch = text.match(/Related Prediction Facts\s*:\s*(\d+)/i)
+    const entityMatch = text.match(/Involved Entities\s*:\s*(\d+)/i)
+    const relMatch = text.match(/Relation Chains\s*:\s*(\d+)/i)
     if (factMatch) result.stats.facts = parseInt(factMatch[1])
     if (entityMatch) result.stats.entities = parseInt(entityMatch[1])
     if (relMatch) result.stats.relationships = parseInt(relMatch[1])
-    
-    // 提取子问题 - 完整提取，不限制数量
-    const subQSection = text.match(/### 分析的子问题\n([\s\S]*?)(?=\n###|$)/)
+
+    const subQSection = text.match(/###\s*Analyzed Sub-Questions[^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (subQSection) {
       const lines = subQSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.subQueries = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
-    
-    // 提取关键事实 - 完整提取，不限制数量
-    const factsSection = text.match(/### 【关键事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
+
+    const factsSection = text.match(/###\s*\[Key Facts\][^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => {
@@ -585,17 +599,16 @@ const parseInsightForge = (text) => {
         return match ? match[1].replace(/^"|"$/g, '').trim() : l.replace(/^\d+\.\s*/, '').trim()
       }).filter(Boolean)
     }
-    
-    // 提取核心实体 - 完整提取，包含摘要和相关事实数
-    const entitySection = text.match(/### 【核心实体】\n([\s\S]*?)(?=\n###|$)/)
+
+    const entitySection = text.match(/###\s*\[Core Entities\][^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (entitySection) {
       const entityText = entitySection[1]
-      // 按 "- **" 分割实体块
+      // Each entity block starts at a "- **" bullet.
       const entityBlocks = entityText.split(/\n(?=- \*\*)/).filter(b => b.trim().startsWith('- **'))
       result.entities = entityBlocks.map(block => {
         const nameMatch = block.match(/^-\s*\*\*(.+?)\*\*\s*\((.+?)\)/)
-        const summaryMatch = block.match(/摘要:\s*"?(.+?)"?(?:\n|$)/)
-        const relatedMatch = block.match(/相关事实:\s*(\d+)/)
+        const summaryMatch = block.match(/Summary\s*:\s*"?(.+?)"?(?:\n|$)/i)
+        const relatedMatch = block.match(/Related facts\s*:\s*(\d+)/i)
         return {
           name: nameMatch ? nameMatch[1].trim() : '',
           type: nameMatch ? nameMatch[2].trim() : '',
@@ -604,9 +617,8 @@ const parseInsightForge = (text) => {
         }
       }).filter(e => e.name)
     }
-    
-    // 提取关系链 - 完整提取，不限制数量
-    const relSection = text.match(/### 【关系链】\n([\s\S]*?)(?=\n###|$)/)
+
+    const relSection = text.match(/###\s*\[Relation Chains\][^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (relSection) {
       const lines = relSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.relations = lines.map(l => {
@@ -620,7 +632,7 @@ const parseInsightForge = (text) => {
   } catch (e) {
     console.warn('Parse insight_forge failed:', e)
   }
-  
+
   return result
 }
 
@@ -632,35 +644,32 @@ const parsePanorama = (text) => {
     historicalFacts: [],
     entities: []
   }
-  
+
   try {
-    // 提取查询
-    const queryMatch = text.match(/查询:\s*(.+?)(?:\n|$)/)
+    const queryMatch = text.match(/Query\s*:\s*(.+?)(?:\n|$)/i)
     if (queryMatch) result.query = queryMatch[1].trim()
-    
-    // 提取统计数据
-    const nodesMatch = text.match(/总节点数:\s*(\d+)/)
-    const edgesMatch = text.match(/总边数:\s*(\d+)/)
-    const activeMatch = text.match(/当前有效事实:\s*(\d+)/)
-    const histMatch = text.match(/历史\/过期事实:\s*(\d+)/)
+
+    // The four counters under "### Statistics".
+    const nodesMatch = text.match(/Total Nodes\s*:\s*(\d+)/i)
+    const edgesMatch = text.match(/Total Edges\s*:\s*(\d+)/i)
+    const activeMatch = text.match(/Currently Valid Facts\s*:\s*(\d+)/i)
+    const histMatch = text.match(/Historical\s*\/\s*Expired Facts\s*:\s*(\d+)/i)
     if (nodesMatch) result.stats.nodes = parseInt(nodesMatch[1])
     if (edgesMatch) result.stats.edges = parseInt(edgesMatch[1])
     if (activeMatch) result.stats.activeFacts = parseInt(activeMatch[1])
     if (histMatch) result.stats.historicalFacts = parseInt(histMatch[1])
-    
-    // 提取当前有效事实 - 完整提取，不限制数量
-    const activeSection = text.match(/### 【当前有效事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
+
+    const activeSection = text.match(/###\s*\[Currently Valid Facts\][^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (activeSection) {
       const lines = activeSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.activeFacts = lines.map(l => {
-        // 移除编号和引号
+        // Strip the list number and the surrounding quotes.
         const factText = l.replace(/^\d+\.\s*/, '').replace(/^"|"$/g, '').trim()
         return factText
       }).filter(Boolean)
     }
-    
-    // 提取历史/过期事实 - 完整提取，不限制数量
-    const histSection = text.match(/### 【历史\/过期事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
+
+    const histSection = text.match(/###\s*\[Historical\s*\/\s*Expired Facts\][^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (histSection) {
       const lines = histSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.historicalFacts = lines.map(l => {
@@ -668,9 +677,8 @@ const parsePanorama = (text) => {
         return factText
       }).filter(Boolean)
     }
-    
-    // 提取涉及实体 - 完整提取，不限制数量
-    const entitySection = text.match(/### 【涉及实体】\n([\s\S]*?)(?=\n###|$)/)
+
+    const entitySection = text.match(/###\s*\[Involved Entities\][^\n]*\n([\s\S]*?)(?=\n###|$)/i)
     if (entitySection) {
       const lines = entitySection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.entities = lines.map(l => {
@@ -682,7 +690,7 @@ const parsePanorama = (text) => {
   } catch (e) {
     console.warn('Parse panorama failed:', e)
   }
-  
+
   return result
 }
 
@@ -696,95 +704,87 @@ const parseInterview = (text) => {
     interviews: [],
     summary: ''
   }
-  
+
   try {
-    // 提取采访主题
-    const topicMatch = text.match(/\*\*采访主题:\*\*\s*(.+?)(?:\n|$)/)
+    const topicMatch = text.match(/\*\*Interview Topic\s*:\*\*\s*(.+?)(?:\n|$)/i)
     if (topicMatch) result.topic = topicMatch[1].trim()
-    
-    // 提取采访人数（如 "5 / 9 位模拟Agent"）
-    const countMatch = text.match(/\*\*采访人数:\*\*\s*(\d+)\s*\/\s*(\d+)/)
+
+    // "**Interviewees:** 5 / 9 simulated agents"
+    const countMatch = text.match(/\*\*Interviewees\s*:\*\*\s*(\d+)\s*\/\s*(\d+)/i)
     if (countMatch) {
       result.successCount = parseInt(countMatch[1])
       result.totalCount = parseInt(countMatch[2])
       result.agentCount = `${countMatch[1]} / ${countMatch[2]}`
     }
-    
-    // 提取采访对象选择理由
-    const reasonMatch = text.match(/### 采访对象选择理由\n([\s\S]*?)(?=\n---\n|\n### 采访实录)/)
+
+    const reasonMatch = text.match(/###\s*Interviewee Selection Rationale[^\n]*\n([\s\S]*?)(?=\n---\n|\n###\s*Interview Transcript)/i)
     if (reasonMatch) {
       result.selectionReason = reasonMatch[1].trim()
     }
-    
-    // 解析每个人的选择理由
+
+    // The rationale block names each interviewee, in one of three layouts.
     const parseIndividualReasons = (reasonText) => {
       const reasons = {}
       if (!reasonText) return reasons
-      
+
       const lines = reasonText.split(/\n+/)
       let currentName = null
       let currentReason = []
-      
+
       for (const line of lines) {
         let headerMatch = null
         let name = null
         let reasonStart = null
-        
-        // 格式1: 数字. **名字（index=X）**：理由
-        // 例如: 1. **校友_345（index=1）**：作为武大校友...
-        headerMatch = line.match(/^\d+\.\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
+
+        // Layout 1: "1. **Name (index=1)**: rationale"
+        headerMatch = line.match(/^\d+\.\s*\*\*([^*(]+)(?:\(index\s*=?\s*\d+\))?\*\*\s*:\s*(.*)/)
         if (headerMatch) {
           name = headerMatch[1].trim()
           reasonStart = headerMatch[2]
         }
-        
-        // 格式2: - 选择名字（index X）：理由
-        // 例如: - 选择家长_601（index 0）：作为家长群体代表...
+
+        // Layout 2: "- Selected Name (index 0): rationale"
         if (!headerMatch) {
-          headerMatch = line.match(/^-\s*选择([^（(]+)(?:[（(]index\s*=?\s*\d+[)）])?[：:]\s*(.*)/)
+          headerMatch = line.match(/^-\s*Selected\s*([^(]+)(?:\(index\s*=?\s*\d+\))?\s*:\s*(.*)/i)
           if (headerMatch) {
             name = headerMatch[1].trim()
             reasonStart = headerMatch[2]
           }
         }
-        
-        // 格式3: - **名字（index X）**：理由
-        // 例如: - **家长_601（index 0）**：作为家长群体代表...
+
+        // Layout 3: "- **Name (index 0)**: rationale"
         if (!headerMatch) {
-          headerMatch = line.match(/^-\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
+          headerMatch = line.match(/^-\s*\*\*([^*(]+)(?:\(index\s*=?\s*\d+\))?\*\*\s*:\s*(.*)/)
           if (headerMatch) {
             name = headerMatch[1].trim()
             reasonStart = headerMatch[2]
           }
         }
-        
+
         if (name) {
-          // 保存上一个人的理由
           if (currentName && currentReason.length > 0) {
             reasons[currentName] = currentReason.join(' ').trim()
           }
-          // 开始新的人
           currentName = name
           currentReason = reasonStart ? [reasonStart.trim()] : []
-        } else if (currentName && line.trim() && !line.match(/^未选|^综上|^最终选择/)) {
-          // 理由的续行（排除结尾总结段落）
+        } else if (currentName && line.trim() && !line.match(/^(?:Not selected|In summary|Final selection)\b/i)) {
+          // A continuation line of the current rationale. The closing summary
+          // paragraph is excluded so it is not attributed to the last name.
           currentReason.push(line.trim())
         }
       }
-      
-      // 保存最后一个人的理由
+
       if (currentName && currentReason.length > 0) {
         reasons[currentName] = currentReason.join(' ').trim()
       }
-      
+
       return reasons
     }
-    
+
     const individualReasons = parseIndividualReasons(result.selectionReason)
-    
-    // 提取每个采访记录
-    const interviewBlocks = text.split(/#### 采访 #\d+:/).slice(1)
-    
+
+    const interviewBlocks = text.split(/####\s*Interview\s*#\d+\s*:/i).slice(1)
+
     interviewBlocks.forEach((block, index) => {
       const interview = {
         num: index + 1,
@@ -798,34 +798,30 @@ const parseInterview = (text) => {
         redditAnswer: '',
         quotes: []
       }
-      
-      // 提取标题（如 "学生"、"教育从业者" 等）
+
+      // The first line of the block is the agent's role label.
       const titleMatch = block.match(/^(.+?)\n/)
       if (titleMatch) interview.title = titleMatch[1].trim()
-      
-      // 提取姓名和角色
+
       const nameRoleMatch = block.match(/\*\*(.+?)\*\*\s*\((.+?)\)/)
       if (nameRoleMatch) {
         interview.name = nameRoleMatch[1].trim()
         interview.role = nameRoleMatch[2].trim()
-        // 设置该人的选择理由
         interview.selectionReason = individualReasons[interview.name] || ''
       }
-      
-      // 提取简介
-      const bioMatch = block.match(/_简介:\s*([\s\S]*?)_\n/)
+
+      const bioMatch = block.match(/_Bio\s*:\s*([\s\S]*?)_\n/i)
       if (bioMatch) {
         interview.bio = bioMatch[1].trim().replace(/\.\.\.$/, '...')
       }
-      
-      // 提取问题列表
+
       const qMatch = block.match(/\*\*Q:\*\*\s*([\s\S]*?)(?=\n\n\*\*A:\*\*|\*\*A:\*\*)/)
       if (qMatch) {
         const qText = qMatch[1].trim()
-        // 按数字编号分割问题
+        // The questions arrive as a numbered list.
         const questions = qText.split(/\n\d+\.\s+/).filter(q => q.trim())
         if (questions.length > 0) {
-          // 如果第一个问题前面有"1."，需要特殊处理
+          // A leading "1." is not a split point, so recover it separately.
           const firstQ = qText.match(/^1\.\s+(.+)/)
           if (firstQ) {
             interview.questions = [firstQ[1].trim(), ...questions.slice(1).map(q => q.trim())]
@@ -834,46 +830,45 @@ const parseInterview = (text) => {
           }
         }
       }
-      
-      // 提取回答 - 分Twitter和Reddit
-      const answerMatch = block.match(/\*\*A:\*\*\s*([\s\S]*?)(?=\*\*关键引言|$)/)
+
+      const answerMatch = block.match(/\*\*A:\*\*\s*([\s\S]*?)(?=\*\*Key Quotes|$)/i)
       if (answerMatch) {
         const answerText = answerMatch[1].trim()
-        
-        // 分离Twitter和Reddit回答
-        const twitterMatch = answerText.match(/【Twitter平台回答】\n?([\s\S]*?)(?=【Reddit平台回答】|$)/)
-        const redditMatch = answerText.match(/【Reddit平台回答】\n?([\s\S]*?)$/)
-        
+
+        // One answer per platform, each behind its own label.
+        const twitterMatch = answerText.match(/\[Twitter Response\]\n?([\s\S]*?)(?=\[Reddit Response\]|$)/i)
+        const redditMatch = answerText.match(/\[Reddit Response\]\n?([\s\S]*?)$/i)
+
         if (twitterMatch) {
           interview.twitterAnswer = twitterMatch[1].trim()
         }
         if (redditMatch) {
           interview.redditAnswer = redditMatch[1].trim()
         }
-        
-        // 平台回退逻辑（兼容旧格式：只有一个平台标记的情况）
+
+        // Only one platform was labelled: mirror the real answer onto the other
+        // side so the reader is not shown an empty tab. A placeholder is never
+        // mirrored.
         if (!twitterMatch && redditMatch) {
-          // 只有 Reddit 回答，仅在非占位文本时复制为默认显示
-          if (interview.redditAnswer && interview.redditAnswer !== '（该平台未获得回复）') {
+          if (!isPlaceholderText(interview.redditAnswer)) {
             interview.twitterAnswer = interview.redditAnswer
           }
         } else if (twitterMatch && !redditMatch) {
-          if (interview.twitterAnswer && interview.twitterAnswer !== '（该平台未获得回复）') {
+          if (!isPlaceholderText(interview.twitterAnswer)) {
             interview.redditAnswer = interview.twitterAnswer
           }
         } else if (!twitterMatch && !redditMatch) {
-          // 没有分平台标记（极旧格式），整体作为回答
+          // No platform label at all: the whole block is the answer.
           interview.twitterAnswer = answerText
         }
       }
-      
-      // 提取关键引言（兼容多种引号格式）
-      const quotesMatch = block.match(/\*\*关键引言:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/)
+
+      const quotesMatch = block.match(/\*\*Key Quotes\s*:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/i)
       if (quotesMatch) {
         const quotesText = quotesMatch[1]
-        // 优先匹配 > "text" 格式
+        // Straight double quotes first.
         let quoteMatches = quotesText.match(/> "([^"]+)"/g)
-        // 回退：匹配 > "text" 或 > \u201Ctext\u201D（中文引号）
+        // Then curly quotes, which the model still produces occasionally.
         if (!quoteMatches) {
           quoteMatches = quotesText.match(/> [\u201C""]([^\u201D""]+)[\u201D""]/g)
         }
@@ -883,21 +878,20 @@ const parseInterview = (text) => {
             .filter(q => q)
         }
       }
-      
+
       if (interview.name || interview.title) {
         result.interviews.push(interview)
       }
     })
-    
-    // 提取采访摘要
-    const summaryMatch = text.match(/### 采访摘要与核心观点\n([\s\S]*?)$/)
+
+    const summaryMatch = text.match(/###\s*Interview Summary and Key Views[^\n]*\n([\s\S]*?)$/i)
     if (summaryMatch) {
       result.summary = summaryMatch[1].trim()
     }
   } catch (e) {
     console.warn('Parse interview failed:', e)
   }
-  
+
   return result
 }
 
@@ -909,52 +903,26 @@ const parseQuickSearch = (text) => {
     edges: [],
     nodes: []
   }
-  
+
   try {
-    // 提取搜索查询
-    const queryMatch = text.match(/搜索查询:\s*(.+?)(?:\n|$)/)
+    const queryMatch = text.match(/Search Query\s*:\s*(.+?)(?:\n|$)/i)
     if (queryMatch) result.query = queryMatch[1].trim()
-    
-    // 提取结果数量
-    const countMatch = text.match(/找到\s*(\d+)\s*条/)
+
+    const countMatch = text.match(/Found\s*(\d+)\s*results/i)
     if (countMatch) result.count = parseInt(countMatch[1])
-    
-    // 提取相关事实 - 完整提取，不限制数量
-    const factsSection = text.match(/### 相关事实:\n([\s\S]*)$/)
+
+    const factsSection = text.match(/###\s*Related Facts\s*:?[^\n]*\n([\s\S]*)$/i)
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
-    
-    // 尝试提取边信息（如果有）
-    const edgesSection = text.match(/### 相关边:\n([\s\S]*?)(?=\n###|$)/)
-    if (edgesSection) {
-      const lines = edgesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
-      result.edges = lines.map(l => {
-        const match = l.match(/^-\s*(.+?)\s*--\[(.+?)\]-->\s*(.+)$/)
-        if (match) {
-          return { source: match[1].trim(), relation: match[2].trim(), target: match[3].trim() }
-        }
-        return null
-      }).filter(Boolean)
-    }
-    
-    // 尝试提取节点信息（如果有）
-    const nodesSection = text.match(/### 相关节点:\n([\s\S]*?)(?=\n###|$)/)
-    if (nodesSection) {
-      const lines = nodesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
-      result.nodes = lines.map(l => {
-        const match = l.match(/^-\s*\*\*(.+?)\*\*\s*\((.+?)\)/)
-        if (match) return { name: match[1].trim(), type: match[2].trim() }
-        const simpleMatch = l.match(/^-\s*(.+)$/)
-        if (simpleMatch) return { name: simpleMatch[1].trim(), type: '' }
-        return null
-      }).filter(Boolean)
-    }
+
+    // edges and nodes stay empty: SearchResult.to_text() in zep_tools.py emits
+    // only the facts section, so there is nothing else to read here.
   } catch (e) {
     console.warn('Parse quick_search failed:', e)
   }
-  
+
   return result
 }
 
@@ -970,7 +938,7 @@ const InsightDisplay = {
     const expandedEntities = ref(false)
     const expandedRelations = ref(false)
     const INITIAL_SHOW_COUNT = 5
-    
+
     // Format result size for display
     const formatSize = (length) => {
       if (!length) return ''
@@ -979,7 +947,7 @@ const InsightDisplay = {
       }
       return `${length} chars`
     }
-    
+
     return () => h('div', { class: 'insight-display' }, [
       // Header Section - like interview header
       h('div', { class: 'insight-header' }, [
@@ -1010,7 +978,7 @@ const InsightDisplay = {
           h('span', { class: 'scenario-text' }, props.result.simulationRequirement)
         ])
       ]),
-      
+
       // Tab Navigation
       h('div', { class: 'insight-tabs' }, [
         h('button', {
@@ -1038,7 +1006,7 @@ const InsightDisplay = {
           h('span', { class: 'tab-label' }, t('step4.tabSubQueries', { count: props.result.subQueries.length }))
         ])
       ]),
-      
+
       // Tab Content
       h('div', { class: 'insight-content' }, [
         // Facts Tab
@@ -1048,7 +1016,7 @@ const InsightDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalCount', { count: props.result.facts.length }))
           ]),
           h('div', { class: 'facts-list' },
-            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, fact)
@@ -1068,7 +1036,7 @@ const InsightDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalEntityCount', { count: props.result.entities.length }))
           ]),
           h('div', { class: 'entities-grid' },
-            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 12)).map((entity, i) => 
+            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 12)).map((entity, i) =>
               h('div', { class: 'entity-tag', key: i, title: entity.summary || '' }, [
                 h('span', { class: 'entity-name' }, entity.name),
                 h('span', { class: 'entity-type' }, entity.type),
@@ -1089,7 +1057,7 @@ const InsightDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalCount', { count: props.result.relations.length }))
           ]),
           h('div', { class: 'relations-list' },
-            (expandedRelations.value ? props.result.relations : props.result.relations.slice(0, INITIAL_SHOW_COUNT)).map((rel, i) => 
+            (expandedRelations.value ? props.result.relations : props.result.relations.slice(0, INITIAL_SHOW_COUNT)).map((rel, i) =>
               h('div', { class: 'relation-item', key: i }, [
                 h('span', { class: 'rel-source' }, rel.source),
                 h('span', { class: 'rel-arrow' }, [
@@ -1114,7 +1082,7 @@ const InsightDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalEntityCount', { count: props.result.subQueries.length }))
           ]),
           h('div', { class: 'subqueries-list' },
-            props.result.subQueries.map((sq, i) => 
+            props.result.subQueries.map((sq, i) =>
               h('div', { class: 'subquery-item', key: i }, [
                 h('span', { class: 'subquery-number' }, `Q${i + 1}`),
                 h('div', { class: 'subquery-text' }, sq)
@@ -1122,7 +1090,7 @@ const InsightDisplay = {
             )
           )
         ]),
-        
+
         // Empty state
         activeTab.value === 'facts' && props.result.facts.length === 0 && h('div', { class: 'empty-state' }, t('step4.emptyKeyFacts')),
         activeTab.value === 'entities' && props.result.entities.length === 0 && h('div', { class: 'empty-state' }, t('step4.emptyCoreEntities')),
@@ -1142,7 +1110,7 @@ const PanoramaDisplay = {
     const expandedHistorical = ref(false)
     const expandedEntities = ref(false)
     const INITIAL_SHOW_COUNT = 5
-    
+
     // Format result size for display
     const formatSize = (length) => {
       if (!length) return ''
@@ -1151,7 +1119,7 @@ const PanoramaDisplay = {
       }
       return `${length} chars`
     }
-    
+
     return () => h('div', { class: 'panorama-display' }, [
       // Header Section
       h('div', { class: 'panorama-header' }, [
@@ -1173,7 +1141,7 @@ const PanoramaDisplay = {
         ]),
         props.result.query && h('div', { class: 'header-topic' }, props.result.query)
       ]),
-      
+
       // Tab Navigation
       h('div', { class: 'panorama-tabs' }, [
         h('button', {
@@ -1195,7 +1163,7 @@ const PanoramaDisplay = {
           h('span', { class: 'tab-label' }, t('step4.tabEntities', { count: props.result.entities.length }))
         ])
       ]),
-      
+
       // Tab Content
       h('div', { class: 'panorama-content' }, [
         // Active Facts Tab
@@ -1205,7 +1173,7 @@ const PanoramaDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalCount', { count: props.result.activeFacts.length }))
           ]),
           props.result.activeFacts.length > 0 ? h('div', { class: 'facts-list' },
-            (expandedActive.value ? props.result.activeFacts : props.result.activeFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedActive.value ? props.result.activeFacts : props.result.activeFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item active', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, fact)
@@ -1217,7 +1185,7 @@ const PanoramaDisplay = {
             onClick: () => { expandedActive.value = !expandedActive.value }
           }, expandedActive.value ? t('step4.collapse') : t('step4.expandAll', { count: props.result.activeFacts.length }))
         ]),
-        
+
         // Historical Facts Tab
         activeTab.value === 'historical' && h('div', { class: 'facts-panel historical-facts' }, [
           h('div', { class: 'panel-header' }, [
@@ -1225,11 +1193,11 @@ const PanoramaDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalCount', { count: props.result.historicalFacts.length }))
           ]),
           props.result.historicalFacts.length > 0 ? h('div', { class: 'facts-list' },
-            (expandedHistorical.value ? props.result.historicalFacts : props.result.historicalFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedHistorical.value ? props.result.historicalFacts : props.result.historicalFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item historical', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, [
-                  // 尝试提取时间信息 [time - time]
+                  // A historical fact may carry a leading [time - time] range.
                   (() => {
                     const timeMatch = fact.match(/^\[(.+?)\]\s*(.*)$/)
                     if (timeMatch) {
@@ -1249,7 +1217,7 @@ const PanoramaDisplay = {
             onClick: () => { expandedHistorical.value = !expandedHistorical.value }
           }, expandedHistorical.value ? t('step4.collapse') : t('step4.expandAll', { count: props.result.historicalFacts.length }))
         ]),
-        
+
         // Entities Tab
         activeTab.value === 'entities' && h('div', { class: 'entities-panel' }, [
           h('div', { class: 'panel-header' }, [
@@ -1257,7 +1225,7 @@ const PanoramaDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalEntityCount', { count: props.result.entities.length }))
           ]),
           props.result.entities.length > 0 ? h('div', { class: 'entities-grid' },
-            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 8)).map((entity, i) => 
+            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 8)).map((entity, i) =>
               h('div', { class: 'entity-tag', key: i }, [
                 h('span', { class: 'entity-name' }, entity.name),
                 entity.type && h('span', { class: 'entity-type' }, entity.type)
@@ -1286,31 +1254,29 @@ const InterviewDisplay = {
       }
       return `${length} chars`
     }
-    
+
     // Clean quote text - remove leading list numbers to avoid double numbering
     const cleanQuoteText = (text) => {
       if (!text) return ''
-      // Remove leading patterns like "1. ", "2. ", "1、", "（1）", "(1)" etc.
-      return text.replace(/^\s*\d+[\.\、\)）]\s*/, '').trim()
+      // Remove leading patterns like "1. ", "2) ", "(3) ".
+      return text.replace(/^\s*\d+[.)]\s*/, '').trim()
     }
-    
+
     const activeIndex = ref(0)
     const expandedAnswers = ref(new Set())
-    // 为每个问题-回答对维护独立的平台选择状态
+    // Each question keeps its own platform selection.
     const platformTabs = reactive({}) // { 'agentIdx-qIdx': 'twitter' | 'reddit' }
-    
-    // 获取某个问题的当前平台选择
+
     const getPlatformTab = (agentIdx, qIdx) => {
       const key = `${agentIdx}-${qIdx}`
       return platformTabs[key] || 'twitter'
     }
-    
-    // 设置某个问题的平台选择
+
     const setPlatformTab = (agentIdx, qIdx, platform) => {
       const key = `${agentIdx}-${qIdx}`
       platformTabs[key] = platform
     }
-    
+
     const toggleAnswer = (key) => {
       const newSet = new Set(expandedAnswers.value)
       if (newSet.has(key)) {
@@ -1320,34 +1286,25 @@ const InterviewDisplay = {
       }
       expandedAnswers.value = newSet
     }
-    
+
     const formatAnswer = (text, expanded) => {
       if (!text) return ''
       if (expanded || text.length <= 400) return text
       return text.substring(0, 400) + '...'
     }
-    
-    // 检查是否为平台占位文本
-    const isPlaceholderText = (text) => {
-      if (!text) return true
-      const t = text.trim()
-      return t === '（该平台未获得回复）' || t === '(该平台未获得回复)' || t === '[无回复]'
-    }
 
-    // 尝试按问题编号分割回答
     const splitAnswerByQuestions = (answerText, questionCount) => {
       if (!answerText || questionCount <= 0) return [answerText]
       if (isPlaceholderText(answerText)) return ['']
 
-      // 支持两种编号格式：
-      // 1. "问题X：" 或 "问题X:" （中文格式，后端新格式）
-      // 2. "1. " 或 "\n1. " （数字+点，旧格式兼容）
+      // Two numbering styles are accepted: the "Question N:" prefix the
+      // interview prompt mandates, and a bare "N. " list, which older answers
+      // used.
       let matches = []
       let match
 
-      // 优先尝试 "问题X：" 格式
-      const cnPattern = /(?:^|[\r\n]+)问题(\d+)[：:]\s*/g
-      while ((match = cnPattern.exec(answerText)) !== null) {
+      const labelPattern = /(?:^|[\r\n]+)Question\s*(\d+)\s*:\s*/gi
+      while ((match = labelPattern.exec(answerText)) !== null) {
         matches.push({
           num: parseInt(match[1]),
           index: match.index,
@@ -1355,7 +1312,6 @@ const InterviewDisplay = {
         })
       }
 
-      // 如果没匹配到，回退到 "数字." 格式
       if (matches.length === 0) {
         const numPattern = /(?:^|[\r\n]+)(\d+)\.\s+/g
         while ((match = numPattern.exec(answerText)) !== null) {
@@ -1367,16 +1323,15 @@ const InterviewDisplay = {
         }
       }
 
-      // 如果没有找到编号或只找到一个，返回整体
+      // No numbering, or a single answer: return the whole block.
       if (matches.length <= 1) {
         const cleaned = answerText
-          .replace(/^问题\d+[：:]\s*/, '')
+          .replace(/^Question\s*\d+\s*:\s*/i, '')
           .replace(/^\d+\.\s+/, '')
           .trim()
         return [cleaned || answerText]
       }
 
-      // 按编号提取各部分
       const parts = []
       for (let i = 0; i < matches.length; i++) {
         const current = matches[i]
@@ -1396,8 +1351,7 @@ const InterviewDisplay = {
 
       return [answerText]
     }
-    
-    // 获取某个问题对应的回答
+
     const getAnswerForQuestion = (interview, qIdx, platform) => {
       const answer = platform === 'twitter' ? interview.twitterAnswer : (interview.redditAnswer || interview.twitterAnswer)
       if (!answer || isPlaceholderText(answer)) return answer || ''
@@ -1405,24 +1359,23 @@ const InterviewDisplay = {
       const questionCount = interview.questions?.length || 1
       const answers = splitAnswerByQuestions(answer, questionCount)
 
-      // 分割成功且索引有效
       if (answers.length > 1 && qIdx < answers.length) {
         return answers[qIdx] || ''
       }
 
-      // 分割失败：第一个问题返回完整回答，其余返回空
+      // The split found nothing: the first question owns the whole answer.
       return qIdx === 0 ? answer : ''
     }
-    
-    // 检查某个问题是否有双平台回答（过滤占位文本）
+
+    // A question shows the platform switch only when both platforms answered
+    // it for real, with different text.
     const hasMultiplePlatforms = (interview, qIdx) => {
       if (!interview.twitterAnswer || !interview.redditAnswer) return false
       const twitterAnswer = getAnswerForQuestion(interview, qIdx, 'twitter')
       const redditAnswer = getAnswerForQuestion(interview, qIdx, 'reddit')
-      // 两个平台都有真实回答（非占位文本）且内容不同
       return !isPlaceholderText(twitterAnswer) && !isPlaceholderText(redditAnswer) && twitterAnswer !== redditAnswer
     }
-    
+
     return () => h('div', { class: 'interview-display' }, [
       // Header Section
       h('div', { class: 'interview-header' }, [
@@ -1444,9 +1397,9 @@ const InterviewDisplay = {
         ]),
         props.result.topic && h('div', { class: 'header-topic' }, props.result.topic)
       ]),
-      
+
       // Agent Selector Tabs
-      props.result.interviews.length > 0 && h('div', { class: 'agent-tabs' }, 
+      props.result.interviews.length > 0 && h('div', { class: 'agent-tabs' },
         props.result.interviews.map((interview, i) => h('button', {
           class: ['agent-tab', { active: activeIndex.value === i }],
           key: i,
@@ -1456,7 +1409,7 @@ const InterviewDisplay = {
           h('span', { class: 'tab-name' }, interview.title || interview.name || `Agent ${i + 1}`)
         ]))
       ),
-      
+
       // Active Interview Detail
       props.result.interviews.length > 0 && h('div', { class: 'interview-detail' }, [
         // Agent Profile Card
@@ -1468,17 +1421,17 @@ const InterviewDisplay = {
             props.result.interviews[activeIndex.value]?.bio && h('div', { class: 'profile-bio' }, props.result.interviews[activeIndex.value].bio)
           ])
         ]),
-        
-        // Selection Reason - 选择理由
+
+        // Selection Reason
         props.result.interviews[activeIndex.value]?.selectionReason && h('div', { class: 'selection-reason' }, [
-          h('div', { class: 'reason-label' }, '选择理由'),
+          h('div', { class: 'reason-label' }, 'Selection Rationale'),
           h('div', { class: 'reason-content' }, props.result.interviews[activeIndex.value].selectionReason)
         ]),
-        
-        // Q&A Conversation Thread - 一问一答样式
-        h('div', { class: 'qa-thread' }, 
-          (props.result.interviews[activeIndex.value]?.questions?.length > 0 
-            ? props.result.interviews[activeIndex.value].questions 
+
+        // Q&A Conversation Thread
+        h('div', { class: 'qa-thread' },
+          (props.result.interviews[activeIndex.value]?.questions?.length > 0
+            ? props.result.interviews[activeIndex.value].questions
             : [props.result.interviews[activeIndex.value]?.question || 'No question available']
           ).map((question, qIdx) => {
             const interview = props.result.interviews[activeIndex.value]
@@ -1505,7 +1458,6 @@ const InterviewDisplay = {
                 h('div', { class: 'qa-content' }, [
                   h('div', { class: 'qa-answer-header' }, [
                     h('div', { class: 'qa-sender' }, interview?.name || 'Agent'),
-                    // 双平台切换按钮（仅在有真实双平台回答时显示）
                     hasDualPlatform && h('div', { class: 'platform-switch' }, [
                       h('button', {
                         class: ['platform-btn', { active: currentPlatform === 'twitter' }],
@@ -1537,7 +1489,7 @@ const InterviewDisplay = {
                           .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                           .replace(/\n/g, '<br>')
                   }),
-                  // Expand/Collapse Button（占位文本不显示）
+                  // Expand/Collapse Button - never shown on a placeholder.
                   !isPlaceholder && answerText.length > 400 && h('button', {
                     class: 'expand-answer-btn',
                     onClick: () => toggleAnswer(expandKey)
@@ -1547,7 +1499,7 @@ const InterviewDisplay = {
             ])
           })
         ),
-        
+
         // Key Quotes Section
         props.result.interviews[activeIndex.value]?.quotes?.length > 0 && h('div', { class: 'quotes-section' }, [
           h('div', { class: 'quotes-header' }, 'Key Quotes'),
@@ -1555,8 +1507,8 @@ const InterviewDisplay = {
             props.result.interviews[activeIndex.value].quotes.slice(0, 3).map((quote, qi) => {
               const cleanedQuote = cleanQuoteText(quote)
               const displayQuote = cleanedQuote.length > 200 ? cleanedQuote.substring(0, 200) + '...' : cleanedQuote
-              return h('blockquote', { 
-                key: qi, 
+              return h('blockquote', {
+                key: qi,
                 class: 'quote-item',
                 innerHTML: renderMarkdown(displayQuote)
               })
@@ -1568,7 +1520,7 @@ const InterviewDisplay = {
       // Summary Section (Collapsible)
       props.result.summary && h('div', { class: 'summary-section' }, [
         h('div', { class: 'summary-header' }, 'Interview Summary'),
-        h('div', { 
+        h('div', {
           class: 'summary-content',
           innerHTML: renderMarkdown(props.result.summary.length > 500 ? props.result.summary.substring(0, 500) + '...' : props.result.summary)
         })
@@ -1585,12 +1537,12 @@ const QuickSearchDisplay = {
     const activeTab = ref('facts') // 'facts', 'edges', 'nodes'
     const expandedFacts = ref(false)
     const INITIAL_SHOW_COUNT = 5
-    
+
     // Check if there are edges or nodes to show tabs
     const hasEdges = computed(() => props.result.edges && props.result.edges.length > 0)
     const hasNodes = computed(() => props.result.nodes && props.result.nodes.length > 0)
     const showTabs = computed(() => hasEdges.value || hasNodes.value)
-    
+
     // Format result size for display
     const formatSize = (length) => {
       if (!length) return ''
@@ -1599,7 +1551,7 @@ const QuickSearchDisplay = {
       }
       return `${length} chars`
     }
-    
+
     return () => h('div', { class: 'quick-search-display' }, [
       // Header Section
       h('div', { class: 'quicksearch-header' }, [
@@ -1619,7 +1571,7 @@ const QuickSearchDisplay = {
           h('span', { class: 'query-text' }, props.result.query)
         ])
       ]),
-      
+
       // Tab Navigation (only show if there are edges or nodes)
       showTabs.value && h('div', { class: 'quicksearch-tabs' }, [
         h('button', {
@@ -1641,7 +1593,7 @@ const QuickSearchDisplay = {
           h('span', { class: 'tab-label' }, t('step4.tabNodes', { count: props.result.nodes.length }))
         ])
       ]),
-      
+
       // Content Area
       h('div', { class: ['quicksearch-content', { 'no-tabs': !showTabs.value }] }, [
         // Facts (always show if no tabs, or when facts tab is active)
@@ -1651,7 +1603,7 @@ const QuickSearchDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalCount', { count: props.result.facts.length }))
           ]),
           props.result.facts.length > 0 ? h('div', { class: 'facts-list' },
-            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, fact)
@@ -1663,7 +1615,7 @@ const QuickSearchDisplay = {
             onClick: () => { expandedFacts.value = !expandedFacts.value }
           }, expandedFacts.value ? t('step4.collapse') : t('step4.expandAll', { count: props.result.facts.length }))
         ]),
-        
+
         // Edges Tab
         activeTab.value === 'edges' && hasEdges.value && h('div', { class: 'edges-panel' }, [
           h('div', { class: 'panel-header' }, [
@@ -1671,7 +1623,7 @@ const QuickSearchDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalCount', { count: props.result.edges.length }))
           ]),
           h('div', { class: 'edges-list' },
-            props.result.edges.map((edge, i) => 
+            props.result.edges.map((edge, i) =>
               h('div', { class: 'edge-item', key: i }, [
                 h('span', { class: 'edge-source' }, edge.source),
                 h('span', { class: 'edge-arrow' }, [
@@ -1684,7 +1636,7 @@ const QuickSearchDisplay = {
             )
           )
         ]),
-        
+
         // Nodes Tab
         activeTab.value === 'nodes' && hasNodes.value && h('div', { class: 'nodes-panel' }, [
           h('div', { class: 'panel-header' }, [
@@ -1692,7 +1644,7 @@ const QuickSearchDisplay = {
             h('span', { class: 'panel-count' }, t('step4.totalEntityCount', { count: props.result.nodes.length }))
           ]),
           h('div', { class: 'nodes-grid' },
-            props.result.nodes.map((node, i) => 
+            props.result.nodes.map((node, i) =>
               h('div', { class: 'node-tag', key: i }, [
                 h('span', { class: 'node-name' }, node.name),
                 node.type && h('span', { class: 'node-type' }, node.type)
@@ -1769,19 +1721,17 @@ const isFinalizing = computed(() => {
   return !isComplete.value && isPlanningDone.value && totalSections.value > 0 && completedSections.value >= totalSections.value
 })
 
-// 当前活跃的步骤（用于顶部显示）
+// The step shown in the panel header: the active one, else the last completed
+// one, else the first step in the plan.
 const activeStep = computed(() => {
   const steps = workflowSteps.value
-  // 找到当前 active 的步骤
   const active = steps.find(s => s.status === 'active')
   if (active) return active
-  
-  // 如果没有 active，返回最后一个 done 的步骤
+
   const doneSteps = steps.filter(s => s.status === 'done')
   if (doneSteps.length > 0) return doneSteps[doneSteps.length - 1]
-  
-  // 否则返回第一个步骤
-  return steps[0] || { noLabel: '--', title: '等待开始', status: 'todo', meta: '' }
+
+  return steps[0] || { noLabel: '--', title: 'Waiting to start', status: 'todo', meta: '' }
 })
 
 const workflowSteps = computed(() => {
@@ -1839,11 +1789,11 @@ const isSectionCompleted = (sectionIndex) => {
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
   try {
-    return new Date(timestamp).toLocaleTimeString('en-US', { 
-      hour12: false, 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit' 
+    return new Date(timestamp).toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
     })
   } catch {
     return ''
@@ -1873,26 +1823,26 @@ const truncateText = (text, maxLen) => {
 
 const renderMarkdown = (content) => {
   if (!content) return ''
-  
-  // 去掉开头的二级标题（## xxx），因为章节标题已在外层显示
+
+  // The chapter heading is already rendered by the section header.
   let processedContent = content.replace(/^##\s+.+\n+/, '')
-  
-  // 处理代码块
+
+  // Fenced code blocks
   let html = processedContent.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
-  
-  // 处理行内代码
+
+  // Inline code
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-  
-  // 处理标题
+
+  // Headings
   html = html.replace(/^#### (.+)$/gm, '<h5 class="md-h5">$1</h5>')
   html = html.replace(/^### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
   html = html.replace(/^## (.+)$/gm, '<h3 class="md-h3">$1</h3>')
   html = html.replace(/^# (.+)$/gm, '<h2 class="md-h2">$1</h2>')
-  
-  // 处理引用块
+
+  // Block quotes
   html = html.replace(/^> (.+)$/gm, '<blockquote class="md-quote">$1</blockquote>')
-  
-  // 处理列表 - 支持子列表
+
+  // Lists, including nested ones
   html = html.replace(/^(\s*)- (.+)$/gm, (match, indent, text) => {
     const level = Math.floor(indent.length / 2)
     return `<li class="md-li" data-level="${level}">${text}</li>`
@@ -1902,52 +1852,53 @@ const renderMarkdown = (content) => {
     return `<li class="md-oli" data-level="${level}">${text}</li>`
   })
 
-  // 包装无序列表
+  // Wrap the unordered list items
   html = html.replace(/(<li class="md-li"[^>]*>.*?<\/li>\s*)+/g, '<ul class="md-ul">$&</ul>')
-  // 包装有序列表
+  // Wrap the ordered list items
   html = html.replace(/(<li class="md-oli"[^>]*>.*?<\/li>\s*)+/g, '<ol class="md-ol">$&</ol>')
 
-  // 清理列表项之间的所有空白
+  // Whitespace between list items
   html = html.replace(/<\/li>\s+<li/g, '</li><li')
-  // 清理列表开始标签后的空白
+  // Whitespace after a list open tag
   html = html.replace(/<ul class="md-ul">\s+/g, '<ul class="md-ul">')
   html = html.replace(/<ol class="md-ol">\s+/g, '<ol class="md-ol">')
-  // 清理列表结束标签前的空白
+  // Whitespace before a list close tag
   html = html.replace(/\s+<\/ul>/g, '</ul>')
   html = html.replace(/\s+<\/ol>/g, '</ol>')
-  
-  // 处理粗体和斜体
+
+  // Bold and italic
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   html = html.replace(/_(.+?)_/g, '<em>$1</em>')
-  
-  // 处理分隔线
+
+  // Horizontal rules
   html = html.replace(/^---$/gm, '<hr class="md-hr">')
-  
-  // 处理换行 - 空行变成段落分隔，单换行变成 <br>
+
+  // A blank line starts a paragraph, a single newline is a <br>
   html = html.replace(/\n\n/g, '</p><p class="md-p">')
   html = html.replace(/\n/g, '<br>')
-  
-  // 包装在段落中
+
+  // Wrap the whole body in a paragraph
   html = '<p class="md-p">' + html + '</p>'
-  
-  // 清理空段落
+
+  // Drop empty paragraphs
   html = html.replace(/<p class="md-p"><\/p>/g, '')
   html = html.replace(/<p class="md-p">(<h[2-5])/g, '$1')
   html = html.replace(/(<\/h[2-5]>)<\/p>/g, '$1')
   html = html.replace(/<p class="md-p">(<ul|<ol|<blockquote|<pre|<hr)/g, '$1')
   html = html.replace(/(<\/ul>|<\/ol>|<\/blockquote>|<\/pre>)<\/p>/g, '$1')
-  // 清理块级元素前后的 <br> 标签
+  // Drop <br> around block elements
   html = html.replace(/<br>\s*(<ul|<ol|<blockquote)/g, '$1')
   html = html.replace(/(<\/ul>|<\/ol>|<\/blockquote>)\s*<br>/g, '$1')
-  // 清理 <p><br> 紧跟块级元素的情况（多余空行导致）
+  // Drop the <p><br> an extra blank line leaves before a block element
   html = html.replace(/<p class="md-p">(<br>\s*)+(<ul|<ol|<blockquote|<pre|<hr)/g, '$2')
-  // 清理连续的 <br> 标签
+  // Collapse runs of <br>
   html = html.replace(/(<br>\s*){2,}/g, '<br>')
-  // 清理块级元素后紧跟的段落开始标签前的 <br>
+  // Drop the <br> between a block element and the next paragraph
   html = html.replace(/(<\/ol>|<\/ul>|<\/blockquote>)<br>(<p|<div)/g, '$1$2')
 
-  // 修复非连续有序列表的编号：当单项 <ol> 被段落内容隔开时，保持编号递增
+  // Keep numbering increasing when single-item <ol> blocks are separated
+  // by paragraph content.
   const tokens = html.split(/(<ol class="md-ol">(?:<li class="md-oli"[^>]*>[\s\S]*?<\/li>)+<\/ol>)/g)
   let olCounter = 0
   let inSequence = false
@@ -2011,9 +1962,9 @@ const getActionLabel = (action) => {
 }
 
 const getLogLevelClass = (log) => {
-  if (log.includes('ERROR') || log.includes('错误')) return 'error'
-  if (log.includes('WARNING') || log.includes('警告')) return 'warning'
-  // INFO 使用默认颜色，不标记为 success
+  if (log.includes('ERROR')) return 'error'
+  if (log.includes('WARNING')) return 'warning'
+  // INFO keeps the default colour rather than reading as a success.
   return ''
 }
 
@@ -2023,53 +1974,52 @@ let consoleLogTimer = null
 
 const fetchAgentLog = async () => {
   if (!props.reportId) return
-  
+
   try {
     const res = await getAgentLog(props.reportId, agentLogLine.value)
-    
+
     if (res.success && res.data) {
       const newLogs = res.data.logs || []
-      
+
       if (newLogs.length > 0) {
         newLogs.forEach(log => {
           agentLogs.value.push(log)
-          
+
           if (log.action === 'planning_complete' && log.details?.outline) {
             reportOutline.value = log.details.outline
           }
-          
+
           if (log.action === 'section_start') {
             currentSectionIndex.value = log.section_index
           }
 
-          // section_complete - 章节生成完成
           if (log.action === 'section_complete') {
             if (log.details?.content) {
               generatedSections.value[log.section_index] = log.details.content
-              // 自动展开刚生成的章节
+              // Expand the section that just finished.
               expandedContent.value.add(log.section_index - 1)
               currentSectionIndex.value = null
             }
           }
-          
+
           if (log.action === 'report_complete') {
             isComplete.value = true
-            currentSectionIndex.value = null  // 确保清除 loading 状态
+            currentSectionIndex.value = null  // clears the loading row
             emit('update-status', 'completed')
             stopPolling()
-            // 滚动逻辑统一在循环结束后的 nextTick 中处理
           }
-          
+
           if (log.action === 'report_start') {
             startTime.value = new Date(log.timestamp)
           }
         })
-        
+
         agentLogLine.value = res.data.from_line + newLogs.length
-        
+
         nextTick(() => {
           if (rightPanel.value) {
-            // 如果任务已完成，滚动到顶部；否则滚动到底部跟随最新日志
+            // A finished run scrolls back to the top; a live one follows the
+            // newest entry.
             if (isComplete.value) {
               rightPanel.value.scrollTop = 0
             } else {
@@ -2084,39 +2034,31 @@ const fetchAgentLog = async () => {
   }
 }
 
-// 提取最终答案内容 - 从 LLM response 中提取章节内容
+// Pull the chapter body out of an LLM response.
 const extractFinalContent = (response) => {
   if (!response) return null
-  
-  // 尝试提取 <final_answer> 标签内的内容
+
   const finalAnswerTagMatch = response.match(/<final_answer>([\s\S]*?)<\/final_answer>/)
   if (finalAnswerTagMatch) {
     return finalAnswerTagMatch[1].trim()
   }
-  
-  // 尝试找 Final Answer: 后面的内容（支持多种格式）
-  // 格式1: Final Answer:\n\n内容
-  // 格式2: Final Answer: 内容
+
+  // "Final Answer:" is the sentinel the report agent's prompt mandates. It is
+  // matched with or without the blank line that usually follows it.
   const finalAnswerMatch = response.match(/Final\s*Answer:\s*\n*([\s\S]*)$/i)
   if (finalAnswerMatch) {
     return finalAnswerMatch[1].trim()
   }
-  
-  // 尝试找 最终答案: 后面的内容
-  const chineseFinalMatch = response.match(/最终答案[:：]\s*\n*([\s\S]*)$/i)
-  if (chineseFinalMatch) {
-    return chineseFinalMatch[1].trim()
-  }
-  
-  // 如果以 ## 或 # 或 > 开头，可能是直接的 markdown 内容
+
+  // A response that opens with #, ## or > is already markdown.
   const trimmedResponse = response.trim()
   if (trimmedResponse.match(/^[#>]/)) {
     return trimmedResponse
   }
-  
-  // 如果内容较长且包含markdown格式，尝试移除思考过程后返回
+
+  // A long markdown-looking response with a leading ReACT thought: strip the
+  // thought and keep the rest.
   if (response.length > 300 && (response.includes('**') || response.includes('>'))) {
-    // 移除 Thought: 开头的思考过程
     const thoughtMatch = response.match(/^Thought:[\s\S]*?(?=\n\n[^T]|\n\n$)/i)
     if (thoughtMatch) {
       const afterThought = response.substring(thoughtMatch[0].length).trim()
@@ -2125,23 +2067,23 @@ const extractFinalContent = (response) => {
       }
     }
   }
-  
+
   return null
 }
 
 const fetchConsoleLog = async () => {
   if (!props.reportId) return
-  
+
   try {
     const res = await getConsoleLog(props.reportId, consoleLogLine.value)
-    
+
     if (res.success && res.data) {
       const newLogs = res.data.logs || []
-      
+
       if (newLogs.length > 0) {
         consoleLogs.value.push(...newLogs)
         consoleLogLine.value = res.data.from_line + newLogs.length
-        
+
         nextTick(() => {
           if (logContent.value) {
             logContent.value.scrollTop = logContent.value.scrollHeight
@@ -2156,10 +2098,10 @@ const fetchConsoleLog = async () => {
 
 const startPolling = () => {
   if (agentLogTimer || consoleLogTimer) return
-  
+
   fetchAgentLog()
   fetchConsoleLog()
-  
+
   agentLogTimer = setInterval(fetchAgentLog, 2000)
   consoleLogTimer = setInterval(fetchConsoleLog, 1500)
 }
@@ -2201,7 +2143,7 @@ watch(() => props.reportId, (newId) => {
     collapsedSections.value = new Set()
     isComplete.value = false
     startTime.value = null
-    
+
     startPolling()
   }
 }, { immediate: true })
@@ -2212,9 +2154,48 @@ watch(() => props.reportId, (newId) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #F8F9FA;
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   overflow: hidden;
+
+  /* Tool identity palette. The six report tools each keep a recognisable hue
+     on navy; every value derives from a shared token, so a palette change in
+     tokens.css propagates here instead of being re-tuned by hand.
+
+     The graph tokens are specified against --bg-canvas, but these labels sit
+     on --bg-raised, where --graph-3 measures 4.42:1 and --graph-8 4.54:1. The
+     two foregrounds are lifted 18% toward white to clear AA with a margin
+     (5.41:1 and 5.39:1); the washes behind them keep the unlifted hue. */
+  --tool-insight:        color-mix(in srgb, var(--graph-3) 82%, white);
+  --tool-insight-soft:   color-mix(in srgb, var(--graph-3) 12%, transparent);
+  --tool-insight-strong: color-mix(in srgb, var(--graph-3) 24%, transparent);
+  --tool-insight-border: color-mix(in srgb, var(--graph-3) 42%, transparent);
+
+  --tool-panorama:        var(--info);
+  --tool-panorama-soft:   var(--info-soft);
+  --tool-panorama-strong: color-mix(in srgb, var(--info) 24%, transparent);
+  --tool-panorama-border: var(--info-border);
+
+  --tool-interview:        var(--success);
+  --tool-interview-soft:   var(--success-soft);
+  --tool-interview-strong: color-mix(in srgb, var(--success) 24%, transparent);
+  --tool-interview-border: var(--success-border);
+
+  --tool-quick:        var(--graph-10);
+  --tool-quick-soft:   color-mix(in srgb, var(--graph-10) 12%, transparent);
+  --tool-quick-strong: color-mix(in srgb, var(--graph-10) 24%, transparent);
+  --tool-quick-border: color-mix(in srgb, var(--graph-10) 42%, transparent);
+
+  --tool-stats:        var(--graph-7);
+  --tool-stats-soft:   color-mix(in srgb, var(--graph-7) 12%, transparent);
+  --tool-stats-strong: color-mix(in srgb, var(--graph-7) 24%, transparent);
+  --tool-stats-border: color-mix(in srgb, var(--graph-7) 42%, transparent);
+
+  --tool-entity:        color-mix(in srgb, var(--graph-8) 82%, white);
+  --tool-entity-soft:   color-mix(in srgb, var(--graph-8) 12%, transparent);
+  --tool-entity-strong: color-mix(in srgb, var(--graph-8) 24%, transparent);
+  --tool-entity-border: color-mix(in srgb, var(--graph-8) 42%, transparent);
 }
 
 /* Main Split Layout */
@@ -2230,11 +2211,11 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 10px;
   padding: 14px 20px;
-  background: #FFFFFF;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-default);
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   position: sticky;
@@ -2246,8 +2227,8 @@ watch(() => props.reportId, (newId) => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #1F2937;
-  box-shadow: 0 0 0 3px rgba(31, 41, 55, 0.15);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
   margin-right: 10px;
   flex-shrink: 0;
   animation: pulse-dot 1.5s ease-in-out infinite;
@@ -2255,17 +2236,17 @@ watch(() => props.reportId, (newId) => {
 
 @keyframes pulse-dot {
   0%, 100% {
-    box-shadow: 0 0 0 3px rgba(31, 41, 55, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
   50% {
-    box-shadow: 0 0 0 5px rgba(31, 41, 55, 0.1);
+    box-shadow: 0 0 0 5px var(--accent-border);
   }
 }
 
 .header-index {
   font-size: 12px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--text-faint);
   margin-right: 10px;
   flex-shrink: 0;
 }
@@ -2273,7 +2254,7 @@ watch(() => props.reportId, (newId) => {
 .header-title {
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2285,47 +2266,47 @@ watch(() => props.reportId, (newId) => {
   margin-left: auto;
   font-size: 10px;
   font-weight: 600;
-  color: #6B7280;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
 /* Panel header status variants */
 .panel-header--active {
-  background: #FAFAFA;
-  border-color: #1F2937;
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 
 .panel-header--active .header-index {
-  color: #1F2937;
+  color: var(--accent);
 }
 
 .panel-header--active .header-title {
-  color: #1F2937;
+  color: var(--accent);
 }
 
 .panel-header--active .header-meta {
-  color: #1F2937;
+  color: var(--accent);
 }
 
 .panel-header--done {
-  background: #F9FAFB;
+  background: var(--bg-inset);
 }
 
 .panel-header--done .header-index {
-  color: #10B981;
+  color: var(--success);
 }
 
 .panel-header--todo .header-index,
 .panel-header--todo .header-title {
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 /* Left Panel - Report Style */
 .left-panel.report-style {
   width: 45%;
   min-width: 450px;
-  background: #FFFFFF;
-  border-right: 1px solid #E5E7EB;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-default);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -2347,11 +2328,11 @@ watch(() => props.reportId, (newId) => {
 }
 
 .left-panel:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--border-strong);
 }
 
 .left-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--text-disabled);
 }
 
 /* Report Header */
@@ -2373,8 +2354,8 @@ watch(() => props.reportId, (newId) => {
 }
 
 .report-tag {
-  background: #000000;
-  color: #FFFFFF;
+  background: var(--accent);
+  color: var(--text-on-accent);
   font-size: 11px;
   font-weight: 700;
   padding: 4px 8px;
@@ -2384,25 +2365,25 @@ watch(() => props.reportId, (newId) => {
 
 .report-id {
   font-size: 11px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   font-weight: 500;
   letter-spacing: 0.02em;
 }
 
 .main-title {
-  font-family: 'Times New Roman', Times, serif;
-  font-size: 36px;
+  font-family: var(--font-serif);
+  font-size: 28px;
   font-weight: 700;
-  color: #111827;
+  color: var(--text-primary);
   line-height: 1.2;
   margin: 0 0 16px 0;
   letter-spacing: -0.02em;
 }
 
 .sub-title {
-  font-family: 'Times New Roman', Times, serif;
+  font-family: var(--font-serif);
   font-size: 16px;
-  color: #6B7280;
+  color: var(--text-muted);
   font-style: italic;
   line-height: 1.6;
   margin: 0 0 30px 0;
@@ -2411,7 +2392,7 @@ watch(() => props.reportId, (newId) => {
 
 .header-divider {
   height: 1px;
-  background: #E5E7EB;
+  background: var(--border-default);
   width: 100%;
 }
 
@@ -2443,12 +2424,12 @@ watch(() => props.reportId, (newId) => {
 }
 
 .section-header-row.clickable:hover {
-  background-color: #F9FAFB;
+  background-color: var(--bg-inset);
 }
 
 .collapse-icon {
   margin-left: auto;
-  color: #9CA3AF;
+  color: var(--text-faint);
   transition: transform 0.3s ease;
   flex-shrink: 0;
   align-self: center;
@@ -2459,29 +2440,29 @@ watch(() => props.reportId, (newId) => {
 }
 
 .section-number {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 16px;
-  color: #9CA3AF; /* 深灰色，不随状态变化 */
+  color: var(--text-faint); /* fixed: the number does not track the section status */
   font-weight: 500;
 }
 
 .section-title {
-  font-family: 'Times New Roman', Times, serif;
+  font-family: var(--font-serif);
   font-size: 24px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   margin: 0;
   transition: color 0.3s ease;
 }
 
 /* States */
 .report-section-item.is-pending .section-title {
-  color: #D1D5DB;
+  color: var(--text-disabled);
 }
 
 .report-section-item.is-active .section-title,
 .report-section-item.is-completed .section-title {
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .section-body {
@@ -2491,10 +2472,10 @@ watch(() => props.reportId, (newId) => {
 
 /* Generated Content */
 .generated-content {
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.8;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .generated-content :deep(p) {
@@ -2504,14 +2485,14 @@ watch(() => props.reportId, (newId) => {
 .generated-content :deep(.md-h2),
 .generated-content :deep(.md-h3),
 .generated-content :deep(.md-h4) {
-  font-family: 'Times New Roman', Times, serif;
-  color: #111827;
+  font-family: var(--font-serif);
+  color: var(--text-primary);
   margin-top: 1.5em;
   margin-bottom: 0.8em;
   font-weight: 700;
 }
 
-.generated-content :deep(.md-h2) { font-size: 20px; border-bottom: 1px solid #F3F4F6; padding-bottom: 8px; }
+.generated-content :deep(.md-h2) { font-size: 20px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px; }
 .generated-content :deep(.md-h3) { font-size: 18px; }
 .generated-content :deep(.md-h4) { font-size: 16px; }
 
@@ -2527,28 +2508,28 @@ watch(() => props.reportId, (newId) => {
 }
 
 .generated-content :deep(.md-quote) {
-  border-left: 3px solid #E5E7EB;
+  border-left: 3px solid var(--border-default);
   padding-left: 16px;
   margin: 1.5em 0;
-  color: #6B7280;
+  color: var(--text-muted);
   font-style: italic;
-  font-family: 'Times New Roman', Times, serif;
+  font-family: var(--font-serif);
 }
 
 .generated-content :deep(.code-block) {
-  background: #F9FAFB;
+  background: var(--bg-inset);
   padding: 12px;
   border-radius: 6px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   overflow-x: auto;
   margin: 1em 0;
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--border-default);
 }
 
 .generated-content :deep(strong) {
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 /* Loading State */
@@ -2556,7 +2537,7 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #6B7280;
+  color: var(--text-muted);
   font-size: 14px;
   margin-top: 4px;
 }
@@ -2564,23 +2545,32 @@ watch(() => props.reportId, (newId) => {
 .loading-icon {
   width: 18px;
   height: 18px;
+  color: var(--accent);
   animation: spin 1s linear infinite;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.loading-icon .spinner-track {
+  stroke: var(--border-default);
+}
+
+.loading-icon .spinner-arc {
+  stroke: var(--accent);
+}
+
 .loading-text {
-  font-family: 'Times New Roman', Times, serif;
+  font-family: var(--font-serif);
   font-size: 15px;
-  color: #4B5563;
+  color: var(--text-secondary);
 }
 
 .cursor-blink {
   display: inline-block;
   width: 8px;
   height: 14px;
-  background: #8B5CF6;
+  background: var(--tool-insight);
   opacity: 0.5;
   animation: blink 1s step-end infinite;
 }
@@ -2596,7 +2586,7 @@ watch(() => props.reportId, (newId) => {
 
 /* Content Styles Override for this view */
 .generated-content :deep(.md-h2) {
-  font-family: 'Times New Roman', Times, serif;
+  font-family: var(--font-serif);
   font-size: 18px;
   margin-top: 0;
 }
@@ -2630,7 +2620,7 @@ watch(() => props.reportId, (newId) => {
   justify-content: center;
   gap: 20px;
   padding: 40px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 .waiting-animation {
@@ -2643,7 +2633,7 @@ watch(() => props.reportId, (newId) => {
   position: absolute;
   width: 100%;
   height: 100%;
-  border: 2px solid #E5E7EB;
+  border: 2px solid var(--border-default);
   border-radius: 50%;
   animation: ripple 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
@@ -2668,26 +2658,26 @@ watch(() => props.reportId, (newId) => {
 /* Right Panel */
 .right-panel {
   flex: 1;
-  background: #FFFFFF;
+  background: var(--bg-panel);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
 
-  /* Functional palette (low saturation, status-based) */
-  --wf-border: #E5E7EB;
-  --wf-divider: #F3F4F6;
+  /* Workflow palette: status only, no tool identity. */
+  --wf-border: var(--border-default);
+  --wf-divider: var(--border-subtle);
 
-  --wf-active-bg: #FAFAFA;
-  --wf-active-border: #1F2937;
-  --wf-active-dot: #1F2937;
-  --wf-active-text: #1F2937;
+  --wf-active-bg: var(--accent-soft);
+  --wf-active-border: var(--accent-border);
+  --wf-active-dot: var(--accent);
+  --wf-active-text: var(--accent);
 
-  --wf-done-bg: #F9FAFB;
-  --wf-done-border: #E5E7EB;
-  --wf-done-dot: #10B981;
+  --wf-done-bg: var(--bg-inset);
+  --wf-done-border: var(--border-default);
+  --wf-done-dot: var(--success);
 
-  --wf-muted-dot: #D1D5DB;
-  --wf-todo-text: #9CA3AF;
+  --wf-muted-dot: var(--neutral-dot);
+  --wf-todo-text: var(--text-faint);
 }
 
 .right-panel::-webkit-scrollbar {
@@ -2705,15 +2695,15 @@ watch(() => props.reportId, (newId) => {
 }
 
 .right-panel:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--border-strong);
 }
 
 .right-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--text-disabled);
 }
 
 .mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 /* Workflow Overview */
@@ -2742,14 +2732,14 @@ watch(() => props.reportId, (newId) => {
 .metric-label {
   font-size: 11px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .metric-value {
   font-size: 12px;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .metric-pill {
@@ -2760,8 +2750,8 @@ watch(() => props.reportId, (newId) => {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--wf-border);
-  background: #F9FAFB;
-  color: #6B7280;
+  background: var(--bg-inset);
+  color: var(--text-muted);
 }
 
 .metric-pill.pill--processing {
@@ -2771,15 +2761,15 @@ watch(() => props.reportId, (newId) => {
 }
 
 .metric-pill.pill--completed {
-  background: #ECFDF5;
-  border-color: #A7F3D0;
-  color: #065F46;
+  background: var(--success-soft);
+  border-color: var(--success-border);
+  color: var(--success);
 }
 
 .metric-pill.pill--pending {
   background: transparent;
   border-style: dashed;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 .workflow-steps {
@@ -2796,7 +2786,7 @@ watch(() => props.reportId, (newId) => {
   padding: 10px 12px;
   border: 1px solid var(--wf-divider);
   border-radius: 8px;
-  background: #FFFFFF;
+  background: var(--bg-raised);
 }
 
 .wf-step--active {
@@ -2828,7 +2818,7 @@ watch(() => props.reportId, (newId) => {
   height: 10px;
   border-radius: 50%;
   background: var(--wf-muted-dot);
-  border: 2px solid #FFFFFF;
+  border: 2px solid var(--bg-panel);
   z-index: 1;
 }
 
@@ -2841,7 +2831,7 @@ watch(() => props.reportId, (newId) => {
 
 .wf-step--active .wf-step-dot {
   background: var(--wf-active-dot);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .wf-step--done .wf-step-dot {
@@ -2858,16 +2848,16 @@ watch(() => props.reportId, (newId) => {
 .wf-step-index {
   font-size: 11px;
   font-weight: 700;
-  color: #9CA3AF;
+  color: var(--text-faint);
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
 
 .wf-step-title {
-  font-family: 'Times New Roman', Times, serif;
+  font-family: var(--font-serif);
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   line-height: 1.35;
   min-width: 0;
   overflow: hidden;
@@ -2910,12 +2900,12 @@ watch(() => props.reportId, (newId) => {
   margin-bottom: 10px;
   border: 1px solid var(--wf-divider);
   border-radius: 8px;
-  background: #FFFFFF;
+  background: var(--bg-raised);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .timeline-item:hover {
-  background: #F9FAFB;
+  background: var(--bg-overlay);
   border-color: var(--wf-border);
 }
 
@@ -2952,7 +2942,7 @@ watch(() => props.reportId, (newId) => {
   height: 12px;
   border-radius: 50%;
   background: var(--wf-muted-dot);
-  border: 2px solid #FFFFFF;
+  border: 2px solid var(--bg-panel);
   z-index: 1;
 }
 
@@ -2966,7 +2956,7 @@ watch(() => props.reportId, (newId) => {
 /* Connector dot: status only */
 .dot-active {
   background: var(--wf-active-dot);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .dot-done {
@@ -3001,20 +2991,20 @@ watch(() => props.reportId, (newId) => {
 .action-label {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .action-time {
   font-size: 11px;
-  color: #9CA3AF;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
 }
 
 .timeline-body {
   font-size: 13px;
-  color: #4B5563;
+  color: var(--text-secondary);
 }
 
 .timeline-footer {
@@ -3023,7 +3013,7 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #F3F4F6;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .elapsed-placeholder {
@@ -3038,11 +3028,11 @@ watch(() => props.reportId, (newId) => {
 
 .elapsed-badge {
   font-size: 11px;
-  color: #6B7280;
-  background: #F3F4F6;
+  color: var(--text-muted);
+  background: var(--bg-hover);
   padding: 2px 8px;
   border-radius: 10px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 /* Timeline Body Elements */
@@ -3054,12 +3044,12 @@ watch(() => props.reportId, (newId) => {
 
 .info-key {
   font-size: 11px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   min-width: 80px;
 }
 
 .info-val {
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .status-message {
@@ -3076,18 +3066,18 @@ watch(() => props.reportId, (newId) => {
 }
 
 .status-message.success {
-  background: #ECFDF5;
-  border-color: #A7F3D0;
-  color: #065F46;
+  background: var(--success-soft);
+  border-color: var(--success-border);
+  color: var(--success);
 }
 
 .outline-badge {
   display: inline-block;
   margin-top: 8px;
   padding: 4px 10px;
-  background: #F9FAFB;
-  color: #6B7280;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
   border-radius: 12px;
   font-size: 11px;
   font-weight: 500;
@@ -3098,7 +3088,7 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #F9FAFB;
+  background: var(--bg-inset);
   border: 1px solid var(--wf-border);
   border-radius: 6px;
 }
@@ -3114,28 +3104,28 @@ watch(() => props.reportId, (newId) => {
 
 
 .section-tag.completed {
-  background: #ECFDF5;
-  border: 1px solid #A7F3D0;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
 }
 
 .section-tag.completed svg {
-  color: #059669;
+  color: var(--success);
 }
 
 .tag-num {
   font-size: 11px;
   font-weight: 700;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 .section-tag.completed .tag-num {
-  color: #059669;
+  color: var(--success);
 }
 
 .tag-title {
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .tool-badge {
@@ -3143,8 +3133,8 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: #F9FAFB;
-  color: #374151;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
   border: 1px solid var(--wf-border);
   border-radius: 6px;
   font-size: 12px;
@@ -3158,72 +3148,72 @@ watch(() => props.reportId, (newId) => {
 
 /* Tool Colors - Purple (Deep Insight) */
 .tool-badge.tool-purple {
-  background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
-  border-color: #C4B5FD;
-  color: #6D28D9;
+  background: linear-gradient(135deg, var(--tool-insight-soft) 0%, var(--tool-insight-strong) 100%);
+  border-color: var(--tool-insight-border);
+  color: var(--tool-insight);
 }
 .tool-badge.tool-purple .tool-icon {
-  stroke: #7C3AED;
+  stroke: var(--tool-insight);
 }
 
 /* Tool Colors - Blue (Panorama Search) */
 .tool-badge.tool-blue {
-  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
-  border-color: #93C5FD;
-  color: #1D4ED8;
+  background: linear-gradient(135deg, var(--tool-panorama-soft) 0%, var(--tool-panorama-strong) 100%);
+  border-color: var(--tool-panorama-border);
+  color: var(--tool-panorama);
 }
 .tool-badge.tool-blue .tool-icon {
-  stroke: #2563EB;
+  stroke: var(--tool-panorama);
 }
 
 /* Tool Colors - Green (Agent Interview) */
 .tool-badge.tool-green {
-  background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
-  border-color: #86EFAC;
-  color: #15803D;
+  background: linear-gradient(135deg, var(--tool-interview-soft) 0%, var(--tool-interview-strong) 100%);
+  border-color: var(--tool-interview-border);
+  color: var(--tool-interview);
 }
 .tool-badge.tool-green .tool-icon {
-  stroke: #16A34A;
+  stroke: var(--tool-interview);
 }
 
 /* Tool Colors - Orange (Quick Search) */
 .tool-badge.tool-orange {
-  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
-  border-color: #FDBA74;
-  color: #C2410C;
+  background: linear-gradient(135deg, var(--tool-quick-soft) 0%, var(--tool-quick-strong) 100%);
+  border-color: var(--tool-quick-border);
+  color: var(--tool-quick);
 }
 .tool-badge.tool-orange .tool-icon {
-  stroke: #EA580C;
+  stroke: var(--tool-quick);
 }
 
 /* Tool Colors - Cyan (Graph Stats) */
 .tool-badge.tool-cyan {
-  background: linear-gradient(135deg, #ECFEFF 0%, #CFFAFE 100%);
-  border-color: #67E8F9;
-  color: #0E7490;
+  background: linear-gradient(135deg, var(--tool-stats-soft) 0%, var(--tool-stats-strong) 100%);
+  border-color: var(--tool-stats-border);
+  color: var(--tool-stats);
 }
 .tool-badge.tool-cyan .tool-icon {
-  stroke: #0891B2;
+  stroke: var(--tool-stats);
 }
 
 /* Tool Colors - Pink (Entity Query) */
 .tool-badge.tool-pink {
-  background: linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 100%);
-  border-color: #F9A8D4;
-  color: #BE185D;
+  background: linear-gradient(135deg, var(--tool-entity-soft) 0%, var(--tool-entity-strong) 100%);
+  border-color: var(--tool-entity-border);
+  color: var(--tool-entity);
 }
 .tool-badge.tool-pink .tool-icon {
-  stroke: #DB2777;
+  stroke: var(--tool-entity);
 }
 
 /* Tool Colors - Gray (Default) */
 .tool-badge.tool-gray {
-  background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
-  border-color: #D1D5DB;
-  color: #374151;
+  background: linear-gradient(135deg, var(--bg-inset) 0%, var(--bg-hover) 100%);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 .tool-badge.tool-gray .tool-icon {
-  stroke: #6B7280;
+  stroke: var(--text-muted);
 }
 
 .tool-params {
@@ -3237,35 +3227,35 @@ watch(() => props.reportId, (newId) => {
 
 .tool-params pre {
   margin: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: #4B5563;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-all;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   padding: 10px;
 }
 
 /* Unified Action Buttons */
 .action-btn {
-  background: #F3F4F6;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .action-btn:hover {
-  background: #E5E7EB;
-  color: #374151;
-  border-color: #D1D5DB;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
 }
 
 /* Result Wrapper */
@@ -3287,13 +3277,13 @@ watch(() => props.reportId, (newId) => {
 .result-tool {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .result-size {
   font-size: 10px;
-  color: #6B7280;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 .result-raw {
@@ -3304,24 +3294,24 @@ watch(() => props.reportId, (newId) => {
 
 .result-raw pre {
   margin: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #374151;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   padding: 10px;
   border-radius: 6px;
 }
 
 .raw-preview {
   margin: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 /* Legacy toggle-raw removed - using unified .action-btn */
@@ -3336,19 +3326,19 @@ watch(() => props.reportId, (newId) => {
 .meta-tag {
   font-size: 11px;
   padding: 3px 8px;
-  background: #F3F4F6;
-  color: #6B7280;
+  background: var(--bg-hover);
+  color: var(--text-muted);
   border-radius: 4px;
 }
 
 .meta-tag.active {
-  background: #DBEAFE;
-  color: #1E40AF;
+  background: var(--info-soft);
+  color: var(--info);
 }
 
 .meta-tag.final-answer {
-  background: #D1FAE5;
-  color: #059669;
+  background: var(--success-soft);
+  color: var(--success);
   font-weight: 600;
 }
 
@@ -3358,10 +3348,10 @@ watch(() => props.reportId, (newId) => {
   gap: 8px;
   margin-top: 10px;
   padding: 10px 14px;
-  background: #ECFDF5;
-  border: 1px solid #A7F3D0;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
   border-radius: 6px;
-  color: #065F46;
+  color: var(--success);
   font-size: 12px;
   font-weight: 500;
 }
@@ -3378,12 +3368,12 @@ watch(() => props.reportId, (newId) => {
 
 .llm-content pre {
   margin: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #4B5563;
-  background: #F3F4F6;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
   padding: 10px;
   border-radius: 6px;
 }
@@ -3394,10 +3384,10 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: #ECFDF5;
-  border: 1px solid #A7F3D0;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
   border-radius: 8px;
-  color: #065F46;
+  color: var(--success);
   font-weight: 600;
   font-size: 14px;
 }
@@ -3412,8 +3402,8 @@ watch(() => props.reportId, (newId) => {
   padding: 14px 20px;
   font-size: 14px;
   font-weight: 600;
-  color: #FFFFFF;
-  background: #1F2937;
+  color: var(--text-on-accent);
+  background: var(--accent);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -3421,7 +3411,7 @@ watch(() => props.reportId, (newId) => {
 }
 
 .next-step-btn:hover {
-  background: #374151;
+  background: var(--accent-hover);
 }
 
 .next-step-btn svg {
@@ -3439,14 +3429,14 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   font-size: 13px;
 }
 
 .empty-pulse {
   width: 24px;
   height: 24px;
-  background: #E5E7EB;
+  background: var(--bg-active);
   border-radius: 50%;
   margin-bottom: 16px;
   animation: pulse-ring 1.5s infinite;
@@ -3478,8 +3468,8 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.stat-box) {
   flex: 1;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   padding: 10px 8px;
   text-align: center;
@@ -3489,69 +3479,69 @@ watch(() => props.reportId, (newId) => {
   display: block;
   font-size: 20px;
   font-weight: 700;
-  color: #111827;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 :deep(.stat-box .stat-label) {
   display: block;
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   margin-top: 2px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 :deep(.stat-box.highlight) {
-  background: #ECFDF5;
-  border-color: #A7F3D0;
+  background: var(--success-soft);
+  border-color: var(--success-border);
 }
 
 :deep(.stat-box.highlight .stat-num) {
-  color: #059669;
+  color: var(--success);
 }
 
 :deep(.stat-box.muted) {
-  background: #F9FAFB;
-  border-color: #E5E7EB;
+  background: var(--bg-inset);
+  border-color: var(--border-default);
 }
 
 :deep(.stat-box.muted .stat-num) {
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 :deep(.query-display) {
-  background: #F9FAFB;
+  background: var(--bg-inset);
   padding: 10px 14px;
   border-radius: 6px;
   font-size: 12px;
-  color: #374151;
+  color: var(--text-secondary);
   margin-bottom: 12px;
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--border-default);
   line-height: 1.5;
 }
 
 :deep(.expand-details) {
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   padding: 8px 14px;
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 :deep(.expand-details:hover) {
-  border-color: #D1D5DB;
-  color: #374151;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 :deep(.detail-content) {
   margin-top: 14px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 14px;
 }
@@ -3559,12 +3549,12 @@ watch(() => props.reportId, (newId) => {
 :deep(.section-label) {
   font-size: 11px;
   font-weight: 600;
-  color: #6B7280;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 10px;
   padding-bottom: 6px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* Facts Section */
@@ -3576,7 +3566,7 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 :deep(.fact-row:last-child) {
@@ -3584,7 +3574,7 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.fact-row.active) {
-  background: #ECFDF5;
+  background: var(--success-soft);
   margin: 0 -10px;
   padding: 8px 10px;
   border-radius: 6px;
@@ -3597,22 +3587,22 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #F3F4F6;
+  background: var(--bg-hover);
   border-radius: 6px;
   font-size: 10px;
   font-weight: 700;
-  color: #6B7280;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
 :deep(.fact-row.active .fact-idx) {
-  background: #A7F3D0;
-  color: #065F46;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 :deep(.fact-text) {
   font-size: 12px;
-  color: #4B5563;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -3631,8 +3621,8 @@ watch(() => props.reportId, (newId) => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   padding: 6px 12px;
 }
@@ -3640,13 +3630,13 @@ watch(() => props.reportId, (newId) => {
 :deep(.chip-name) {
   font-size: 12px;
   font-weight: 500;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 :deep(.chip-type) {
   font-size: 10px;
-  color: #9CA3AF;
-  background: #E5E7EB;
+  color: var(--text-faint);
+  background: var(--bg-active);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -3662,7 +3652,7 @@ watch(() => props.reportId, (newId) => {
   gap: 8px;
   padding: 8px 0;
   flex-wrap: wrap;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 :deep(.relation-row:last-child) {
@@ -3672,8 +3662,8 @@ watch(() => props.reportId, (newId) => {
 :deep(.rel-node) {
   font-size: 12px;
   font-weight: 500;
-  color: #111827;
-  background: #F3F4F6;
+  color: var(--text-primary);
+  background: var(--bg-hover);
   padding: 4px 10px;
   border-radius: 4px;
 }
@@ -3681,8 +3671,8 @@ watch(() => props.reportId, (newId) => {
 :deep(.rel-edge) {
   font-size: 10px;
   font-weight: 600;
-  color: #FFFFFF;
-  background: #4F46E5;
+  color: var(--text-inverse);
+  background: var(--tool-insight);
   padding: 3px 10px;
   border-radius: 10px;
 }
@@ -3707,10 +3697,10 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.interview-display .header-title) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -3729,31 +3719,31 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .stat-value) {
   font-size: 14px;
   font-weight: 600;
-  color: #4F46E5;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--tool-insight);
+  font-family: var(--font-mono);
 }
 
 :deep(.interview-display .stat-label) {
   font-size: 11px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   text-transform: lowercase;
 }
 
 :deep(.interview-display .stat-divider) {
-  color: #D1D5DB;
+  color: var(--text-disabled);
   font-size: 12px;
 }
 
 :deep(.interview-display .stat-size) {
   font-size: 11px;
-  color: #9CA3AF;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
 }
 
 :deep(.interview-display .header-topic) {
   margin-top: 4px;
   font-size: 12px;
-  color: #6B7280;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -3763,11 +3753,11 @@ watch(() => props.reportId, (newId) => {
   gap: 8px;
   padding: 0 0 14px 0;
   background: transparent;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  scrollbar-color: #E5E7EB transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 :deep(.interview-display .agent-tabs::-webkit-scrollbar) {
@@ -3779,12 +3769,12 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.interview-display .agent-tabs::-webkit-scrollbar-thumb) {
-  background: #E5E7EB;
+  background: var(--bg-active);
   border-radius: 2px;
 }
 
 :deep(.interview-display .agent-tabs::-webkit-scrollbar-thumb:hover) {
-  background: #D1D5DB;
+  background: var(--bg-active);
 }
 
 :deep(.interview-display .agent-tab) {
@@ -3792,28 +3782,28 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 :deep(.interview-display .agent-tab:hover) {
-  background: #F3F4F6;
-  border-color: #D1D5DB;
-  color: #374151;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 :deep(.interview-display .agent-tab.active) {
-  background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
-  border-color: #A5B4FC;
-  color: #4338CA;
-  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.1);
+  background: linear-gradient(135deg, var(--tool-insight-soft) 0%, var(--tool-insight-strong) 100%);
+  border-color: var(--tool-insight-border);
+  color: var(--tool-insight);
+  box-shadow: var(--shadow-xs);
 }
 
 :deep(.interview-display .tab-avatar) {
@@ -3822,8 +3812,8 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #E5E7EB;
-  color: #6B7280;
+  background: var(--bg-active);
+  color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
   border-radius: 50%;
@@ -3831,12 +3821,12 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.interview-display .agent-tab:hover .tab-avatar) {
-  background: #D1D5DB;
+  background: var(--border-strong);
 }
 
 :deep(.interview-display .agent-tab.active .tab-avatar) {
-  background: #6366F1;
-  color: #FFFFFF;
+  background: var(--tool-insight);
+  color: var(--text-inverse);
 }
 
 :deep(.interview-display .tab-name) {
@@ -3867,8 +3857,8 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #E5E7EB;
-  color: #6B7280;
+  background: var(--bg-active);
+  color: var(--text-muted);
   font-size: 14px;
   font-weight: 600;
   border-radius: 50%;
@@ -3883,19 +3873,19 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .profile-name) {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   margin-bottom: 2px;
 }
 
 :deep(.interview-display .profile-role) {
   font-size: 11px;
-  color: #6B7280;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
 :deep(.interview-display .profile-bio) {
   font-size: 11px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -3903,10 +3893,10 @@ watch(() => props.reportId, (newId) => {
   overflow: hidden;
 }
 
-/* Selection Reason - 选择理由 */
+/* Selection Reason */
 :deep(.interview-display .selection-reason) {
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 12px 14px;
   margin-bottom: 16px;
@@ -3915,7 +3905,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .reason-label) {
   font-size: 11px;
   font-weight: 600;
-  color: #64748B;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   margin-bottom: 6px;
@@ -3923,7 +3913,7 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .reason-content) {
   font-size: 12px;
-  color: #475569;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -3956,7 +3946,7 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
   border-radius: 4px;
@@ -3965,14 +3955,14 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .q-badge) {
   background: transparent;
-  color: #9CA3AF;
-  border: 1px solid #E5E7EB;
+  color: var(--text-faint);
+  border: 1px solid var(--border-default);
 }
 
 :deep(.interview-display .a-badge) {
-  background: #4F46E5;
-  color: #FFFFFF;
-  border: 1px solid #4F46E5;
+  background: var(--tool-insight);
+  color: var(--text-inverse);
+  border: 1px solid var(--tool-insight);
 }
 
 :deep(.interview-display .qa-content) {
@@ -3983,7 +3973,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .qa-sender) {
   font-size: 11px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--text-faint);
   margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -3991,7 +3981,7 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .qa-text) {
   font-size: 13px;
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -4008,7 +3998,7 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .placeholder-text) {
   font-style: italic;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.interview-display .qa-answer-header) {
@@ -4037,19 +4027,19 @@ watch(() => props.reportId, (newId) => {
   border-radius: 4px;
   font-size: 10px;
   font-weight: 500;
-  color: #9CA3AF;
+  color: var(--text-faint);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 :deep(.interview-display .platform-btn:hover) {
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 :deep(.interview-display .platform-btn.active) {
   background: transparent;
-  color: #4F46E5;
-  border-color: #E5E7EB;
+  color: var(--tool-insight);
+  border-color: var(--border-default);
   box-shadow: none;
 }
 
@@ -4059,12 +4049,12 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .answer-text) {
   font-size: 13px;
-  color: #111827;
+  color: var(--text-primary);
   line-height: 1.6;
 }
 
 :deep(.interview-display .answer-text strong) {
-  color: #111827;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -4074,18 +4064,18 @@ watch(() => props.reportId, (newId) => {
   padding: 0;
   background: transparent;
   border: none;
-  border-bottom: 1px dotted #D1D5DB;
+  border-bottom: 1px dotted var(--border-strong);
   border-radius: 0;
   font-size: 11px;
   font-weight: 500;
-  color: #9CA3AF;
+  color: var(--text-faint);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 :deep(.interview-display .expand-answer-btn:hover) {
   background: transparent;
-  color: #6B7280;
+  color: var(--text-muted);
   border-bottom-style: solid;
 }
 
@@ -4093,7 +4083,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .quotes-section) {
   background: transparent;
   border: none;
-  border-top: 1px solid #F3F4F6;
+  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
   padding: 16px 0 0 0;
   margin-top: 16px;
@@ -4102,7 +4092,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .quotes-header) {
   font-size: 11px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 12px;
@@ -4117,12 +4107,12 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .quote-item) {
   margin: 0;
   padding: 10px 12px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   font-size: 12px;
   font-style: italic;
-  color: #4B5563;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -4132,14 +4122,14 @@ watch(() => props.reportId, (newId) => {
   padding: 16px 0 0 0;
   background: transparent;
   border: none;
-  border-top: 1px solid #F3F4F6;
+  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
 }
 
 :deep(.interview-display .summary-header) {
   font-size: 11px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 8px;
@@ -4147,7 +4137,7 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .summary-content) {
   font-size: 13px;
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -4158,7 +4148,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .summary-content h5) {
   margin: 12px 0 8px 0;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 :deep(.interview-display .summary-content h2) {
@@ -4180,7 +4170,7 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.interview-display .summary-content strong) {
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 :deep(.interview-display .summary-content em) {
@@ -4200,15 +4190,15 @@ watch(() => props.reportId, (newId) => {
 :deep(.interview-display .summary-content blockquote) {
   margin: 8px 0;
   padding-left: 12px;
-  border-left: 3px solid #E5E7EB;
-  color: #6B7280;
+  border-left: 3px solid var(--border-default);
+  color: var(--text-muted);
   font-style: italic;
 }
 
 /* Markdown styles in quotes */
 :deep(.interview-display .quote-item strong) {
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.interview-display .quote-item em) {
@@ -4222,9 +4212,9 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.insight-header) {
   padding: 12px 16px;
-  background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
+  background: linear-gradient(135deg, var(--tool-insight-soft) 0%, var(--tool-insight-strong) 100%);
   border-radius: 8px 8px 0 0;
-  border: 1px solid #C4B5FD;
+  border: 1px solid var(--tool-insight-border);
   border-bottom: none;
 }
 
@@ -4238,7 +4228,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.insight-header .header-title) {
   font-size: 14px;
   font-weight: 700;
-  color: #6D28D9;
+  color: var(--tool-insight);
 }
 
 :deep(.insight-header .header-stats) {
@@ -4255,37 +4245,37 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.insight-header .stat-value) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-weight: 700;
-  color: #7C3AED;
+  color: var(--tool-insight);
 }
 
 :deep(.insight-header .stat-label) {
-  color: #8B5CF6;
+  color: var(--tool-insight);
   font-size: 10px;
 }
 
 :deep(.insight-header .stat-divider) {
-  color: #C4B5FD;
+  color: var(--text-faint);
   margin: 0 4px;
 }
 
 :deep(.insight-header .stat-size) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.insight-header .header-topic) {
   font-size: 13px;
-  color: #5B21B6;
+  color: var(--tool-insight);
   line-height: 1.5;
 }
 
 :deep(.insight-header .header-scenario) {
   margin-top: 6px;
   font-size: 11px;
-  color: #7C3AED;
+  color: var(--tool-insight);
 }
 
 :deep(.insight-header .scenario-label) {
@@ -4296,8 +4286,8 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 2px;
   padding: 8px 12px;
-  background: #FAFAFA;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-top: none;
 }
 
@@ -4311,28 +4301,28 @@ watch(() => props.reportId, (newId) => {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 :deep(.insight-tab:hover) {
-  background: #F3F4F6;
-  color: #374151;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 :deep(.insight-tab.active) {
-  background: #FFFFFF;
-  color: #7C3AED;
-  border-color: #C4B5FD;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: var(--bg-raised);
+  color: var(--tool-insight);
+  border-color: var(--tool-insight-border);
+  box-shadow: var(--shadow-xs);
 }
 
 
 :deep(.insight-content) {
   padding: 12px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   border-top: none;
   border-radius: 0 0 8px 8px;
 }
@@ -4343,18 +4333,18 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 :deep(.insight-display .panel-title) {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.insight-display .panel-count) {
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.insight-display .facts-list),
@@ -4375,8 +4365,8 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
@@ -4387,18 +4377,18 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #E5E7EB;
+  background: var(--bg-active);
   border-radius: 50%;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 :deep(.insight-display .fact-content) {
   flex: 1;
   font-size: 12px;
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -4408,43 +4398,43 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   cursor: default;
   transition: all 0.15s ease;
 }
 
 :deep(.insight-display .entity-tag:hover) {
-  background: #F3F4F6;
-  border-color: #D1D5DB;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 :deep(.insight-display .entity-tag .entity-name) {
   font-size: 12px;
   font-weight: 500;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 :deep(.insight-display .entity-tag .entity-type) {
   font-size: 9px;
-  color: #7C3AED;
-  background: #EDE9FE;
+  color: var(--tool-insight);
+  background: var(--tool-insight-soft);
   padding: 1px 4px;
   border-radius: 3px;
 }
 
 :deep(.insight-display .entity-tag .entity-fact-count) {
   font-size: 9px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   margin-left: 2px;
 }
 
 /* Legacy entity card styles for backwards compatibility */
 :deep(.insight-display .entity-card) {
   padding: 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
 }
 
@@ -4461,13 +4451,13 @@ watch(() => props.reportId, (newId) => {
 :deep(.insight-display .entity-card .entity-name) {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 :deep(.insight-display .entity-card .entity-type) {
   font-size: 10px;
-  color: #7C3AED;
-  background: #EDE9FE;
+  color: var(--tool-insight);
+  background: var(--tool-insight-soft);
   padding: 2px 6px;
   border-radius: 4px;
   display: inline-block;
@@ -4476,8 +4466,8 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.insight-display .entity-card .entity-fact-count) {
   font-size: 10px;
-  color: #9CA3AF;
-  background: #F3F4F6;
+  color: var(--text-faint);
+  background: var(--bg-hover);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -4485,9 +4475,9 @@ watch(() => props.reportId, (newId) => {
 :deep(.insight-display .entity-summary) {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #E5E7EB;
+  border-top: 1px solid var(--border-default);
   font-size: 11px;
-  color: #6B7280;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -4497,20 +4487,20 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.insight-display .rel-source),
 :deep(.insight-display .rel-target) {
   padding: 4px 8px;
-  background: #FFFFFF;
-  border: 1px solid #D1D5DB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.insight-display .rel-arrow) {
@@ -4523,16 +4513,16 @@ watch(() => props.reportId, (newId) => {
 :deep(.insight-display .rel-line) {
   flex: 1;
   height: 1px;
-  background: #D1D5DB;
+  background: var(--bg-active);
 }
 
 :deep(.insight-display .rel-label) {
   padding: 2px 6px;
-  background: #EDE9FE;
+  background: var(--tool-insight-soft);
   border-radius: 4px;
   font-size: 10px;
   font-weight: 500;
-  color: #7C3AED;
+  color: var(--tool-insight);
   white-space: nowrap;
 }
 
@@ -4541,25 +4531,25 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.insight-display .subquery-number) {
   flex-shrink: 0;
   padding: 2px 6px;
-  background: #7C3AED;
+  background: var(--tool-insight);
   border-radius: 4px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  color: #FFFFFF;
+  color: var(--text-inverse);
 }
 
 :deep(.insight-display .subquery-text) {
   font-size: 12px;
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -4571,12 +4561,12 @@ watch(() => props.reportId, (newId) => {
   width: 100%;
   margin-top: 12px;
   padding: 8px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: center;
@@ -4585,9 +4575,9 @@ watch(() => props.reportId, (newId) => {
 :deep(.insight-display .expand-btn:hover),
 :deep(.panorama-display .expand-btn:hover),
 :deep(.quick-search-display .expand-btn:hover) {
-  background: #F3F4F6;
-  color: #374151;
-  border-color: #D1D5DB;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
 }
 
 /* Empty State */
@@ -4597,7 +4587,7 @@ watch(() => props.reportId, (newId) => {
   padding: 24px;
   text-align: center;
   font-size: 12px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 /* ========== Enhanced Panorama Display Styles ========== */
@@ -4607,9 +4597,9 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.panorama-header) {
   padding: 12px 16px;
-  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+  background: linear-gradient(135deg, var(--tool-panorama-soft) 0%, var(--tool-panorama-strong) 100%);
   border-radius: 8px 8px 0 0;
-  border: 1px solid #93C5FD;
+  border: 1px solid var(--tool-panorama-border);
   border-bottom: none;
 }
 
@@ -4623,7 +4613,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.panorama-header .header-title) {
   font-size: 14px;
   font-weight: 700;
-  color: #1D4ED8;
+  color: var(--tool-panorama);
 }
 
 :deep(.panorama-header .header-stats) {
@@ -4640,30 +4630,30 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.panorama-header .stat-value) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-weight: 700;
-  color: #2563EB;
+  color: var(--tool-panorama);
 }
 
 :deep(.panorama-header .stat-label) {
-  color: #60A5FA;
+  color: var(--tool-panorama);
   font-size: 10px;
 }
 
 :deep(.panorama-header .stat-divider) {
-  color: #93C5FD;
+  color: var(--text-faint);
   margin: 0 4px;
 }
 
 :deep(.panorama-header .stat-size) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.panorama-header .header-topic) {
   font-size: 13px;
-  color: #1E40AF;
+  color: var(--tool-panorama);
   line-height: 1.5;
 }
 
@@ -4671,8 +4661,8 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 2px;
   padding: 8px 12px;
-  background: #FAFAFA;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-top: none;
 }
 
@@ -4686,28 +4676,28 @@ watch(() => props.reportId, (newId) => {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 :deep(.panorama-tab:hover) {
-  background: #F3F4F6;
-  color: #374151;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 :deep(.panorama-tab.active) {
-  background: #FFFFFF;
-  color: #2563EB;
-  border-color: #93C5FD;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: var(--bg-raised);
+  color: var(--tool-panorama);
+  border-color: var(--tool-panorama-border);
+  box-shadow: var(--shadow-xs);
 }
 
 
 :deep(.panorama-content) {
   padding: 12px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   border-top: none;
   border-radius: 0 0 8px 8px;
 }
@@ -4718,18 +4708,18 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 :deep(.panorama-display .panel-title) {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.panorama-display .panel-count) {
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.panorama-display .facts-list) {
@@ -4742,19 +4732,19 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.panorama-display .fact-item.active) {
-  background: #F9FAFB;
-  border-color: #E5E7EB;
+  background: var(--bg-inset);
+  border-color: var(--border-default);
 }
 
 :deep(.panorama-display .fact-item.historical) {
-  background: #F9FAFB;
-  border-color: #E5E7EB;
+  background: var(--bg-inset);
+  border-color: var(--border-default);
 }
 
 :deep(.panorama-display .fact-number) {
@@ -4764,37 +4754,37 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #E5E7EB;
+  background: var(--bg-active);
   border-radius: 50%;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 :deep(.panorama-display .fact-item.active .fact-number) {
-  background: #E5E7EB;
-  color: #6B7280;
+  background: var(--bg-active);
+  color: var(--text-muted);
 }
 
 :deep(.panorama-display .fact-item.historical .fact-number) {
-  background: #9CA3AF;
-  color: #FFFFFF;
+  background: var(--text-disabled);
+  color: var(--text-primary);
 }
 
 :deep(.panorama-display .fact-content) {
   flex: 1;
   font-size: 12px;
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
 :deep(.panorama-display .fact-time) {
   display: block;
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
   margin-bottom: 4px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 :deep(.panorama-display .fact-text) {
@@ -4813,21 +4803,21 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.panorama-display .entity-name) {
   font-size: 12px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.panorama-display .entity-type) {
   font-size: 10px;
-  color: #2563EB;
-  background: #DBEAFE;
+  color: var(--tool-panorama);
+  background: var(--tool-panorama-soft);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -4839,9 +4829,9 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.quicksearch-header) {
   padding: 12px 16px;
-  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+  background: linear-gradient(135deg, var(--tool-quick-soft) 0%, var(--tool-quick-strong) 100%);
   border-radius: 8px 8px 0 0;
-  border: 1px solid #FDBA74;
+  border: 1px solid var(--tool-quick-border);
   border-bottom: none;
 }
 
@@ -4855,7 +4845,7 @@ watch(() => props.reportId, (newId) => {
 :deep(.quicksearch-header .header-title) {
   font-size: 14px;
   font-weight: 700;
-  color: #C2410C;
+  color: var(--tool-quick);
 }
 
 :deep(.quicksearch-header .header-stats) {
@@ -4872,30 +4862,30 @@ watch(() => props.reportId, (newId) => {
 }
 
 :deep(.quicksearch-header .stat-value) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-weight: 700;
-  color: #EA580C;
+  color: var(--tool-quick);
 }
 
 :deep(.quicksearch-header .stat-label) {
-  color: #FB923C;
+  color: var(--tool-quick);
   font-size: 10px;
 }
 
 :deep(.quicksearch-header .stat-divider) {
-  color: #FDBA74;
+  color: var(--text-faint);
   margin: 0 4px;
 }
 
 :deep(.quicksearch-header .stat-size) {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.quicksearch-header .header-query) {
   font-size: 13px;
-  color: #9A3412;
+  color: var(--tool-quick);
   line-height: 1.5;
 }
 
@@ -4907,8 +4897,8 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 2px;
   padding: 8px 12px;
-  background: #FAFAFA;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-top: none;
 }
 
@@ -4922,28 +4912,28 @@ watch(() => props.reportId, (newId) => {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 :deep(.quicksearch-tab:hover) {
-  background: #F3F4F6;
-  color: #374151;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 :deep(.quicksearch-tab.active) {
-  background: #FFFFFF;
-  color: #EA580C;
-  border-color: #FDBA74;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: var(--bg-raised);
+  color: var(--tool-quick);
+  border-color: var(--tool-quick-border);
+  box-shadow: var(--shadow-xs);
 }
 
 
 :deep(.quicksearch-content) {
   padding: 12px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   border-top: none;
   border-radius: 0 0 8px 8px;
 }
@@ -4959,18 +4949,18 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 :deep(.quick-search-display .panel-title) {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.quick-search-display .panel-count) {
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-faint);
 }
 
 :deep(.quick-search-display .facts-list) {
@@ -4983,14 +4973,14 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.quick-search-display .fact-item.active) {
-  background: #F9FAFB;
-  border-color: #E5E7EB;
+  background: var(--bg-inset);
+  border-color: var(--border-default);
 }
 
 :deep(.quick-search-display .fact-number) {
@@ -5000,23 +4990,23 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #E5E7EB;
+  background: var(--bg-active);
   border-radius: 50%;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 :deep(.quick-search-display .fact-item.active .fact-number) {
-  background: #E5E7EB;
-  color: #6B7280;
+  background: var(--bg-active);
+  color: var(--text-muted);
 }
 
 :deep(.quick-search-display .fact-content) {
   flex: 1;
   font-size: 12px;
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -5032,20 +5022,20 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.quick-search-display .edge-source),
 :deep(.quick-search-display .edge-target) {
   padding: 4px 8px;
-  background: #FFFFFF;
-  border: 1px solid #D1D5DB;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.quick-search-display .edge-arrow) {
@@ -5058,16 +5048,16 @@ watch(() => props.reportId, (newId) => {
 :deep(.quick-search-display .edge-line) {
   flex: 1;
   height: 1px;
-  background: #D1D5DB;
+  background: var(--bg-active);
 }
 
 :deep(.quick-search-display .edge-label) {
   padding: 2px 6px;
-  background: #FFEDD5;
+  background: var(--tool-quick-soft);
   border-radius: 4px;
   font-size: 10px;
   font-weight: 500;
-  color: #C2410C;
+  color: var(--tool-quick);
   white-space: nowrap;
 }
 
@@ -5083,43 +5073,43 @@ watch(() => props.reportId, (newId) => {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
 }
 
 :deep(.quick-search-display .node-name) {
   font-size: 12px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 :deep(.quick-search-display .node-type) {
   font-size: 10px;
-  color: #EA580C;
-  background: #FFEDD5;
+  color: var(--tool-quick);
+  background: var(--tool-quick-soft);
   padding: 2px 6px;
   border-radius: 4px;
 }
 
-/* Console Logs - 与 Step3Simulation.vue 保持一致 */
+/* Console Logs - kept visually identical to Step3Simulation.vue */
 .console-logs {
-  background: #000;
-  color: #DDD;
+  background: var(--term-bg);
+  color: var(--term-fg);
   padding: 16px;
-  font-family: 'JetBrains Mono', monospace;
-  border-top: 1px solid #222;
+  font-family: var(--font-mono);
+  border-top: 1px solid var(--term-rule);
   flex-shrink: 0;
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--term-rule);
   padding-bottom: 8px;
   margin-bottom: 8px;
   font-size: 10px;
-  color: #666;
+  color: var(--term-dim);
 }
 
 .log-title {
@@ -5137,7 +5127,7 @@ watch(() => props.reportId, (newId) => {
 }
 
 .log-content::-webkit-scrollbar { width: 4px; }
-.log-content::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+.log-content::-webkit-scrollbar-thumb { background: var(--term-rule); border-radius: 2px; }
 
 .log-line {
   font-size: 11px;
@@ -5145,18 +5135,11 @@ watch(() => props.reportId, (newId) => {
 }
 
 .log-msg {
-  color: #BBB;
+  color: var(--term-fg);
   word-break: break-all;
 }
 
-.log-msg.error { color: #EF5350; }
-.log-msg.warning { color: #FFA726; }
-.log-msg.success { color: #66BB6A; }
-</style>
-
-<style>
-/* English locale: smaller report title */
-html[lang="en"] .report-header-block .main-title {
-  font-size: 28px;
-}
+.log-msg.error { color: var(--term-error); }
+.log-msg.warning { color: var(--term-warn); }
+.log-msg.success { color: var(--term-success); }
 </style>

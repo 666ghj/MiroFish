@@ -1,6 +1,6 @@
-"""
-图谱构建服务
-接口2：使用Zep API构建Standalone Graph
+"""Graph building service.
+
+Endpoint 2: build a standalone graph through the Zep API.
 """
 
 import hashlib
@@ -28,12 +28,12 @@ from ..utils.zep import (
     is_retryable_zep_error,
 )
 from .text_processor import TextProcessor
-from ..utils.locale import t, get_locale, set_locale
+from ..utils.locale import t
 
 
 @dataclass
 class GraphInfo:
-    """图谱信息"""
+    """Summary counts for one built graph."""
     graph_id: str
     node_count: int
     edge_count: int
@@ -59,15 +59,13 @@ class BatchSubmission:
 
 
 class GraphBuilderService:
-    """
-    图谱构建服务
-    负责调用Zep API构建知识图谱
-    """
+    """Build a knowledge graph through the Zep API."""
+
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
         if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
+            raise ValueError("ZEP_API_KEY is not configured.")
         
         self.client = get_zep_client(self.api_key)
         self.task_manager = TaskManager()
@@ -76,26 +74,24 @@ class GraphBuilderService:
         self,
         text: str,
         ontology: Dict[str, Any],
-        graph_name: str = "MiroFish Graph",
+        graph_name: str = "SoSim Graph",
         chunk_size: int = 500,
         chunk_overlap: int = 50,
         batch_size: int = 350
     ) -> str:
-        """
-        异步构建图谱
-        
+        """Build a graph on a background thread and return its task ID.
+
         Args:
-            text: 输入文本
-            ontology: 本体定义（来自接口1的输出）
-            graph_name: 图谱名称
-            chunk_size: 文本块大小
-            chunk_overlap: 块重叠大小
-            batch_size: 每批发送的块数量
-            
+            text: Source text to ingest.
+            ontology: Ontology definition produced by endpoint 1.
+            graph_name: Human-readable graph name.
+            chunk_size: Characters per text chunk.
+            chunk_overlap: Overlap between adjacent chunks.
+            batch_size: Chunks sent per Batch API call.
+
         Returns:
-            任务ID
+            The task ID to poll for progress.
         """
-        # 创建任务
         task_id = self.task_manager.create_task(
             task_type="graph_build",
             metadata={
@@ -104,14 +100,10 @@ class GraphBuilderService:
                 "text_length": len(text),
             }
         )
-        
-        # Capture locale before spawning background thread
-        current_locale = get_locale()
 
-        # 在后台线程中执行构建
         thread = threading.Thread(
             target=self._build_graph_worker,
-            args=(task_id, text, ontology, graph_name, chunk_size, chunk_overlap, batch_size, current_locale)
+            args=(task_id, text, ontology, graph_name, chunk_size, chunk_overlap, batch_size)
         )
         thread.daemon = True
         thread.start()
@@ -127,10 +119,8 @@ class GraphBuilderService:
         chunk_size: int,
         chunk_overlap: int,
         batch_size: int,
-        locale: str = 'zh'
     ):
-        """图谱构建工作线程"""
-        set_locale(locale)
+        """Run one graph build to completion on a worker thread."""
         try:
             self.task_manager.update_task(
                 task_id,
@@ -145,7 +135,7 @@ class GraphBuilderService:
             self.validate_batch_chunks(chunks, batch_size=batch_size)
             total_chunks = len(chunks)
 
-            # 1. 创建图谱
+            # 1. Create the graph.
             graph_id = self.create_graph(graph_name)
             self.task_manager.update_task(
                 task_id,
@@ -153,7 +143,7 @@ class GraphBuilderService:
                 message=t('progress.graphCreated', graphId=graph_id)
             )
             
-            # 2. 设置本体
+            # 2. Install the ontology.
             self.set_ontology(graph_id, ontology)
             self.task_manager.update_task(
                 task_id,
@@ -161,14 +151,15 @@ class GraphBuilderService:
                 message=t('progress.ontologySet')
             )
             
-            # 3. 文本分块已在 Cloud mutation 前完成并验证
+            # 3. Chunking already ran and was validated before the first
+            #    Cloud mutation.
             self.task_manager.update_task(
                 task_id,
                 progress=20,
                 message=t('progress.textSplit', count=total_chunks)
             )
             
-            # 4. 分批发送数据
+            # 4. Send the chunks in batches.
             submission = self.add_text_batches(
                 graph_id, chunks, batch_size,
                 lambda msg, prog: self.task_manager.update_task(
@@ -178,7 +169,7 @@ class GraphBuilderService:
                 )
             )
             
-            # 5. 等待Zep处理完成
+            # 5. Wait for Zep to finish processing.
             self.task_manager.update_task(
                 task_id,
                 progress=60,
@@ -194,7 +185,7 @@ class GraphBuilderService:
                 )
             )
             
-            # 6. 获取图谱信息
+            # 6. Read the resulting graph summary.
             self.task_manager.update_task(
                 task_id,
                 progress=90,
@@ -203,7 +194,6 @@ class GraphBuilderService:
             
             graph_info = self._get_graph_info(graph_id)
             
-            # 完成
             self.task_manager.complete_task(task_id, {
                 "graph_id": graph_id,
                 "graph_info": graph_info.to_dict(),
@@ -224,7 +214,7 @@ class GraphBuilderService:
     ) -> str:
         """Create a graph with a caller-durable ID and reconcile lost replies."""
 
-        graph_id = graph_id or f"mirofish_{uuid.uuid4().hex[:16]}"
+        graph_id = graph_id or f"sosim_{uuid.uuid4().hex[:16]}"
         # Persist the client-generated ID before the non-idempotent POST so a
         # later reset can clean up a graph whose successful response was lost.
         if graph_id_callback:
@@ -234,7 +224,7 @@ class GraphBuilderService:
             self.client.graph.create(
                 graph_id=graph_id,
                 name=name,
-                description="MiroFish Social Simulation Graph"
+                description="SoSim Social Simulation Graph"
             )
         except Exception as error:
             if not is_retryable_zep_error(error):
@@ -288,7 +278,7 @@ class GraphBuilderService:
                 for batch in getattr(page, "batches", None) or []:
                     metadata = getattr(batch, "metadata", None) or {}
                     if (
-                        metadata.get("mirofish_operation_id") == operation_id
+                        metadata.get("sosim_operation_id") == operation_id
                         and metadata.get("graph_id") == graph_id
                     ):
                         matches.append(batch)
@@ -311,75 +301,73 @@ class GraphBuilderService:
         return None
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
-        """设置图谱本体（公开方法）"""
+        """Install entity and edge types on a graph."""
         import warnings
         from typing import Optional
         from pydantic import Field
         from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
         
-        # 抑制 Pydantic v2 关于 Field(default=None) 的警告
-        # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略
+        # Pydantic v2 warns about Field(default=None), but that is exactly
+        # what the Zep SDK requires, and the warning comes from dynamic class
+        # creation rather than from anything the caller can fix.
         warnings.filterwarnings('ignore', category=UserWarning, module='pydantic')
         
         def safe_attr_name(attr_name: str) -> str:
-            """将保留名称转换为安全名称"""
+            """Rename a reserved attribute so Zep will accept it."""
             if attr_name.lower() in RESERVED_ONTOLOGY_ATTRIBUTE_NAMES:
                 return f"entity_{attr_name}"
             return attr_name
         
-        # 动态创建实体类型
+        # Build the entity classes.
         entity_types = {}
         for entity_def in ontology.get("entity_types", [])[:MAX_ONTOLOGY_TYPES]:
             name = entity_def["name"]
             description = entity_def.get("description", f"A {name} entity.")
             
-            # 创建属性字典和类型注解（Pydantic v2 需要）
+            # Pydantic v2 needs both the attribute values and __annotations__.
             attrs = {"__doc__": description}
             annotations = {}
             
             for normalized in normalize_ontology_attributes(
                 entity_def.get("attributes", [])
             ):
-                attr_name = safe_attr_name(normalized["name"])  # 使用安全名称
+                attr_name = safe_attr_name(normalized["name"])
                 attr_desc = normalized["description"]
-                # Zep API 需要 Field 的 description，这是必需的
+                # The Zep API rejects a Field without a description.
                 attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[EntityText]  # 类型注解
-            
+                annotations[attr_name] = Optional[EntityText]
+
             attrs["__annotations__"] = annotations
-            
-            # 动态创建类
+
             entity_class = type(name, (EntityModel,), attrs)
             entity_class.__doc__ = description
             entity_types[name] = entity_class
         
-        # 动态创建边类型
+        # Build the edge classes.
         edge_definitions = {}
         for edge_def in ontology.get("edge_types", [])[:MAX_ONTOLOGY_TYPES]:
             name = edge_def["name"]
             description = edge_def.get("description", f"A {name} relationship.")
             
-            # 创建属性字典和类型注解
+            # Pydantic v2 needs both the attribute values and __annotations__.
             attrs = {"__doc__": description}
             annotations = {}
             
             for normalized in normalize_ontology_attributes(
                 edge_def.get("attributes", [])
             ):
-                attr_name = safe_attr_name(normalized["name"])  # 使用安全名称
+                attr_name = safe_attr_name(normalized["name"])
                 attr_desc = normalized["description"]
-                # Zep API 需要 Field 的 description，这是必需的
+                # The Zep API rejects a Field without a description.
                 attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[str]  # 边属性用str类型
-            
+                annotations[attr_name] = Optional[str]
+
             attrs["__annotations__"] = annotations
-            
-            # 动态创建类
+
             class_name = ''.join(word.capitalize() for word in name.split('_'))
             edge_class = type(class_name, (EdgeModel,), attrs)
             edge_class.__doc__ = description
             
-            # 构建source_targets
             source_targets = []
             for st in normalize_ontology_source_targets(
                 edge_def.get("source_targets", [])
@@ -394,7 +382,6 @@ class GraphBuilderService:
             if source_targets:
                 edge_definitions[name] = (edge_class, source_targets)
         
-        # 调用Zep API设置本体
         if entity_types or edge_definitions:
             self.client.graph.set_ontology(
                 graph_ids=[graph_id],
@@ -435,7 +422,7 @@ class GraphBuilderService:
         try:
             batch = self.client.batch.create(
                 metadata={
-                    "mirofish_operation_id": operation_id,
+                    "sosim_operation_id": operation_id,
                     "graph_id": graph_id,
                     "chunk_count": total_chunks,
                 }
@@ -473,9 +460,9 @@ class GraphBuilderService:
                     graph_id=graph_id,
                     data=chunk,
                     data_type="text",
-                    source_description="MiroFish source document chunk",
+                    source_description="SoSim source document chunk",
                     metadata={
-                        "mirofish_operation_id": operation_id,
+                        "sosim_operation_id": operation_id,
                         "chunk_index": i + offset,
                         "chunk_sha256": hashlib.sha256(
                             chunk.encode("utf-8")
@@ -723,7 +710,7 @@ class GraphBuilderService:
         progress_callback: Optional[Callable] = None,
         timeout: int = ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
     ):
-        """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
+        """Wait until every episode reports itself as processed."""
         if not episode_uuids:
             if progress_callback:
                 progress_callback(t('progress.noEpisodesWait'), 1.0)
@@ -749,7 +736,6 @@ class GraphBuilderService:
                     f"{len(pending_episodes)} episode(s) still pending"
                 )
             
-            # 检查每个 episode 的处理状态
             for ep_uuid in list(pending_episodes):
                 episode = call_zep_read_with_retry(
                     lambda: self.client.graph.episode.get(uuid_=ep_uuid),
@@ -769,20 +755,16 @@ class GraphBuilderService:
                 )
             
             if pending_episodes:
-                time.sleep(3)  # 每3秒检查一次
+                time.sleep(3)
         
         if progress_callback:
             progress_callback(t('progress.processingComplete', completed=completed_count, total=total_episodes), 1.0)
     
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
-        """获取图谱信息"""
-        # 获取节点（分页）
+        """Read node and edge counts and the distinct entity types."""
         nodes = fetch_all_nodes(self.client, graph_id)
-
-        # 获取边（分页）
         edges = fetch_all_edges(self.client, graph_id)
 
-        # 统计实体类型
         entity_types = set()
         for node in nodes:
             if node.labels:
@@ -798,26 +780,24 @@ class GraphBuilderService:
         )
     
     def get_graph_data(self, graph_id: str) -> Dict[str, Any]:
-        """
-        获取完整图谱数据（包含详细信息）
-        
+        """Read the full graph, including timestamps and attributes.
+
         Args:
-            graph_id: 图谱ID
-            
+            graph_id: The graph to read.
+
         Returns:
-            包含nodes和edges的字典，包括时间信息、属性等详细数据
+            A dictionary of nodes and edges with their detailed fields.
         """
         nodes = fetch_all_nodes(self.client, graph_id)
         edges = fetch_all_edges(self.client, graph_id)
 
-        # 创建节点映射用于获取节点名称
+        # Edges carry endpoint UUIDs only, so index the names once.
         node_map = {}
         for node in nodes:
             node_map[node.uuid_] = node.name or ""
         
         nodes_data = []
         for node in nodes:
-            # 获取创建时间
             created_at = getattr(node, 'created_at', None)
             if created_at:
                 created_at = str(created_at)
@@ -833,20 +813,17 @@ class GraphBuilderService:
         
         edges_data = []
         for edge in edges:
-            # 获取时间信息
             created_at = getattr(edge, 'created_at', None)
             valid_at = getattr(edge, 'valid_at', None)
             invalid_at = getattr(edge, 'invalid_at', None)
             expired_at = getattr(edge, 'expired_at', None)
             
-            # 获取 episodes
             episodes = getattr(edge, 'episodes', None) or getattr(edge, 'episode_ids', None)
             if episodes and not isinstance(episodes, list):
                 episodes = [str(episodes)]
             elif episodes:
                 episodes = [str(e) for e in episodes]
             
-            # 获取 fact_type
             fact_type = getattr(edge, 'fact_type', None) or edge.name or ""
             
             edges_data.append({
@@ -875,5 +852,5 @@ class GraphBuilderService:
         }
     
     def delete_graph(self, graph_id: str):
-        """删除图谱"""
+        """Delete a graph and everything in it."""
         self.client.graph.delete(graph_id=graph_id)

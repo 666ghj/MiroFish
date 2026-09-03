@@ -51,5 +51,5 @@ def test_explicit_platform_overrides_dual_platform_default(tmp_path):
 def test_invalid_platform_is_rejected(tmp_path):
     manager, _ = _manager(tmp_path, twitter=True, reddit=True)
 
-    with pytest.raises(ValueError, match="不支持的平台"):
+    with pytest.raises(ValueError, match="Unsupported platform"):
         manager.get_profiles("sim_test", platform="../state")

@@ -1,27 +1,14 @@
 import { createI18n } from 'vue-i18n'
-import languages from '../../../locales/languages.json'
+import en from '../../../locales/en.json'
 
-const localeFiles = import.meta.glob('../../../locales/!(languages).json', { eager: true })
-
-const messages = {}
-const availableLocales = []
-
-for (const path in localeFiles) {
-  const key = path.match(/\/([^/]+)\.json$/)[1]
-  if (languages[key]) {
-    messages[key] = localeFiles[path].default
-    availableLocales.push({ key, label: languages[key].label })
-  }
-}
-
-const savedLocale = localStorage.getItem('locale') || 'zh'
-
+// English is the only locale. The glob import and the runtime locale list are
+// gone with the language switcher, so there is nothing left to select between
+// and no stored preference to honour; index.html evicts the old one.
 const i18n = createI18n({
   legacy: false,
-  locale: savedLocale,
-  fallbackLocale: 'zh',
-  messages
+  locale: 'en',
+  fallbackLocale: 'en',
+  messages: { en }
 })
 
-export { availableLocales }
 export default i18n

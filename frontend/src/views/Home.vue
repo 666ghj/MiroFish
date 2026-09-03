@@ -1,30 +1,19 @@
 <template>
   <div class="home-container">
-    <!-- 顶部导航栏 -->
-    <nav class="navbar">
-      <div class="nav-brand">MIROFISH</div>
-      <div class="nav-links">
-        <LanguageSwitcher />
-        <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
-          {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
-        </a>
-      </div>
-    </nav>
-
     <div class="main-content">
-      <!-- 上半部分：Hero 区域 -->
+      <!-- Hero -->
       <section class="hero-section">
         <div class="hero-left">
           <div class="tag-row">
             <span class="orange-tag">{{ $t('home.tagline') }}</span>
             <span class="version-text">{{ $t('home.version') }}</span>
           </div>
-          
+
           <h1 class="main-title">
             {{ $t('home.heroTitle1') }}<br>
             <span class="gradient-text">{{ $t('home.heroTitle2') }}</span>
           </h1>
-          
+
           <div class="hero-desc">
             <p>
               <i18n-t keypath="home.heroDesc" tag="span">
@@ -37,36 +26,34 @@
               {{ $t('home.slogan') }}<span class="blinking-cursor">_</span>
             </p>
           </div>
-           
+
           <div class="decoration-square"></div>
         </div>
-        
+
         <div class="hero-right">
-          <!-- Logo 区域 -->
           <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="MiroFish Logo" class="hero-logo" />
+            <img :src="brandMark" alt="SoSim" class="hero-logo" />
           </div>
-          
-          <button class="scroll-down-btn" @click="scrollToBottom">
+
+          <button class="scroll-down-btn" @click="scrollToDashboard">
             ↓
           </button>
         </div>
       </section>
 
-      <!-- 下半部分：双栏布局 -->
-      <section class="dashboard-section">
-        <!-- 左栏：状态与步骤 -->
+      <!-- Status, workflow and the upload console -->
+      <section ref="dashboardSection" class="dashboard-section">
+        <!-- Left column: status and workflow -->
         <div class="left-panel">
           <div class="panel-header">
             <span class="status-dot">■</span> {{ $t('home.systemStatus') }}
           </div>
-          
+
           <h2 class="section-title">{{ $t('home.systemReady') }}</h2>
           <p class="section-desc">
             {{ $t('home.systemReadyDesc') }}
           </p>
-          
-          <!-- 数据指标卡片 -->
+
           <div class="metrics-row">
             <div class="metric-card">
               <div class="metric-value">{{ $t('home.metricLowCost') }}</div>
@@ -78,7 +65,6 @@
             </div>
           </div>
 
-          <!-- 项目模拟步骤介绍 (新增区域) -->
           <div class="steps-container">
             <div class="steps-header">
                <span class="diamond-icon">◇</span> {{ $t('home.workflowSequence') }}
@@ -123,17 +109,16 @@
           </div>
         </div>
 
-        <!-- 右栏：交互控制台 -->
+        <!-- Right column: upload console -->
         <div class="right-panel">
           <div class="console-box">
-            <!-- 上传区域 -->
             <div class="console-section">
               <div class="console-header">
                 <span class="console-label">{{ $t('home.realitySeed') }}</span>
                 <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
               </div>
-              
-              <div 
+
+              <div
                 class="upload-zone"
                 :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
                 @dragover.prevent="handleDragOver"
@@ -150,13 +135,13 @@
                   style="display: none"
                   :disabled="loading"
                 />
-                
+
                 <div v-if="files.length === 0" class="upload-placeholder">
                   <div class="upload-icon">↑</div>
                   <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
                   <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
                 </div>
-                
+
                 <div v-else class="file-list">
                   <div v-for="(file, index) in files" :key="index" class="file-item">
                     <span class="file-icon">📄</span>
@@ -167,12 +152,10 @@
               </div>
             </div>
 
-            <!-- 分割线 -->
             <div class="console-divider">
               <span>{{ $t('home.inputParams') }}</span>
             </div>
 
-            <!-- 输入区域 -->
             <div class="console-section">
               <div class="console-header">
                 <span class="console-label">{{ $t('home.simulationPrompt') }}</span>
@@ -189,9 +172,8 @@
               </div>
             </div>
 
-            <!-- 启动按钮 -->
             <div class="console-section btn-section">
-              <button 
+              <button
                 class="start-engine-btn"
                 @click="startSimulation"
                 :disabled="!canSubmit || loading"
@@ -204,9 +186,6 @@
           </div>
         </div>
       </section>
-
-      <!-- 历史项目数据库 -->
-      <HistoryDatabase />
     </div>
   </div>
 </template>
@@ -214,65 +193,56 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import HistoryDatabase from '../components/HistoryDatabase.vue'
-import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import brandMark from '@/assets/brand/sosim-mark-light.svg'
+import { setPendingUpload } from '../store/pendingUpload'
 
 const router = useRouter()
 
-// 表单数据
 const formData = ref({
   simulationRequirement: ''
 })
 
-// 文件列表
 const files = ref([])
 
-// 状态
 const loading = ref(false)
-const error = ref('')
 const isDragOver = ref(false)
 
-// 文件输入引用
 const fileInput = ref(null)
+const dashboardSection = ref(null)
 
-// 计算属性:是否可以提交
 const canSubmit = computed(() => {
   return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
 })
 
-// 触发文件选择
 const triggerFileInput = () => {
   if (!loading.value) {
     fileInput.value?.click()
   }
 }
 
-// 处理文件选择
 const handleFileSelect = (event) => {
   const selectedFiles = Array.from(event.target.files)
   addFiles(selectedFiles)
 }
 
-// 处理拖拽相关
-const handleDragOver = (e) => {
+const handleDragOver = () => {
   if (!loading.value) {
     isDragOver.value = true
   }
 }
 
-const handleDragLeave = (e) => {
+const handleDragLeave = () => {
   isDragOver.value = false
 }
 
 const handleDrop = (e) => {
   isDragOver.value = false
   if (loading.value) return
-  
+
   const droppedFiles = Array.from(e.dataTransfer.files)
   addFiles(droppedFiles)
 }
 
-// 添加文件
 const addFiles = (newFiles) => {
   const validFiles = newFiles.filter(file => {
     const ext = file.name.split('.').pop().toLowerCase()
@@ -281,113 +251,42 @@ const addFiles = (newFiles) => {
   files.value.push(...validFiles)
 }
 
-// 移除文件
 const removeFile = (index) => {
   files.value.splice(index, 1)
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
-  window.scrollTo({
-    top: document.body.scrollHeight,
-    behavior: 'smooth'
-  })
+// The page scrolls inside the shell's .app-main, not the window, so the jump
+// has to be expressed against the element rather than window.scrollTo.
+const scrollToDashboard = () => {
+  dashboardSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-// 开始模拟 - 立即跳转，API调用在Process页面进行
+// The upload itself happens on the project view, so submitting navigates at
+// once and hands the payload over through the pending-upload store.
 const startSimulation = () => {
   if (!canSubmit.value || loading.value) return
-  
-  // 存储待上传的数据
-  import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
-    // 立即跳转到Process页面（使用特殊标识表示新建项目）
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
+
+  setPendingUpload(files.value, formData.value.simulationRequirement)
+
+  router.push({
+    name: 'Process',
+    params: { projectId: 'new' }
   })
 }
 </script>
 
 <style scoped>
-/* 全局变量与重置 */
-:root {
-  --black: #000000;
-  --white: #FFFFFF;
-  --orange: #FF4500;
-  --gray-light: #F5F5F5;
-  --gray-text: #666666;
-  --border: #E5E5E5;
-  /* 
-    使用 Space Grotesk 作为主要标题字体，JetBrains Mono 作为代码/标签字体
-    确保已在 index.html 引入这些 Google Fonts 
-  */
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
-  --font-cn: 'Noto Sans SC', system-ui, sans-serif;
-}
-
 .home-container {
-  min-height: 100vh;
-  background: var(--white);
-  font-family: var(--font-sans);
-  color: var(--black);
+  min-height: 100%;
 }
 
-/* 顶部导航 */
-.navbar {
-  height: 60px;
-  background: var(--black);
-  color: var(--white);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 40px;
-}
-
-.nav-brand {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  letter-spacing: 1px;
-  font-size: 1.2rem;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.github-link {
-  color: var(--white);
-  text-decoration: none;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: opacity 0.2s;
-}
-
-.github-link:hover {
-  opacity: 0.8;
-}
-
-.arrow {
-  font-family: sans-serif;
-}
-
-/* 主要内容区 */
 .main-content {
   max-width: 1400px;
   margin: 0 auto;
   padding: 60px 40px;
 }
 
-/* Hero 区域 */
+/* Hero */
 .hero-section {
   display: flex;
   justify-content: space-between;
@@ -410,31 +309,38 @@ const startSimulation = () => {
 }
 
 .orange-tag {
-  background: var(--orange);
-  color: var(--white);
+  background: var(--accent);
+  /* Never white on the accent: 2.35:1. --text-on-accent is 7.04:1. */
+  color: var(--text-on-accent);
   padding: 4px 10px;
+  border-radius: var(--radius-xs);
   font-weight: 700;
   letter-spacing: 1px;
   font-size: 0.75rem;
 }
 
 .version-text {
-  color: #999;
+  color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.5px;
 }
 
+/* The type scale here is the English one. It used to be applied by a set of
+   language-attribute overrides at the bottom of this file, which only ever won
+   because of their extra element selector; those are gone, so the tuned values
+   live directly on the rules now. */
 .main-title {
-  font-size: 4.5rem;
+  font-size: 3.5rem;
   line-height: 1.2;
   font-weight: 500;
   margin: 0 0 40px 0;
-  letter-spacing: -2px;
-  color: var(--black);
+  letter-spacing: -1px;
+  color: var(--text-primary);
 }
 
 .gradient-text {
-  background: linear-gradient(90deg, #000000 0%, #444444 100%);
+  background: linear-gradient(90deg, var(--text-primary) 0%, var(--text-muted) 100%);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
@@ -443,11 +349,10 @@ const startSimulation = () => {
 .hero-desc {
   font-size: 1.05rem;
   line-height: 1.8;
-  color: var(--gray-text);
+  color: var(--text-secondary);
   max-width: 640px;
   margin-bottom: 50px;
   font-weight: 400;
-  text-align: justify;
 }
 
 .hero-desc p {
@@ -455,38 +360,37 @@ const startSimulation = () => {
 }
 
 .highlight-bold {
-  color: var(--black);
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .highlight-orange {
-  color: var(--orange);
+  color: var(--accent);
   font-weight: 700;
   font-family: var(--font-mono);
 }
 
 .highlight-code {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bg-inset);
   padding: 2px 6px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
   font-size: 0.9em;
-  color: var(--black);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .slogan-text {
   font-size: 1.2rem;
   font-weight: 520;
-  color: var(--black);
-  letter-spacing: 1px;
-  border-left: 3px solid var(--orange);
+  color: var(--text-primary);
+  border-left: 3px solid var(--accent);
   padding-left: 15px;
   margin-top: 20px;
 }
 
 .blinking-cursor {
-  color: var(--orange);
+  color: var(--accent);
   animation: blink 1s step-end infinite;
   font-weight: 700;
 }
@@ -499,7 +403,7 @@ const startSimulation = () => {
 .decoration-square {
   width: 16px;
   height: 16px;
-  background: var(--orange);
+  background: var(--accent);
 }
 
 .hero-right {
@@ -517,34 +421,37 @@ const startSimulation = () => {
   padding-right: 40px;
 }
 
+/* The brand mark is a square 1000x1000 glyph, not the old wide lockup, so it
+   is capped well below the 500px the raster asset used. */
 .hero-logo {
-  max-width: 500px; /* 调整logo大小 */
   width: 100%;
+  max-width: 280px;
 }
 
 .scroll-down-btn {
   width: 40px;
   height: 40px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  color: var(--orange);
+  color: var(--accent);
   font-size: 1.2rem;
-  transition: all 0.2s;
+  transition: border-color 0.2s, background-color 0.2s;
 }
 
 .scroll-down-btn:hover {
-  border-color: var(--orange);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-/* Dashboard 双栏布局 */
+/* Dashboard */
 .dashboard-section {
   display: flex;
   gap: 60px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 60px;
   align-items: flex-start;
 }
@@ -555,7 +462,6 @@ const startSimulation = () => {
   flex-direction: column;
 }
 
-/* 左侧面板 */
 .left-panel {
   flex: 0.8;
 }
@@ -563,7 +469,7 @@ const startSimulation = () => {
 .panel-header {
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: #999;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -571,7 +477,7 @@ const startSimulation = () => {
 }
 
 .status-dot {
-  color: var(--orange);
+  color: var(--accent);
   font-size: 0.8rem;
 }
 
@@ -579,10 +485,11 @@ const startSimulation = () => {
   font-size: 2rem;
   font-weight: 520;
   margin: 0 0 15px 0;
+  color: var(--text-primary);
 }
 
 .section-desc {
-  color: var(--gray-text);
+  color: var(--text-secondary);
   margin-bottom: 25px;
   line-height: 1.6;
 }
@@ -594,7 +501,9 @@ const startSimulation = () => {
 }
 
 .metric-card {
-  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
   padding: 20px 30px;
   min-width: 150px;
 }
@@ -604,16 +513,19 @@ const startSimulation = () => {
   font-size: 1.8rem;
   font-weight: 520;
   margin-bottom: 5px;
+  color: var(--text-primary);
 }
 
 .metric-label {
   font-size: 0.85rem;
-  color: #999;
+  color: var(--text-muted);
 }
 
-/* 项目模拟步骤介绍 */
+/* Workflow */
 .steps-container {
-  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
   padding: 30px;
   position: relative;
 }
@@ -621,7 +533,7 @@ const startSimulation = () => {
 .steps-header {
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: #999;
+  color: var(--text-muted);
   margin-bottom: 25px;
   display: flex;
   align-items: center;
@@ -629,6 +541,7 @@ const startSimulation = () => {
 }
 
 .diamond-icon {
+  color: var(--accent);
   font-size: 1.2rem;
   line-height: 1;
 }
@@ -648,8 +561,7 @@ const startSimulation = () => {
 .step-num {
   font-family: var(--font-mono);
   font-weight: 700;
-  color: var(--black);
-  opacity: 0.3;
+  color: var(--text-faint);
 }
 
 .step-info {
@@ -660,21 +572,26 @@ const startSimulation = () => {
   font-weight: 520;
   font-size: 1rem;
   margin-bottom: 4px;
+  color: var(--text-primary);
 }
 
-.step-desc {
-  font-size: 0.85rem;
-  color: var(--gray-text);
+.workflow-list .step-desc {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 
-/* 右侧交互控制台 */
+/* Upload console */
 .right-panel {
   flex: 1.2;
 }
 
 .console-box {
-  border: 1px solid #CCC; /* 外部实线 */
-  padding: 8px; /* 内边距形成双重边框感 */
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  /* The inner padding is what makes the well below read as a second frame. */
+  padding: 8px;
 }
 
 .console-section {
@@ -691,19 +608,20 @@ const startSimulation = () => {
   margin-bottom: 15px;
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .upload-zone {
-  border: 1px dashed #CCC;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
   height: 200px;
   overflow-y: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.3s;
-  background: #FAFAFA;
+  transition: background-color 0.3s, border-color 0.3s;
+  background: var(--bg-sunken);
 }
 
 .upload-zone.has-files {
@@ -711,8 +629,13 @@ const startSimulation = () => {
 }
 
 .upload-zone:hover {
-  background: #F0F0F0;
-  border-color: #999;
+  background: var(--bg-inset);
+  border-color: var(--accent-border);
+}
+
+.upload-zone.drag-over {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .upload-placeholder {
@@ -722,24 +645,26 @@ const startSimulation = () => {
 .upload-icon {
   width: 40px;
   height: 40px;
-  border: 1px solid #DDD;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 15px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .upload-title {
   font-weight: 500;
   font-size: 0.9rem;
   margin-bottom: 5px;
+  color: var(--text-primary);
 }
 
 .upload-hint {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .file-list {
@@ -753,9 +678,11 @@ const startSimulation = () => {
 .file-item {
   display: flex;
   align-items: center;
-  background: var(--white);
+  background: var(--bg-raised);
+  color: var(--text-primary);
   padding: 8px 12px;
-  border: 1px solid #EEE;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 0.85rem;
 }
@@ -768,9 +695,14 @@ const startSimulation = () => {
 .remove-btn {
   background: none;
   border: none;
-  cursor: pointer;
   font-size: 1.2rem;
-  color: #999;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.remove-btn:hover {
+  color: var(--danger);
 }
 
 .console-divider {
@@ -784,27 +716,34 @@ const startSimulation = () => {
   content: '';
   flex: 1;
   height: 1px;
-  background: #EEE;
+  background: var(--border-subtle);
 }
 
 .console-divider span {
   padding: 0 15px;
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: #BBB;
+  color: var(--text-faint);
   letter-spacing: 1px;
 }
 
 .input-wrapper {
   position: relative;
-  border: 1px solid #DDD;
-  background: #FAFAFA;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  transition: border-color 0.2s;
+}
+
+.input-wrapper:focus-within {
+  border-color: var(--accent-border);
 }
 
 .code-input {
   width: 100%;
   border: none;
   background: transparent;
+  color: var(--text-primary);
   padding: 20px;
   font-family: var(--font-mono);
   font-size: 0.9rem;
@@ -814,20 +753,25 @@ const startSimulation = () => {
   min-height: 150px;
 }
 
+.code-input::placeholder {
+  color: var(--text-faint);
+}
+
 .model-badge {
   position: absolute;
   bottom: 10px;
   right: 15px;
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: #AAA;
+  color: var(--text-faint);
 }
 
 .start-engine-btn {
   width: 100%;
-  background: var(--black);
-  color: var(--white);
-  border: none;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
   padding: 20px;
   font-family: var(--font-mono);
   font-weight: 700;
@@ -835,119 +779,63 @@ const startSimulation = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
   letter-spacing: 1px;
   position: relative;
   overflow: hidden;
 }
 
-/* 可点击状态（非禁用） */
 .start-engine-btn:not(:disabled) {
-  background: var(--black);
-  border: 1px solid var(--black);
   animation: pulse-border 2s infinite;
 }
 
 .start-engine-btn:hover:not(:disabled) {
-  background: var(--orange);
-  border-color: var(--orange);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
   transform: translateY(-2px);
 }
 
 .start-engine-btn:active:not(:disabled) {
+  background: var(--accent-active);
   transform: translateY(0);
 }
 
 .start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
-  cursor: not-allowed;
+  background: var(--bg-raised);
+  color: var(--text-disabled);
+  border-color: var(--border-default);
   transform: none;
-  border: 1px solid #E5E5E5;
 }
 
-/* 引导动画：微妙的边框脉冲 */
+/* A slow halo, so the primary action reads as the one live control. */
 @keyframes pulse-border {
-  0% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); }
-  70% { box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+  0% { box-shadow: 0 0 0 0 var(--accent-border); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-/* 响应式适配 */
 @media (max-width: 1024px) {
   .dashboard-section {
     flex-direction: column;
   }
-  
+
   .hero-section {
     flex-direction: column;
   }
-  
+
   .hero-left {
     padding-right: 0;
     margin-bottom: 40px;
   }
-  
+
+  .logo-container {
+    justify-content: flex-start;
+    padding-right: 0;
+  }
+
   .hero-logo {
-    max-width: 200px;
+    max-width: 160px;
     margin-bottom: 20px;
   }
-}
-</style>
-
-<style>
-/* English locale adjustments (unscoped to target html[lang]) */
-html[lang="en"] .main-title {
-  font-size: 3.5rem;
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: -1px;
-}
-
-html[lang="en"] .hero-desc {
-  text-align: left;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: 0;
-}
-
-html[lang="en"] .slogan-text {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: 0;
-}
-
-html[lang="en"] .tag-row {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-html[lang="en"] .navbar .nav-links {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Left pane: system status + workflow */
-html[lang="en"] .status-section {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-html[lang="en"] .status-section .status-ready {
-  font-size: 1.6rem;
-}
-
-html[lang="en"] .status-section .metric-value {
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 1.4rem;
-}
-
-html[lang="en"] .workflow-list .step-title {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-html[lang="en"] .workflow-list .step-desc {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  font-size: 0.72rem !important;
-  line-height: 1.4 !important;
-}
-
-html[lang="en"] .workflow-list {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 </style>

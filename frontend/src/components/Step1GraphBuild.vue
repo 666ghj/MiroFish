@@ -210,10 +210,11 @@ const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
 
-// 进入环境搭建 - 创建 simulation 并跳转
+// The simulation is created here rather than in the environment-setup view so
+// that the view is always reached with an id it can prepare against.
 const handleEnterEnvSetup = async () => {
   if (!props.projectData?.project_id || !props.projectData?.graph_id) {
-    console.error('缺少项目或图谱信息')
+    console.error('Missing project or knowledge graph information')
     return
   }
   
@@ -228,17 +229,16 @@ const handleEnterEnvSetup = async () => {
     })
     
     if (res.success && res.data?.simulation_id) {
-      // 跳转到 simulation 页面
       router.push({
         name: 'Simulation',
         params: { simulationId: res.data.simulation_id }
       })
     } else {
-      console.error('创建模拟失败:', res.error)
+      console.error('Failed to create simulation:', res.error)
       alert(t('step1.createSimulationFailed', { error: res.error || t('common.unknownError') }))
     }
   } catch (err) {
-    console.error('创建模拟异常:', err)
+    console.error('Simulation creation error:', err)
     alert(t('step1.createSimulationException', { error: err.message }))
   } finally {
     creatingSimulation.value = false
@@ -275,7 +275,7 @@ watch(() => props.systemLogs.length, () => {
 <style scoped>
 .workbench-panel {
   height: 100%;
-  background-color: #FAFAFA;
+  background: var(--bg-canvas);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -284,6 +284,7 @@ watch(() => props.systemLogs.length, () => {
 
 .scroll-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px;
   display: flex;
@@ -292,18 +293,18 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .step-card {
-  background: #FFF;
-  border-radius: 8px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
-  transition: all 0.3s ease;
-  position: relative; /* For absolute overlay */
+  box-shadow: var(--shadow-sm), var(--edge-highlight);
+  border: 1px solid var(--border-subtle);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  position: relative; /* anchors the ontology detail overlay */
 }
 
 .step-card.active {
-  border-color: #FF5722;
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-accent);
 }
 
 .card-header {
@@ -320,46 +321,47 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .step-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 20px;
   font-weight: 700;
-  color: #E0E0E0;
+  color: var(--text-disabled);
 }
 
 .step-card.active .step-num,
 .step-card.completed .step-num {
-  color: #000;
+  color: var(--text-primary);
 }
 
 .step-title {
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.5px;
+  color: var(--text-primary);
 }
 
 .badge {
   font-size: 10px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
-.badge.accent { background: #FF5722; color: #FFF; }
-.badge.pending { background: #F5F5F5; color: #999; }
+.badge.success { background: var(--success-soft); color: var(--success); }
+.badge.processing { background: var(--accent); color: var(--text-on-accent); }
+.badge.accent { background: var(--accent); color: var(--text-on-accent); }
+.badge.pending { background: var(--bg-inset); color: var(--text-muted); }
 
 .api-note {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #999;
+  color: var(--text-muted);
   margin-bottom: 8px;
 }
 
 .description {
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
 }
@@ -378,7 +380,7 @@ watch(() => props.systemLogs.length, () => {
 .tag-label {
   display: block;
   font-size: 10px;
-  color: #AAA;
+  color: var(--text-muted);
   margin-bottom: 8px;
   font-weight: 600;
 }
@@ -390,14 +392,14 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .entity-tag {
-  background: #F5F5F5;
-  border: 1px solid #EEE;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
   padding: 4px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
-  color: #333;
-  font-family: 'JetBrains Mono', monospace;
-  transition: all 0.2s;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .entity-tag.clickable {
@@ -405,23 +407,22 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .entity-tag.clickable:hover {
-    background: #E0E0E0;
-    border-color: #CCC;
+    background: var(--bg-overlay);
+    border-color: var(--border-strong);
 }
 
 /* Ontology Detail Overlay */
 .ontology-detail-overlay {
     position: absolute;
-    top: 60px; /* Below header roughly */
+    top: 60px; /* clears the card header */
     left: 20px;
     right: 20px;
     bottom: 20px;
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(4px);
+    background: var(--bg-overlay);
     z-index: 10;
-    border: 1px solid #EAEAEA;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-md);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -435,8 +436,8 @@ watch(() => props.systemLogs.length, () => {
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    border-bottom: 1px solid #EAEAEA;
-    background: #FAFAFA;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-panel);
 }
 
 .detail-title-group {
@@ -448,45 +449,46 @@ watch(() => props.systemLogs.length, () => {
 .detail-type-badge {
     font-size: 9px;
     font-weight: 700;
-    color: #FFF;
-    background: #000;
+    color: var(--text-on-accent);
+    background: var(--accent);
     padding: 2px 6px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     text-transform: uppercase;
 }
 
 .detail-name {
     font-size: 14px;
     font-weight: 700;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
 }
 
 .close-btn {
     background: none;
     border: none;
     font-size: 18px;
-    color: #999;
-    cursor: pointer;
+    color: var(--text-muted);
     line-height: 1;
 }
 
 .close-btn:hover {
-    color: #333;
+    color: var(--text-primary);
 }
 
 .detail-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 16px;
 }
 
 .detail-desc {
     font-size: 12px;
-    color: #444;
+    color: var(--text-secondary);
     line-height: 1.5;
     margin-bottom: 16px;
     padding-bottom: 12px;
-    border-bottom: 1px dashed #EAEAEA;
+    border-bottom: 1px dashed var(--border-default);
 }
 
 .detail-section {
@@ -497,7 +499,7 @@ watch(() => props.systemLogs.length, () => {
     display: block;
     font-size: 10px;
     font-weight: 600;
-    color: #AAA;
+    color: var(--text-muted);
     margin-bottom: 8px;
 }
 
@@ -514,23 +516,23 @@ watch(() => props.systemLogs.length, () => {
     gap: 6px;
     align-items: baseline;
     padding: 4px;
-    background: #F9F9F9;
-    border-radius: 4px;
+    background: var(--bg-inset);
+    border-radius: var(--radius-sm);
 }
 
 .attr-name {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-weight: 600;
-    color: #000;
+    color: var(--text-primary);
 }
 
 .attr-type {
-    color: #999;
+    color: var(--text-muted);
     font-size: 10px;
 }
 
 .attr-desc {
-    color: #555;
+    color: var(--text-secondary);
     flex: 1;
     min-width: 150px;
 }
@@ -543,11 +545,11 @@ watch(() => props.systemLogs.length, () => {
 
 .example-tag {
     font-size: 11px;
-    background: #FFF;
-    border: 1px solid #E0E0E0;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-default);
     padding: 3px 8px;
-    border-radius: 12px;
-    color: #555;
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
 }
 
 .conn-item {
@@ -556,18 +558,18 @@ watch(() => props.systemLogs.length, () => {
     gap: 8px;
     font-size: 11px;
     padding: 6px;
-    background: #F5F5F5;
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-inset);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
 }
 
 .conn-node {
     font-weight: 600;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .conn-arrow {
-    color: #BBB;
+    color: var(--accent);
 }
 
 /* Step 02 Stats */
@@ -575,9 +577,9 @@ watch(() => props.systemLogs.length, () => {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
-  background: #F9F9F9;
+  background: var(--bg-inset);
   padding: 16px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .stat-card {
@@ -588,13 +590,13 @@ watch(() => props.systemLogs.length, () => {
   display: block;
   font-size: 20px;
   font-weight: 700;
-  color: #000;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 .stat-label {
   font-size: 9px;
-  color: #999;
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-top: 4px;
   display: block;
@@ -603,24 +605,23 @@ watch(() => props.systemLogs.length, () => {
 /* Step 03 Button */
 .action-btn {
   width: 100%;
-  background: #000;
-  color: #FFF;
+  background: var(--accent);
+  color: var(--text-on-accent);
   border: none;
   padding: 14px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s;
+  transition: background 0.2s;
 }
 
 .action-btn:hover:not(:disabled) {
-  opacity: 0.8;
+  background: var(--accent-hover);
 }
 
 .action-btn:disabled {
-  background: #CCC;
-  cursor: not-allowed;
+  background: var(--bg-raised);
+  color: var(--text-disabled);
 }
 
 .progress-section {
@@ -628,15 +629,15 @@ watch(() => props.systemLogs.length, () => {
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: #FF5722;
+  color: var(--accent);
   margin-bottom: 12px;
 }
 
 .spinner-sm {
   width: 14px;
   height: 14px;
-  border: 2px solid #FFCCBC;
-  border-top-color: #FF5722;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -645,29 +646,29 @@ watch(() => props.systemLogs.length, () => {
 
 /* System Logs */
 .system-logs {
-  background: #000;
-  color: #DDD;
+  background: var(--term-bg);
+  color: var(--term-fg);
   padding: 16px;
-  font-family: 'JetBrains Mono', monospace;
-  border-top: 1px solid #222;
+  font-family: var(--font-mono);
+  border-top: 1px solid var(--term-rule);
   flex-shrink: 0;
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--term-rule);
   padding-bottom: 8px;
   margin-bottom: 8px;
   font-size: 10px;
-  color: #888;
+  color: var(--term-dim);
 }
 
 .log-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  height: 80px; /* Approx 4 lines visible */
+  height: 80px; /* about four lines */
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -677,8 +678,8 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .log-content::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 2px;
+  background: var(--term-rule);
+  border-radius: var(--radius-xs);
 }
 
 .log-line {
@@ -689,12 +690,12 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .log-time {
-  color: #666;
+  color: var(--term-dim);
   min-width: 75px;
 }
 
 .log-msg {
-  color: #CCC;
+  color: var(--term-fg);
   word-break: break-all;
 }
 </style>

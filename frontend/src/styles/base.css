@@ -1,0 +1,180 @@
+/* frontend/src/styles/base.css - global reset and dark-theme base.
+   Imported from main.js immediately after tokens.css, so every rule here can
+   rely on the custom properties in :root. Nothing view-specific belongs in
+   this file; see the compatibility block at the end for the one exception. */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* HEIGHT CONTRACT. AppShell's .app-main is the flex child that scrolls, and it
+   can only do that if every ancestor up to <html> has a resolved height. */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  background: var(--bg-canvas);
+}
+
+body {
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+/* Form controls do not inherit type from their ancestors on their own. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+}
+
+a {
+  color: var(--text-link);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* One focus treatment for the whole app. :focus-visible keeps the ring off
+   mouse clicks without leaving keyboard users unable to see where they are. */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* SCROLLBARS. WebKit gets the detailed treatment; Firefox reads the two
+   standard properties. Both sit on the dark surface, not the light default. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-sunken);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--bg-sunken);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* LANDING-PAGE TYPE SCALE. Carried over from the html[lang="en"] overrides
+   that used to live at the bottom of Home.vue. Those selectors went dead the
+   moment the language switcher stopped setting documentElement.lang, and the
+   font-family half of them is now redundant because body sets --font-sans.
+   What is left is the size and alignment tuning.
+
+   EVERY RULE BELOW IS SCOPED TO .home-container, the root element of
+   views/Home.vue and the only element in the app that carries that class.
+   Unscoped, they were global rules on names other views also use:
+   .main-title is rendered by Step4Report.vue:14 and Step5Interaction.vue:14
+   as a 28px serif report heading, and a bare `.main-title { font-size: 3.5rem }`
+   in a global stylesheet was landing on it. Nothing broke only because Vue's
+   scoped-style attribute gives those components' own rules a higher
+   specificity - an accident, not a design. .metric-value collides the same way
+   (Home.vue:59 vs Step4Report.vue:93). The .home-container prefix removes the
+   collision instead of relying on the tiebreak.
+
+   Two rules were dropped rather than scoped: `.status-section .status-ready`
+   and `.status-section .metric-value` matched no markup anywhere in src/. */
+.home-container .main-title {
+  font-size: 3.5rem;
+  letter-spacing: -1px;
+}
+
+.home-container .hero-desc {
+  text-align: left;
+  letter-spacing: 0;
+}
+
+.home-container .slogan-text {
+  letter-spacing: 0;
+}
+
+.home-container .workflow-list .step-desc {
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
