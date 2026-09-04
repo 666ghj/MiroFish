@@ -509,10 +509,17 @@ def prepare_simulation():
                 defined_entity_types=entity_types_list,
                 enrich_with_edges=False  # 不获取边信息，加快速度
             )
+            agent_entities_preview = OasisProfileGenerator.filter_agent_persona_entities(
+                filtered_preview.entities,
+                allow_group_accounts=False
+            )
             # 保存实体数量到状态（供前端立即获取）
-            state.entities_count = filtered_preview.filtered_count
-            state.entity_types = list(filtered_preview.entity_types)
-            logger.info(f"预期实体数量: {filtered_preview.filtered_count}, 类型: {filtered_preview.entity_types}")
+            state.entities_count = len(agent_entities_preview)
+            state.entity_types = sorted({
+                entity.get_entity_type() or "Unknown"
+                for entity in agent_entities_preview
+            })
+            logger.info(f"预期Agent数量: {len(agent_entities_preview)}, 类型: {state.entity_types}")
         except Exception as e:
             logger.warning(f"同步获取实体数量失败（将在后台任务中重试）: {e}")
             # 失败不影响后续流程，后台任务会重新获取
@@ -1434,7 +1441,8 @@ def generate_profiles():
             "graph_id": "mirofish_xxxx",     // 必填
             "entity_types": ["Student"],      // 可选
             "use_llm": true,                  // 可选
-            "platform": "reddit"              // 可选
+            "platform": "reddit",             // 可选
+            "allow_group_accounts": false     // 可选，是否允许机构/群体账号
         }
     """
     try:
@@ -1465,10 +1473,18 @@ def generate_profiles():
             }), 400
         
         generator = OasisProfileGenerator()
+        allow_group_accounts = data.get('allow_group_accounts', False)
         profiles = generator.generate_profiles_from_entities(
             entities=filtered.entities,
-            use_llm=use_llm
+            use_llm=use_llm,
+            allow_group_accounts=allow_group_accounts
         )
+
+        if not profiles:
+            return jsonify({
+                "success": False,
+                "error": t('api.noMatchingEntities')
+            }), 400
         
         if platform == "reddit":
             profiles_data = [p.to_reddit_format() for p in profiles]
