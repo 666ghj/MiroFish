@@ -210,6 +210,9 @@
   "step4": {
     "generatingSection": "Generating {title}...",
     "goToInteraction": "Enter Deep Interaction",
+    "step5Label": "Step 5/5",
+    "deepInteractionTitle": "Deep Interaction",
+    "deepInteractionDescription": "Continue into the simulated world to ask the Report Agent or individual agents follow-up questions.",
     "waitingForReportAgent": "Waiting for Report Agent...",
     "collapse": "Collapse ▲",
     "expandAll": "Show all {count} ▼",

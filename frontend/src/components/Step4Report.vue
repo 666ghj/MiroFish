@@ -127,14 +127,20 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>{{ $t('step4.goToInteraction') }}</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <div v-if="isComplete" class="next-step-card">
+            <div class="next-step-card-header">
+              <span class="next-step-index mono">{{ $t('step4.step5Label') }}</span>
+              <span class="next-step-title">{{ $t('step4.deepInteractionTitle') }}</span>
+            </div>
+            <p class="next-step-copy">{{ $t('step4.deepInteractionDescription') }}</p>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>{{ $t('step4.goToInteraction') }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -2888,6 +2894,43 @@ watch(() => props.reportId, (newId) => {
 .wf-step--todo .wf-step-title,
 .wf-step--todo .wf-step-index {
   color: var(--wf-todo-text);
+}
+
+.next-step-card {
+  border: 1px solid var(--wf-active-border);
+  border-radius: 8px;
+  background: #F9FAFB;
+  padding: 14px;
+  margin: 2px 0 14px 0;
+}
+
+.next-step-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.next-step-index {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6B7280;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.next-step-title {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.next-step-copy {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4B5563;
+  margin: 0 0 12px 0;
 }
 
 .workflow-divider {
