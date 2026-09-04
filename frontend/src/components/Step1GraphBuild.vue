@@ -106,14 +106,27 @@
       </div>
 
       <!-- Step 02: Graph Build -->
-      <div class="step-card" :class="{ 'active': currentPhase === 1, 'completed': currentPhase > 1 }">
+      <div
+        class="step-card"
+        :class="{
+          'active': currentPhase === 1 && !buildFailed,
+          'completed': currentPhase > 1 && !buildFailed,
+          'failed': buildFailed
+        }"
+      >
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">02</span>
             <span class="step-title">{{ $t('step1.graphRagBuild') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 1" class="badge success">{{ $t('step1.ontologyCompleted') }}</span>
+            <!-- The failure is read before the phase. A build that died is
+                 still sitting on the build step, and rendering that as the
+                 in-progress badge left a dead build showing '0%' forever:
+                 nothing polls a project that has already failed, so the number
+                 never moved again. -->
+            <span v-if="buildFailed" class="badge failed">{{ $t('step1.buildFailed') }}</span>
+            <span v-else-if="currentPhase > 1" class="badge success">{{ $t('step1.ontologyCompleted') }}</span>
             <span v-else-if="currentPhase === 1" class="badge processing">{{ buildProgress?.progress || 0 }}%</span>
             <span v-else class="badge pending">{{ $t('step1.ontologyPending') }}</span>
           </div>
@@ -140,6 +153,44 @@
               <span class="stat-label">{{ $t('step1.schemaTypes') }}</span>
             </div>
           </div>
+
+          <!-- Nothing in the app used to POST /api/graph/build again after a
+               failure, so a build that died on one episode could only be
+               finished by deleting the project. The backend now resumes a
+               recoverable batch on an ordinary (non-forced) build, so that is
+               what the primary control sends; the forced rebuild deletes the
+               graph the run left behind and re-ingests everything, so it is
+               kept secondary and confirmed. -->
+          <div v-if="buildFailed || retryingBuild" class="failure-panel">
+            <p class="failure-message">{{ buildError || $t('step1.buildFailedDesc') }}</p>
+            <p v-if="projectData?.graph_id" class="failure-note">{{ $t('step1.buildFailedGraphKept') }}</p>
+            <p v-if="rebuildRequired" class="failure-note is-warning">{{ $t('step1.rebuildRequired') }}</p>
+
+            <!-- Inert while a simulation is being created: that POST is being
+                 answered over the graph a retry or a rebuild would rewrite, so
+                 the two controls are never live at the same time. -->
+            <button
+              class="action-btn"
+              :disabled="buildInFlight || creatingSimulation"
+              @click="requestBuild(false)"
+            >
+              <span v-if="buildInFlight" class="spinner-sm"></span>
+              {{ buildInFlight ? $t('step1.retryingBuild') : retryLabel }}
+            </button>
+            <p class="failure-hint">{{ retryHint }}</p>
+
+            <!-- Offered only where there is a graph to delete. A failure that
+                 never created one has nothing for the rebuild to do that the
+                 retry above does not already do safely. -->
+            <button
+              v-if="projectData?.graph_id"
+              class="destructive-btn"
+              :disabled="buildInFlight || creatingSimulation"
+              @click="confirmingRebuild = true"
+            >
+              {{ $t('step1.rebuildFromScratch') }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -158,9 +209,17 @@
         <div class="card-content">
           <p class="api-note">POST /api/simulation/create</p>
           <p class="description">{{ $t('step1.buildCompleteDesc') }}</p>
-          <button 
-            class="action-btn" 
-            :disabled="currentPhase < 2 || creatingSimulation"
+          <!-- Gated on the graph, not on the build having reported success. A
+               build that ingested 61 of 62 episodes and then timed out on the
+               last one is recorded as failed, but every episode it committed is
+               still in FalkorDB behind the project's graph_id, and
+               POST /api/simulation/create asks for nothing more than a project
+               with one. This is the only button in the app that creates a
+               simulation, so gating it on the build made a single timed-out
+               episode permanently unrecoverable. -->
+          <button
+            class="action-btn"
+            :disabled="!canEnterEnvSetup || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
             <span v-if="creatingSimulation" class="spinner-sm"></span>
@@ -183,6 +242,18 @@
         </div>
       </div>
     </div>
+
+    <!-- The rebuild deletes every episode the failed run committed, so it is
+         never one click away from a user who came here to recover them. -->
+    <ConfirmDialog
+      :open="confirmingRebuild"
+      :title="$t('step1.confirmRebuildTitle')"
+      :body="$t('step1.confirmRebuildBody')"
+      :confirm-label="$t('step1.confirmRebuild')"
+      tone="danger"
+      @confirm="handleRebuild"
+      @cancel="confirmingRebuild = false"
+    />
   </div>
 </template>
 
@@ -191,6 +262,7 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { createSimulation } from '../api/simulation'
+import ConfirmDialog from './simulations/ConfirmDialog.vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -201,23 +273,97 @@ const props = defineProps({
   ontologyProgress: Object,
   buildProgress: Object,
   graphData: Object,
-  systemLogs: { type: Array, default: () => [] }
+  systemLogs: { type: Array, default: () => [] },
+  // The build's failure travels on its own rather than as a phase: a dead
+  // build stands on the build step without being in progress there.
+  buildFailed: { type: Boolean, default: false },
+  buildError: { type: String, default: '' },
+  // The backend answered 409 'recoverable': the interrupted batch is gone, so
+  // there is nothing left for a retry to resume.
+  rebuildRequired: { type: Boolean, default: false },
+  retryingBuild: { type: Boolean, default: false }
 })
 
-defineEmits(['next-step'])
+const emit = defineEmits(['next-step', 'retry-build'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+const confirmingRebuild = ref(false)
+
+// Everything that means 'a build is being driven right now', in the order the
+// page learns it: MainView's request still in flight - it sets retryingBuild
+// synchronously, before the first await, so the prop is already true on the
+// re-render that follows the click - and then the build step itself while it is
+// running. The second clause is not redundant with the status check below: it
+// is the only one that holds when MainView could not read the project back
+// after a reused build and is following the task instead, leaving projectData
+// describing a state that is no longer current.
+//
+// Note the two clauses are disjoint in practice, not overlapping: starting a
+// retry clears buildFailed synchronously, so a render never sees retryingBuild
+// and buildFailed at once. That is why the failure panel is mounted on
+// (buildFailed || retryingBuild) rather than buildFailed alone - otherwise the
+// panel unmounts the instant retry begins and its in-flight state is dead
+// markup that nothing can ever display.
+const buildInFlight = computed(() => (
+  props.retryingBuild
+  || (props.currentPhase === 1 && !props.buildFailed)
+))
+
+// A graph_id alone does not mean the graph holds anything: graph.py saves it
+// from its remember_graph callback at the very start of a build, before the
+// first episode is ingested and while the project still reads
+// 'graph_building'. Gating on the build's own status - not on a phase number -
+// keeps a running build from handing the user a simulation over an empty
+// graph, while a FAILED project that has a graph_id stays open: that is the
+// 61-of-62 case this whole gate exists to unblock. The status is what the
+// server last said, so an in-flight rebuild is read locally on top of it.
+const canEnterEnvSetup = computed(() => (
+  Boolean(props.projectData?.graph_id)
+  && props.projectData?.status !== 'graph_building'
+  && !buildInFlight.value
+))
+
+// The same button, described for what the backend will actually do with it.
+// It resumes only where there is an ingest to resume: a failure that never got
+// as far as creating the graph, or one the backend has already reported it
+// cannot resume, starts a fresh build instead. Either way it deletes nothing,
+// which is what keeps it the safe one of the two.
+const canResumeBuild = computed(() => (
+  Boolean(props.projectData?.graph_id) && !props.rebuildRequired
+))
+
+const retryLabel = computed(() => (
+  canResumeBuild.value ? t('step1.resumeBuild') : t('step1.startFreshBuild')
+))
+
+const retryHint = computed(() => (
+  canResumeBuild.value ? t('step1.resumeBuildHint') : t('step1.startFreshBuildHint')
+))
+
+// The single way a build request leaves this component, so that nothing can
+// emit one past the two states that must not overlap with it: a build already
+// being driven, and a create-simulation POST in flight over the graph a build
+// would rewrite.
+const requestBuild = (force) => {
+  if (buildInFlight.value || creatingSimulation.value) return
+  emit('retry-build', { force })
+}
+
+const handleRebuild = () => {
+  confirmingRebuild.value = false
+  requestBuild(true)
+}
 
 // The simulation is created here rather than in the environment-setup view so
 // that the view is always reached with an id it can prepare against.
 const handleEnterEnvSetup = async () => {
-  if (!props.projectData?.project_id || !props.projectData?.graph_id) {
+  if (!props.projectData?.project_id || !canEnterEnvSetup.value) {
     console.error('Missing project or knowledge graph information')
     return
   }
-  
+
   creatingSimulation.value = true
   
   try {
@@ -307,6 +453,10 @@ watch(() => props.systemLogs.length, () => {
   box-shadow: var(--shadow-accent);
 }
 
+.step-card.failed {
+  border-color: var(--danger-border);
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -328,7 +478,8 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .step-card.active .step-num,
-.step-card.completed .step-num {
+.step-card.completed .step-num,
+.step-card.failed .step-num {
   color: var(--text-primary);
 }
 
@@ -351,6 +502,7 @@ watch(() => props.systemLogs.length, () => {
 .badge.processing { background: var(--accent); color: var(--text-on-accent); }
 .badge.accent { background: var(--accent); color: var(--text-on-accent); }
 .badge.pending { background: var(--bg-inset); color: var(--text-muted); }
+.badge.failed { background: var(--danger-soft); color: var(--danger); }
 
 .api-note {
   font-family: var(--font-mono);
@@ -622,6 +774,67 @@ watch(() => props.systemLogs.length, () => {
 .action-btn:disabled {
   background: var(--bg-raised);
   color: var(--text-disabled);
+}
+
+/* Failed build */
+.failure-panel {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+}
+
+.failure-message {
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.failure-note {
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.failure-note.is-warning {
+  color: var(--warning);
+}
+
+.failure-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Deliberately not shaped like the button above it. The rebuild throws away
+   every episode the failed run committed, so it must not be reachable by
+   reflex from the control that recovers them. */
+.destructive-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 6px;
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.destructive-btn:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.destructive-btn:disabled {
+  opacity: 0.55;
 }
 
 .progress-section {

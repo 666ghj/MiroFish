@@ -114,6 +114,93 @@ reboot and keep holding the GPU and ports 8000 / 8081 / 6379. `start` force-remo
 them before it brings anything up, because the renamed containers cannot bind those
 ports while they are alive.
 
+### Wiping everything and starting again
+
+Sometimes the right move is to throw away every graph, every simulation and every
+uploaded document and reinstall. There is no single command for it, because the state
+lives in four unrelated places: the shim's SQLite batch record, the FalkorDB volume,
+the backend's upload tree, and `.env`.
+
+> **Never delete `data/hf-cache/`.** It is bind-mounted into both vLLM containers with
+> `HF_HUB_OFFLINE=1`, so an empty cache does **not** quietly re-download the weights -
+> the containers *fail to start*, and on a box that has since been disconnected you
+> cannot get them back. This is the most destructive mistake available during a wipe,
+> and `rm -rf data/` is how you make it. Delete the named files below, never the
+> directory holding them.
+
+```bash
+cd /path/to/MiroFish
+./scripts/provision_local.sh stop
+
+# 1. The shim's SQLite state: which episodes of which build already committed.
+#    BOTH paths, because which one is live depends on your .env vintage - the
+#    ./data/zep_compat.sqlite3 this repo used to ship resolves against the shim's
+#    own working directory, while an .env without the key lands in the repo's data/.
+#    Normally you would compare them before touching either; here you are wiping.
+rm -f data/zep_compat.sqlite3
+rm -f third_party/graphiti/server/data/zep_compat.sqlite3
+
+# 2. The graph database. `stop` only stops the container, and a volume cannot be
+#    removed while any container still references it - even a stopped one.
+#    "No such container" / "no such volume" here just means it was already gone.
+docker rm -f sosim-falkordb mirofish-falkordb
+docker volume rm sosim_falkordb
+docker volume rm mirofish_falkordb   # the pre-rename orphan, if you still have it
+
+# 3. Projects, simulations and reports - uploaded sources, agent state, output.
+rm -rf backend/uploads/projects backend/uploads/simulations backend/uploads/reports
+
+# 4. Take the current defaults. `setup` NEVER overwrites an existing .env, so without
+#    this step the "fresh" install silently keeps every value you had tuned before.
+#    data/ is gitignored, so the backup cannot be committed by accident.
+mv .env data/env.pre-wipe.bak
+
+./scripts/provision_local.sh setup   # recreates .env; weights and images are cached
+./scripts/provision_local.sh start
+```
+
+`setup` is the right way back up, and it is quick after a wipe, because the weights are
+still in `data/hf-cache/` and the images are still in Docker. Be precise about what it
+does, though: it re-creates `.env` from `.env.example`, and then adds only the keys that
+are *missing* from it — in practice just `ZEP_COMPAT_DB_PATH`, which a fresh copy does
+not pin to an absolute path. It does **not**
+re-derive the concurrency keys for this host's `MAX_NUM_SEQS`. `ensure_env_key` only
+writes a key that is *absent*, and the fresh copy already carries `SIM_LLM_SEMAPHORE`,
+`ZEP_COMPAT_BATCH_CONCURRENCY` and `SEMAPHORE_LIMIT` at the values derived for the
+default `MAX_NUM_SEQS=16`, so none of them fires (the script's own comment says so).
+
+**If you run a non-default `MAX_NUM_SEQS`, edit those three keys by hand** in the new
+`.env` — `SIM_LLM_SEMAPHORE` is half of it, and
+`ZEP_COMPAT_BATCH_CONCURRENCY × SEMAPHORE_LIMIT` must stay at or under
+`MAX_NUM_SEQS / 2` — then check the result with the same value in the environment:
+
+```bash
+MAX_NUM_SEQS=32 ./scripts/provision_local.sh doctor
+```
+
+Both `setup` and `doctor` re-check that product against the current `MAX_NUM_SEQS` and
+report it as a failure when it no longer fits. Neither of them rewrites it for you.
+
+**On an air-gapped box, `setup` will report a failed download for each model** - its
+`fetch_models` stage forces `HF_HUB_OFFLINE=0` deliberately, so it always tries the
+network. Everything else has already been done by the time it gets there, so the run is
+still useful. If you would rather not see the failures, replace step 4 and `setup` with:
+
+```bash
+mv .env data/env.pre-wipe.bak && cp .env.example .env
+./scripts/provision_local.sh start
+```
+
+Then put back anything you had deliberately tuned, and re-check the result:
+
+```bash
+diff data/env.pre-wipe.bak .env
+./scripts/provision_local.sh doctor
+```
+
+Also *not* part of the wipe: `data/logs/` (append-only, and it holds the evidence for
+whatever made you wipe) and `data/run/` (pidfiles, already cleared by `stop`).
+
 ### Reading the output when something breaks
 
 Failures are designed to be impossible to miss from the console alone:

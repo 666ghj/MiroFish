@@ -398,6 +398,52 @@ make_env() {
     "a queued request's wait counts against this"
   ensure_env_key SIM_MODEL_MAX_RETRIES 1 \
     "a retry re-enters the same queue, so retries multiply load"
+
+  # Same coupling for graph ingest, where the two knobs MULTIPLY: the shim runs
+  # ZEP_COMPAT_BATCH_CONCURRENCY episodes at once and Graphiti fans each one out
+  # SEMAPHORE_LIMIT wide, so peak in-flight requests is the product. At the old
+  # 4 x 6 = 24 against --max-num-seqs=16 the excess queues and the wait counts
+  # against each request's timeout — which is how a 62-episode build spent 50
+  # minutes and then died on one openai.APITimeoutError. The embeddings server
+  # shares this GPU, so the product gets half the batch, not all of it.
+  #
+  # SEMAPHORE_LIMIT especially must be written out here: graphiti_core's own
+  # default is 20, so an .env that never mentions the key runs 4 x 20 = 80 deep
+  # against 16 slots with nothing in any config file to point at.
+  local llm_budget=$(( MAX_NUM_SEQS / 2 ))
+  (( llm_budget >= 1 )) || llm_budget=1
+  local want_batch=2
+  (( want_batch <= llm_budget )) || want_batch=1
+  local want_fanout=$(( llm_budget / want_batch ))
+  (( want_fanout >= 1 )) || want_fanout=1
+  ensure_env_key ZEP_COMPAT_BATCH_CONCURRENCY "$want_batch" \
+    "x SEMAPHORE_LIMIT must stay under half of vLLM --max-num-seqs=$MAX_NUM_SEQS"
+  ensure_env_key SEMAPHORE_LIMIT "$want_fanout" \
+    "graphiti's own default is 20, which would flood a $MAX_NUM_SEQS-slot server"
+
+  # Those two calls are advice, not enforcement, and on a FRESH install they do
+  # not fire at all: .env was copied from .env.example a few lines up, so both
+  # keys are already present at their shipped values and ensure_env_key returns
+  # without writing. They only ever act on a pre-existing .env that is missing a
+  # key. Meanwhile MAX_NUM_SEQS is overridable and README tells operators to
+  # sweep it through 1/4/8/16/32, which silently invalidates the product.
+  # So check the invariant itself against what .env EFFECTIVELY says.
+  check_ingest_budget \
+    "$(env_file_value ZEP_COMPAT_BATCH_CONCURRENCY)" \
+    "$(env_file_value SEMAPHORE_LIMIT)" \
+    "$llm_budget" || true
+
+  # Pin the shim's sqlite state to an ABSOLUTE path under this repo's own
+  # gitignored data/. This is non-relocating BY CONSTRUCTION: ensure_env_key
+  # writes only when the key is ABSENT, and an absent key already resolved to
+  # exactly this file — that is what start_shim's
+  # ${ZEP_COMPAT_DB_PATH:-$DATA_DIR/...} default has produced all along. An .env
+  # that does carry the key keeps whatever it says, live database and all.
+  # Writing it out is what removes the two-defaults-depending-on-.env-vintage
+  # ambiguity that had someone inspecting an empty decoy while the real database
+  # sat somewhere else.
+  ensure_env_key ZEP_COMPAT_DB_PATH "$DATA_DIR/zep_compat.sqlite3" \
+    "absolute, so it no longer depends on the shim's working directory"
 }
 
 # ensure_env_key <key> <value> [why]
@@ -408,7 +454,7 @@ make_env() {
 ensure_env_key() {
   local key="$1" value="$2" why="${3:-}" current
   if grep -qE "^${key}=" "$ROOT/.env" 2>/dev/null; then
-    current=$(grep -E "^${key}=" "$ROOT/.env" | head -1 | cut -d= -f2-)
+    current=$(unquote_env_value "$(grep -E "^${key}=" "$ROOT/.env" | head -1 | cut -d= -f2-)")
     if [[ "$current" != "$value" ]]; then
       note "$key=$current in .env (this host suggests $value)"
     fi
@@ -420,6 +466,73 @@ ensure_env_key() {
     printf '\n%s=%s\n' "$key" "$value"
   } >> "$ROOT/.env"
   ok "set $key=$value in .env"
+}
+
+# unquote_env_value <raw-right-hand-side>
+# Turn the text after the '=' into the string `source` would actually produce.
+# `cut -d= -f2-` hands back the line verbatim, so SEMAPHORE_LIMIT="4" arrived as
+# the three-character string "4" (quotes included) and failed every ^[0-9]+$
+# guard downstream — the ingest-budget check silently declined to validate a
+# perfectly legal .env. Quoting is normal in a dotenv file, so strip it here
+# rather than demanding operators write these keys bare.
+unquote_env_value() {
+  local v="$1"
+  v="${v#"${v%%[![:space:]]*}"}"            # leading space, before the quote test
+  case "$v" in
+    \"*) v="${v#\"}"; v="${v%%\"*}" ;;      # "…"  — stop at the closing quote
+    \'*) v="${v#\'}"; v="${v%%\'*}" ;;      # '…'
+    # Bare value: bash treats '#' as starting a comment only after whitespace,
+    # so `KEY=abc#def` really is abc#def. Match that, don't truncate at any '#'.
+    *)   [[ "$v" =~ ^([^#]*)[[:space:]]\# ]] && v="${BASH_REMATCH[1]}" ;;
+  esac
+  v="${v#"${v%%[![:space:]]*}"}"            # and again, now inside the quotes
+  v="${v%"${v##*[![:space:]]}"}"
+  printf '%s' "$v"
+}
+
+# env_file_value <key>
+# What .env EFFECTIVELY holds for a key — i.e. what `source` ends up with, so
+# the LAST assignment wins, not the first, and quotes and inline comments are
+# resolved rather than returned as text. Empty when the key is absent.
+env_file_value() {
+  unquote_env_value "$(grep -E "^$1=" "$ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+}
+
+# check_ingest_budget <batch> <fanout> <budget>
+# The graph-ingest invariant, in one place because make_env and doctor have to
+# agree on it. The shim ingests <batch> episodes at once and Graphiti fans each
+# one out <fanout> LLM calls wide, so peak in-flight requests is the PRODUCT.
+# vLLM admits only --max-num-seqs and queues the rest, and a queued request's
+# wait counts against its own timeout: 4 x 6 = 24 against 16 slots is what made
+# a 62-episode build run for 50 minutes and die on one openai.APITimeoutError.
+# <budget> is half of --max-num-seqs because the embeddings server is a second
+# vLLM sharing this GPU.
+#
+# A broken (or uncheckable) invariant is recorded through fail(), so it is
+# reprinted in the exit summary and makes the script exit non-zero, exactly like
+# a container that would not start. It does not abort the caller — callers use
+# the `|| true` form, the same as start_llm and friends — because the rest of
+# setup/doctor is still worth running. Warning alone was not enough: this is the
+# misconfiguration that scrolled past twice and cost two 50-minute builds.
+check_ingest_budget() {
+  local batch="$1" fanout="$2" budget="$3"
+  if [[ ! "$batch" =~ ^[0-9]+$ || ! "$fanout" =~ ^[0-9]+$ ]]; then
+    fail "cannot check the ingest concurrency invariant — not integers:" \
+         "ZEP_COMPAT_BATCH_CONCURRENCY='$batch' SEMAPHORE_LIMIT='$fanout'"
+    return 1
+  fi
+  local peak=$(( batch * fanout ))
+  if (( peak > budget )); then
+    fail "INGEST OVER-COMMITTED: ZEP_COMPAT_BATCH_CONCURRENCY x SEMAPHORE_LIMIT = $batch x $fanout = $peak concurrent LLM requests, against a budget of $budget"
+    warn "  The budget is half of vLLM --max-num-seqs=$MAX_NUM_SEQS, because the embeddings"
+    warn "  server is a second vLLM on the same GPU. The excess queues, and the wait counts"
+    warn "  against each request's own timeout — this is exactly how a 62-episode"
+    warn "  build spent 50 minutes and then died on one openai.APITimeoutError."
+    warn "  Lower either key in .env, or raise MAX_NUM_SEQS and re-run '$0 setup'."
+    return 1
+  fi
+  ok "ingest concurrency $batch x $fanout = $peak (budget $budget, --max-num-seqs=$MAX_NUM_SEQS)"
+  return 0
 }
 
 install_python_deps() {
@@ -718,14 +831,54 @@ start_bg() {
 
 start_shim() {
   step "Zep-compatible shim (Graphiti-backed)"
-  local venv="$ROOT/third_party/graphiti/server/.venv/bin/python"
+  local shim_dir="$ROOT/third_party/graphiti/server"
+  local venv="$shim_dir/.venv/bin/python"
   if [[ ! -x "$venv" ]]; then
     fail "shim venv missing at $venv — run: $0 setup"
     return 1
   fi
-  export ZEP_COMPAT_DB_PATH="${ZEP_COMPAT_DB_PATH:-$DATA_DIR/zep_compat.sqlite3}"
+
+  # The shim resolves ZEP_COMPAT_DB_PATH against ITS OWN cwd, which start_bg
+  # sets to $shim_dir — not the repo root, not $DATA_DIR. Which file is live
+  # therefore depends on this host's .env vintage, and BOTH outcomes are real:
+  # an .env carrying the ./data/zep_compat.sqlite3 this repo used to ship lands
+  # under $shim_dir, while an .env that never mentions the key falls through to
+  # the ${:-} default below and lands in $DATA_DIR. Either way the note printed
+  # a relative path, so someone chasing live batch state ran sqlite3 against
+  # $ROOT/data/zep_compat.sqlite3, where sqlite3 SILENTLY CREATED an empty
+  # database, and nearly mutated that instead of the real one.
+  #
+  # So: resolve a relative value against the shim's cwd — the same place the
+  # shim itself would land on, so an existing install's database does NOT move —
+  # and export it absolute, so the note below names the file actually in use.
+  local db_path="${ZEP_COMPAT_DB_PATH:-$DATA_DIR/zep_compat.sqlite3}"
+  case "$db_path" in
+    /*) ;;
+    *)  db_path="$shim_dir/${db_path#./}" ;;
+  esac
+  export ZEP_COMPAT_DB_PATH="$db_path"
   note "sqlite state: $ZEP_COMPAT_DB_PATH"
-  start_bg zep-shim "$ROOT/third_party/graphiti/server" \
+
+  # Both locations can hold a REAL database — see the vintage note above — so
+  # report the second one without judging it. Do NOT call it dead and do NOT
+  # suggest deleting it: on a host whose .env predates ZEP_COMPAT_DB_PATH this
+  # is the file the shim has been writing all along, and the empty decoy sqlite3
+  # leaves behind on a mistyped path looks identical from the outside. Print how
+  # to tell them apart instead and let the operator decide.
+  local other_db="$DATA_DIR/zep_compat.sqlite3"
+  if [[ "$ZEP_COMPAT_DB_PATH" != "$other_db" && -f "$other_db" ]]; then
+    warn "a second database file exists at $other_db"
+    warn "This run uses the path printed above and leaves that one untouched, but"
+    warn "either can be the live one: an .env without ZEP_COMPAT_DB_PATH resolved"
+    warn "there. Compare them before touching either — size, mtime, and batches:"
+    warn "    ls -l '$ZEP_COMPAT_DB_PATH' '$other_db'"
+    warn "    sqlite3 '$other_db' 'select count(*) from batches;'"
+    warn "'no such table: batches' (or zero rows, 0 bytes) means that file is the"
+    warn "empty decoy. If it is the one with your history, point ZEP_COMPAT_DB_PATH"
+    warn "in .env at it — as an absolute path — rather than deleting anything."
+  fi
+
+  start_bg zep-shim "$shim_dir" \
     "$venv" -m uvicorn graph_service.zep_compat.app:app \
     --host 127.0.0.1 --port "$SHIM_PORT"
 }
@@ -750,6 +903,14 @@ start_frontend() {
 
 do_start() {
   load_env
+  # FAILURES is global and `all` runs make_env in this same process, so a config
+  # advisory recorded there (the ingest-budget check) is already in the array
+  # before a single service has been touched. It still belongs in the exit
+  # summary and the exit code — it is a real misconfiguration — but it is NOT
+  # evidence that a service failed to come up, and gating on the raw count made a
+  # healthy stack report "the stack is NOT fully up". Gate on what THIS function
+  # adds instead.
+  local failures_at_start=${#FAILURES[@]}
   # Must run before anything binds a port: the pre-rename containers are still
   # holding 8000, 8081 and 6379 on any machine that ran this stack before.
   retire_legacy_infra || true
@@ -777,8 +938,17 @@ do_start() {
   wait_for_http "http://127.0.0.1:$FRONTEND_PORT" "frontend" \
     "$FRONTEND_WAIT_TRIES" frontend || true
 
-  if (( ${#FAILURES[@]} == 0 )); then
+  if (( ${#FAILURES[@]} == failures_at_start )); then
     summary
+    # Anything recorded BEFORE do_start (on the `all` path that means make_env,
+    # whose only entries are config advisories) is still printed by
+    # report_failures on the way out, and still makes the script exit non-zero.
+    # Say so here, or the summary and the exit code look like they disagree.
+    # This counts every such entry, not only advisories - it is a "something
+    # earlier objected" note, so keep the wording non-specific about what.
+    if (( failures_at_start > 0 )); then
+      warn "every service is up, but $failures_at_start problem(s) were reported before startup"
+    fi
   else
     step "Started with errors"
     warn "the stack is NOT fully up; see the failure list below"
@@ -958,6 +1128,94 @@ do_doctor() {
   if grep -qE '^LLM_BOOST_[A-Z_]+=\s*$' "$ROOT/.env"; then
     warn "LLM_BOOST_* keys are present but blank. They must be absent entirely."
   fi
+
+  # The graph-ingest concurrency invariant. doctor is the only place it gets
+  # re-checked after setup: make_env's ensure_env_key calls never overwrite, and
+  # README tells operators to sweep MAX_NUM_SEQS through 1/4/8/16/32, so the host
+  # that actually hit the incident would otherwise still get no signal at all.
+  local budget=$(( MAX_NUM_SEQS / 2 ))
+  (( budget >= 1 )) || budget=1
+  # An ABSENT key is not the value .env.example documents — each side falls back
+  # to its own code default: 4 in the shim (zep_compat/runtime.py) and 20 in
+  # graphiti_core (helpers.py). Check what will really be used, not what is
+  # written down.
+  local batch="${ZEP_COMPAT_BATCH_CONCURRENCY:-4}"
+  local fanout="${SEMAPHORE_LIMIT:-}"
+  if [[ -z "$fanout" ]]; then
+    warn "SEMAPHORE_LIMIT is not set in .env. graphiti_core does NOT fall back to"
+    warn "the value .env.example documents — its code default is 20, so that is"
+    warn "what graph ingest will actually run at:"
+    fanout=20
+  fi
+  check_ingest_budget "$batch" "$fanout" "$budget" || true
+
+  # Same class of bug as SEMAPHORE_LIMIT above, one layer down: an ABSENT
+  # GRAPHITI_LLM_MAX_TOKENS does not mean "whatever .env.example documents", it
+  # means the shim's own code default of 16384 (zep_compat/runtime.py) — which is
+  # precisely the configuration of the build that ran ~50 minutes and died on one
+  # openai.APITimeoutError. Nothing in any config file would point at it.
+  local max_tokens="${GRAPHITI_LLM_MAX_TOKENS:-}"
+  if [[ -z "$max_tokens" ]]; then
+    warn "GRAPHITI_LLM_MAX_TOKENS is not set in .env. The shim does NOT fall back to"
+    warn "the value .env.example documents — runtime.py's code default is 16384, so"
+    warn "every extraction call gets the same budget as the run that spent ~50 minutes"
+    warn "and then died on openai.APITimeoutError. Set it explicitly in .env."
+  elif [[ ! "$max_tokens" =~ ^[0-9]+$ ]]; then
+    warn "GRAPHITI_LLM_MAX_TOKENS='$max_tokens' is not an integer; the shim casts it"
+    warn "with int() at startup and will raise ValueError before serving anything."
+  else
+    ok "GRAPHITI_LLM_MAX_TOKENS=$max_tokens"
+    # Deliberately no "good value" here, because there isn't one: 16384 timed out
+    # and 4096 truncated mid-JSON, both in production.
+    note "no cap is a fix — 16384 timed out, 4096 truncated (JSONDecodeError at"
+    note "char 4148: ~1 char/token, the leading hypothesis being a runaway list of"
+    note "integers). A cap hit now raises a named TruncatedResponseError rather"
+    note "than a JSONDecodeError, and is not retried; this bounds the damage only."
+  fi
+
+  # Read by the shim (zep_compat/runtime.py) and handed straight to AsyncOpenAI
+  # alongside max_retries=0, so it is the only thing bounding a hung extraction.
+  local llm_timeout="${GRAPHITI_LLM_REQUEST_TIMEOUT:-}"
+  if [[ -z "$llm_timeout" ]]; then
+    note "GRAPHITI_LLM_REQUEST_TIMEOUT unset; runtime.py's own default of 180s applies"
+  elif [[ ! "$llm_timeout" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    warn "GRAPHITI_LLM_REQUEST_TIMEOUT='$llm_timeout' is not a number; the shim casts it"
+    warn "with float() when it first builds an LLM client, so this fails on the first"
+    warn "graph build (or preflight), not at startup - the shim starts up fine."
+  else
+    ok "GRAPHITI_LLM_REQUEST_TIMEOUT=${llm_timeout}s (with max_retries=0)"
+  fi
+
+  # Not validated anywhere downstream: graphiti compares this to 'json_object'
+  # exactly and treats everything else — including a typo — as json_schema, so a
+  # misspelled fallback would look like it was applied and change nothing.
+  case "${GRAPHITI_STRUCTURED_OUTPUT_MODE:-json_schema}" in
+    json_schema)
+      ok "GRAPHITI_STRUCTURED_OUTPUT_MODE=json_schema (schema sent as response_format)"
+      note "vLLM is EXPECTED to enforce it with constrained decoding, but that is"
+      note "UNCONFIRMED here: nothing pins the structured-output backend, and xgrammar"
+      note "has historically treated array maxItems as unsupported and ignored it at"
+      note "decode time. To confirm which backend this server chose (not '$0 logs',"
+      note "which follows the stream and would never return):"
+      note "  docker logs sosim-llm | grep -iE 'guided|structured.?output|xgrammar|outlines'"
+      note "If the runaway-array truncation returns, GRAPHITI_STRUCTURED_OUTPUT_MODE="
+      note "json_object is the zero-code fallback."
+      ;;
+    json_object)
+      warn "GRAPHITI_STRUCTURED_OUTPUT_MODE=json_object: the schema is injected into"
+      warn "the prompt and NOT enforced. That is the intended zero-code fallback for the"
+      warn "runaway-array truncation — a switch to shape/validation errors means"
+      warn "generation now terminates — but expect messier extraction. The schemas do"
+      warn "carry their own ceilings now, so go back to json_schema once you have"
+      warn "confirmed this server actually honours them at decode time."
+      ;;
+    *)
+      warn "GRAPHITI_STRUCTURED_OUTPUT_MODE='$GRAPHITI_STRUCTURED_OUTPUT_MODE' is not one of"
+      warn "json_schema / json_object. graphiti only tests for 'json_object', so this"
+      warn "silently behaves as json_schema — nothing rejects it and nothing logs it."
+      ;;
+  esac
+
   [[ -d "$HF_CACHE/hub" ]] && ok "HF cache present at $HF_CACHE" \
     || warn "no HF cache yet; run '$0 setup' before going offline."
 }

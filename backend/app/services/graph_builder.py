@@ -4,6 +4,7 @@ Endpoint 2: build a standalone graph through the Zep API.
 """
 
 import hashlib
+import os
 import uuid
 import time
 import threading
@@ -14,6 +15,7 @@ from zep_cloud import BatchAddItem, EntityEdgeSourceTarget, NotFoundError
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
+from ..utils.logger import get_logger
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from ..utils.ontology import (
     MAX_ONTOLOGY_TYPES,
@@ -29,6 +31,25 @@ from ..utils.zep import (
 )
 from .text_processor import TextProcessor
 from ..utils.locale import t
+
+logger = get_logger('sosim.graph_builder')
+
+# UXE fork: ingesting a document makes hundreds of local LLM calls, and nothing
+# below the Batch API retries an openai.APITimeoutError. One timed-out call used
+# to end the whole build as "partial" and throw away every episode that had
+# already committed. Resubmit the failed items instead; keep the bound small so
+# an endpoint that is genuinely down still fails within a sane wall time.
+GRAPH_BUILD_MAX_ITEM_RETRIES = int(
+    os.environ.get("GRAPH_BUILD_MAX_ITEM_RETRIES") or 2
+)
+
+# A journalled retry batch nobody can read back is not the same thing as one
+# that was never journalled at all: the recorded batch already ingested
+# something that is no longer visible, so resubmitting its chunks would commit
+# their episodes a second time, while an absent record means nothing ran.
+# _resume_recorded_retry_batch returns this instead of None so the two answers
+# stay distinguishable.
+UNREADABLE_RETRY_BATCH = object()
 
 
 @dataclass
@@ -58,10 +79,62 @@ class BatchSubmission:
     item_count: int
 
 
+@dataclass(frozen=True)
+class LostBatchItem:
+    """One batch item that never produced an episode, after every retry."""
+
+    sequence_index: int
+    status: str | None
+    error: Any
+
+
+@dataclass(frozen=True)
+class BatchItemPartition:
+    """What one terminal batch listing says about the items it reported.
+
+    ``reported_indexes`` covers every sequence index the listing mentioned at
+    all, so a caller can tell an item it already accounted for from one the
+    server never reported - a listing that comes back short is exactly how a
+    chunk disappears without anyone raising.
+    """
+
+    episodes_by_index: Dict[int, str]
+    lost_items: List[LostBatchItem]
+    reported_indexes: set[int]
+
+
 class GraphBuilderService:
     """Build a knowledge graph through the Zep API."""
 
-    
+    # Zep counts "skipped" and "canceled" items separately from failures: the
+    # server declined the work rather than tripping over it. Neither produced
+    # an episode, so both are still losses the caller has to hear about, but
+    # resubmitting them would override that decision - and, for an item skipped
+    # as a duplicate, commit a second episode for a chunk already in the graph.
+    NON_RETRYABLE_ITEM_STATUSES = frozenset({"skipped", "canceled"})
+
+    # A status alone does not say whether resubmitting is worth anything: a
+    # truncation fails as an ordinary "failed" item, and it is deterministic -
+    # the same chunk under the same token cap clips its JSON again on every
+    # resubmission, so the retries only burn the budget the other items need.
+    # The Zep-compatible shim records the failing exception class in the item
+    # error, and graphiti raises TruncatedResponseError for exactly this, so
+    # match on that name rather than on the message text.
+    NON_RETRYABLE_ITEM_ERROR_TYPES = frozenset({"TruncatedResponseError"})
+
+    @classmethod
+    def _item_is_retryable(cls, item: "LostBatchItem") -> bool:
+        """Report whether resubmitting one lost item could ever recover it."""
+
+        if item.status in cls.NON_RETRYABLE_ITEM_STATUSES:
+            return False
+        error = item.error
+        error_type = (
+            error.get("type") if isinstance(error, dict)
+            else getattr(error, "type", None)
+        )
+        return error_type not in cls.NON_RETRYABLE_ITEM_ERROR_TYPES
+
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
         if not self.api_key:
@@ -176,30 +249,75 @@ class GraphBuilderService:
                 message=t('progress.waitingZepProcess')
             )
             
+            # Opting into salvage means this path can now finish with chunks
+            # missing, so it has to hear about them: discarding the callback
+            # and reporting completion regardless is the silent-success shape
+            # the other build path was just fixed for.
+            lost_items: List[LostBatchItem] = []
             self._wait_for_batch(
                 submission,
                 lambda msg, prog: self.task_manager.update_task(
                     task_id,
                     progress=60 + int(prog * 0.3),  # 60-90%
                     message=msg
-                )
+                ),
+                # This path salvages a partial batch instead of failing it, so
+                # it opts in explicitly and hands over the chunks a failed item
+                # has to be resubmitted with.
+                allow_partial=True,
+                retry_chunks=chunks,
+                lost_items_callback=lost_items.extend,
             )
-            
+
             # 6. Read the resulting graph summary.
             self.task_manager.update_task(
                 task_id,
                 progress=90,
                 message=t('progress.fetchingGraphInfo')
             )
-            
+
             graph_info = self._get_graph_info(graph_id)
-            
-            self.task_manager.complete_task(task_id, {
-                "graph_id": graph_id,
-                "graph_info": graph_info.to_dict(),
-                "chunks_processed": total_chunks,
-            })
-            
+
+            lost_indexes = [item.sequence_index for item in lost_items]
+            if lost_indexes:
+                logger.warning(
+                    "Task %s built graph %s without %s of %s chunk(s): "
+                    "chunk_indexes=%s",
+                    task_id,
+                    graph_id,
+                    len(lost_indexes),
+                    total_chunks,
+                    lost_indexes,
+                )
+
+            self.task_manager.update_task(
+                task_id,
+                status=TaskStatus.COMPLETED,
+                progress=100,
+                # A graph missing chunks is usable but incomplete, and the
+                # completion message is the only place a caller polling the
+                # task will ever see that.
+                message=(
+                    t(
+                        'progress.episodesTimeout',
+                        completed=total_chunks - len(lost_indexes),
+                        total=total_chunks,
+                    )
+                    if lost_indexes
+                    else t('progress.taskComplete')
+                ),
+                result={
+                    "graph_id": graph_id,
+                    "graph_info": graph_info.to_dict(),
+                    # The chunks that actually landed, not the chunks that were
+                    # submitted: the two differ exactly when items were lost.
+                    "chunks_processed": total_chunks - len(lost_indexes),
+                    "chunk_count": total_chunks,
+                    "lost_chunk_count": len(lost_indexes),
+                    "lost_chunk_indexes": lost_indexes,
+                },
+            )
+
         except Exception as e:
             import traceback
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
@@ -440,6 +558,12 @@ class GraphBuilderService:
             raise RuntimeError("Zep Batch API returned no batch_id")
         if batch_created_callback:
             batch_created_callback(batch_id, operation_id)
+        logger.info(
+            "Zep batch %s created for graph %s with %s chunk(s)",
+            batch_id,
+            graph_id,
+            total_chunks,
+        )
 
         episode_uuids: List[str] = []
         for i in range(0, total_chunks, batch_size):
@@ -543,6 +667,11 @@ class GraphBuilderService:
                     f"Zep batch {batch_id} processing is unconfirmed"
                 ) from error
 
+        logger.info(
+            "Zep batch %s submitted for processing (%s item(s))",
+            batch_id,
+            total_chunks,
+        )
         return BatchSubmission(
             batch_id=batch_id,
             operation_id=operation_id,
@@ -615,95 +744,565 @@ class GraphBuilderService:
             operation_name=f"get batch {batch_id}",
         )
 
-    def _wait_for_batch(
+    def _poll_batch_until_terminal(
         self,
-        submission: BatchSubmission,
+        batch_id: str,
+        timeout: float,
         progress_callback: Optional[Callable] = None,
-        timeout: int | None = None,
-    ) -> List[str]:
-        """Wait for a Batch API terminal state and validate every item."""
+        completed_offset: int = 0,
+        progress_total: int = 0,
+    ) -> str:
+        """Poll one batch until it reports a terminal status.
 
-        timeout = timeout or ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        ``timeout`` is the budget for this call alone: a follow-up retry batch
+        is polled with whatever is left of the caller's deadline, never with a
+        fresh copy of it. ``completed_offset`` and ``progress_total`` let that
+        retry batch report progress against the whole ingest instead of
+        restarting the counter at zero for the handful of items resubmitted.
+        """
+
         start_time = time.time()
+        total = progress_total
         terminal_states = {"succeeded", "partial", "failed", "invalid", "canceled"}
 
         while True:
             if time.time() - start_time > timeout:
                 raise TimeoutError(
-                    f"Zep batch {submission.batch_id} did not finish within {timeout}s"
+                    f"Zep batch {batch_id} did not finish within {int(timeout)}s"
                 )
 
             summary = call_zep_read_with_retry(
-                lambda: self.client.batch.get(batch_id=submission.batch_id),
-                operation_name=f"poll batch {submission.batch_id}",
+                lambda: self.client.batch.get(batch_id=batch_id),
+                operation_name=f"poll batch {batch_id}",
             )
             status = getattr(summary, "status", None)
             progress = getattr(summary, "progress", None)
-            percent = float(getattr(progress, "percent_complete", 0) or 0) / 100
             if progress_callback:
-                completed = int(getattr(progress, "succeeded_items", 0) or 0)
+                completed = completed_offset + int(
+                    getattr(progress, "succeeded_items", 0) or 0
+                )
                 progress_callback(
                     t(
                         'progress.zepProcessing',
                         completed=completed,
-                        total=submission.item_count,
-                        pending=max(submission.item_count - completed, 0),
+                        total=total,
+                        pending=max(total - completed, 0),
                         elapsed=int(time.time() - start_time),
                     ),
-                    min(max(percent, 0.0), 1.0),
+                    min(max(completed / total if total else 1.0, 0.0), 1.0),
                 )
 
             if status in terminal_states:
-                break
+                # One line per batch, not per poll: a build polls for the best
+                # part of an hour.
+                logger.info(
+                    "Zep batch %s reached terminal status %s after %ss",
+                    batch_id,
+                    status,
+                    int(time.time() - start_time),
+                )
+                return status
             time.sleep(3)
 
+    @staticmethod
+    def _batch_item_landed(item: Any) -> bool:
+        """Report whether one batch item actually committed an episode.
+
+        The failure summary and the retry partition both ask this question and
+        used to answer it differently: the summary read "skipped" as a
+        non-failure while the partition called it lost and resubmitted the
+        chunk. One definition now serves both, so they cannot drift apart.
+        """
+
+        return bool(
+            getattr(item, "status", None) == "succeeded"
+            and getattr(item, "episode_uuid", None)
+        )
+
+    def _partition_batch_items(
+        self,
+        batch_id: str,
+        items: List[Any],
+    ) -> BatchItemPartition:
+        """Split terminal batch items into landed episodes and lost items."""
+
+        episodes_by_index: Dict[int, str] = {}
+        lost_items: List[LostBatchItem] = []
+        reported_indexes: set[int] = set()
+        for item in items:
+            sequence_index = getattr(item, "sequence_index", 0) or 0
+            reported_indexes.add(sequence_index)
+            episode_uuid = getattr(item, "episode_uuid", None)
+            source_uuid = getattr(item, "source_uuid", None)
+            if not self._batch_item_landed(item):
+                lost_items.append(
+                    LostBatchItem(
+                        sequence_index=sequence_index,
+                        status=getattr(item, "status", None),
+                        error=getattr(item, "error", None),
+                    )
+                )
+                continue
+            if source_uuid and source_uuid != episode_uuid:
+                raise RuntimeError(
+                    f"Zep batch {batch_id} returned mismatched episode UUIDs"
+                )
+            episodes_by_index[sequence_index] = episode_uuid
+        return BatchItemPartition(
+            episodes_by_index=episodes_by_index,
+            lost_items=lost_items,
+            reported_indexes=reported_indexes,
+        )
+
+    @staticmethod
+    def _batch_graph_id(items: List[Any]) -> str | None:
+        """Read the target graph back from the batch items themselves."""
+
+        graph_ids = {
+            graph_id
+            for graph_id in (getattr(item, "graph_id", None) for item in items)
+            if graph_id
+        }
+        if len(graph_ids) != 1:
+            return None
+        return graph_ids.pop()
+
+    def _resume_recorded_retry_batch(
+        self,
+        graph_id: str,
+        recorded: Optional[Dict[str, Any]],
+    ) -> str | object | None:
+        """Return a retry batch a previous run already submitted, if there is one.
+
+        Retry batches are journaled the same way the main batch is, so a build
+        that died after recovering its failed chunks resumes by polling the
+        batch it already created instead of ingesting those chunks a second
+        time and duplicating the episodes they committed.
+
+        Returns the batch ID to poll, ``None`` when this attempt still has to
+        be submitted, or ``UNREADABLE_RETRY_BATCH`` when a journalled batch
+        exists but the server will not say what became of it.
+        """
+
+        if not recorded:
+            return None
+        batch_id = recorded.get("batch_id")
+        try:
+            if not batch_id:
+                # The create response was lost before the batch ID could be
+                # persisted; the deterministic operation ID is what still
+                # names it.
+                operation_id = recorded.get("operation_id")
+                if not operation_id:
+                    return None
+                batch = self._find_batch_by_operation_id(graph_id, operation_id)
+                batch_id = getattr(batch, "batch_id", None) if batch else None
+                if not batch_id:
+                    # The journal entry is written before the create POST, so
+                    # an operation the server has never heard of ingested
+                    # nothing: this attempt still has to be submitted.
+                    return None
+            summary = self.get_batch_summary(batch_id)
+        except Exception as error:
+            # get_batch_summary raises - NotFoundError for a batch that has
+            # aged out, for instance - and this call sits inside the attempt
+            # loop, so one unreadable entry used to abandon every remaining
+            # retry, including a later journalled batch that reads perfectly
+            # well. Report it as unresolvable and let the caller keep going.
+            logger.warning(
+                "Zep retry batch %s from the journal could not be read (%s: %s)",
+                batch_id or recorded.get("operation_id"),
+                type(error).__name__,
+                error,
+            )
+            return UNREADABLE_RETRY_BATCH
+        if getattr(summary, "status", None) in {None, "draft"}:
+            # Created but never handed to Zep for processing, so it ingested
+            # nothing: this attempt still has to be submitted.
+            return None
+        return batch_id
+
+    def _retry_failed_batch_items(
+        self,
+        submission: BatchSubmission,
+        items: List[Any],
+        episodes_by_index: Dict[int, str],
+        lost_items: List[LostBatchItem],
+        retry_chunks: Optional[List[str]],
+        deadline: float,
+        progress_callback: Optional[Callable] = None,
+        *,
+        retry_batch_callback: Optional[Callable[[str | None, str], None]] = None,
+        known_retry_batches: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[LostBatchItem]:
+        """Resubmit only the failed items and merge whatever they produce.
+
+        Each item commits its own episode, so the ones that already succeeded
+        must never be re-ingested; the follow-up batch carries the failed
+        chunks alone. ``episodes_by_index`` is updated in place and the items
+        still missing an episode are returned.
+        """
+
+        graph_id = self._batch_graph_id(items)
+        # Items Zep declined, and items that failed deterministically, stay
+        # lost whatever the retries do; see NON_RETRYABLE_ITEM_STATUSES and
+        # NON_RETRYABLE_ITEM_ERROR_TYPES for why replaying them is not safe.
+        declined = [
+            item for item in lost_items
+            if not self._item_is_retryable(item)
+        ]
+        pending = [
+            item for item in lost_items
+            if self._item_is_retryable(item)
+        ]
+
+        def all_lost(remaining: List[LostBatchItem]) -> List[LostBatchItem]:
+            return sorted(
+                declined + remaining, key=lambda item: item.sequence_index
+            )
+
+        if not pending:
+            return all_lost([])
+        if not retry_chunks or graph_id is None:
+            logger.warning(
+                "Zep batch %s cannot resubmit %s failed item(s): "
+                "retry chunks are %s and the target graph is %s",
+                submission.batch_id,
+                len(pending),
+                "present" if retry_chunks else "missing",
+                graph_id or "unknown",
+            )
+            return all_lost(pending)
+
+        recorded = list(known_retry_batches or [])
+        # Set once a journalled attempt turns out to be unusable - unreadable,
+        # or recorded for a different chunk set. From that point on the chunks
+        # it carried may or may not already be in the graph, so a fresh
+        # submission of the same chunks is no longer a recovery - it is a coin
+        # flip on duplicating their episodes.
+        unresolved_retry_batch: str | None = None
+        for attempt in range(1, GRAPH_BUILD_MAX_ITEM_RETRIES + 1):
+            indexes = [item.sequence_index for item in pending]
+            if any(index >= len(retry_chunks) for index in indexes):
+                logger.error(
+                    "Zep batch %s reported item indexes %s outside the "
+                    "submitted chunk list; refusing to guess the payload",
+                    submission.batch_id,
+                    indexes,
+                )
+                return all_lost(pending)
+
+            # The retries spend the caller's timeout, they do not renew it. A
+            # per-attempt clock turned a 2-hour budget into 6 hours of holding
+            # the project in GRAPH_BUILDING, during which /reset and /delete
+            # answer 409 and the project cannot be recovered by hand.
+            remaining_budget = deadline - time.time()
+            if remaining_budget <= 0:
+                logger.error(
+                    "Zep batch %s: ingestion budget exhausted with %s item(s) "
+                    "%s still missing; not resubmitting",
+                    submission.batch_id,
+                    len(indexes),
+                    indexes,
+                )
+                return all_lost(pending)
+
+            # "recovering", not "resubmitting": this attempt may replay a batch
+            # a previous run already submitted, or skip a journalled one it
+            # cannot read, without ingesting anything at all.
+            logger.warning(
+                "Zep batch %s: recovering %s failed item(s) %s (attempt %s/%s)",
+                submission.batch_id,
+                len(indexes),
+                indexes,
+                attempt,
+                GRAPH_BUILD_MAX_ITEM_RETRIES,
+            )
+            journal_entry = (
+                recorded[attempt - 1] if attempt <= len(recorded) else None
+            )
+            if journal_entry is not None:
+                # A journalled batch may only be replayed against the exact
+                # chunk set it was submitted for. Retry results are merged
+                # back by position - indexes[retry_index] below - so an entry
+                # recorded when `pending` held a different set maps its
+                # episodes onto the wrong source chunks, silently, which is
+                # worse than reporting the chunks lost. `pending` does drift:
+                # an attempt spent on an unreadable entry does not shrink it,
+                # and a later listing can report a different set of failures
+                # than the run that wrote the journal saw. The operation ID is
+                # a hash of the graph ID and the submitted chunk texts, so
+                # recomputing it here is that identity check.
+                expected_operation_id = self.build_operation_id(
+                    graph_id, [retry_chunks[index] for index in indexes]
+                )
+                if journal_entry.get("operation_id") != expected_operation_id:
+                    logger.error(
+                        "Zep batch %s: journalled retry batch %s was submitted "
+                        "for a different chunk set than item(s) %s, so its "
+                        "episodes cannot be mapped back; not replaying it",
+                        submission.batch_id,
+                        journal_entry.get("batch_id")
+                        or journal_entry.get("operation_id"),
+                        indexes,
+                    )
+                    # Like an unreadable entry: that batch may already hold
+                    # episodes for these chunks, so a fresh submission of them
+                    # is a coin flip on duplicating those episodes.
+                    unresolved_retry_batch = str(
+                        journal_entry.get("batch_id")
+                        or journal_entry.get("operation_id")
+                    )
+                    continue
+            try:
+                retry_batch_id = self._resume_recorded_retry_batch(
+                    graph_id,
+                    journal_entry,
+                )
+                if retry_batch_id is UNREADABLE_RETRY_BATCH:
+                    # Spend the attempt without ingesting anything: a later
+                    # journalled batch may still be readable and may already
+                    # hold the episodes these chunks need.
+                    unresolved_retry_batch = str(
+                        (journal_entry or {}).get("batch_id")
+                        or (journal_entry or {}).get("operation_id")
+                    )
+                    continue
+                if retry_batch_id is None:
+                    if unresolved_retry_batch:
+                        logger.error(
+                            "Zep batch %s: retry batch %s from the journal is "
+                            "unusable, so item(s) %s cannot be resubmitted "
+                            "without risking a duplicate episode; reporting "
+                            "them lost",
+                            submission.batch_id,
+                            unresolved_retry_batch,
+                            indexes,
+                        )
+                        return all_lost(pending)
+                    retry_batch_id = self.add_text_batches(
+                        graph_id,
+                        [retry_chunks[index] for index in indexes],
+                        batch_created_callback=retry_batch_callback,
+                    ).batch_id
+                self._poll_batch_until_terminal(
+                    retry_batch_id,
+                    remaining_budget,
+                    progress_callback,
+                    completed_offset=len(episodes_by_index),
+                    progress_total=submission.item_count,
+                )
+                retry_items = self._list_batch_items(retry_batch_id)
+                partition = self._partition_batch_items(
+                    retry_batch_id, retry_items
+                )
+            except Exception as error:
+                # A retry that blows up must not cost the caller the episodes
+                # that already committed: stop here and report the losses.
+                logger.warning(
+                    "Zep batch %s: retry attempt %s failed (%s: %s)",
+                    submission.batch_id,
+                    attempt,
+                    type(error).__name__,
+                    error,
+                )
+                return all_lost(pending)
+
+            if not partition.reported_indexes <= set(range(len(indexes))):
+                logger.error(
+                    "Zep batch %s: retry batch %s returned sequence indexes %s "
+                    "that do not map back to the resubmitted items",
+                    submission.batch_id,
+                    retry_batch_id,
+                    sorted(partition.reported_indexes),
+                )
+                return all_lost(pending)
+
+            for retry_index, episode_uuid in partition.episodes_by_index.items():
+                episodes_by_index[indexes[retry_index]] = episode_uuid
+
+            # A retry listing can come back short exactly like the main one. An
+            # index it never mentions is in neither bucket, so the subset guard
+            # above passes, the item silently drops out of `pending` and the
+            # build reports every chunk recovered while one is still missing.
+            unreported = [
+                LostBatchItem(sequence_index=index, status=None, error=None)
+                for index in range(len(indexes))
+                if index not in partition.reported_indexes
+            ]
+            remaining = sorted(
+                (
+                    LostBatchItem(
+                        sequence_index=indexes[item.sequence_index],
+                        status=item.status,
+                        error=item.error,
+                    )
+                    for item in partition.lost_items + unreported
+                ),
+                key=lambda item: item.sequence_index,
+            )
+            declined.extend(
+                item for item in remaining
+                if not self._item_is_retryable(item)
+            )
+            pending = [
+                item for item in remaining
+                if self._item_is_retryable(item)
+            ]
+            if not pending:
+                logger.info(
+                    "Zep batch %s: retry attempt %s recovered every "
+                    "resubmitted item",
+                    submission.batch_id,
+                    attempt,
+                )
+                return all_lost([])
+
+        return all_lost(pending)
+
+    def _wait_for_batch(
+        self,
+        submission: BatchSubmission,
+        progress_callback: Optional[Callable] = None,
+        timeout: int | None = None,
+        *,
+        allow_partial: bool = False,
+        retry_chunks: Optional[List[str]] = None,
+        lost_items_callback: Optional[Callable[[List[LostBatchItem]], None]] = None,
+        retry_batch_callback: Optional[Callable[[str | None, str], None]] = None,
+        known_retry_batches: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[str]:
+        """Wait for a Batch API terminal state and keep every landed episode.
+
+        A "partial" batch need not be a failed build. Every item commits its
+        own episode independently, so one item dying on a single LLM timeout
+        used to discard the 61 episodes that were already in the graph and
+        force a 50-minute re-ingest. Salvaging that is opt-in: pass
+        ``allow_partial`` together with ``retry_chunks`` - the ordered chunk
+        list this batch was built from - to have the failed items resubmitted
+        as a follow-up batch, and ``lost_items_callback`` to hear about
+        whatever is still missing once the retries are exhausted. Without
+        ``allow_partial`` a short ingest still raises, so a caller that only
+        counts the returned episodes cannot read a lossy batch as a clean one.
+
+        ``retry_batch_callback`` reports every follow-up batch the retries
+        create, and ``known_retry_batches`` replays the ones a previous run
+        recorded, so resuming an interrupted build never re-ingests a chunk a
+        retry batch already committed.
+        """
+
+        timeout = timeout or ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        # One absolute deadline for the whole wait, retries included. Restarting
+        # the clock per retry turned a 2-hour budget into 6 hours of holding the
+        # project in GRAPH_BUILDING, with /reset and /delete answering 409.
+        deadline = time.time() + timeout
+        status = self._poll_batch_until_terminal(
+            submission.batch_id,
+            timeout,
+            progress_callback,
+            progress_total=submission.item_count,
+        )
+
         items = self._list_batch_items(submission.batch_id)
-        if status != "succeeded":
+        salvageable = {"succeeded"} | ({"partial"} if allow_partial else set())
+        if status not in salvageable:
             failed_items = [
-                item for item in items
-                if getattr(item, "status", None) not in {"succeeded", "skipped"}
+                item for item in items if not self._batch_item_landed(item)
             ]
             first_error = getattr(failed_items[0], "error", None) if failed_items else None
+            logger.error(
+                "Zep batch %s ended as %s with %s failed item(s); first_error=%s",
+                submission.batch_id,
+                status,
+                len(failed_items),
+                first_error,
+            )
             raise RuntimeError(
                 f"Zep batch {submission.batch_id} ended as {status}; "
                 f"failed_items={len(failed_items)}; first_error={first_error}"
             )
-        if len(items) != submission.item_count:
-            raise RuntimeError(
-                f"Zep batch {submission.batch_id} contains {len(items)} items, "
-                f"expected {submission.item_count}"
-            )
 
-        ordered_items = sorted(
-            items,
-            key=lambda item: getattr(item, "sequence_index", 0) or 0,
-        )
-        episode_uuids: List[str] = []
-        for item in ordered_items:
-            item_status = getattr(item, "status", None)
-            episode_uuid = getattr(item, "episode_uuid", None)
-            source_uuid = getattr(item, "source_uuid", None)
-            if item_status != "succeeded" or not episode_uuid:
+        partition = self._partition_batch_items(submission.batch_id, items)
+        episodes_by_index = partition.episodes_by_index
+        lost_items = list(partition.lost_items)
+
+        if status == "succeeded":
+            # A batch the server calls succeeded while still holding an
+            # unfinished item is a contract violation, not a partial ingest.
+            if lost_items:
                 raise RuntimeError(
                     f"Zep batch {submission.batch_id} returned an incomplete item"
                 )
-            if source_uuid and source_uuid != episode_uuid:
+            # Count the distinct indexes that produced an episode rather than
+            # the listing rows: a listing of the right length that repeats one
+            # sequence_index would otherwise pass while a chunk is missing.
+            if len(episodes_by_index) != submission.item_count:
                 raise RuntimeError(
-                    f"Zep batch {submission.batch_id} returned mismatched episode UUIDs"
+                    f"Zep batch {submission.batch_id} produced "
+                    f"{len(episodes_by_index)} episode(s), "
+                    f"expected {submission.item_count}"
                 )
-            episode_uuids.append(episode_uuid)
+
+        if status == "partial":
+            # A partial batch can also come back short. An item the listing
+            # never mentions is just as lost as one that failed, so account for
+            # it here instead of silently dropping the chunk.
+            lost_items.extend(
+                LostBatchItem(sequence_index=index, status=None, error=None)
+                for index in range(submission.item_count)
+                if index not in partition.reported_indexes
+            )
+            lost_items.sort(key=lambda item: item.sequence_index)
+
+        if lost_items:
+            lost_items = self._retry_failed_batch_items(
+                submission,
+                items,
+                episodes_by_index,
+                lost_items,
+                retry_chunks,
+                deadline,
+                progress_callback,
+                retry_batch_callback=retry_batch_callback,
+                known_retry_batches=known_retry_batches,
+            )
+
+        episode_uuids = [
+            episodes_by_index[index] for index in sorted(episodes_by_index)
+        ]
+
+        if lost_items:
+            logger.error(
+                "Zep batch %s lost %s of %s item(s); sequence_indexes=%s "
+                "first_error=%s",
+                submission.batch_id,
+                len(lost_items),
+                submission.item_count,
+                [item.sequence_index for item in lost_items],
+                lost_items[0].error,
+            )
+            if lost_items_callback:
+                lost_items_callback(lost_items)
+            if not episode_uuids:
+                # Nothing landed at all, so there is no graph to salvage.
+                raise RuntimeError(
+                    f"Zep batch {submission.batch_id} ended as {status}; "
+                    f"failed_items={len(lost_items)}; "
+                    f"first_error={lost_items[0].error}"
+                )
 
         if progress_callback:
             progress_callback(
                 t(
-                    'progress.processingComplete',
+                    'progress.episodesTimeout' if lost_items
+                    else 'progress.processingComplete',
                     completed=len(episode_uuids),
                     total=submission.item_count,
                 ),
                 1.0,
             )
         return episode_uuids
-    
+
     def _wait_for_episodes(
         self,
         episode_uuids: List[str],

@@ -56,8 +56,15 @@ const routes = [
     component: () => import('../views/ReportsView.vue')
   },
   {
-    // There is no 404 page, so an unknown path lands on Projects rather than
-    // on an empty router-view.
+    // Lazily loaded for the same reason as the two menus above: the landing
+    // page has no use for the project list.
+    path: '/projects',
+    name: 'Projects',
+    component: () => import('../views/ProjectsView.vue')
+  },
+  {
+    // There is no 404 page, so an unknown path lands on the upload console
+    // rather than on an empty router-view.
     path: '/:pathMatch(.*)*',
     redirect: '/'
   }

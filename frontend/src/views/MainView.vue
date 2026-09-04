@@ -41,6 +41,11 @@
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :buildFailed="buildFailed"
+          :buildError="buildErrorMessage"
+          :rebuildRequired="rebuildRequired"
+          :retryingBuild="retryingBuild"
+          @retry-build="handleRetryBuild"
           @next-step="handleNextStep"
         />
         <!-- Step 2: environment setup -->
@@ -92,6 +97,20 @@ const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
+// The phase says which step the project stands on; it cannot also say the
+// build there is dead. Reusing phase 1 for a failed build rendered the build
+// card as 'processing, 0%' for good, because nothing polls a project that has
+// already failed, so the failure carries its own flag.
+const buildFailed = ref(false)
+// The failed build's own message. It is deliberately not the page-level error
+// ref: that one is written by the project load and by the new-project flow, so
+// sharing it rendered an unrelated failure inside the build's failure panel and
+// let starting a build wipe an unrelated error off the page.
+const buildErrorMessage = ref('')
+// Set when the build endpoint answers 409 'recoverable': the interrupted batch
+// can no longer be resumed, and only a rebuild clears the project.
+const rebuildRequired = ref(false)
+const retryingBuild = ref(false)
 
 // Polling timers
 let pollTimer = null
@@ -112,13 +131,13 @@ const rightPanelStyle = computed(() => {
 
 // --- Status Computed ---
 const statusClass = computed(() => {
-  if (error.value) return 'error'
+  if (error.value || buildFailed.value) return 'error'
   if (currentPhase.value >= 2) return 'completed'
   return 'processing'
 })
 
 const statusText = computed(() => {
-  if (error.value) return 'Error'
+  if (error.value || buildFailed.value) return 'Error'
   if (currentPhase.value >= 2) return 'Ready'
   if (currentPhase.value === 1) return 'Building graph'
   if (currentPhase.value === 0) return 'Generating ontology'
@@ -174,6 +193,25 @@ const initProject = async () => {
   }
 }
 
+// The backend reads project_name off this form and falls back to the literal
+// 'Unnamed Project' when it is missing, which is what every project on the
+// instance was called: the upload console never sent one. It has no name field,
+// so the closest thing to a title it captures is the first line of the
+// requirement, with the first filename standing in when the requirement is
+// blank. An over-long line is cut rather than dropped - a truncated name still
+// tells two projects apart in the Projects list.
+const PROJECT_NAME_MAX = 60
+const NAME_ELLIPSIS = '...'
+
+const deriveProjectName = ({ simulationRequirement, files }) => {
+  const firstLine = (simulationRequirement || '').trim().split('\n')[0].trim()
+  const source = firstLine || (files[0]?.name || '').replace(/\.[^.]+$/, '')
+  if (source.length <= PROJECT_NAME_MAX) return source
+  // The ellipsis comes out of the budget rather than being added to it:
+  // appending it to a full-length slice sent a 63-character name.
+  return `${source.slice(0, PROJECT_NAME_MAX - NAME_ELLIPSIS.length).trimEnd()}${NAME_ELLIPSIS}`
+}
+
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   if (!pending.isPending || pending.files.length === 0) {
@@ -191,6 +229,7 @@ const handleNewProject = async () => {
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
     formData.append('simulation_requirement', pending.simulationRequirement)
+    formData.append('project_name', deriveProjectName(pending))
 
     const res = await generateOntology(formData)
     if (res.success) {
@@ -221,16 +260,18 @@ const loadProject = async () => {
     const res = await getProject(currentProjectId.value)
     if (res.success) {
       projectData.value = res.data
-      updatePhaseByStatus(res.data.status)
+      updatePhaseByStatus(res.data)
       addLog(`Project loaded, status: ${res.data.status}`)
 
       if (res.data.status === 'ontology_generated' && !res.data.graph_id) {
         await startBuildGraph()
       } else if (res.data.status === 'graph_building' && res.data.graph_build_task_id) {
-        currentPhase.value = 1
         startPollingTask(res.data.graph_build_task_id)
-      } else if (res.data.status === 'graph_completed' && res.data.graph_id) {
-        currentPhase.value = 2
+      } else if (res.data.graph_id) {
+        // Any status with a graph_id, not just 'graph_completed'. A build that
+        // failed on its last episode still left every earlier one committed in
+        // FalkorDB, so the graph is there to be drawn and refreshGraph would
+        // have loaded it on demand anyway.
         await loadGraph(res.data.graph_id)
       }
     } else {
@@ -245,44 +286,172 @@ const loadProject = async () => {
   }
 }
 
-const updatePhaseByStatus = (status) => {
-  switch (status) {
+// The build's failure is state of its own, not a phase. Step1GraphBuild reads
+// it to render the failed build - the message the backend recorded, and the
+// two ways out of it - instead of a progress badge no poll will ever move.
+const recordBuildFailure = (message, { rebuildOnly = false } = {}) => {
+  buildErrorMessage.value = message || 'Graph build failed'
+  buildFailed.value = true
+  rebuildRequired.value = rebuildOnly
+  buildProgress.value = null
+}
+
+const clearBuildFailure = () => {
+  buildErrorMessage.value = ''
+  buildFailed.value = false
+  rebuildRequired.value = false
+}
+
+// 'failed' used to set the error and leave currentPhase at its initial -1,
+// which rendered every step card inactive and left the page with nothing on it
+// the user could act on. A failed project is not an empty one: a build that
+// timed out on one episode is recorded as failed with its graph_id already on
+// disk, so it resumes at the same phase a completed build does and only a
+// failure that produced no graph falls back to the build step.
+const updatePhaseByStatus = (project) => {
+  switch (project.status) {
     case 'created':
-    case 'ontology_generated': currentPhase.value = 0; break;
-    case 'graph_building': currentPhase.value = 1; break;
-    case 'graph_completed': currentPhase.value = 2; break;
-    case 'failed': error.value = 'Project failed'; break;
+    case 'ontology_generated': currentPhase.value = 0; clearBuildFailure(); break;
+    case 'graph_building': currentPhase.value = 1; clearBuildFailure(); break;
+    case 'graph_completed': currentPhase.value = 2; clearBuildFailure(); break;
+    case 'failed':
+      // project.error is the one-line str(e) the build recorded, not the
+      // traceback the task carries; it is what the failed card renders.
+      recordBuildFailure(project.error || 'Project failed')
+      currentPhase.value = project.graph_id ? 2 : 1
+      break;
   }
 }
 
-const startBuildGraph = async () => {
+// A read that only refreshes the cached project. It must not take the page
+// down with it: every caller has already published the state it cares about.
+const refreshProjectData = async () => {
   try {
-    currentPhase.value = 1
-    buildProgress.value = { progress: 0, message: 'Preparing the graph build' }
-    addLog('Building the knowledge graph')
+    const res = await getProject(currentProjectId.value)
+    if (res.success) projectData.value = res.data
+  } catch (err) {
+    console.warn('Failed to refresh the project:', err)
+  }
+}
 
-    const res = await buildGraph({ project_id: currentProjectId.value })
+// force is the destructive rebuild: /api/graph/build deletes the graph the run
+// left behind and re-ingests every document. The plain call is the safe one -
+// on a failed project whose Zep batch is still readable the backend resumes
+// that batch, so the episodes already committed are kept.
+const startBuildGraph = async ({ force = false } = {}) => {
+  try {
+    clearBuildFailure()
+    currentPhase.value = 1
+    buildProgress.value = {
+      progress: 0,
+      message: force ? 'Rebuilding the graph from scratch' : 'Preparing the graph build'
+    }
+    addLog(force ? 'Rebuilding the knowledge graph from scratch' : 'Building the knowledge graph')
+
+    const payload = { project_id: currentProjectId.value }
+    if (force) payload.force = true
+
+    const res = await buildGraph(payload)
     if (res.success) {
-      if (res.data.reused && res.data.graph_id) {
-        currentPhase.value = 2
+      if (res.data.reused) {
+        // 'reused' covers two different situations - a graph that is already
+        // complete, and a build still running under an earlier task - and only
+        // the project says which. Taking a running build for a finished one is
+        // what opens the environment-setup button over a graph that has an id
+        // but nothing in it yet.
         buildProgress.value = null
-        const projectRes = await getProject(currentProjectId.value)
-        if (projectRes.success) {
-          projectData.value = projectRes.data
+
+        // This read is the app finding out WHICH of the two it is; it is a read
+        // about the build, not the build. It used to sit bare inside the outer
+        // try, so a network blip or a backend restart between the POST above
+        // and this GET fell into the catch below and painted 'BUILD FAILED'
+        // over a build the backend had just confirmed was alive. It answers for
+        // itself now, and a failure here costs the page the status - never the
+        // build it was following.
+        let reusedProject = null
+        let reusedReadError = ''
+        try {
+          const projectRes = await getProject(currentProjectId.value)
+          if (projectRes.success) reusedProject = projectRes.data
+        } catch (err) {
+          reusedReadError = err.message
+          addLog(`Could not read the project back after the build request: ${err.message}`)
         }
-        await loadGraph(res.data.graph_id)
+
+        if (!reusedProject) {
+          // Nothing was learned about the build, and following res.data.task_id
+          // here is a dead end rather than a fallback: the likeliest reason this
+          // read failed is a backend that is down or restarting, and the task
+          // registry is in-memory, so a restarted backend answers
+          // GET /api/graph/task/<id> with 404 for the rest of that task's life
+          // while the poll only logs it - no progress, no failure, no way out.
+          // The page reports what it actually knows and leaves the failure
+          // panel's controls to try again with.
+          const detail = reusedReadError ? `: ${reusedReadError}` : ''
+          recordBuildFailure(`Could not read the project back after the build request${detail}. The build may still be running - reload the page, or start the build again, to find out.`)
+          addLog('Could not follow the reused graph build: the project could not be read back')
+          return
+        }
+
+        projectData.value = reusedProject
+        updatePhaseByStatus(reusedProject)
+
+        if (reusedProject.status === 'graph_building') {
+          // The project's own task id first; the reused reply names the same
+          // build when the project was saved without one.
+          const runningTaskId = reusedProject.graph_build_task_id || res.data.task_id
+          if (runningTaskId) {
+            addLog(`Attached to the graph build task already running: ${runningTaskId}`)
+            startPollingTask(runningTaskId)
+            return
+          }
+          // A build in progress that names no task cannot be followed, and
+          // leaving the page on the build phase would sit at 0% for good.
+          recordBuildFailure('The backend reports a graph build in progress but names no task to follow. Start the build again to take it over.')
+          addLog('The reused graph build named no task to follow')
+          return
+        }
+
+        if (res.data.graph_id) {
+          await loadGraph(res.data.graph_id)
+        }
         return
       }
 
+      if (res.data.resumed) {
+        addLog('Resuming the Zep batch the interrupted build left behind')
+      }
       addLog(`Started graph build task ${res.data.task_id}`)
+      // Read the project back before the first poll so the cached copy carries
+      // the build that has just started. Step1GraphBuild's environment-setup
+      // gate reads that status, and a project still remembered as 'failed'
+      // would leave the button open over a graph this run is rewriting.
+      await refreshProjectData()
       startPollingTask(res.data.task_id)
     } else {
-      error.value = res.error
+      recordBuildFailure(res.error)
       addLog(`Failed to start the graph build: ${res.error}`)
     }
   } catch (err) {
-    error.value = err.message
+    // 409 'recoverable' is the backend reporting that it has just marked the
+    // stale build failed and that nothing of it is left to resume, so the card
+    // stops offering a resume as the way forward.
+    recordBuildFailure(err.message, { rebuildOnly: err.response?.data?.recoverable === true })
     addLog(`Failed to start the graph build: ${err.message}`)
+  }
+}
+
+// The two ways out of a failed build. The plain retry is the resuming one;
+// force is the deliberate rebuild, which Step1GraphBuild confirms before it
+// emits it.
+const handleRetryBuild = async ({ force = false } = {}) => {
+  if (retryingBuild.value) return
+
+  retryingBuild.value = true
+  try {
+    await startBuildGraph({ force })
+  } finally {
+    retryingBuild.value = false
   }
 }
 
@@ -311,6 +480,9 @@ const fetchGraphData = async () => {
 }
 
 const startPollingTask = (taskId) => {
+  // A retry can be pressed while an earlier timer is still around; without
+  // this each attempt would leave its own interval running.
+  stopPolling()
   pollTaskStatus(taskId)
   pollTimer = setInterval(() => pollTaskStatus(taskId), 2000)
 }
@@ -342,8 +514,33 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
-        error.value = task.error
-        addLog(`Graph build task failed: ${task.error}`)
+        stopGraphPolling()
+
+        // Recorded before the request below, which can throw: the poll is
+        // already stopped, so a follow-up that fails must not leave the card on
+        // a progress badge nothing is left to move. task.error is the raw
+        // traceback, so the message is the task's own summary line.
+        recordBuildFailure(task.message || task.error)
+        addLog(`Graph build task failed: ${task.message || task.error}`)
+
+        // Then read the project back rather than trusting the phase the page
+        // was on: the build records its failure with graph_id already saved
+        // when it got as far as creating the graph, and that is what decides
+        // whether the graph can still be drawn and a simulation created from
+        // it.
+        const projRes = await getProject(currentProjectId.value)
+        if (projRes.success) {
+          projectData.value = projRes.data
+          // Only once the project has caught up with the task. The two are
+          // saved one after the other, and a status still reading
+          // 'graph_building' would recompute this as a build in progress.
+          if (projRes.data.status === 'failed') {
+            updatePhaseByStatus(projRes.data)
+          }
+          if (projRes.data.graph_id) {
+            await loadGraph(projRes.data.graph_id)
+          }
+        }
       }
     }
   } catch (e) {

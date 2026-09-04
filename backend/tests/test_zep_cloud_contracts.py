@@ -3,7 +3,7 @@ import json
 
 import httpx
 import pytest
-from zep_cloud import Zep
+from zep_cloud import NotFoundError, Zep
 from zep_cloud.core.api_error import ApiError as ZepApiError
 
 from app.services import graph_builder as graph_builder_module
@@ -395,7 +395,7 @@ def test_batch_wait_validates_terminal_items_and_opaque_zero_cursor():
     assert [call["cursor"] for call in list_calls] == [None, 0]
 
 
-@pytest.mark.parametrize("status", ["partial", "failed", "invalid", "canceled"])
+@pytest.mark.parametrize("status", ["failed", "invalid", "canceled"])
 def test_batch_non_success_terminal_states_fail(status):
     builder = object.__new__(GraphBuilderService)
     builder.client = SimpleNamespace(
@@ -415,6 +415,803 @@ def test_batch_non_success_terminal_states_fail(status):
         )
 
 
+def _batch_item(sequence_index, status, episode_uuid=None, error=None):
+    return SimpleNamespace(
+        sequence_index=sequence_index,
+        status=status,
+        episode_uuid=episode_uuid,
+        source_uuid=episode_uuid,
+        graph_id="graph-1",
+        error=error,
+    )
+
+
+def test_partial_batch_retries_only_the_failed_items():
+    """One timed-out episode must not discard the ones that committed."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(status="partial", progress=None)
+            return SimpleNamespace(status="succeeded", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-retry")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-3")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "succeeded", "episode-2"),
+                        _batch_item(2, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-3")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 3),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two", "chunk three"],
+        lost_items_callback=lost.extend,
+    )
+
+    assert episode_uuids == ["episode-1", "episode-2", "episode-3"]
+    # Only the failed chunk is re-ingested; the other two already have episodes.
+    assert resubmitted == [["chunk three"]]
+    assert lost == []
+
+
+def test_partial_batch_keeps_landed_episodes_when_retries_exhaust(monkeypatch):
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id=f"batch-retry-{len(resubmitted)}")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-pending")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "failed", error={"message": "llm timeout"})],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    # Prove the bound is the bound: one retry means exactly one resubmission.
+    monkeypatch.setattr(graph_builder_module, "GRAPH_BUILD_MAX_ITEM_RETRIES", 1)
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        lost_items_callback=lost.extend,
+    )
+
+    assert episode_uuids == ["episode-1"]
+    assert resubmitted == [["chunk two"]]
+    assert [item.sequence_index for item in lost] == [1]
+    assert lost[0].error == {"message": "llm timeout"}
+
+
+def test_partial_batch_resubmits_an_item_the_listing_never_reported():
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(status="partial", progress=None)
+            return SimpleNamespace(status="succeeded", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-retry")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-2")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                # The second item is missing from the listing entirely.
+                return SimpleNamespace(
+                    items=[_batch_item(0, "succeeded", "episode-1")],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-2")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+    )
+
+    assert episode_uuids == ["episode-1", "episode-2"]
+    assert resubmitted == [["chunk two"]]
+
+
+def test_retry_batch_short_listing_is_not_reported_as_recovered():
+    """A resubmitted item the retry listing omits is still a lost chunk."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id=f"batch-retry-{len(resubmitted)}")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-pending")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            # The retry batch reports nothing at all about the item it was
+            # given, which used to read as "recovered every failed item".
+            return SimpleNamespace(items=[], next_cursor=None)
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        lost_items_callback=lost.extend,
+    )
+
+    assert episode_uuids == ["episode-1"]
+    assert [item.sequence_index for item in lost] == [1]
+    assert resubmitted == [["chunk two"], ["chunk two"]]
+
+
+def test_partial_batch_raises_unless_the_caller_opts_into_salvage():
+    """A caller that only counts episodes must not silently get a short list."""
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def list_items(self, **_kwargs):
+            return SimpleNamespace(
+                items=[
+                    _batch_item(0, "succeeded", "episode-1"),
+                    _batch_item(1, "failed", error={"message": "llm timeout"}),
+                ],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+
+    with pytest.raises(RuntimeError, match="partial"):
+        builder._wait_for_batch(
+            BatchSubmission("batch-1", "operation", [], 2),
+            timeout=1,
+        )
+
+
+def test_partial_batch_fails_when_no_episode_landed_at_all():
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def list_items(self, **_kwargs):
+            return SimpleNamespace(
+                items=[_batch_item(0, "failed", error={"message": "bad"})],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+
+    with pytest.raises(RuntimeError, match="partial"):
+        builder._wait_for_batch(
+            BatchSubmission("batch-1", "operation", [], 1),
+            timeout=1,
+            allow_partial=True,
+        )
+
+
+def test_retry_budget_comes_out_of_the_caller_timeout(monkeypatch):
+    """Each retry must spend the caller's deadline, not restart it."""
+
+    resubmitted = []
+    clock = {"now": 0.0}
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            # Polling the main batch consumes the whole ingestion budget.
+            clock["now"] += 20.0
+            return SimpleNamespace(status="partial", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-retry")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-2")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **_kwargs):
+            return SimpleNamespace(
+                items=[
+                    _batch_item(0, "succeeded", "episode-1"),
+                    _batch_item(1, "failed", error={"message": "llm timeout"}),
+                ],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    monkeypatch.setattr(graph_builder_module.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(graph_builder_module.time, "sleep", lambda _seconds: None)
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=10,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        lost_items_callback=lost.extend,
+    )
+
+    assert episode_uuids == ["episode-1"]
+    assert resubmitted == []
+    assert [item.sequence_index for item in lost] == [1]
+
+
+def test_skipped_item_is_reported_lost_without_being_resubmitted():
+    """Zep declined this item; replaying it would risk a duplicate episode."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-retry")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-2")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "skipped"),
+                        _batch_item(2, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-2")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 3),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two", "chunk three"],
+        lost_items_callback=lost.extend,
+    )
+
+    assert episode_uuids == ["episode-1", "episode-2"]
+    # Only the failed chunk goes back; the skipped one is reported, not replayed.
+    assert resubmitted == [["chunk three"]]
+    assert [(item.sequence_index, item.status) for item in lost] == [(1, "skipped")]
+
+
+def test_a_truncated_item_is_reported_lost_without_being_resubmitted():
+    """Truncation is deterministic, so a resubmission only truncates again."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-retry")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-3")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(
+                            1,
+                            "failed",
+                            error={
+                                "type": "TruncatedResponseError",
+                                "message": (
+                                    "hit max_tokens=4096 before closing its JSON"
+                                ),
+                            },
+                        ),
+                        _batch_item(2, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-3")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 3),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two", "chunk three"],
+        lost_items_callback=lost.extend,
+    )
+
+    assert episode_uuids == ["episode-1", "episode-3"]
+    # The timeout is worth another attempt; the truncation never is, so the
+    # retry budget goes to the item that can still land.
+    assert resubmitted == [["chunk three"]]
+    assert [item.sequence_index for item in lost] == [1]
+
+
+def test_succeeded_batch_rejects_a_duplicate_sequence_index():
+    """A listing of the right length can still be missing a chunk."""
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="succeeded", progress=None)
+
+        def list_items(self, **_kwargs):
+            return SimpleNamespace(
+                items=[
+                    _batch_item(0, "succeeded", "episode-1"),
+                    _batch_item(0, "succeeded", "episode-1"),
+                ],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+
+    with pytest.raises(RuntimeError, match="expected 2"):
+        builder._wait_for_batch(
+            BatchSubmission("batch-1", "operation", [], 2),
+            timeout=1,
+        )
+
+
+def test_resume_replays_a_recorded_retry_batch_instead_of_reingesting():
+    """A crash after the retries succeeded must not duplicate their episodes."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(status="partial", progress=None)
+            return SimpleNamespace(status="succeeded", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-retry-2")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-2")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-2")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    recorded = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        retry_batch_callback=lambda batch_id, operation_id: recorded.append(
+            {"batch_id": batch_id, "operation_id": operation_id}
+        ),
+        known_retry_batches=[],
+    )
+
+    assert episode_uuids == ["episode-1", "episode-2"]
+    assert resubmitted == [["chunk two"]]
+    assert [entry["batch_id"] for entry in recorded] == [None, "batch-retry-2"]
+
+    # Replaying the journalled batch recovers the same episode without a
+    # second ingest of the same chunk.
+    resubmitted.clear()
+    replayed = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        known_retry_batches=[entry for entry in recorded if entry["batch_id"]],
+    )
+
+    assert replayed == ["episode-1", "episode-2"]
+    assert resubmitted == []
+
+
+def _aged_out_batch(batch_id):
+    return NotFoundError(
+        body={"message": f"batch {batch_id} not found"},
+    )
+
+
+def _retry_operation_id(chunks):
+    """The identity a retry batch for these chunks is journalled under."""
+
+    return GraphBuilderService.build_operation_id("graph-1", chunks)
+
+
+def test_an_unreadable_journal_entry_still_lets_a_later_one_recover():
+    """One aged-out retry batch must not abandon the retries that follow it."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **kwargs):
+            batch_id = kwargs["batch_id"]
+            if batch_id == "batch-1":
+                return SimpleNamespace(status="partial", progress=None)
+            if batch_id == "batch-dead":
+                raise _aged_out_batch(batch_id)
+            return SimpleNamespace(status="succeeded", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-fresh")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-2")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-2")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        lost_items_callback=lost.extend,
+        known_retry_batches=[
+            # Both entries were journalled for this same chunk set, so either
+            # one may be replayed against it; the operation ID is what says so.
+            {"operation_id": _retry_operation_id(["chunk two"]), "batch_id": "batch-dead"},
+            {"operation_id": _retry_operation_id(["chunk two"]), "batch_id": "batch-alive"},
+        ],
+    )
+
+    assert episode_uuids == ["episode-1", "episode-2"]
+    assert lost == []
+    # The second journalled batch already held the episode, so nothing was
+    # ingested a second time.
+    assert resubmitted == []
+
+
+def test_an_unreadable_journal_entry_is_not_replaced_by_a_fresh_ingest():
+    """Nobody can say what the dead batch committed, so do not repeat it."""
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(status="partial", progress=None)
+            raise _aged_out_batch(kwargs["batch_id"])
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-fresh")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-2")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **_kwargs):
+            return SimpleNamespace(
+                items=[
+                    _batch_item(0, "succeeded", "episode-1"),
+                    _batch_item(1, "failed", error={"message": "llm timeout"}),
+                ],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 2),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two"],
+        lost_items_callback=lost.extend,
+        known_retry_batches=[
+            {
+                "operation_id": _retry_operation_id(["chunk two"]),
+                "batch_id": "batch-dead",
+            }
+        ],
+    )
+
+    assert episode_uuids == ["episode-1"]
+    assert resubmitted == []
+    assert [item.sequence_index for item in lost] == [1]
+
+
+def test_a_journal_entry_is_never_mapped_onto_a_different_pending_set():
+    """Retry results are merged by position, so identity has to be checked.
+
+    The journal was written by a run whose second attempt carried chunk three
+    alone. This run cannot shrink `pending` the same way - its first entry is
+    unreadable - so replaying the second entry positionally would credit chunk
+    index 1 with chunk three's episode: the wrong source chunk, silently.
+    """
+
+    resubmitted = []
+
+    class BatchApi:
+        def get(self, **kwargs):
+            batch_id = kwargs["batch_id"]
+            if batch_id == "batch-1":
+                return SimpleNamespace(status="partial", progress=None)
+            if batch_id == "batch-dead":
+                raise _aged_out_batch(batch_id)
+            return SimpleNamespace(status="succeeded", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-fresh")
+
+        def add(self, **kwargs):
+            resubmitted.append([item.data for item in kwargs["items"]])
+            return [SimpleNamespace(episode_uuid="episode-fresh")]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **kwargs):
+            if kwargs["batch_id"] == "batch-1":
+                return SimpleNamespace(
+                    items=[
+                        _batch_item(0, "succeeded", "episode-1"),
+                        _batch_item(1, "failed", error={"message": "llm timeout"}),
+                        _batch_item(2, "failed", error={"message": "llm timeout"}),
+                    ],
+                    next_cursor=None,
+                )
+            # The batch that carried chunk three alone; its only item sits at
+            # sequence index 0.
+            return SimpleNamespace(
+                items=[_batch_item(0, "succeeded", "episode-3")],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    lost = []
+
+    episode_uuids = builder._wait_for_batch(
+        BatchSubmission("batch-1", "operation", [], 3),
+        timeout=1,
+        allow_partial=True,
+        retry_chunks=["chunk one", "chunk two", "chunk three"],
+        lost_items_callback=lost.extend,
+        known_retry_batches=[
+            {
+                "operation_id": _retry_operation_id(["chunk two", "chunk three"]),
+                "batch_id": "batch-dead",
+            },
+            {
+                "operation_id": _retry_operation_id(["chunk three"]),
+                "batch_id": "batch-alive",
+            },
+        ],
+    )
+
+    # chunk three's episode belongs to chunk three or to nobody.
+    assert episode_uuids == ["episode-1"]
+    assert [item.sequence_index for item in lost] == [1, 2]
+    # And nothing is re-ingested either: batch-dead may already hold these.
+    assert resubmitted == []
+
+
+def test_service_worker_reports_the_chunks_its_retries_could_not_recover(monkeypatch):
+    """The legacy build path opts into salvage, so it must report the losses."""
+
+    updates = []
+
+    class BatchApi:
+        def get(self, **_kwargs):
+            return SimpleNamespace(status="partial", progress=None)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(batch_id="batch-1")
+
+        def add(self, **kwargs):
+            return [
+                SimpleNamespace(episode_uuid=f"episode-{index}")
+                for index, _item in enumerate(kwargs["items"])
+            ]
+
+        def process(self, **_kwargs):
+            return SimpleNamespace(status="queued")
+
+        def list_items(self, **_kwargs):
+            return SimpleNamespace(
+                items=[
+                    _batch_item(0, "succeeded", "episode-0"),
+                    _batch_item(1, "failed", error={"message": "llm timeout"}),
+                    _batch_item(2, "succeeded", "episode-2"),
+                ],
+                next_cursor=None,
+            )
+
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(batch=BatchApi())
+    builder.task_manager = SimpleNamespace(
+        update_task=lambda task_id, **kwargs: updates.append((task_id, kwargs)),
+        complete_task=lambda task_id, result: updates.append(
+            (task_id, {"status": "complete_task", "result": result})
+        ),
+        fail_task=lambda task_id, error: updates.append(
+            (task_id, {"status": "fail_task", "error": error})
+        ),
+    )
+    builder.create_graph = lambda name, **_kwargs: "graph-1"
+    builder.set_ontology = lambda _graph_id, _ontology: None
+    builder._get_graph_info = lambda graph_id: graph_builder_module.GraphInfo(
+        graph_id=graph_id, node_count=4, edge_count=3, entity_types=["Person"]
+    )
+    # One retry, and it recovers nothing, so the item stays lost.
+    monkeypatch.setattr(graph_builder_module, "GRAPH_BUILD_MAX_ITEM_RETRIES", 1)
+
+    builder._build_graph_worker(
+        "task-1",
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+        {"entity_types": [], "edge_types": []},
+        "Graph",
+        30,
+        0,
+        350,
+    )
+
+    completions = [
+        kwargs for _task_id, kwargs in updates
+        if kwargs.get("status") == graph_builder_module.TaskStatus.COMPLETED
+    ]
+    assert len(completions) == 1
+    result = completions[0]["result"]
+    assert result["lost_chunk_count"] == 1
+    assert result["lost_chunk_indexes"] == [1]
+    assert result["chunk_count"] == 3
+    # The chunks that landed, not the chunks that were submitted.
+    assert result["chunks_processed"] == 2
+    assert "fail_task" not in [
+        kwargs.get("status") for _task_id, kwargs in updates
+    ]
+
+
 def test_batch_wait_times_out_while_status_remains_nonterminal(monkeypatch):
     builder = object.__new__(GraphBuilderService)
     builder.client = SimpleNamespace(
@@ -422,7 +1219,9 @@ def test_batch_wait_times_out_while_status_remains_nonterminal(monkeypatch):
             get=lambda **_kwargs: SimpleNamespace(status="processing", progress=None)
         )
     )
-    timestamps = iter([0.0, 2.0])
+    # One reading for the ingestion deadline, then the poll's own start and
+    # first elapsed check.
+    timestamps = iter([0.0, 0.0, 2.0])
     monkeypatch.setattr(graph_builder_module.time, "time", lambda: next(timestamps))
     monkeypatch.setattr(graph_builder_module.time, "sleep", lambda _seconds: None)
 

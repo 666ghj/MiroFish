@@ -37,22 +37,20 @@ const route = useRoute()
 // named target while an unmatched path resolves to an empty route and renders
 // as an inert link.
 const navLinks = [
-  { label: 'Projects', path: '/', exact: true },
-  { label: 'Simulations', path: '/simulations', exact: false },
-  { label: 'Reports', path: '/reports', exact: false }
+  { label: 'Projects', path: '/projects' },
+  { label: 'Simulations', path: '/simulations' },
+  { label: 'Reports', path: '/reports' }
 ]
 
 const currentPath = computed(() => route.path)
 
 // The active class is computed rather than left to .router-link-active because
-// that class only appears once a matching route exists, and because Projects
-// points at '/', which prefix-matches every route in the app.
-const isActive = (link) => {
-  if (link.exact) {
-    return currentPath.value === link.path
-  }
-  return currentPath.value === link.path || currentPath.value.startsWith(`${link.path}/`)
-}
+// that class only appears once a matching route exists. Projects used to point
+// at '/', which prefix-matches every route in the app and needed an exact-match
+// case of its own; it points at the project list now, so all three links match
+// the same way.
+const isActive = (link) =>
+  currentPath.value === link.path || currentPath.value.startsWith(`${link.path}/`)
 </script>
 
 <style scoped>

@@ -65,3 +65,19 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * List projects, newest first.
+ *
+ * Backs the Projects menu.
+ *
+ * @param {Number} limit
+ * @returns {Promise}
+ */
+export function listProjects(limit = 50) {
+  return service({
+    url: '/api/graph/project/list',
+    method: 'get',
+    params: { limit }
+  })
+}
