@@ -8,7 +8,10 @@
     <div v-else-if="!total" class="table-state is-empty">
       <strong>{{ $t('simulations.empty') }}</strong>
       <span>{{ $t('simulations.emptyDesc') }}</span>
-      <router-link class="state-action" to="/">{{ $t('simulations.emptyAction') }}</router-link>
+      <!-- "Go to Projects" led to the upload console back when '/' was the only
+           thing the Projects nav entry pointed at. The project list is where a
+           simulation is actually started from, so it goes there now. -->
+      <router-link class="state-action" to="/projects">{{ $t('simulations.emptyAction') }}</router-link>
     </div>
 
     <div v-else-if="!simulations.length" class="table-state is-empty">

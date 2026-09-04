@@ -47,7 +47,18 @@ class Project:
     graph_build_task_id: Optional[str] = None
     zep_batch_id: Optional[str] = None
     zep_batch_operation_id: Optional[str] = None
-    
+    # Every follow-up batch the ingest retries created, journaled as
+    # {operation_id, batch_id} in submission order. A build that dies after
+    # recovering its failed chunks resumes by polling these instead of
+    # re-ingesting chunks that already committed their episodes.
+    zep_retry_batches: List[Dict[str, Optional[str]]] = field(default_factory=list)
+    # Graphs an earlier attempt created and a later build walked away from. A
+    # non-forced retry deliberately keeps the Cloud graph instead of deleting
+    # the episodes that landed, but the new build overwrites graph_id - without
+    # this list the old graph would stay in Zep with nothing referencing it, so
+    # neither reset nor DELETE /graph/delete could ever find it again.
+    orphaned_graph_ids: List[str] = field(default_factory=list)
+
     # Settings
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
@@ -72,6 +83,8 @@ class Project:
             "graph_build_task_id": self.graph_build_task_id,
             "zep_batch_id": self.zep_batch_id,
             "zep_batch_operation_id": self.zep_batch_operation_id,
+            "zep_retry_batches": self.zep_retry_batches,
+            "orphaned_graph_ids": self.orphaned_graph_ids,
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
@@ -99,6 +112,8 @@ class Project:
             graph_build_task_id=data.get('graph_build_task_id'),
             zep_batch_id=data.get('zep_batch_id'),
             zep_batch_operation_id=data.get('zep_batch_operation_id'),
+            zep_retry_batches=data.get('zep_retry_batches') or [],
+            orphaned_graph_ids=data.get('orphaned_graph_ids') or [],
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
@@ -226,12 +241,18 @@ class ProjectManager:
 
     @classmethod
     def find_projects_by_graph_id(cls, graph_id: str) -> List[Project]:
-        """Return every persisted project that references a Cloud graph."""
+        """Return every persisted project that references a Cloud graph.
+
+        A graph an earlier attempt abandoned counts as a reference: it is the
+        only record that the graph exists, and deleting it is the whole point
+        of keeping the record.
+        """
 
         return [
             project
             for project in cls.list_projects(limit=None)
             if project.graph_id == graph_id
+            or graph_id in project.orphaned_graph_ids
         ]
     
     @classmethod

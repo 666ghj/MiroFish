@@ -565,7 +565,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             episode_uuids=[_uuid(item) for item in added_details if _uuid(item)],
             item_count=len(batch_items),
         )
+        # No allow_partial here on purpose: this harness validates the Cloud
+        # contract, so a lossy ingest has to fail loudly instead of quietly
+        # returning fewer episodes than the batch was given items.
         baseline_episode_uuids = builder._wait_for_batch(submission, timeout=args.timeout)
+        if len(baseline_episode_uuids) != len(batch_items):
+            raise AssertionError(
+                f"batch ingest produced {len(baseline_episode_uuids)} episode(s) "
+                f"for {len(batch_items)} submitted item(s)"
+            )
         listed_items, batch_pages = _list_batch_items(client, batch_id, page_size=3)
         result["batch"] = {
             "status": client.batch.get(batch_id=batch_id).status,
