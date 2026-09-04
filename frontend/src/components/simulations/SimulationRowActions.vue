@@ -109,16 +109,6 @@ const { t } = useI18n()
 // these strings live here until keys exist for them; they are English-only,
 // like the rest of the product.
 
-// GET /history reports 'preparing' for a preparation that is running right now
-// and for one a backend restart killed - preparation runs in a daemon thread,
-// so it dies without raising and nothing writes a failure. The two are
-// indistinguishable from here, so this says what is true of both: the step has
-// not finished, waiting resolves the first case and Restart resolves the
-// second.
-const PREPARING_BLOCKED_HINT =
-  'Preparation has not finished. If it is still running this opens when it completes; ' +
-  'if it was interrupted, Restart recovers the simulation.'
-
 // Restart on a live run is not a restart. The backend reaps the child and
 // deletes the run state, the log, both action files and both databases before
 // relaunching, so the run being watched is simply gone.
@@ -145,8 +135,9 @@ const menuStyle = ref({})
 const primary = computed(() => primaryAction(props.simulation))
 const available = computed(() => secondaryActions(props.simulation))
 
+// 'preparing' is not among these any more: the row opens into the setup view,
+// which follows the preparation instead of dead-ending on a disabled button.
 const blockedHint = computed(() => {
-  if (primary.value.blocked === 'preparing') return PREPARING_BLOCKED_HINT
   if (primary.value.blocked === 'stale') return t('simulations.staleHint')
   return ''
 })

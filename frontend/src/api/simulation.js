@@ -10,10 +10,62 @@ export const createSimulation = (data) => {
 
 /**
  * Prepare a simulation environment. Runs as a background task.
+ *
+ * Answers 409 with coalesced:true when a preparation for the same simulation is
+ * already running in the backend process, rather than starting a second one
+ * over the same profile and config files. Read that with pendingPreparation
+ * and follow the task it names; do not call this directly from a component -
+ * the decision to prepare belongs to store/preparation.js.
+ *
  * @param {Object} data - { simulation_id, entity_types?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
  */
 export const prepareSimulation = (data) => {
   return service.post('/api/simulation/prepare', data)
+}
+
+/**
+ * Read the join signal out of a 409 that reports a preparation in flight.
+ *
+ * Both routes answer with the task that reports the running preparation, under
+ * a marker that says the refusal is benign:
+ *   /prepare  { success: false, pending: true, coalesced: true, task_id }
+ *   /restart  { success: false, pending: true, preparation_live: true, task_id }
+ * coalesced means this request joined the preparation already running - nothing
+ * failed. preparation_live means the restart was refused because one is running
+ * and owns the files it would clear. A claim whose thread has died is neither:
+ * the backend drops it, so a retry after that is accepted rather than refused.
+ *
+ * pending on its own is deliberately NOT enough. It is also emitted for
+ * SimulationStopPending (backend/app/api/simulation.py, the restart and
+ * stop paths), which means "the previous run's monitor is still publishing its
+ * terminal state" - nothing to do with preparation. Accepting a bare pending
+ * here reported that as a preparation in flight and sent the caller off to
+ * poll a preparation task that does not exist.
+ *
+ * This arrives in a catch block because the wrapper in ./index rejects any body
+ * that says success:false. The body itself survives on err.response.data, which
+ * is what this reads.
+ *
+ * @param {Error} err - the rejection from prepareSimulation or restartSimulation
+ * @returns {?Object} { taskId, message, coalesced, preparationLive }, or null
+ *   when this is a real failure
+ */
+export const pendingPreparation = (err) => {
+  const body = err?.response?.data
+  if (!body) return null
+
+  const benign = body.coalesced === true || body.preparation_live === true
+  if (!benign) return null
+
+  return {
+    // Null between the claim being taken and its task being created: a
+    // fraction of a second, and /prepare/status still answers for the
+    // simulation_id alone.
+    taskId: body.task_id || null,
+    message: body.error || '',
+    coalesced: body.coalesced === true,
+    preparationLive: body.preparation_live === true
+  }
 }
 
 /**
@@ -98,9 +150,11 @@ export const startSimulation = (data) => {
  * Restart a simulation from a clean slate.
  *
  * Always quiesces the previous run and clears its output before relaunching,
- * and rescues a simulation stranded in 'preparing' on the way. Answers 409
- * with pending:true when a preparation is genuinely in flight; read
- * err.response.data.pending to tell that from a real failure.
+ * and rescues a simulation stranded in 'preparing' on the way - including one
+ * stranded by a preparation thread that died, whose claim this route drops
+ * before it rescues. Answers 409 with preparation_live:true only while a
+ * preparation is genuinely running; read that with pendingPreparation to tell
+ * it from a real failure.
  *
  * @param {Object} data - { simulation_id, platform?, max_rounds?, enable_graph_memory_update? }
  */

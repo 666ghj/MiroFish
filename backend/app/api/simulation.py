@@ -5,8 +5,10 @@ Step 2: read and filter Zep entities, then prepare and run an OASIS simulation.
 
 import os
 import threading
+import time
 import traceback
 from contextlib import nullcontext
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from flask import request, jsonify, send_file
@@ -88,31 +90,127 @@ def optimize_interview_prompt(prompt: str) -> str:
 
 # ============== Preparation claims ==============
 
+
+@dataclass
+class _PreparationClaim:
+    """
+    One claimed preparation: the task that reports it and the thread doing it.
+
+    The thread is held so that a claim can be checked for life. A claim used to
+    be nothing but a task id, so a thread that died without releasing it left
+    an entry no request could tell from a healthy preparation - and because
+    /prepare and /restart both refuse while a claim exists, the simulation was
+    then wedged until the backend was restarted.
+    """
+
+    task_id: Optional[str] = None
+    thread: Optional[threading.Thread] = None
+    # When the claim was taken, used ONLY to bound the pre-start window below.
+    claimed_at: float = field(default_factory=time.monotonic)
+
+
 # Simulations whose preparation thread is running in THIS process, mapped to
-# the task that reports its progress. Preparation is a daemon thread with no
+# the claim that describes it. Preparation is a daemon thread with no
 # cancellation point, and it writes the agent profiles and the simulation
 # config into the same directory a run reads, so a second preparation - or a
 # restart - must not race it. The registry is also what tells an in-flight
 # preparation apart from one a backend restart stranded in 'preparing', which
 # is otherwise indistinguishable from the outside: both read status=preparing.
-_active_preparations: Dict[str, Optional[str]] = {}
+_active_preparations: Dict[str, _PreparationClaim] = {}
 _active_preparations_guard = threading.Lock()
+
+# How long a claim may sit with no started thread behind it. The real window is
+# a handful of statements on the request thread, so this is orders of magnitude
+# more than it needs; it exists only so the window cannot become permanent.
+CLAIM_START_GRACE_SECONDS = 60.0
+
+
+def _claim_is_live(claim: _PreparationClaim) -> bool:
+    """
+    Is there still a thread behind this claim?
+
+    Liveness is asked of the thread rather than of a deadline on purpose:
+    preparation makes real LLM calls per entity and a healthy run can
+    legitimately take many minutes, so a wall-clock timeout would evict
+    exactly the runs the claim exists to protect.
+
+    Two states have no thread running yet, both of them windows inside
+    /prepare that are a few statements wide and release the claim if they
+    raise:
+    - no thread attached yet: the request is still between the claim and
+      building the worker
+    - a thread attached but never started (ident is None): the request is
+      between attaching it and start()
+
+    Those windows are bounded by CLAIM_START_GRACE_SECONDS rather than trusted
+    forever. Treating them as unconditionally live reproduced the exact bug
+    this registry exists to fix: a claim that never got a thread was as
+    eternal as the bare task id it replaced, and wedged /prepare, /restart and
+    /delete for the life of the process.
+
+    Note this grace bounds ONLY the gap between claiming and starting - a few
+    statements, microseconds in practice, and always on the request thread. It
+    is NOT a deadline on the preparation: once the thread is running, liveness
+    is asked of the thread alone, so a healthy multi-minute LLM run is never
+    evicted.
+    """
+    thread = claim.thread
+    if thread is None or thread.ident is None:
+        return (time.monotonic() - claim.claimed_at) < CLAIM_START_GRACE_SECONDS
+    return thread.is_alive()
+
+
+def _discard_dead_preparation(simulation_id: str) -> bool:
+    """
+    Drop a claim whose thread is gone, and report whether one was dropped.
+
+    This is the escape from a leaked claim. Every exit of the preparation
+    thread releases its claim in a finally, so a leftover entry means the
+    thread died in a way that ran no Python at all - and without this, that
+    entry outlived the work it described for as long as the process lived.
+
+    Returns:
+        True when a dead claim was removed
+    """
+    with _active_preparations_guard:
+        claim = _active_preparations.get(simulation_id)
+        if claim is None or _claim_is_live(claim):
+            return False
+        _active_preparations.pop(simulation_id, None)
+
+    logger.warning(
+        "Dropped a preparation claim whose thread is gone: "
+        "simulation_id=%s, task_id=%s",
+        simulation_id,
+        claim.task_id,
+    )
+    return True
 
 
 def _claim_preparation(simulation_id: str) -> bool:
     """Claim a simulation for preparation, or report that one is in flight."""
+    _discard_dead_preparation(simulation_id)
     with _active_preparations_guard:
         if simulation_id in _active_preparations:
             return False
-        _active_preparations[simulation_id] = None
+        _active_preparations[simulation_id] = _PreparationClaim()
         return True
 
 
 def _note_preparation_task(simulation_id: str, task_id: str) -> None:
     """Record the task that reports on a claimed preparation."""
     with _active_preparations_guard:
-        if simulation_id in _active_preparations:
-            _active_preparations[simulation_id] = task_id
+        claim = _active_preparations.get(simulation_id)
+        if claim is not None:
+            claim.task_id = task_id
+
+
+def _note_preparation_worker(simulation_id: str, thread: threading.Thread) -> None:
+    """Record the thread doing a claimed preparation, so it can be checked."""
+    with _active_preparations_guard:
+        claim = _active_preparations.get(simulation_id)
+        if claim is not None:
+            claim.thread = thread
 
 
 def _release_preparation(simulation_id: str) -> None:
@@ -122,11 +220,44 @@ def _release_preparation(simulation_id: str) -> None:
 
 
 def _preparation_in_flight(simulation_id: str) -> Tuple[bool, Optional[str]]:
-    """Report whether a preparation is running here, and under which task."""
+    """
+    Report whether a LIVE preparation is running here, and under which task.
+
+    A claim whose thread has gone is dropped and reported as absent, so that
+    no caller is ever refused on behalf of a preparation that is not running.
+    """
+    _discard_dead_preparation(simulation_id)
     with _active_preparations_guard:
-        if simulation_id not in _active_preparations:
+        claim = _active_preparations.get(simulation_id)
+        if claim is None:
             return False, None
-        return True, _active_preparations[simulation_id]
+        return True, claim.task_id
+
+
+def _coalesced_preparation_response(simulation_id: str, task_id: Optional[str]):
+    """
+    Answer a /prepare that arrived while a preparation was already running.
+
+    This is not a failure: the request is coalesced into the preparation in
+    flight, and task_id names the task that reports it, so the caller can
+    follow that one instead of starting a second. Step 2 mounts two components
+    that each call /prepare about thirty milliseconds apart, and the loser used
+    to surface as "Preparation error: Preparation is already running", which
+    reads as a crashed run. Callers branch on the coalesced marker rather than
+    on the prose.
+    """
+    reported_by = f" It is reported by task {task_id}." if task_id else ""
+    return jsonify({
+        "success": False,
+        "pending": True,
+        "coalesced": True,
+        "task_id": task_id,
+        "error": (
+            f"Preparation for {simulation_id} is already running, so this "
+            f"request joined it instead of starting a second one."
+            f"{reported_by}"
+        ),
+    }), 409
 
 
 def _rescue_stranded_preparation(
@@ -655,10 +786,13 @@ def prepare_simulation():
     - Detects work that is already prepared and does not regenerate it
     - Returns the existing result when the simulation is already prepared
     - Regenerates everything when force_regenerate=true
-    - Refuses with HTTP 409 and pending=true while a preparation for the same
-      simulation is already running in this process, force_regenerate included.
-      Two preparation threads interleave their writes to the same profile and
-      config files and the loser silently overwrites the winner.
+    - Answers HTTP 409 with coalesced=true, pending=true and the task_id of
+      the preparation already running in this process, force_regenerate
+      included. Two preparation threads interleave their writes to the same
+      profile and config files and the loser silently overwrites the winner,
+      so the second caller follows the first task rather than starting one.
+      coalesced marks this as benign: nothing failed, and the run the caller
+      asked for is under way.
 
     Steps:
     1. Check for preparation that already finished
@@ -713,21 +847,16 @@ def prepare_simulation():
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"Handling /prepare: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
 
-        # Refuse a second preparation, force_regenerate included. Two threads
-        # writing the same profile and config files interleave their output,
-        # and the loser silently overwrites the winner. The authoritative claim
-        # is taken below; this is the early, cheap refusal.
+        # Coalesce a second preparation into the first, force_regenerate
+        # included. Two threads writing the same profile and config files
+        # interleave their output, and the loser silently overwrites the
+        # winner. The authoritative claim is taken below; this is the early,
+        # cheap join.
         in_flight, in_flight_task_id = _preparation_in_flight(simulation_id)
         if in_flight:
-            return jsonify({
-                "success": False,
-                "pending": True,
-                "task_id": in_flight_task_id,
-                "error": (
-                    f"Preparation is already running for {simulation_id}. "
-                    f"Wait for it to finish, or restart the simulation."
-                ),
-            }), 409
+            return _coalesced_preparation_response(
+                simulation_id, in_flight_task_id
+            )
 
         # Skip the work when the simulation is already prepared
         if not force_regenerate:
@@ -796,30 +925,34 @@ def prepare_simulation():
         # and there is nothing to release.
         if not _claim_preparation(simulation_id):
             _, in_flight_task_id = _preparation_in_flight(simulation_id)
-            return jsonify({
-                "success": False,
-                "pending": True,
-                "task_id": in_flight_task_id,
-                "error": (
-                    f"Preparation is already running for {simulation_id}. "
-                    f"Wait for it to finish, or restart the simulation."
-                ),
-            }), 409
+            return _coalesced_preparation_response(
+                simulation_id, in_flight_task_id
+            )
 
-        # Create the background task
-        task_manager = TaskManager()
-        task_id = task_manager.create_task(
-            task_type="simulation_prepare",
-            metadata={
-                "simulation_id": simulation_id,
-                "project_id": state.project_id
-            }
-        )
-        _note_preparation_task(simulation_id, task_id)
+        # Everything from here to the thread start has to hand the claim back
+        # if it raises. The handler at the bottom of this route answers 500 and
+        # touches nothing else, so an exception in here - a task file that
+        # cannot be written, a state save that fails - used to leave a claim
+        # behind that no thread would ever release, and /prepare and /restart
+        # then both refused for the life of the process.
+        try:
+            # Create the background task
+            task_manager = TaskManager()
+            task_id = task_manager.create_task(
+                task_type="simulation_prepare",
+                metadata={
+                    "simulation_id": simulation_id,
+                    "project_id": state.project_id
+                }
+            )
+            _note_preparation_task(simulation_id, task_id)
 
-        # Update the simulation state, including the entity count read above
-        state.status = SimulationStatus.PREPARING
-        manager._save_simulation_state(state)
+            # Update the simulation state, including the entity count read above
+            state.status = SimulationStatus.PREPARING
+            manager._save_simulation_state(state)
+        except Exception:
+            _release_preparation(simulation_id)
+            raise
 
         # The background task
         def run_prepare():
@@ -930,9 +1063,13 @@ def prepare_simulation():
             finally:
                 _release_preparation(simulation_id)
 
-        # Start the background thread
+        # Start the background thread. The worker is attached to the claim
+        # before it is started, never after: the claim is what later requests
+        # check for life, and a window where the claim holds no thread is a
+        # window where a dead preparation still looks alive.
         try:
             thread = threading.Thread(target=run_prepare, daemon=True)
+            _note_preparation_worker(simulation_id, thread)
             thread.start()
         except Exception:
             # The thread never ran, so its finally clause never will either.
@@ -2162,10 +2299,14 @@ def restart_simulation():
     ready when its files are complete, and at failed otherwise.
 
     Re-entry: restart does NOT supersede a preparation that is genuinely in
-    flight in this process. It refuses with HTTP 409 and pending=true. There is
-    no cancellation point in the preparation thread, so superseding it would
-    leave two writers racing over the same profile and config files. The same
-    guard is on POST /prepare.
+    flight in this process. It refuses with HTTP 409, pending=true and
+    preparation_live=true, naming the task to follow. There is no cancellation
+    point in the preparation thread, so superseding it would leave two writers
+    racing over the same profile and config files. The same guard is on POST
+    /prepare. A claim whose thread has died is NOT in flight: it is dropped,
+    the restart proceeds into the rescue above, and the reply says so with
+    cleared_dead_preparation=true. Refusing on a dead claim used to leave the
+    simulation with no way out of 'preparing' short of a backend restart.
 
     A LIVE run is refused with HTTP 409 unless force=true, exactly as POST
     /start refuses one. The restart is destructive - it reaps the child and
@@ -2193,6 +2334,7 @@ def restart_simulation():
                 "restarted": true,
                 "forced": false,
                 "rescued_from_preparing": false,
+                "cleared_dead_preparation": false,
                 "graph_memory_update_enabled": false
             }
         }
@@ -2275,21 +2417,36 @@ def restart_simulation():
                 simulation_id,
             )
 
-        # A preparation running here owns the directory the restart would clear
+        # A preparation running here owns the directory the restart would
+        # clear, so a live one is still refused. A claim whose thread is gone
+        # owns nothing, and refusing on that is what wedged a simulation for
+        # good: /prepare refused because of the claim, and this route - the one
+        # escape from a stranded 'preparing' - refused on the same claim, so a
+        # backend restart was the only way out. A dead claim is dropped here
+        # and the restart carries on into the rescue below.
+        cleared_dead_preparation = _discard_dead_preparation(simulation_id)
         in_flight, in_flight_task_id = _preparation_in_flight(simulation_id)
         if in_flight:
+            following = (
+                f" Follow task {in_flight_task_id} to its end"
+                if in_flight_task_id else " Let it run to the end"
+            )
             return jsonify({
                 "success": False,
                 "pending": True,
+                "preparation_live": True,
                 "task_id": in_flight_task_id,
                 "error": (
-                    f"Simulation {simulation_id} is still being prepared. "
-                    f"Wait for preparation to finish before restarting it."
+                    f"A preparation for {simulation_id} is running right now "
+                    f"and owns the files a restart would clear."
+                    f"{following}; restarting works again as soon as it "
+                    f"finishes, whether it succeeds or fails."
                 ),
             }), 409
 
         # 'preparing' with no preparation behind it is an orphan of a backend
-        # restart, and the only escape from it in the UI is this route.
+        # restart, or of a preparation thread that died, and the only escape
+        # from it in the UI is this route.
         rescued_from_preparing = False
         if state.status == SimulationStatus.PREPARING:
             rescued_from_preparing = True
@@ -2301,6 +2458,7 @@ def restart_simulation():
                         "simulation_id": simulation_id,
                         "status": state.status.value,
                         "rescued_from_preparing": True,
+                        "cleared_dead_preparation": cleared_dead_preparation,
                     },
                 }), 409
 
@@ -2344,10 +2502,11 @@ def restart_simulation():
 
         logger.info(
             "Restarted simulation %s, platform=%s, rescued_from_preparing=%s, "
-            "force=%s",
+            "cleared_dead_preparation=%s, force=%s",
             simulation_id,
             platform,
             rescued_from_preparing,
+            cleared_dead_preparation,
             force,
         )
 
@@ -2355,6 +2514,7 @@ def restart_simulation():
         response_data['restarted'] = True
         response_data['forced'] = force
         response_data['rescued_from_preparing'] = rescued_from_preparing
+        response_data['cleared_dead_preparation'] = cleared_dead_preparation
         response_data['graph_memory_update_enabled'] = enable_graph_memory_update
         if max_rounds:
             response_data['max_rounds_applied'] = max_rounds

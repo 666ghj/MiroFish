@@ -184,11 +184,20 @@ export function primaryAction(sim) {
     return { label: 'open', hint: 'openHint', route: attachRoute(simulationId), blocked: null }
   }
 
-  // Preparation runs in a daemon thread that a backend restart kills without
-  // raising, so a row can sit here forever. Restart is the only way out, and
-  // saying so is better than a button that leads to "Simulation not ready".
+  // A preparation running right now and one a backend restart killed both read
+  // 'preparing' from here, and the setup view no longer needs them told apart:
+  // its /prepare is coalesced onto a running preparation, which hands back the
+  // task to follow, and starts a fresh one where no claim is left. This row
+  // used to be blocked with 'Restart recovers it' - true of the killed case,
+  // and for the running one the backend answered that very restart with
+  // "still being prepared", which left the user nowhere to go.
   if (status === 'preparing') {
-    return { label: 'continue', hint: 'continueHint', route: null, blocked: 'preparing' }
+    return {
+      label: 'continue',
+      hint: 'followPreparationHint',
+      route: setupRoute(simulationId),
+      blocked: null
+    }
   }
 
   // Prepared and never run: pick up at step 3.

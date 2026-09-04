@@ -61,6 +61,27 @@
             {{ $t('step2.generateAgentPersonaDesc') }}
           </p>
 
+          <!-- A preparation that stopped, said out loud. The badge above it
+               freezes at whatever percentage the last poll reported, and a
+               progress bar nothing will ever move is how this page used to
+               end. Retrying is offered whatever the reason: it is a plain
+               /prepare, and the backend drops a claim whose thread has died
+               before it answers one, so a retry is refused only while a
+               preparation is genuinely running - and then it follows it. -->
+          <div v-if="prepareIssue" class="prepare-issue">
+            <p class="issue-message">{{ prepareIssue.message }}</p>
+            <p v-if="prepareIssue.joined" class="issue-note">{{ $t('step2.prepareJoinedNote') }}</p>
+            <button
+              class="action-btn secondary"
+              :disabled="retryingPrepare"
+              @click="retryPrepare"
+            >
+              <span v-if="retryingPrepare" class="spinner-sm"></span>
+              {{ retryingPrepare ? $t('step2.prepareRetrying') : $t('step2.prepareRetry') }}
+            </button>
+            <p class="issue-hint">{{ $t('step2.prepareRetryHint') }}</p>
+          </div>
+
           <!-- Profiles Stats -->
           <div v-if="profiles.length > 0" class="stats-grid">
             <div class="stat-card">
@@ -629,12 +650,15 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  prepareSimulation,
   getPrepareStatus,
   getSimulationProfilesRealtime,
   getSimulationConfig,
   getSimulationConfigRealtime
 } from '../api/simulation'
+// /prepare is never posted from here directly. This component mounts again on
+// every arrival at the route, and two arrivals racing one preparation is the
+// deadlock this store exists to prevent.
+import { ensurePreparation, releasePreparation } from '../store/preparation'
 
 const { t } = useI18n()
 
@@ -659,6 +683,19 @@ const expectedTotal = ref(null)
 const simulationConfig = ref(null)
 const selectedProfile = ref(null)
 const showProfilesDetail = ref(true)
+
+// A preparation that cannot be followed to a finish, and what this page is
+// allowed to say about it: { message, joined }. It is rendered in the step 02
+// card with the one control that can move it, because a failure that lives
+// only in the log well leaves the page showing a progress badge nothing will
+// ever advance.
+const prepareIssue = ref(null)
+const retryingPrepare = ref(false)
+// Whether this page started the preparation it is following or joined one the
+// backend already had. A failure reads differently in the second case - the
+// preparation that stopped was not the one this visit asked for - and the
+// panel says so rather than reporting it as this page's own.
+const joinedPreparation = ref(false)
 
 // Polling repeats the same payload until something changes, so the last value
 // written to the log well is remembered and identical lines are dropped.
@@ -737,12 +774,43 @@ const addLog = (msg) => {
   emit('add-log', msg)
 }
 
-const handlePrepareFailure = (message) => {
+const handlePrepareFailure = (message, { logKey = 'log.prepareFailedWithError' } = {}) => {
   stopPolling()
   stopProfilesPolling()
   stopConfigPolling()
-  addLog(t('log.prepareFailedWithError', { error: message || t('common.unknownError') }))
+
+  // Release the claim before the panel offers a retry: the store coalesces on
+  // it, so a retry that kept it would join the dead preparation it is meant to
+  // replace and poll a task that will never move again.
+  releasePreparation(props.simulationId)
+
+  const text = message || t('common.unknownError')
+  addLog(t(logKey, { error: text }))
+  prepareIssue.value = { message: text, joined: joinedPreparation.value }
   emit('update-status', 'error')
+}
+
+/**
+ * Ask for preparation again after a failure.
+ *
+ * The retry is a plain /prepare, so it genuinely starts one whenever no live
+ * preparation holds this simulation - a claim whose thread has died is dropped
+ * by the backend before it answers. While one is genuinely running the request
+ * is coalesced onto it and this page follows that preparation instead, which
+ * is the honest outcome rather than a second writer over the same files.
+ */
+const retryPrepare = async () => {
+  if (retryingPrepare.value) return
+
+  retryingPrepare.value = true
+  prepareIssue.value = null
+  addLog(t('log.retryingPreparation'))
+
+  try {
+    await startPrepareSimulation()
+  } finally {
+    retryingPrepare.value = false
+  }
 }
 
 const handleStartSimulation = () => {
@@ -782,49 +850,66 @@ const startPrepareSimulation = async () => {
   addLog(t('log.simInstanceCreated', { id: props.simulationId }))
   addLog(t('log.preparingSimEnv'))
   emit('update-status', 'processing')
-  
+
   try {
-    const res = await prepareSimulation({
-      simulation_id: props.simulationId,
+    // Whether a preparation is started or joined is not this component's call
+    // to make - see store/preparation.js.
+    const claim = await ensurePreparation(props.simulationId, {
       use_llm_for_profiles: true,
       parallel_profile_count: 5
     })
-    
-    if (res.success && res.data) {
-      if (res.data.already_prepared) {
-        addLog(t('log.detectedExistingPrep'))
-        await loadPreparedData()
-        return
-      }
-      
-      taskId.value = res.data.task_id
-      addLog(t('log.prepareTaskStarted'))
-      addLog(t('log.prepareTaskId', { taskId: res.data.task_id }))
-      
-      // The expected total comes back with the prepare response, long before
-      // the first profile does, so the stat card is never blank while it waits.
-      if (res.data.expected_entities_count) {
-        expectedTotal.value = res.data.expected_entities_count
-        addLog(t('log.zepEntitiesFound', { count: res.data.expected_entities_count }))
-        if (res.data.entity_types && res.data.entity_types.length > 0) {
-          addLog(t('log.entityTypes', { types: res.data.entity_types.join(', ') }))
-        }
-      }
-      
-      addLog(t('log.startPollingProgress'))
-      startPolling()
-      startProfilesPolling()
-    } else {
-      addLog(t('log.prepareFailed', { error: res.error || t('common.unknownError') }))
-      emit('update-status', 'error')
+
+    if (claim.alreadyPrepared) {
+      addLog(t('log.detectedExistingPrep'))
+      await loadPreparedData()
+      return
     }
+
+    joinedPreparation.value = claim.joined
+    taskId.value = claim.taskId
+
+    if (claim.joined) {
+      // A preparation was already running for this simulation. Following it is
+      // the whole point of the task id the backend hands back: a second
+      // preparation would interleave its writes with the first one's.
+      addLog(t('log.joinedPreparation'))
+    } else {
+      addLog(t('log.prepareTaskStarted'))
+    }
+
+    if (claim.taskId) {
+      addLog(t('log.prepareTaskId', { taskId: claim.taskId }))
+    }
+
+    // The expected total comes back with the prepare response, long before
+    // the first profile does, so the stat card is never blank while it waits.
+    // A joined claim carries no payload of its own; the profile poll fills the
+    // total in from the running preparation instead.
+    if (claim.data.expected_entities_count) {
+      expectedTotal.value = claim.data.expected_entities_count
+      addLog(t('log.zepEntitiesFound', { count: claim.data.expected_entities_count }))
+      if (claim.data.entity_types && claim.data.entity_types.length > 0) {
+        addLog(t('log.entityTypes', { types: claim.data.entity_types.join(', ') }))
+      }
+    }
+
+    addLog(t('log.startPollingProgress'))
+    startPolling()
+    startProfilesPolling()
   } catch (err) {
-    addLog(t('log.prepareException', { error: err.message }))
-    emit('update-status', 'error')
+    handlePrepareFailure(err.message, { logKey: 'log.prepareException' })
   }
 }
 
+// Consecutive /prepare/status failures. Reset by any successful poll, so only
+// a sustained outage - not one dropped request - gives up the claim.
+let pollFailures = 0
+const MAX_POLL_FAILURES = 5
+
 const startPolling = () => {
+  // Cleared first because a retry walks this path a second time, and an
+  // orphaned interval would keep polling a task nothing reads any more.
+  stopPolling()
   pollTimer = setInterval(pollPrepareStatus, 2000)
 }
 
@@ -836,6 +921,7 @@ const stopPolling = () => {
 }
 
 const startProfilesPolling = () => {
+  stopProfilesPolling()
   profilesTimer = setInterval(fetchProfilesRealtime, 3000)
 }
 
@@ -889,6 +975,10 @@ const pollPrepareStatus = async () => {
         addLog(t('log.prepareComplete'))
         stopPolling()
         stopProfilesPolling()
+        // Nothing is running under this simulation any more, so the store must
+        // stop coalescing onto it: a later force_regenerate has to reach the
+        // backend rather than join a preparation that has finished.
+        releasePreparation(props.simulationId)
         await loadPreparedData()
       } else if (data.status === 'failed') {
         handlePrepareFailure(data.error)
@@ -896,7 +986,26 @@ const pollPrepareStatus = async () => {
     }
   } catch (err) {
     console.warn('Failed to poll preparation status:', err)
+    // A poll that keeps failing is usually the task itself being gone - the
+    // registry behind /prepare/status is in-memory, so a backend restart
+    // erases every task id while the row on disk still reads 'preparing'.
+    // Swallowing that forever kept this tab's claim alive, and the claim is
+    // what makes the next arrival JOIN instead of asking the backend again,
+    // so the view polled a task that could never answer. Give up the claim
+    // after a few consecutive failures and stop: the backend is authoritative
+    // about whether a preparation is really running (it discards a claim whose
+    // thread is gone), so asking it again is the correct next move.
+    pollFailures += 1
+    if (pollFailures >= MAX_POLL_FAILURES) {
+      stopPolling()
+      releasePreparation(props.simulationId)
+      handlePrepareFailure(
+        t('step2.preparationStatusUnavailable')
+      )
+    }
+    return
   }
+  pollFailures = 0
 }
 
 const fetchProfilesRealtime = async () => {
@@ -1166,6 +1275,46 @@ onUnmounted(() => {
   color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
+}
+
+/* A preparation that stopped. Shaped like Step1GraphBuild's failure panel on
+   purpose: the two say the same kind of thing about the two long-running steps
+   the page can get stuck in. */
+.prepare-issue {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+}
+
+.issue-message {
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.issue-note {
+  margin-bottom: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.prepare-issue .action-btn {
+  width: 100%;
+  padding: 8px 16px;
+  font-size: 12px;
+}
+
+.issue-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 /* Action Section */

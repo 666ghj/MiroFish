@@ -108,6 +108,7 @@ import LogViewerModal from '../components/simulations/LogViewerModal.vue'
 import {
   deleteSimulation,
   getSimulationHistory,
+  pendingPreparation,
   restartSimulation,
   stopSimulation
 } from '../api/simulation'
@@ -268,8 +269,25 @@ const runRestart = async (sim, name) => {
   // relaunch the run with less than it had: no graph memory update, and the
   // backend's own auto-planned round count instead of the one this simulation
   // was running to. restartParams restates what a normal start sends.
-  await restartSimulation(restartParams(sim))
-  notify(t('simulations.toast.restarted', { name }), 'success')
+  try {
+    await restartSimulation(restartParams(sim))
+    notify(t('simulations.toast.restarted', { name }), 'success')
+  } catch (err) {
+    // 409 preparation_live:true means a preparation is running right now and
+    // owns the files this restart would clear, so the backend refused it. The
+    // refusal is narrow: a claim whose thread has died is dropped and the
+    // restart goes through, so this only ever fires on a genuinely running
+    // preparation. Reported as the generic 'Failed to restart' it read as the
+    // app arguing with itself - the menu offering a restart and the backend
+    // answering that the simulation is still being prepared. It is a state to
+    // explain, and the place to watch it is the setup view, which follows the
+    // running preparation rather than starting another.
+    if (pendingPreparation(err)) {
+      notify(t('simulations.toast.restartPreparing', { name }), 'info')
+      return
+    }
+    throw err
+  }
 }
 
 const runStop = async (sim, name) => {
