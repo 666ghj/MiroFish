@@ -58,3 +58,6 @@ backend/uploads/
 
 # Docker 数据
 data/
+
+# 安装程序输出目录
+installer/output

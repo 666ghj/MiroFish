@@ -3,7 +3,9 @@ MiroFish Backend - Flask应用工厂
 """
 
 import os
+import time
 import warnings
+import threading
 
 # 抑制 multiprocessing resource_tracker 的警告（来自第三方库如 transformers）
 # 需要在所有其他导入之前设置
@@ -48,6 +50,12 @@ def create_app(config_class=Config):
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
     
+    # 心跳状态
+    last_heartbeat = {"ts": time.time()}
+
+    def touch_heartbeat():
+        last_heartbeat["ts"] = time.time()
+
     # 请求日志中间件
     @app.before_request
     def log_request():
@@ -55,6 +63,8 @@ def create_app(config_class=Config):
         logger.debug(f"请求: {request.method} {request.path}")
         if request.content_type and 'json' in request.content_type:
             logger.debug(f"请求体: {request.get_json(silent=True)}")
+        if request.path.startswith('/api') or request.path == '/health':
+            touch_heartbeat()
     
     @app.after_request
     def log_response(response):
@@ -72,9 +82,26 @@ def create_app(config_class=Config):
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
+
+    @app.route('/api/heartbeat', methods=['GET', 'POST'])
+    def heartbeat():
+        touch_heartbeat()
+        return {'status': 'ok'}
+
+    def heartbeat_watch():
+        timeout = int(os.environ.get('MIROFISH_HEARTBEAT_TIMEOUT', '45'))
+        interval = int(os.environ.get('MIROFISH_HEARTBEAT_INTERVAL', '5'))
+        while True:
+            time.sleep(interval)
+            if time.time() - last_heartbeat["ts"] > timeout:
+                logger.warning("心跳超时，自动关闭后端服务")
+                os._exit(0)
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
+        monitor = threading.Thread(target=heartbeat_watch, daemon=True)
+        monitor.start()
+        logger.info("心跳监控已启动")
     
     return app
 

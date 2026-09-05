@@ -1,17 +1,49 @@
 """\n配置管理\n统一从项目根目录的 .env 文件加载配置\n"""
 
 import os
-from dotenv import load_dotenv
+from io import StringIO
+from dotenv import load_dotenv, dotenv_values
 
 # 加载项目根目录的 .env 文件
 # 路径: MiroFish/.env (相对于 backend/app/config.py)
 project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
 
+
+def _decode_env_bytes(data: bytes) -> str:
+    for encoding in ("utf-8", "utf-8-sig", "gbk", "gb2312"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _load_env_with_fallback(path: str) -> None:
+    if not os.path.exists(path):
+        return
+    data = _decode_env_bytes(open(path, "rb").read())
+    try:
+        values = dotenv_values(stream=StringIO(data))
+        for key, value in values.items():
+            if key and value is not None:
+                os.environ[key] = value
+        return
+    except Exception:
+        pass
+    for line in data.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ[key.strip()] = value.strip()
+
+
 if os.path.exists(project_root_env):
-    load_dotenv(project_root_env, override=True)
+    _load_env_with_fallback(project_root_env)
 else:
-    # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
-    load_dotenv(override=True)
+    default_env = os.path.join(os.getcwd(), '.env')
+    if os.path.exists(default_env):
+        _load_env_with_fallback(default_env)
 
 
 class Config:
