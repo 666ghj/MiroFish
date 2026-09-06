@@ -258,7 +258,7 @@ class IPCHandler:
             agent_prompts = {}  # 记录每个agent的prompt
             
             for interview in interviews:
-                agent_id = interview.get("agent_id")
+                agent_id = interview.get("agent_id", 0)
                 prompt = interview.get("prompt", "")
                 
                 try:
@@ -333,7 +333,9 @@ class IPCHandler:
                 except json.JSONDecodeError:
                     result["response"] = info_json
             
-            conn.close()
+            finally:
+                if conn:
+                    conn.close()
             
         except Exception as e:
             print(f"  读取Interview结果失败: {e}")
