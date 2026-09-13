@@ -6,15 +6,24 @@
 import os
 from dotenv import load_dotenv
 
-# 加载项目根目录的 .env 文件
-# 路径: MiroFish/.env (相对于 backend/app/config.py)
+# Load a local file only as a fallback.  `oprun` resolves op:// addresses before
+# this process begins; overriding its environment here would put those addresses
+# back into runtime credentials.
 project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
 
 if os.path.exists(project_root_env):
-    load_dotenv(project_root_env, override=True)
+    load_dotenv(project_root_env, override=False)
 else:
-    # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
-    load_dotenv(override=True)
+    # Preserve injected production/CI values when no local file exists.
+    load_dotenv(override=False)
+
+
+def _resolved_env(name: str):
+    """Return a usable environment value, never a literal 1Password address."""
+    value = os.environ.get(name)
+    if value and value.strip().startswith("op://"):
+        return None
+    return value
 
 
 class Config:
@@ -28,12 +37,12 @@ class Config:
     JSON_AS_ASCII = False
     
     # LLM配置（统一使用OpenAI格式）
-    LLM_API_KEY = os.environ.get('LLM_API_KEY')
+    LLM_API_KEY = _resolved_env('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
     # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    ZEP_API_KEY = _resolved_env('ZEP_API_KEY')
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB

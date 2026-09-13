@@ -449,6 +449,11 @@ class RedditSimulationRunner:
         if not llm_model:
             llm_model = self.config.get("llm_model", "gpt-4o-mini")
         
+        # A direct invocation can otherwise pass an unresolved 1Password
+        # address to the provider.  Local runs must go through oprun.
+        if llm_api_key.strip().startswith("op://"):
+            raise ValueError("LLM_API_KEY is an unresolved 1Password address; start this script through oprun")
+
         # 设置 camel-ai 所需的环境变量
         if llm_api_key:
             os.environ["OPENAI_API_KEY"] = llm_api_key

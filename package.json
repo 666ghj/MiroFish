@@ -6,10 +6,13 @@
     "setup": "npm install && cd frontend && npm install",
     "setup:backend": "cd backend && uv sync",
     "setup:all": "npm run setup && npm run setup:backend",
-    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
-    "backend": "cd backend && uv run python run.py",
+    "dev": "./scripts/with-local-env.sh npm run dev:raw",
+    "dev:raw": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend:raw\" \"npm run frontend\"",
+    "backend": "./scripts/with-local-env.sh npm run backend:raw",
+    "backend:raw": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "test:env-boundary": "sh scripts/test-local-env-boundary.sh && python3 -m unittest backend.tests.test_env_boundary"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
