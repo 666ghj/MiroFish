@@ -89,18 +89,15 @@ _project_root = os.path.abspath(os.path.join(_backend_dir, '..'))
 sys.path.insert(0, _scripts_dir)
 sys.path.insert(0, _backend_dir)
 
-# 加载项目根目录的 .env 文件（包含 LLM_API_KEY 等配置）
-from dotenv import load_dotenv
-_env_file = os.path.join(_project_root, '.env')
-if os.path.exists(_env_file):
-    load_dotenv(_env_file)
-    print(f"已加载环境配置: {_env_file}")
-else:
-    # 尝试加载 backend/.env
-    _backend_env = os.path.join(_backend_dir, '.env')
-    if os.path.exists(_backend_env):
-        load_dotenv(_backend_env)
-        print(f"已加载环境配置: {_backend_env}")
+# Process environment wins over local files. Do not allow a literal op://
+# address to reach a direct simulation when it bypasses npm's local wrapper.
+from environment import environment_errors, load_environment
+_loaded_env = load_environment(_project_root, _backend_dir)
+_env_errors = environment_errors((), ("LLM_API_KEY", "LLM_BOOST_API_KEY", "OPENAI_API_KEY"))
+if _env_errors:
+    raise RuntimeError("Invalid environment: " + "; ".join(_env_errors))
+if _loaded_env:
+    print(f"已加载环境配置: {_loaded_env}")
 
 
 class MaxTokensWarningFilter(logging.Filter):

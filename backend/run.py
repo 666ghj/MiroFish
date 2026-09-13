@@ -30,7 +30,7 @@ def main():
         print("配置错误:")
         for err in errors:
             print(f"  - {err}")
-        print("\n请检查 .env 文件中的配置")
+        print("\n请检查注入的环境变量或通过 oprun 启动")
         sys.exit(1)
     
     # 创建应用
