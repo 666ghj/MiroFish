@@ -122,6 +122,10 @@ LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
+# Optional: use one temperature for cohort generation and retries.
+# Leave unset to keep the existing per-stage retry temperatures.
+# MIROFISH_COHORT_TEMPERATURE=0
+
 # Zep Cloud Configuration
 # Free monthly quota is sufficient for simple usage: https://app.getzep.com/
 ZEP_API_KEY=your_zep_api_key

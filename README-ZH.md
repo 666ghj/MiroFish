@@ -122,6 +122,10 @@ LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
+# 可选：为人群生成及重试统一指定温度，以便复现实验。
+# 留空则保持现有的分阶段重试温度。
+# MIROFISH_COHORT_TEMPERATURE=0
+
 # Zep Cloud 配置
 # 每月免费额度即可支撑简单使用：https://app.getzep.com/
 ZEP_API_KEY=your_zep_api_key

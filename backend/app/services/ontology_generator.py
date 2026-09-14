@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from typing import Dict, Any, List, Optional
+from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.locale import get_language_instruction
 from ..utils.file_parser import split_text_into_chunks
@@ -234,7 +235,7 @@ class OntologyGenerator:
         # 调用LLM
         result = self.llm_client.chat_json(
             messages=messages,
-            temperature=0.3,
+            temperature=Config.cohort_temperature(0.3, 0),
             # Structured ontology responses can exceed 4096 completion tokens,
             # especially when a compatible provider counts hidden reasoning in
             # the same budget. Let the provider use its model-specific limit.
