@@ -125,6 +125,16 @@ LLM_MODEL_NAME=qwen-plus
 # Zep Cloud 配置
 # 每月免费额度即可支撑简单使用：https://app.getzep.com/
 ZEP_API_KEY=your_zep_api_key
+
+# OrcaRouter（可选的一等提供商）
+# OrcaRouter 是面向模型与 Agent 的 OpenAI 兼容 AI 网关：自适应路由、自动故障转移、
+# 零加成推理、可观测性、护栏与 Agent 工具治理；并在同一端点上提供网关级零信任
+# Agent 安全，默认拒绝地审查每一次提示/响应、治理每一次工具调用，无需修改应用代码。
+# 可在应用右上角「模型提供商」中选择（粘贴 sk-orca-... 密钥，或使用 OrcaRouter 账户登录），
+# 也可在此直接配置；两种认证方式都会把同一个普通 OrcaRouter API Key 写入下面这一项。
+# ORCAROUTER_API_KEY=sk-orca-...
+# ORCAROUTER_MODEL_NAME=orcarouter/auto
+# LLM_PROVIDER=orcarouter
 ```
 
 #### 2. 安装依赖

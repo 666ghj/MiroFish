@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from ..config import Config
 from .openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from .orcarouter import resolve_llm_config
 
 
 logger = logging.getLogger(__name__)
@@ -97,13 +98,17 @@ class LLMClient:
         base_url: Optional[str] = None,
         model: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model = model or Config.LLM_MODEL_NAME
-        
+        resolved = resolve_llm_config(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+        )
+        self.api_key = resolved.api_key
+        self.base_url = resolved.base_url
+        self.model = resolved.model
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url

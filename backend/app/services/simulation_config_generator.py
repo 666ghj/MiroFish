@@ -229,13 +229,15 @@ class SimulationConfigGenerator:
         base_url: Optional[str] = None,
         model_name: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+        from ..utils.orcarouter import resolve_llm_config
+        resolved = resolve_llm_config(api_key=api_key, base_url=base_url, model=model_name)
+        self.api_key = resolved.api_key
+        self.base_url = resolved.base_url
+        self.model_name = resolved.model
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url

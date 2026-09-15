@@ -125,6 +125,19 @@ LLM_MODEL_NAME=qwen-plus
 # Zep Cloud Configuration
 # Free monthly quota is sufficient for simple usage: https://app.getzep.com/
 ZEP_API_KEY=your_zep_api_key
+
+# OrcaRouter (optional, first-class provider)
+# OrcaRouter is an OpenAI-compatible AI gateway built for both models and agents,
+# with adaptive routing, automatic failover, zero-markup inference, observability,
+# guardrails, and agent-tool governance. It also runs gateway-level, zero-trust
+# security for AI agents on the same endpoint, screening every prompt/response and
+# governing every tool call on a default-deny basis, with no application code changes.
+# Choose it from the "Model Provider" panel in the app (paste an sk-orca-... key, or
+# sign in with your OrcaRouter account), or set it here. Both sign-in methods store
+# the same ordinary OrcaRouter API key in this variable.
+# ORCAROUTER_API_KEY=sk-orca-...
+# ORCAROUTER_MODEL_NAME=orcarouter/auto
+# LLM_PROVIDER=orcarouter
 ```
 
 #### 2. Install Dependencies

@@ -28,6 +28,19 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+
+    # ===== OrcaRouter 模型提供商 =====
+    # 两种认证方式：粘贴已有 sk-orca-... API Key，或通过
+    # OAuth 2.0 + PKCE 连接 OrcaRouter 账户（Flow A 本地回环回调）。
+    # 认证与推理使用不同的公开 origin：auth 在 www.orcarouter.ai，
+    # 推理与模型目录在 api.orcarouter.ai/v1。显式 ORCA_AUTH_BASE_URL /
+    # ORCA_API_BASE_URL 覆盖共享的 ORCA_BASE_URL。
+    ORCAROUTER_API_KEY = os.environ.get('ORCAROUTER_API_KEY')
+    ORCAROUTER_MODEL_NAME = os.environ.get('ORCAROUTER_MODEL_NAME', 'orcarouter/auto')
+    ORCA_BASE_URL = os.environ.get('ORCA_BASE_URL')          # 共享自托管 fallback
+    ORCA_AUTH_BASE_URL = os.environ.get('ORCA_AUTH_BASE_URL')  # 显式 auth 覆盖
+    ORCA_API_BASE_URL = os.environ.get('ORCA_API_BASE_URL')    # 显式 API 覆盖
+    LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'default')   # default | orcarouter
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')

@@ -67,6 +67,10 @@ def create_app(config_class=Config):
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
+
+    # OrcaRouter 提供商蓝图（API Key + OAuth 2.0 + PKCE 双认证）
+    from .api.orcarouter import orca_bp
+    app.register_blueprint(orca_bp)
     
     # 健康检查
     @app.route('/health')
