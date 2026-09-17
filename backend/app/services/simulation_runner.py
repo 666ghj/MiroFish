@@ -296,6 +296,120 @@ class SimulationRunner:
         if state:
             cls._run_states[simulation_id] = state
         return state
+
+    @staticmethod
+    def _process_is_alive(process_pid: Optional[int]) -> bool:
+        """Return whether a persisted process ID still identifies a process."""
+
+        if process_pid is None:
+            return False
+        try:
+            pid = int(process_pid)
+        except (TypeError, ValueError):
+            return False
+        if pid <= 0:
+            return False
+
+        try:
+            os.kill(pid, 0)
+        except PermissionError:
+            # The process exists but this user cannot signal it.
+            return True
+        except (ProcessLookupError, OSError):
+            return False
+        return True
+
+    @classmethod
+    def _reconcile_stale_run_state(cls, state: SimulationRunState) -> bool:
+        """Recover an active state left behind by a process that no longer exists.
+
+        A persisted STOPPING state must remain untouched while this process or a
+        graph-ingestion updater still owns finalization. After a service restart,
+        however, a dead PID and no updater prove that no owner can complete the
+        transition. Only an explicitly complete run is promoted to COMPLETED;
+        every other stale state becomes FAILED so report generation stays safe.
+        """
+
+        active_statuses = {
+            RunnerStatus.STARTING,
+            RunnerStatus.RUNNING,
+            RunnerStatus.PAUSED,
+            RunnerStatus.STOPPING,
+        }
+        if state.runner_status not in active_statuses:
+            return False
+
+        # In-process monitors own their finalization and must not be
+        # reconciled by a concurrent state read.
+        if (
+            state.simulation_id in cls._processes
+            or state.simulation_id in cls._monitor_threads
+        ):
+            return False
+        if cls._process_is_alive(state.process_pid):
+            return False
+
+        # A persisted STOPPING state may still have an active graph drain. Do
+        # not manufacture a terminal state while that updater is alive.
+        try:
+            if ZepGraphMemoryManager.get_updater(state.simulation_id) is not None:
+                return False
+        except Exception as error:
+            logger.warning(
+                "Unable to inspect graph updater for stale run %s: %s",
+                state.simulation_id,
+                type(error).__name__,
+            )
+            return False
+
+        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+        platform_signals = {
+            "twitter": (
+                state.twitter_running
+                or state.twitter_completed
+                or state.twitter_current_round > 0
+                or state.twitter_actions_count > 0
+                or os.path.exists(os.path.join(sim_dir, "twitter", "actions.jsonl"))
+            ),
+            "reddit": (
+                state.reddit_running
+                or state.reddit_completed
+                or state.reddit_current_round > 0
+                or state.reddit_actions_count > 0
+                or os.path.exists(os.path.join(sim_dir, "reddit", "actions.jsonl"))
+            ),
+        }
+        enabled_platforms = [
+            platform for platform, signaled in platform_signals.items() if signaled
+        ]
+        complete_horizon = (
+            bool(enabled_platforms)
+            and state.total_rounds > 0
+            and state.current_round >= state.total_rounds
+            and all(
+                getattr(state, f"{platform}_completed")
+                for platform in enabled_platforms
+            )
+        )
+
+        state.runner_status = (
+            RunnerStatus.COMPLETED if complete_horizon else RunnerStatus.FAILED
+        )
+        state.twitter_running = False
+        state.reddit_running = False
+        state.process_pid = None
+        state.completed_at = state.completed_at or datetime.now().isoformat()
+        state.error = (
+            None
+            if complete_horizon
+            else "Simulation process exited before reaching a terminal state"
+        )
+        logger.warning(
+            "Reconciled stale simulation state: simulation=%s status=%s",
+            state.simulation_id,
+            state.runner_status.value,
+        )
+        return True
     
     @classmethod
     def _load_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
@@ -332,6 +446,9 @@ class SimulationRunner:
                 error=data.get("error"),
                 process_pid=data.get("process_pid"),
             )
+
+            if cls._reconcile_stale_run_state(state):
+                cls._save_run_state(state)
             
             # 加载最近动作
             actions_data = data.get("recent_actions", [])
