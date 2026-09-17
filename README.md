@@ -176,6 +176,20 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+
+### Remote / VPS Deployment Note
+
+When you deploy MiroFish on a remote host (VPS) and open the UI from another machine, the frontend axios client still defaults to `http://localhost:5001` (see `frontend/src/api/index.js`). The Vite `/api` proxy only applies during local development, so remote browsers try to reach `localhost:5001` on the **client** machine and show a network error.
+
+**Fix:** set `VITE_API_BASE_URL` to a backend URL your browser can reach, then restart (or rebuild) the frontend:
+
+```env
+# Example for a VPS — use your public IP or domain
+VITE_API_BASE_URL=http://YOUR_VPS_IP:5001
+```
+
+Vite only injects `VITE_*` variables into the client bundle. Put this in `frontend/.env` (recommended), or export it in the shell before `npm run frontend` / `npm run build`. It is also documented in the root `.env.example`. Ensure the backend port (`5001` by default) is reachable (firewall / security group) from clients.
+
 ## 📬 Join the Conversation
 
 <div align="center">

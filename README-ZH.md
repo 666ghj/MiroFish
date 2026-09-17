@@ -176,6 +176,20 @@ docker compose up -d
 
 > 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
 
+
+### 远程 / VPS 部署说明
+
+当把 MiroFish 部署在远程主机（VPS）上、并从另一台电脑打开前端时，axios 客户端仍默认请求 `http://localhost:5001`（见 `frontend/src/api/index.js`）。Vite 的 `/api` 代理仅在本地开发时生效，因此远程浏览器会去访问**本机**的 `localhost:5001`，从而出现 Network error。
+
+**解决办法：** 设置 `VITE_API_BASE_URL` 为浏览器可访问的后端地址，然后重启（或重新构建）前端：
+
+```env
+# VPS 示例 — 替换为你的公网 IP 或域名
+VITE_API_BASE_URL=http://YOUR_VPS_IP:5001
+```
+
+Vite 只会把 `VITE_*` 变量注入前端包。请将该变量写入 `frontend/.env`（推荐），或在执行 `npm run frontend` / `npm run build` 前于 shell 中 export。根目录 `.env.example` 中也有说明。请同时确保客户端能访问后端端口（默认 `5001`，检查防火墙 / 安全组）。
+
 ## 📬 更多交流
 
 <div align="center">
