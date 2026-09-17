@@ -67,7 +67,11 @@ def extract_chat_completion_text(response: Any) -> str:
     if message is None:
         return ""
 
-    content = getattr(message, "content", "")
+    content = getattr(message, "content", None)
+    if content is None:
+        # Some reasoning-capable compatible endpoints place the usable text
+        # in reasoning_content while leaving the regular content field null.
+        content = getattr(message, "reasoning_content", "")
 
     if isinstance(content, str):
         return content
