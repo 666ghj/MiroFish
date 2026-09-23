@@ -428,10 +428,16 @@ class ZepToolsService:
     RETRY_DELAY = 2.0
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
+        import os as _os
+
+        backend = _os.environ.get(
+            "GRAPH_MEMORY_BACKEND", Config.GRAPH_MEMORY_BACKEND or "zep"
+        )
         self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
+        if backend == "zep" and not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
-        
+        # neo4j_local 后端不消费 Zep 凭据；api_key 允许为空。
+
         self.client = get_zep_client(self.api_key)
         # LLM客户端用于InsightForge生成子问题
         self._llm_client = llm_client

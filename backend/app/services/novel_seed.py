@@ -181,6 +181,11 @@ class NovelSeeder:
             raise
 
         project.simulation_requirement = compile_simulation_requirement(seed)
+        project.novel_seed = {
+            "projectId": seed.projectId,
+            "sourceRevision": seed.sourceRevision,
+            "inputHash": input_hash,
+        }
         project.graph_id = graph_id
         project.status = ProjectStatus.GRAPH_COMPLETED
         project.updated_at = _now_iso()

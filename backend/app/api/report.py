@@ -255,7 +255,8 @@ def generate_report():
                     agent = ReportAgent(
                         graph_id=graph_id,
                         simulation_id=simulation_id,
-                        simulation_requirement=simulation_requirement
+                        simulation_requirement=simulation_requirement,
+                        novel_seed=project.novel_seed
                     )
 
                     def progress_callback(stage, progress, message):

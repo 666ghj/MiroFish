@@ -888,26 +888,29 @@ class ReportAgent:
     MAX_TOOL_CALLS_PER_CHAT = 2
     
     def __init__(
-        self, 
+        self,
         graph_id: str,
         simulation_id: str,
         simulation_requirement: str,
         llm_client: Optional[LLMClient] = None,
-        zep_tools: Optional[ZepToolsService] = None
+        zep_tools: Optional[ZepToolsService] = None,
+        novel_seed: Optional[Dict[str, Any]] = None
     ):
         """
         初始化Report Agent
-        
+
         Args:
             graph_id: 图谱ID
             simulation_id: 模拟ID
             simulation_requirement: 模拟需求描述
             llm_client: LLM客户端（可选）
             zep_tools: Zep工具服务（可选）
+            novel_seed: 小说种子元数据（novel-mac fork；存在即启用小说模式）
         """
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
+        self.novel_seed = novel_seed
         
         self.llm = llm_client or LLMClient()
         self.zep_tools = zep_tools or ZepToolsService()
@@ -1211,6 +1214,11 @@ class ReportAgent:
             total_entities=context.get('total_entities', 0),
             related_facts_json=json.dumps(context.get('related_facts', [])[:10], ensure_ascii=False, indent=2),
         )
+        if self.novel_seed:
+            # 小说沙盘模式（novel-mac fork）：大纲必须覆盖 craft 面并禁市场断言
+            from .novel_report import NOVEL_OUTLINE_ADDENDUM
+            system_prompt += NOVEL_OUTLINE_ADDENDUM
+            user_prompt += NOVEL_OUTLINE_ADDENDUM
 
         try:
             response = self.llm.chat_json(
@@ -1246,6 +1254,21 @@ class ReportAgent:
             
         except Exception as e:
             logger.error(t('report.outlinePlanFailed', error=str(e)))
+            if self.novel_seed:
+                # 小说沙盘模式的确定性 fallback 大纲（craft 面即章节）
+                from .novel_report import (
+                    NOVEL_FALLBACK_SECTIONS,
+                    NOVEL_FALLBACK_SUMMARY,
+                    NOVEL_FALLBACK_TITLE,
+                )
+
+                return ReportOutline(
+                    title=NOVEL_FALLBACK_TITLE,
+                    summary=NOVEL_FALLBACK_SUMMARY,
+                    sections=[
+                        ReportSection(title=title) for title in NOVEL_FALLBACK_SECTIONS
+                    ],
+                )
             # 返回默认大纲（3个章节，作为fallback）
             return ReportOutline(
                 title="未来预测报告",
@@ -1749,6 +1772,13 @@ class ReportAgent:
             
             # 使用ReportManager组装完整报告
             report.markdown_content = ReportManager.assemble_full_report(report_id, outline)
+            if self.novel_seed:
+                # 小说沙盘模式：市场断言降级 + 追加限制节（novel-mac fork）
+                from .novel_report import novel_report_postprocess
+
+                report.markdown_content = novel_report_postprocess(
+                    report.markdown_content, self.novel_seed
+                )
             report.status = ReportStatus.COMPLETED
             report.completed_at = datetime.now().isoformat()
             

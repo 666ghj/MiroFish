@@ -50,6 +50,9 @@ class Project:
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
+
+    # 小说种子元数据（novel-mac fork）：{projectId, sourceRevision, inputHash}
+    novel_seed: Optional[Dict[str, Any]] = None
     
     # 错误信息
     error: Optional[str] = None
@@ -73,7 +76,8 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
-            "error": self.error
+            "error": self.error,
+            "novel_seed": self.novel_seed
         }
     
     @classmethod
@@ -100,7 +104,8 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
-            error=data.get('error')
+            error=data.get('error'),
+            novel_seed=data.get('novel_seed')
         )
 
 
