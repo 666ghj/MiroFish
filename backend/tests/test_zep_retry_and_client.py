@@ -50,6 +50,7 @@ def test_rate_limit_retry_respects_retry_after():
 
 
 def test_zep_client_is_shared_and_uses_an_explicit_timeout(monkeypatch):
+    monkeypatch.setenv("GRAPH_MEMORY_BACKEND", "zep")
     created = []
 
     def fake_zep(**kwargs):
@@ -73,6 +74,7 @@ def test_zep_client_is_shared_and_uses_an_explicit_timeout(monkeypatch):
 
 
 def test_zep_client_rejects_self_hosted_endpoint_override(monkeypatch):
+    monkeypatch.setenv("GRAPH_MEMORY_BACKEND", "zep")
     monkeypatch.setenv("ZEP_API_URL", "https://example.invalid")
 
     with pytest.raises(ValueError, match="ZEP_API_URL"):
@@ -80,6 +82,7 @@ def test_zep_client_rejects_self_hosted_endpoint_override(monkeypatch):
 
 
 def test_zep_client_uses_internal_timeout_and_ignores_env_overrides(monkeypatch):
+    monkeypatch.setenv("GRAPH_MEMORY_BACKEND", "zep")
     created = []
 
     def fake_zep(**kwargs):
