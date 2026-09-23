@@ -172,6 +172,106 @@ class _GraphApi:
 
     # ---- 确定性结构化写入 ----
 
+    def add_nodes(self, *, nodes, graph_id: Optional[str] = None, **_ignored):
+        """按 zep-cloud add_nodes 语义确定性写入/更新节点。
+
+        nodes 为 AddNodeItem 形状（name 必填，label/summary/attributes/uuid_
+        可选）。给定 uuid 存在则更新、不存在则以该 uuid 创建（zep 同义）；
+        未给 uuid 时按 (graph_id, name) 复用，再无则新建。本地图记忆没有
+        影子 episode 与 embedding 派生，metadata 忽略。
+        """
+
+        if not graph_id:
+            raise ValueError("add_nodes 需要 graph_id")
+        written: List[str] = []
+        with self._driver.session() as session:
+            exists = session.run(
+                f"MATCH (g:{_MARKER_GRAPH_LABEL} {{graph_id: $graph_id}}) RETURN count(g) AS c",
+                graph_id=graph_id,
+            ).single()
+            if exists is None or exists["c"] == 0:
+                raise _not_found(f"graph {graph_id} not found", {"graph_id": graph_id})
+
+            for item in nodes:
+                name = getattr(item, "name", None)
+                if not name:
+                    raise ValueError("add_nodes 的每个节点都需要 name")
+                label = getattr(item, "label", None)
+                labels = [label] if label else None
+                summary = getattr(item, "summary", None)
+                attributes = getattr(item, "attributes", None)
+                item_uuid = getattr(item, "uuid_", None)
+
+                existing_by_uuid = None
+                if item_uuid:
+                    existing_by_uuid = session.run(
+                        f"MATCH (n:{_MARKER_LABEL} {{uuid: $uuid}}) RETURN n.uuid AS uuid",
+                        uuid=item_uuid,
+                    ).single()
+
+                node_uuid: Optional[str] = None
+                if existing_by_uuid is not None:
+                    node_uuid = existing_by_uuid["uuid"]
+                elif item_uuid:
+                    node_uuid = item_uuid
+                    self._create_node(
+                        session,
+                        graph_id=graph_id,
+                        node_uuid=node_uuid,
+                        node_name=name,
+                        node_labels=labels,
+                        node_summary=summary,
+                        node_attributes=attributes,
+                    )
+                else:
+                    node_uuid = self._upsert_node(
+                        session,
+                        graph_id=graph_id,
+                        node_uuid=None,
+                        node_name=name,
+                        node_labels=labels,
+                        node_summary=summary,
+                        node_attributes=attributes,
+                    )
+
+                for label_value in _normalize_labels(labels):
+                    session.run(
+                        f"MATCH (n:{_MARKER_LABEL} {{uuid: $uuid}}) "
+                        "SET n.summary = coalesce(n.summary, $summary), "
+                        "    n.attributes_json = $attributes_json "
+                        f"SET n:{_safe_label(label_value)}",
+                        uuid=node_uuid,
+                        summary=summary or "",
+                        attributes_json=_to_attributes_json(attributes),
+                    )
+                written.append(node_uuid)
+        return SimpleNamespace(uuids=written, nodes=[], relationships=[])
+
+    def _create_node(
+        self,
+        session,
+        *,
+        graph_id: str,
+        node_uuid: str,
+        node_name: Optional[str],
+        node_labels: Optional[Sequence[str]],
+        node_summary: Optional[str],
+        node_attributes: Optional[Dict[str, Any]],
+    ) -> None:
+        labels = _normalize_labels(node_labels)
+        label_fragment = "".join(":" + _safe_label(label) for label in labels)
+        session.run(
+            f"CREATE (n:{_MARKER_LABEL}{label_fragment} {{"
+            "    uuid: $uuid, graph_id: $graph_id, name: $name, "
+            "    summary: $summary, attributes_json: $attributes_json"
+            "})",
+            uuid=node_uuid,
+            graph_id=graph_id,
+            name=node_name,
+            summary=node_summary or "",
+            attributes_json=_to_attributes_json(node_attributes),
+        )
+
     def add_fact_triple(
         self,
         *,
