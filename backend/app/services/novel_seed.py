@@ -148,8 +148,11 @@ class NovelSeeder:
 
         self._validate_references(seed)
 
+        # 与 novel-agent 侧 canonicalSeedJson 字节一致：排序键 + 紧凑分隔符 + 原样 unicode
         input_hash = hashlib.sha256(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            json.dumps(
+                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
         ).hexdigest()
 
         project = ProjectManager.create_project(
