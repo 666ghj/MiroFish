@@ -272,8 +272,8 @@ class OasisProfileGenerator:
                 logger.warning(f"Zep客户端初始化失败: {e}")
     
     def generate_profile_from_entity(
-        self, 
-        entity: EntityNode, 
+        self,
+        entity: EntityNode,
         user_id: int,
         use_llm: bool = True
     ) -> OasisAgentProfile:
@@ -289,7 +289,12 @@ class OasisProfileGenerator:
             OasisAgentProfile
         """
         entity_type = entity.get_entity_type() or "Entity"
-        
+
+        # 显式读者 Persona（novel-mac fork 改造 ②）：确定性生成，永不经 LLM，
+        # 数值字段用固定默认值（不走 random），保证同实体两次生成完全一致。
+        if entity_type == "ReaderPersona":
+            return self._generate_reader_persona_profile(entity, user_id, entity_type)
+
         # 基础信息
         name = entity.name
         user_name = self._generate_username(name)
@@ -331,6 +336,50 @@ class OasisProfileGenerator:
             country=profile_data.get("country"),
             profession=profile_data.get("profession"),
             interested_topics=profile_data.get("interested_topics", []),
+            source_entity_uuid=entity.uuid,
+            source_entity_type=entity_type,
+        )
+
+    def _generate_reader_persona_profile(
+        self,
+        entity: EntityNode,
+        user_id: int,
+        entity_type: str,
+    ) -> OasisAgentProfile:
+        """从 seed 写入的 ReaderPersona 实体确定性构造 OASIS profile。
+
+        人设文本只来自实体 attributes（novel-agent 侧从已接受 Canon 编译），
+        固定数值默认，保证 prepare 结果可复现。
+        """
+
+        attributes = entity.attributes or {}
+        description = _coerce_to_str(attributes.get("description")) or entity.summary or ""
+        persona_id = _coerce_to_str(attributes.get("id")) or entity.name
+        reading_history = _coerce_to_str(attributes.get("readingHistory")) or ""
+
+        persona_lines = [
+            f"{entity.name}（{persona_id}）是显式定义的读者 Persona。",
+            f"人设：{description}" if description else "",
+            f"阅读历史：{reading_history}" if reading_history else "",
+            "在模拟中严格按此人设阅读并回应正文内容，不引入人设之外的信息。",
+        ]
+
+        # 用户名确定性：用 persona id 做后缀，不走 _generate_username 的随机后缀。
+        sanitized_id = "".join(
+            c for c in persona_id.lower().replace(" ", "_") if c.isalnum() or c == "_"
+        )
+        deterministic_username = f"reader_{sanitized_id}" if sanitized_id else "reader"
+
+        return OasisAgentProfile(
+            user_id=user_id,
+            user_name=deterministic_username,
+            name=entity.name,
+            bio=description or f"{entity_type}: {entity.name}",
+            persona="\n".join(line for line in persona_lines if line),
+            karma=1000,
+            friend_count=100,
+            follower_count=150,
+            statuses_count=500,
             source_entity_uuid=entity.uuid,
             source_entity_type=entity_type,
         )
