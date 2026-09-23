@@ -5,6 +5,8 @@ Zep实体读取与过滤服务
 
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
+import os
+
 from zep_cloud import NotFoundError
 
 from ..config import Config
@@ -78,10 +80,12 @@ class ZepEntityReader:
     """
     
     def __init__(self, api_key: Optional[str] = None):
+        backend = os.environ.get("GRAPH_MEMORY_BACKEND", Config.GRAPH_MEMORY_BACKEND or "zep")
         self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
+        if backend == "zep" and not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
-        
+        # neo4j_local 后端不消费 Zep 凭据；api_key 允许为空。
+
         self.client = get_zep_client(self.api_key)
     
     def _call_with_retry(

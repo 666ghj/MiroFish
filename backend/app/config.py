@@ -31,7 +31,13 @@ class Config:
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
-    
+
+    # 图记忆后端（novel-mac fork）：zep（默认，Zep Cloud）或 neo4j_local
+    GRAPH_MEMORY_BACKEND = os.environ.get('GRAPH_MEMORY_BACKEND', 'zep')
+    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:17687')
+    NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'mirofishnovellocal')
+
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
@@ -62,14 +68,24 @@ class Config:
     
     @classmethod
     def validate(cls) -> list[str]:
-        """验证必要配置"""
+        """验证必要配置（按图记忆后端分支）"""
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
-        if os.environ.get("ZEP_API_URL"):
-            errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
+
+        # 后端选择在调用时读环境，避免 .env 与进程环境不一致时静默走错后端
+        backend = os.environ.get("GRAPH_MEMORY_BACKEND", cls.GRAPH_MEMORY_BACKEND or "zep")
+        if backend == "neo4j_local":
+            if not cls.NEO4J_URI:
+                errors.append("NEO4J_URI 未配置")
+        elif backend == "zep":
+            if not cls.ZEP_API_KEY:
+                errors.append("ZEP_API_KEY 未配置")
+            if os.environ.get("ZEP_API_URL"):
+                errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
+        else:
+            errors.append(f"GRAPH_MEMORY_BACKEND 未知: {backend}；支持 zep 或 neo4j_local")
+
         if cls.DEBUG:
             import warnings
             warnings.warn("Flask DEBUG mode is enabled. Do not use in production.", RuntimeWarning)

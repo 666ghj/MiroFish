@@ -63,7 +63,22 @@ def _cached_zep_client(api_key: str, timeout: float) -> Zep:
 
 
 def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> Zep:
-    """Return a process-shared, explicitly configured Zep Cloud client."""
+    """Return a process-shared graph-memory client.
+
+    GRAPH_MEMORY_BACKEND=neo4j_local（novel-mac fork）时返回
+    :class:`~app.utils.local_graph_memory.LocalGraphMemoryClient`，不要求任何
+    Zep Cloud 配置；其余情况沿用显式配置的 Zep Cloud 客户端。
+    """
+
+    backend = os.environ.get("GRAPH_MEMORY_BACKEND", Config.GRAPH_MEMORY_BACKEND or "zep")
+    if backend == "neo4j_local":
+        return _cached_local_graph_client(
+            Config.NEO4J_URI,
+            Config.NEO4J_USER,
+            Config.NEO4J_PASSWORD,
+        )
+    if backend != "zep":
+        raise ValueError(f"GRAPH_MEMORY_BACKEND 未知: {backend}；支持 zep 或 neo4j_local")
 
     # zep-cloud gives ZEP_API_URL precedence even when base_url is explicit.
     # Reject it so this Cloud-only integration cannot silently target a
@@ -83,10 +98,18 @@ def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> 
     return _cached_zep_client(normalized_key, request_timeout)
 
 
+@lru_cache(maxsize=4)
+def _cached_local_graph_client(uri: str, user: str, password: str):
+    from .local_graph_memory import LocalGraphMemoryClient
+
+    return LocalGraphMemoryClient(uri, user, password)
+
+
 def clear_zep_client_cache() -> None:
     """Clear cached clients. Intended for tests and controlled reconfiguration."""
 
     _cached_zep_client.cache_clear()
+    _cached_local_graph_client.cache_clear()
 
 
 def is_retryable_zep_error(error: BaseException) -> bool:
