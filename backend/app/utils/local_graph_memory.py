@@ -172,6 +172,88 @@ class _GraphApi:
 
     # ---- 确定性结构化写入 ----
 
+    def search(self, *, graph_id: str, query: str, limit: int = 10,
+               scope: str = "edges", reranker: Optional[str] = None, **_ignored):
+        """词法匹配搜索（报告读路径），语义与 zep_tools._local_search 对齐。
+
+        无向量检索：按查询整串与分词做子串打分，uuid 稳定排序。命中为空
+        是合法结果；图不存在抛 NotFound。
+        """
+        if not graph_id:
+            raise ValueError("search 需要 graph_id")
+        query_lower = (query or "").strip().lower()
+        keywords = [
+            word.strip()
+            for word in query_lower.replace(',', ' ').replace('，', ' ').split()
+            if len(word.strip()) > 1
+        ]
+
+        def score(text: Optional[str]) -> int:
+            if not text:
+                return 0
+            text_lower = text.lower()
+            if query_lower and query_lower in text_lower:
+                return 100
+            return sum(10 for keyword in keywords if keyword in text_lower)
+
+        with self._driver.session() as session:
+            exists = session.run(
+                f"MATCH (g:{_MARKER_GRAPH_LABEL} {{graph_id: $graph_id}}) RETURN count(g) AS c",
+                graph_id=graph_id,
+            ).single()
+            if exists is None or exists["c"] == 0:
+                raise _not_found(f"graph {graph_id} not found", {"graph_id": graph_id})
+
+            edge_rows = []
+            if scope in ("edges", "both", None):
+                result = session.run(
+                    f"MATCH (s:{_MARKER_LABEL})-[r:{_EDGE_TYPE} {{graph_id: $graph_id}}]"
+                    f"->(t:{_MARKER_LABEL}) "
+                    "RETURN r AS edge, s.uuid AS source_uuid, t.uuid AS target_uuid",
+                    graph_id=graph_id,
+                )
+                for record in result:
+                    edge = record["edge"]
+                    total = score(edge["fact"]) + score(edge["name"])
+                    if total > 0:
+                        edge_rows.append((total, edge["uuid"], _edge_namespace(
+                            {"uuid": edge["uuid"], "name": edge["name"], "fact": edge["fact"],
+                             "attributes_json": edge["attributes_json"]},
+                            record["source_uuid"], record["target_uuid"])))
+            node_rows = []
+            if scope in ("nodes", "both"):
+                result = session.run(
+                    f"MATCH (n:{_MARKER_LABEL} {{graph_id: $graph_id}}) "
+                    "RETURN n.uuid AS uuid, n.name AS name, labels(n) AS labels, "
+                    "       n.summary AS summary, n.attributes_json AS attributes_json",
+                    graph_id=graph_id,
+                )
+                for record in record_rows(result):
+                    total = score(record["name"]) + score(record["summary"])
+                    if total > 0:
+                        node_rows.append((total, record["uuid"], _node_namespace(record)))
+
+        edge_rows.sort(key=lambda row: (-row[0], row[1]))
+        node_rows.sort(key=lambda row: (-row[0], row[1]))
+
+        # 命中边的端点节点随结果返回（图搜索语义：相关实体与事实一起出）。
+        with self._driver.session() as session:
+            for _score, _uuid, edge in edge_rows[: int(limit)]:
+                result = session.run(
+                    f"MATCH (n:{_MARKER_LABEL}) WHERE n.uuid IN $uuids "
+                    "RETURN n.uuid AS uuid, n.name AS name, labels(n) AS labels, "
+                    "       n.summary AS summary, n.attributes_json AS attributes_json",
+                    uuids=[edge.source_node_uuid, edge.target_node_uuid],
+                )
+                for record in record_rows(result):
+                    if all(existing.uuid_ != record["uuid"] for _, _, existing in node_rows):
+                        node_rows.append((0, record["uuid"], _node_namespace(record)))
+        node_rows.sort(key=lambda row: (-row[0], row[1]))
+        return SimpleNamespace(
+            edges=[row[2] for row in edge_rows[: int(limit)]],
+            nodes=[row[2] for row in node_rows[: int(limit)]],
+        )
+
     def add_nodes(self, *, nodes, graph_id: Optional[str] = None, **_ignored):
         """按 zep-cloud add_nodes 语义确定性写入/更新节点。
 
@@ -509,3 +591,6 @@ def _build_edge_page(records: List[dict], page_size: int) -> _RawResponse:
     if has_more and page:
         headers["zep-next-cursor"] = page[-1]["edge"]["uuid"]
     return _RawResponse(data=items, headers=headers)
+
+def record_rows(result) -> List[dict]:
+    return [dict(record) for record in result]

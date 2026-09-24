@@ -280,3 +280,49 @@ def test_reader_filter_semantics_hold_on_local_backend(monkeypatch):
     finally:
         zep_utils.clear_zep_client_cache()
         client.graph.delete(graph_id=graph_id)
+
+
+@requires_neo4j
+def test_graph_search_matches_facts_lexically_and_deterministically(monkeypatch):
+    """报告读路径的 graph.search：词法匹配 + 稳定排序，无语义承诺。"""
+    from app.utils.local_graph_memory import LocalGraphMemoryClient
+
+    client = LocalGraphMemoryClient(
+        NEO4J_TEST_URI, NEO4J_TEST_USER, NEO4J_TEST_PASSWORD
+    )
+    graph_id = f"mfn_{uuidlib.uuid4().hex[:12]}"
+    try:
+        client.graph.create(graph_id=graph_id, name="search", description="")
+        client.graph.add_fact_triple(
+            fact="林砚在雾港夜班巡检航标",
+            fact_name="patrols",
+            graph_id=graph_id,
+            source_node_name="林砚",
+            source_node_labels=["Entity", "Character"],
+            target_node_name="雾港航标",
+            target_node_labels=["Entity", "Location"],
+        )
+        client.graph.add_fact_triple(
+            fact="苏晚保管一段旧港记录",
+            fact_name="keeps",
+            graph_id=graph_id,
+            source_node_name="苏晚",
+            source_node_labels=["Entity", "Character"],
+            target_node_name="旧港记录",
+            target_node_labels=["Entity", "Location"],
+        )
+
+        hit = client.graph.search(
+            graph_id=graph_id, query="夜班 航标 巡检", limit=5, scope="both", reranker="cross_encoder"
+        )
+        facts = [edge.fact for edge in (hit.edges or [])]
+        assert any("巡检航标" in fact for fact in facts)
+        assert not any("旧港记录" in fact for fact in facts)
+        node_names = [node.name for node in (hit.nodes or [])]
+        assert "林砚" in node_names
+
+        miss = client.graph.search(graph_id=graph_id, query="完全无关的词", limit=5, scope="both")
+        assert list(miss.edges or []) == []
+        assert list(miss.nodes or []) == []
+    finally:
+        client.graph.delete(graph_id=graph_id)
