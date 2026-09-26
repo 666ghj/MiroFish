@@ -1946,7 +1946,7 @@ class SimulationRunner:
                     SELECT user_id, info, created_at
                     FROM trace
                     WHERE action = 'interview' AND user_id = ?
-                    ORDER BY created_at DESC
+                    ORDER BY rowid DESC
                     LIMIT ?
                 """, (agent_id, limit))
             else:
@@ -1954,7 +1954,7 @@ class SimulationRunner:
                     SELECT user_id, info, created_at
                     FROM trace
                     WHERE action = 'interview'
-                    ORDER BY created_at DESC
+                    ORDER BY rowid DESC
                     LIMIT ?
                 """, (limit,))
             
