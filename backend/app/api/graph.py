@@ -540,35 +540,70 @@ def _build_graph_impl():
                     }
                 })
 
-            if (
-                not force
-                and project.graph_id
-                and project.zep_batch_id
-                and project.zep_batch_operation_id
-            ):
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        # A background failure can occur after Zep accepted and completed the
+        # batch (for example, a transient error while reading its final status).
+        # Reconcile persisted work before the FAILED-project rebuild path is
+        # allowed to delete the referenced graph.
+        if (
+            not force
+            and project.status in {ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED}
+            and project.graph_id
+            and project.zep_batch_id
+            and project.zep_batch_operation_id
+        ):
+            builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+            try:
                 batch_summary = builder.get_batch_summary(project.zep_batch_id)
-                if getattr(batch_summary, "status", None) in {
-                    "queued",
-                    "processing",
-                    "succeeded",
-                }:
-                    resume_existing_batch = True
-
-            if not resume_existing_batch:
-                project.status = ProjectStatus.FAILED
-                project.error = (
-                    "Graph build task is no longer present; the persisted Zep "
-                    "batch cannot be resumed automatically"
+            except Exception:
+                logger.warning(
+                    "Unable to reconcile persisted Zep batch %s; preserving graph %s",
+                    project.zep_batch_id,
+                    project.graph_id,
+                    exc_info=True,
                 )
-                ProjectManager.save_project(project)
-                if not force:
-                    return jsonify({
-                        "success": False,
-                        "error": project.error,
-                        "task_id": project.graph_build_task_id,
-                        "recoverable": True,
-                    }), 409
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Unable to verify the existing Zep batch status. "
+                        "The graph was preserved; retry when Zep is reachable."
+                    ),
+                    "recoverable": True,
+                    "graph_id": project.graph_id,
+                    "batch_id": project.zep_batch_id,
+                }), 503
+
+            batch_status = getattr(batch_summary, "status", None)
+            resumable_batch_statuses = {"queued", "processing", "succeeded"}
+            terminal_batch_statuses = {"partial", "failed", "invalid", "canceled"}
+            if batch_status in resumable_batch_statuses:
+                resume_existing_batch = True
+            elif batch_status not in terminal_batch_statuses:
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "The existing Zep batch returned an unknown status. "
+                        "The graph was preserved; retry after the batch can be verified."
+                    ),
+                    "recoverable": True,
+                    "graph_id": project.graph_id,
+                    "batch_id": project.zep_batch_id,
+                    "batch_status": batch_status,
+                }), 409
+
+        if project.status == ProjectStatus.GRAPH_BUILDING and not resume_existing_batch:
+            project.status = ProjectStatus.FAILED
+            project.error = (
+                "Graph build task is no longer present; the persisted Zep "
+                "batch cannot be resumed automatically"
+            )
+            ProjectManager.save_project(project)
+            if not force:
+                return jsonify({
+                    "success": False,
+                    "error": project.error,
+                    "task_id": project.graph_build_task_id,
+                    "recoverable": True,
+                }), 409
 
         if project.status == ProjectStatus.GRAPH_COMPLETED and not force:
             return jsonify({
@@ -619,7 +654,7 @@ def _build_graph_impl():
             }), 400
 
         # Only mutate Cloud state after the complete rebuild request validates.
-        if project.status == ProjectStatus.FAILED or (
+        if (project.status == ProjectStatus.FAILED and not resume_existing_batch) or (
             force and project.status == ProjectStatus.GRAPH_COMPLETED
         ):
             graph_id_to_delete = project.graph_id
@@ -642,6 +677,7 @@ def _build_graph_impl():
         # 更新项目状态
         project.status = ProjectStatus.GRAPH_BUILDING
         project.graph_build_task_id = task_id
+        project.error = None
         ProjectManager.save_project(project)
         
         # Capture locale before spawning background thread
