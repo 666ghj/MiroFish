@@ -28,6 +28,15 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+
+    # Optional cohort-generation temperature override. When unset, each
+    # generator keeps its existing retry schedule; when set, the same value is
+    # used for every cohort-generation attempt.
+    COHORT_TEMPERATURE = (
+        float(os.environ['MIROFISH_COHORT_TEMPERATURE'])
+        if os.environ.get('MIROFISH_COHORT_TEMPERATURE') is not None
+        else None
+    )
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
@@ -59,6 +68,13 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
+
+    @classmethod
+    def cohort_temperature(cls, default: float, attempt: int) -> float:
+        """Return the configured cohort temperature for one retry attempt."""
+        if cls.COHORT_TEMPERATURE is not None:
+            return cls.COHORT_TEMPERATURE
+        return default - (attempt * 0.1)
     
     @classmethod
     def validate(cls) -> list[str]:
