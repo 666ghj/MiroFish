@@ -6,7 +6,7 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 import os
 import traceback
 from contextlib import nullcontext
-from flask import request, jsonify, send_file
+from flask import request, jsonify, send_file, g
 
 from . import simulation_bp
 from ..config import Config
@@ -23,8 +23,22 @@ from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..utils.zep_lifecycle import get_graph_readers, graph_lifecycle_lock
 from ..models.project import ProjectManager
+from ..utils.id_validation import validate_simulation_id, validate_platform_name, safe_join
+from ..utils.authorization import authorize, authorize_any, is_owned_by_current_user
 
 logger = get_logger('mirofish.api.simulation')
+
+
+def _authorize_simulation_access(simulation_id: str) -> None:
+    """
+    校验当前用户是否拥有该模拟对应的项目。
+
+    若模拟在本地不存在则直接返回（交由调用方保留的现有 404 逻辑处理），
+    只有存在但不属于当前用户时才会抛出 ForbiddenError。
+    """
+    state = SimulationManager().get_simulation(simulation_id)
+    if state is not None:
+        authorize(state)
 
 
 def _get_default_platform(simulation_id: str) -> str:
@@ -92,7 +106,8 @@ def get_graph_entities(graph_id: str):
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
             }), 500
-        
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         entity_types_str = request.args.get('entity_types', '')
         entity_types = [t.strip() for t in entity_types_str.split(',') if t.strip()] if entity_types_str else None
         enrich = request.args.get('enrich', 'true').lower() == 'true'
@@ -129,7 +144,8 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
             }), 500
-        
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         reader = ZepEntityReader()
         entity = reader.get_entity_with_context(graph_id, entity_uuid)
         
@@ -162,9 +178,10 @@ def get_entities_by_type(graph_id: str, entity_type: str):
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
             }), 500
-        
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         enrich = request.args.get('enrich', 'true').lower() == 'true'
-        
+
         reader = ZepEntityReader()
         entities = reader.get_entities_by_type(
             graph_id=graph_id,
@@ -237,20 +254,22 @@ def create_simulation():
                 "success": False,
                 "error": t('api.projectNotFound', id=project_id)
             }), 404
-        
+        authorize(project)
+
         graph_id = data.get('graph_id') or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.graphNotBuilt')
             }), 400
-        
+
         manager = SimulationManager()
         state = manager.create_simulation(
             project_id=project_id,
             graph_id=graph_id,
             enable_twitter=data.get('enable_twitter', True),
             enable_reddit=data.get('enable_reddit', True),
+            owner_id=project.owner_id,
         )
         
         return jsonify({
@@ -285,8 +304,9 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     """
     import os
     from ..config import Config
-    
-    simulation_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
+    validate_simulation_id(simulation_id)
+    simulation_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
     
     # 检查目录是否存在
     if not os.path.exists(simulation_dir):
@@ -444,13 +464,14 @@ def prepare_simulation():
         
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        
+
         if not state:
             return jsonify({
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
-        
+        authorize(state)
+
         # 检查是否强制重新生成
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"开始处理 /prepare 请求: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
@@ -709,9 +730,10 @@ def get_prepare_status():
         
         task_id = data.get('task_id')
         simulation_id = data.get('simulation_id')
-        
+
         # 如果提供了simulation_id，先检查是否已准备完成
         if simulation_id:
+            _authorize_simulation_access(simulation_id)
             is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
             if is_prepared:
                 return jsonify({
@@ -799,7 +821,8 @@ def get_simulation(simulation_id: str):
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
-        
+        authorize(state)
+
         result = state.to_dict()
         
         # 如果模拟已准备好，附加运行说明
@@ -830,10 +853,13 @@ def list_simulations():
     """
     try:
         project_id = request.args.get('project_id')
-        
+
         manager = SimulationManager()
-        simulations = manager.list_simulations(project_id=project_id)
-        
+        simulations = [
+            s for s in manager.list_simulations(project_id=project_id)
+            if is_owned_by_current_user(s)
+        ]
+
         return jsonify({
             "success": True,
             "data": [s.to_dict() for s in simulations],
@@ -947,8 +973,10 @@ def get_simulation_history():
         limit = request.args.get('limit', 20, type=int)
         
         manager = SimulationManager()
-        simulations = manager.list_simulations()[:limit]
-        
+        simulations = [
+            s for s in manager.list_simulations() if is_owned_by_current_user(s)
+        ][:limit]
+
         # 增强模拟数据，只从 Simulation 文件读取
         enriched_simulations = []
         for sim in simulations:
@@ -1030,6 +1058,7 @@ def get_simulation_profiles(simulation_id: str):
     Query参数：
         platform: 平台类型（reddit/twitter，默认reddit）
     """
+    _authorize_simulation_access(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
 
@@ -1091,19 +1120,22 @@ def get_simulation_profiles_realtime(simulation_id: str):
     import json
     import csv
     from datetime import datetime
-    
+
+    validate_simulation_id(simulation_id)
+    _authorize_simulation_access(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
+        validate_platform_name(platform)
 
         # 获取模拟目录
-        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
-        
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         if not os.path.exists(sim_dir):
             return jsonify({
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
-        
+
         # 确定文件路径
         if platform == "reddit":
             profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
@@ -1201,17 +1233,19 @@ def get_simulation_config_realtime(simulation_id: str):
     """
     import json
     from datetime import datetime
-    
+
+    validate_simulation_id(simulation_id)
+    _authorize_simulation_access(simulation_id)
     try:
         # 获取模拟目录
-        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
-        
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         if not os.path.exists(sim_dir):
             return jsonify({
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
-        
+
         # 配置文件路径
         config_file = os.path.join(sim_dir, "simulation_config.json")
         
@@ -1317,10 +1351,11 @@ def get_simulation_config(simulation_id: str):
         - platform_configs: 平台配置
         - generation_reasoning: LLM的配置推理说明
     """
+    _authorize_simulation_access(simulation_id)
     try:
         manager = SimulationManager()
         config = manager.get_simulation_config(simulation_id)
-        
+
         if not config:
             return jsonify({
                 "success": False,
@@ -1341,9 +1376,48 @@ def get_simulation_config(simulation_id: str):
         }), 500
 
 
+@simulation_bp.route('/<simulation_id>/manifest', methods=['GET'])
+def get_simulation_manifest(simulation_id: str):
+    """
+    获取模拟的可复现性清单（Reproducibility Manifest）
+
+    记录该模拟准备时使用的 LLM 模型、源文档/本体/生成的 Agent Profile 的
+    内容哈希、随机种子、以及运行时代码/依赖版本，用于事后重建或对比一次
+    运行的执行条件。注意：这不代表整个模拟是完全确定性的，详见清单中
+    `randomness` 字段的说明。
+    """
+    _authorize_simulation_access(simulation_id)
+    try:
+        from ..services import reproducibility_manifest
+
+        manager = SimulationManager()
+        sim_dir = manager._get_simulation_dir(simulation_id)
+        manifest = reproducibility_manifest.load_manifest(sim_dir)
+
+        if not manifest:
+            return jsonify({
+                "success": False,
+                "error": t('api.manifestNotFound')
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "data": manifest
+        })
+
+    except Exception as e:
+        logger.error(f"获取可复现性清单失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
 @simulation_bp.route('/<simulation_id>/config/download', methods=['GET'])
 def download_simulation_config(simulation_id: str):
     """下载模拟配置文件"""
+    _authorize_simulation_access(simulation_id)
     try:
         manager = SimulationManager()
         sim_dir = manager._get_simulation_dir(simulation_id)
@@ -1446,7 +1520,8 @@ def generate_profiles():
                 "success": False,
                 "error": t('api.requireGraphId')
             }), 400
-        
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         entity_types = data.get('entity_types')
         use_llm = data.get('use_llm', True)
         platform = data.get('platform', 'reddit')
@@ -1594,6 +1669,7 @@ def start_simulation():
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
+        authorize(state)
 
         force_restarted = False
         
@@ -1814,7 +1890,8 @@ def stop_simulation():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
-        
+        _authorize_simulation_access(simulation_id)
+
         run_state = SimulationRunner.stop_simulation(simulation_id)
         
         # 更新模拟状态
@@ -1888,9 +1965,10 @@ def get_run_status(simulation_id: str):
             }
         }
     """
+    _authorize_simulation_access(simulation_id)
     try:
         run_state = SimulationRunner.get_run_state(simulation_id)
-        
+
         if not run_state:
             return jsonify({
                 "success": True,
@@ -1957,6 +2035,7 @@ def get_run_status_detail(simulation_id: str):
             }
         }
     """
+    _authorize_simulation_access(simulation_id)
     try:
         run_state = SimulationRunner.get_run_state(simulation_id)
         platform_filter = request.args.get('platform')
@@ -2042,13 +2121,14 @@ def get_simulation_actions(simulation_id: str):
             }
         }
     """
+    _authorize_simulation_access(simulation_id)
     try:
         limit = request.args.get('limit', 100, type=int)
         offset = request.args.get('offset', 0, type=int)
         platform = request.args.get('platform')
         agent_id = request.args.get('agent_id', type=int)
         round_num = request.args.get('round_num', type=int)
-        
+
         actions = SimulationRunner.get_actions(
             simulation_id=simulation_id,
             limit=limit,
@@ -2088,10 +2168,11 @@ def get_simulation_timeline(simulation_id: str):
     
     返回每轮的汇总信息
     """
+    _authorize_simulation_access(simulation_id)
     try:
         start_round = request.args.get('start_round', 0, type=int)
         end_round = request.args.get('end_round', type=int)
-        
+
         timeline = SimulationRunner.get_timeline(
             simulation_id=simulation_id,
             start_round=start_round,
@@ -2122,6 +2203,7 @@ def get_agent_stats(simulation_id: str):
     
     用于前端展示Agent活跃度排行、动作分布等
     """
+    _authorize_simulation_access(simulation_id)
     try:
         stats = SimulationRunner.get_agent_stats(simulation_id)
         
@@ -2156,15 +2238,15 @@ def get_simulation_posts(simulation_id: str):
     
     返回帖子列表（从SQLite数据库读取）
     """
+    validate_simulation_id(simulation_id)
+    _authorize_simulation_access(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
+        validate_platform_name(platform)
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
 
         db_file = f"{platform}_simulation.db"
         db_path = os.path.join(sim_dir, db_file)
@@ -2233,17 +2315,17 @@ def get_simulation_comments(simulation_id: str):
         limit: 返回数量
         offset: 偏移量
     """
+    validate_simulation_id(simulation_id)
+    _authorize_simulation_access(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
+        validate_platform_name(platform)
         post_id = request.args.get('post_id')
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
-        
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         db_path = os.path.join(sim_dir, f"{platform}_simulation.db")
         
         if not os.path.exists(db_path):
@@ -2378,24 +2460,25 @@ def interview_agent():
                 "success": False,
                 "error": t('api.requirePrompt')
             }), 400
-        
+        _authorize_simulation_access(simulation_id)
+
         # 验证platform参数
         if platform and platform not in ("twitter", "reddit"):
             return jsonify({
                 "success": False,
                 "error": t('api.invalidInterviewPlatform')
             }), 400
-        
+
         # 检查环境状态
         if not SimulationRunner.check_env_alive(simulation_id):
             return jsonify({
                 "success": False,
                 "error": t('api.envNotRunning')
             }), 400
-        
+
         # 优化prompt，添加前缀避免Agent调用工具
         optimized_prompt = optimize_interview_prompt(prompt)
-        
+
         result = SimulationRunner.interview_agent(
             simulation_id=simulation_id,
             agent_id=agent_id,
@@ -2493,6 +2576,7 @@ def interview_agents_batch():
                 "success": False,
                 "error": t('api.requireInterviews')
             }), 400
+        _authorize_simulation_access(simulation_id)
 
         # 验证platform参数
         if platform and platform not in ("twitter", "reddit"):
@@ -2620,6 +2704,7 @@ def interview_all_agents():
                 "success": False,
                 "error": t('api.requirePrompt')
             }), 400
+        _authorize_simulation_access(simulation_id)
 
         # 验证platform参数
         if platform and platform not in ("twitter", "reddit"):
@@ -2718,6 +2803,7 @@ def get_interview_history():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
+        _authorize_simulation_access(simulation_id)
 
         history = SimulationRunner.get_interview_history(
             simulation_id=simulation_id,
@@ -2777,6 +2863,7 @@ def get_env_status():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
+        _authorize_simulation_access(simulation_id)
 
         env_alive = SimulationRunner.check_env_alive(simulation_id)
         
@@ -2845,7 +2932,8 @@ def close_simulation_env():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
-        
+        _authorize_simulation_access(simulation_id)
+
         result = SimulationRunner.close_simulation_env(
             simulation_id=simulation_id,
             timeout=timeout

@@ -350,6 +350,7 @@
     "requireTaskOrSimId": "Please provide task_id or simulation_id",
     "configNotFound": "Simulation config not found. Please call /prepare first.",
     "configFileNotFound": "Config file not found. Please call /prepare first.",
+    "manifestNotFound": "Reproducibility manifest not found. Please call /prepare first.",
     "unknownScript": "Unknown script: {name}. Available: {allowed}",
     "scriptFileNotFound": "Script file not found: {name}",
     "requireGraphId": "Please provide graph_id",

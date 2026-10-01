@@ -350,6 +350,7 @@
     "requireTaskOrSimId": "请提供 task_id 或 simulation_id",
     "configNotFound": "模拟配置不存在，请先调用 /prepare 接口",
     "configFileNotFound": "配置文件不存在，请先调用 /prepare 接口",
+    "manifestNotFound": "可复现性清单不存在，请先调用 /prepare 接口",
     "unknownScript": "未知脚本: {name}，可选: {allowed}",
     "scriptFileNotFound": "脚本文件不存在: {name}",
     "requireGraphId": "请提供 graph_id",
