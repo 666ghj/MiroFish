@@ -897,57 +897,68 @@ const startSimulation = () => {
 </style>
 
 <style>
-/* English locale adjustments (unscoped to target html[lang]) */
-html[lang="en"] .main-title {
+/* Latin-script locale adjustments (unscoped to target html[lang]) */
+html[lang="en"] .main-title,
+html[lang="it"] .main-title {
   font-size: 3.5rem;
   font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: -1px;
 }
 
-html[lang="en"] .hero-desc {
+html[lang="en"] .hero-desc,
+html[lang="it"] .hero-desc {
   text-align: left;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: 0;
 }
 
-html[lang="en"] .slogan-text {
+html[lang="en"] .slogan-text,
+html[lang="it"] .slogan-text {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: 0;
 }
 
-html[lang="en"] .tag-row {
+html[lang="en"] .tag-row,
+html[lang="it"] .tag-row {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-html[lang="en"] .navbar .nav-links {
+html[lang="en"] .navbar .nav-links,
+html[lang="it"] .navbar .nav-links {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Left pane: system status + workflow */
-html[lang="en"] .status-section {
+html[lang="en"] .status-section,
+html[lang="it"] .status-section {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-html[lang="en"] .status-section .status-ready {
+html[lang="en"] .status-section .status-ready,
+html[lang="it"] .status-section .status-ready {
   font-size: 1.6rem;
 }
 
-html[lang="en"] .status-section .metric-value {
+html[lang="en"] .status-section .metric-value,
+html[lang="it"] .status-section .metric-value {
   font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 1.4rem;
 }
 
-html[lang="en"] .workflow-list .step-title {
+html[lang="en"] .workflow-list .step-title,
+html[lang="it"] .workflow-list .step-title {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-html[lang="en"] .workflow-list .step-desc {
+html[lang="en"] .workflow-list .step-desc,
+html[lang="it"] .workflow-list .step-desc {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   font-size: 0.72rem !important;
   line-height: 1.4 !important;
 }
 
-html[lang="en"] .workflow-list {
+html[lang="en"] .workflow-list,
+html[lang="it"] .workflow-list {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 </style>
