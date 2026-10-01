@@ -27,6 +27,15 @@ from ..utils.zep import (
 )
 from .zep_graph_memory_updater import ZepGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
+from . import simulation_checkpoint
+from ..utils.id_validation import validate_simulation_id, safe_join
+from ..utils.state_machine import (
+    ConcurrentModificationError,
+    InvalidStateTransitionError,
+    atomic_write_json,
+    is_valid_transition,
+    next_revision,
+)
 
 logger = get_logger('mirofish.simulation_runner')
 
@@ -47,6 +56,50 @@ class RunnerStatus(str, Enum):
     STOPPED = "stopped"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+# 运行器状态机的合法转换图，基于本文件中每一处 `runner_status = ...` 赋值
+# 逐一核对得出（包括 stop_simulation 的重试路径、_monitor_simulation 的
+# 完成/失败收尾、以及 register_cleanup 在进程重启后恢复未完成的图谱写入
+# 屏障等边缘情况）。保存时通过 _save_run_state 强制校验，任何不在此图中的
+# 转换都会被拒绝而不是被静默持久化。
+RUNNER_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    RunnerStatus.IDLE.value: {RunnerStatus.STARTING.value, RunnerStatus.STOPPING.value},
+    RunnerStatus.STARTING.value: {
+        RunnerStatus.RUNNING.value,
+        RunnerStatus.FAILED.value,
+        RunnerStatus.STOPPING.value,
+    },
+    RunnerStatus.RUNNING.value: {
+        RunnerStatus.PAUSED.value,
+        RunnerStatus.STOPPING.value,
+        RunnerStatus.STOPPED.value,
+        RunnerStatus.COMPLETED.value,
+        RunnerStatus.FAILED.value,
+    },
+    RunnerStatus.PAUSED.value: {
+        RunnerStatus.RUNNING.value,
+        RunnerStatus.STOPPING.value,
+        RunnerStatus.FAILED.value,
+    },
+    RunnerStatus.STOPPING.value: {
+        RunnerStatus.STOPPED.value,
+        RunnerStatus.COMPLETED.value,
+        RunnerStatus.FAILED.value,
+    },
+    # Terminal states remain reachable from one another: restarting a
+    # simulation reuses the same simulation_id and always begins a fresh
+    # SimulationRunState at STARTING, and register_cleanup() may need to
+    # reopen the STOPPING ingestion barrier for a retained Zep updater even
+    # after a premature terminal projection.
+    RunnerStatus.STOPPED.value: {RunnerStatus.STARTING.value, RunnerStatus.STOPPING.value},
+    RunnerStatus.COMPLETED.value: {RunnerStatus.STARTING.value, RunnerStatus.STOPPING.value},
+    RunnerStatus.FAILED.value: {
+        RunnerStatus.STARTING.value,
+        RunnerStatus.STOPPING.value,
+        RunnerStatus.FAILED.value,
+    },
+}
 
 
 class SimulationStopPending(TimeoutError):
@@ -151,7 +204,10 @@ class SimulationRunState:
     
     # 进程ID（用于停止）
     process_pid: Optional[int] = None
-    
+
+    # 持久化修订号，每次成功保存自增，用于乐观并发控制（CAS）
+    revision: int = 0
+
     def add_action(self, action: AgentAction):
         """添加动作到最近动作列表"""
         self.recent_actions.insert(0, action)
@@ -191,8 +247,9 @@ class SimulationRunState:
             "completed_at": self.completed_at,
             "error": self.error,
             "process_pid": self.process_pid,
+            "revision": self.revision,
         }
-    
+
     def to_detail_dict(self) -> Dict[str, Any]:
         """包含最近动作的详细信息"""
         result = self.to_dict()
@@ -237,6 +294,12 @@ class SimulationRunner:
     _finalization_locks: Dict[str, threading.Lock] = {}
     _finalization_locks_guard = threading.Lock()
     _manual_stop_requests: set[str] = set()
+
+    @classmethod
+    def _get_sim_dir(cls, simulation_id: str) -> str:
+        """获取模拟运行状态目录（校验 simulation_id 格式并确保结果位于 RUN_STATE_DIR 内）"""
+        validate_simulation_id(simulation_id)
+        return safe_join(cls.RUN_STATE_DIR, simulation_id)
 
     @classmethod
     def _finalization_lock(cls, simulation_id: str) -> threading.Lock:
@@ -300,7 +363,7 @@ class SimulationRunner:
     @classmethod
     def _load_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """从文件加载运行状态"""
-        state_file = os.path.join(cls.RUN_STATE_DIR, simulation_id, "run_state.json")
+        state_file = os.path.join(cls._get_sim_dir(simulation_id), "run_state.json")
         if not os.path.exists(state_file):
             return None
         
@@ -331,6 +394,7 @@ class SimulationRunner:
                 completed_at=data.get("completed_at"),
                 error=data.get("error"),
                 process_pid=data.get("process_pid"),
+                revision=data.get("revision", 0),
             )
             
             # 加载最近动作
@@ -354,19 +418,53 @@ class SimulationRunner:
             return None
     
     @classmethod
-    def _save_run_state(cls, state: SimulationRunState):
-        """保存运行状态到文件"""
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+    def _save_run_state(
+        cls,
+        state: SimulationRunState,
+        *,
+        expected_revision: Optional[int] = None,
+    ):
+        """
+        保存运行状态到文件（原子写入 + 状态转换校验 + 可选的乐观并发控制）
+
+        与内存缓存 `_run_states` 中同一对象引用比较毫无意义（调用方通常是先
+        原地修改这个被缓存的对象，再调用本方法保存），因此这里始终以磁盘上
+        最后一次持久化的状态作为"上一状态"，用来校验状态转换是否合法、以及
+        （如提供 expected_revision）是否发生了并发修改。
+
+        Args:
+            state: 待保存的运行状态
+            expected_revision: 可选。调用方最后一次读取到的 revision；若磁盘上
+                当前的 revision 与此不符，说明期间发生了并发写入，抛出
+                ConcurrentModificationError 而不是静默覆盖。
+        """
+        sim_dir = cls._get_sim_dir(state.simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         state_file = os.path.join(sim_dir, "run_state.json")
-        
-        data = state.to_detail_dict()
-        
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
+
+        previous = cls._load_run_state(state.simulation_id)
+        previous_status = previous.runner_status.value if previous else None
+        previous_revision = previous.revision if previous else None
+
+        if expected_revision is not None and previous_revision != expected_revision:
+            raise ConcurrentModificationError(
+                f"模拟 {state.simulation_id} 的运行状态已被并发修改: "
+                f"期望 revision={expected_revision}，实际 revision={previous_revision}"
+            )
+
+        if not is_valid_transition(
+            RUNNER_STATUS_TRANSITIONS, previous_status, state.runner_status.value
+        ):
+            raise InvalidStateTransitionError(
+                f"模拟 {state.simulation_id} 非法的运行状态转换: "
+                f"{previous_status!r} -> {state.runner_status.value!r}"
+            )
+
+        state.revision = next_revision(previous_revision)
+        atomic_write_json(state_file, state.to_detail_dict())
+
         cls._run_states[state.simulation_id] = state
-    
+
     @classmethod
     def start_simulation(
         cls,
@@ -374,25 +472,39 @@ class SimulationRunner:
         platform: str = "parallel",  # twitter / reddit / parallel
         max_rounds: int = None,  # 最大模拟轮数（可选，用于截断过长的模拟）
         enable_graph_memory_update: bool = False,  # 是否将活动更新到Zep图谱
-        graph_id: str = None  # Zep图谱ID（启用图谱更新时必需）
+        graph_id: str = None,  # Zep图谱ID（启用图谱更新时必需）
+        no_wait: bool = False  # 完成所有轮次后立即退出，不等待interview/close命令
     ) -> SimulationRunState:
         """
         启动模拟
-        
+
         Args:
             simulation_id: 模拟ID
             platform: 运行平台 (twitter/reddit/parallel)
             max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
             enable_graph_memory_update: 是否将Agent活动动态更新到Zep图谱
             graph_id: Zep图谱ID（启用图谱更新时必需）
-            
+            no_wait: 为 True 时对子进程附加 --no-wait，使其在跑完所有轮次后
+                立即退出，而不是像交互式单次模拟那样停留在等待
+                interview/close 命令的状态。默认 False，保持单次模拟现有的
+                "跑完后留给前端手动 interview/close" 行为不变；目前仅由
+                EnsembleRunner 传入 True——集成成员没有人工操作者去调用
+                close，必须自己退出进程，SimulationRunner 才能把它标记为
+                COMPLETED。
+
         Returns:
             SimulationRunState
         """
+        # 纯输入校验，在认领 simulation_id / 创建任何状态之前完成，这样它
+        # 失败时不需要任何终态清理——不像认领之后才发现的失败路径那样，
+        # 需要显式把 run_state.json 和 checkpoint.json 都落到 FAILED。
+        if enable_graph_memory_update and not graph_id:
+            raise ValueError("启用图谱记忆更新时必须提供 graph_id")
+
         # 加载模拟配置
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         config_path = os.path.join(sim_dir, "simulation_config.json")
-        
+
         if not os.path.exists(config_path):
             raise ValueError(f"模拟配置不存在，请先调用 /prepare 接口")
         
@@ -436,12 +548,74 @@ class SimulationRunner:
             ) or ZepGraphMemoryManager.get_updater(simulation_id) is not None:
                 raise ValueError(f"模拟已在运行或结束处理中: {simulation_id}")
             cls._save_run_state(state)
+
+            # 清除上一轮运行遗留的动作日志。_monitor_simulation 总是从
+            # position 0 开始读取 actions.jsonl；如果这里不清理，新一轮的
+            # 监控线程会把上一轮已经记录的 round_end/action 当成本轮的进度
+            # 重新处理一遍，导致 run_state.json 和检查点都汇报错误的轮次/
+            # 动作数（这是一个先于本次改动就存在的问题——此前只有在
+            # API 层传入 force=True 时才会清理，未强制重启的路径完全没有
+            # 清理；检查点让这个问题变得更容易被观察到，因此这里一并修复，
+            # 让 SimulationRunner 自身保证每次新认领的运行不会读到旧日志，
+            # 而不是依赖调用方是否传了 force）。
+            #
+            # 如果删除失败（例如目录只读），绝不能静默地继续启动——监控线程
+            # 一样会把这份旧日志当成新一轮的进度读进来。宁可让本次启动失败，
+            # 也不要放行一个从一开始就会汇报错误进度的运行。
+            stale_log_error = None
+            for _platform_dir in ("twitter", "reddit"):
+                _stale_log = os.path.join(sim_dir, _platform_dir, "actions.jsonl")
+                if os.path.exists(_stale_log):
+                    try:
+                        os.remove(_stale_log)
+                    except Exception as _cleanup_error:
+                        logger.exception(
+                            f"清理上一轮动作日志失败: simulation_id={simulation_id}, "
+                            f"file={_stale_log}"
+                        )
+                        stale_log_error = _cleanup_error
+
+            if stale_log_error is not None:
+                state.runner_status = RunnerStatus.FAILED
+                state.error = f"清理上一轮动作日志失败，拒绝启动新一轮运行: {stale_log_error}"
+                cls._save_run_state(state)
+                cls._save_terminal_checkpoint(simulation_id, state)
+                cls._sync_simulation_status(
+                    simulation_id,
+                    RunnerStatus.FAILED,
+                    state.error,
+                )
+                raise RuntimeError(state.error) from stale_log_error
+
+            # 这里是"新一轮运行已确定接管该 simulation_id"的唯一节点，
+            # 覆盖了后续所有可能的启动失败路径（Zep 更新器创建失败、脚本
+            # 缺失、进程启动失败等）。此时必须让检查点反映新一轮运行，
+            # 而不是让 API 继续返回上一轮运行遗留的旧检查点。
+            #
+            # 与上面清理旧动作日志同理：如果这次重置写入失败（例如磁盘已满），
+            # 不能静默放行——那样 GET .../checkpoint 会在整个新一轮运行期间
+            # 都汇报上一轮遗留的、完全不相关的进度和状态。宁可让启动失败。
+            try:
+                simulation_checkpoint.save_checkpoint(
+                    sim_dir, simulation_checkpoint.build_checkpoint_from_state(state)
+                )
+            except Exception as checkpoint_reset_error:
+                logger.exception(f"重置检查点失败: simulation_id={simulation_id}")
+                state.runner_status = RunnerStatus.FAILED
+                state.error = f"重置检查点失败，拒绝启动新一轮运行: {checkpoint_reset_error}"
+                cls._save_run_state(state)
+                # 尽力重试一次（内部已自行吞掉异常）；即使这次也失败，
+                # run_state.json 的 FAILED 仍是权威状态。
+                cls._save_terminal_checkpoint(simulation_id, state)
+                cls._sync_simulation_status(
+                    simulation_id,
+                    RunnerStatus.FAILED,
+                    state.error,
+                )
+                raise RuntimeError(state.error) from checkpoint_reset_error
         
-        # 如果启用图谱记忆更新，创建更新器
+        # 如果启用图谱记忆更新，创建更新器（graph_id 已在方法开头校验过）
         if enable_graph_memory_update:
-            if not graph_id:
-                raise ValueError("启用图谱记忆更新时必须提供 graph_id")
-            
             try:
                 ZepGraphMemoryManager.create_updater(simulation_id, graph_id)
                 cls._graph_memory_enabled[simulation_id] = True
@@ -453,6 +627,7 @@ class SimulationRunner:
                 state.error = f"Zep图谱更新器初始化失败: {e}"
                 with cls._finalization_lock(simulation_id):
                     cls._save_run_state(state)
+                    cls._save_terminal_checkpoint(simulation_id, state)
                     cls._sync_simulation_status(
                         simulation_id,
                         RunnerStatus.FAILED,
@@ -492,6 +667,7 @@ class SimulationRunner:
                 state.error += f"; Zep图谱写入清理失败: {cleanup_error}"
             with cls._finalization_lock(simulation_id):
                 cls._save_run_state(state)
+                cls._save_terminal_checkpoint(simulation_id, state)
                 cls._sync_simulation_status(
                     simulation_id,
                     RunnerStatus.FAILED,
@@ -523,7 +699,10 @@ class SimulationRunner:
             # 如果指定了最大轮数，添加到命令行参数
             if max_rounds is not None and max_rounds > 0:
                 cmd.extend(["--max-rounds", str(max_rounds)])
-            
+
+            if no_wait:
+                cmd.append("--no-wait")
+
             # 创建主日志文件，避免 stdout/stderr 管道缓冲区满导致进程阻塞
             main_log_path = os.path.join(sim_dir, "simulation.log")
             main_log_file = open(main_log_path, 'w', encoding='utf-8')
@@ -607,6 +786,7 @@ class SimulationRunner:
                 state.error += "; " + "; ".join(cleanup_errors)
             with cls._finalization_lock(simulation_id):
                 cls._save_run_state(state)
+                cls._save_terminal_checkpoint(simulation_id, state)
                 cls._sync_simulation_status(
                     simulation_id,
                     RunnerStatus.FAILED,
@@ -620,7 +800,7 @@ class SimulationRunner:
     def _monitor_simulation(cls, simulation_id: str, locale: str = 'zh'):
         """监控模拟进程，解析动作日志"""
         set_locale(locale)
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         
         # 新的日志结构：分平台的动作日志
         twitter_actions_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
@@ -634,7 +814,12 @@ class SimulationRunner:
         
         twitter_position = 0
         reddit_position = 0
-        
+        # 记录各平台"轮次 + 动作数"的组合签名，而不是只看跨平台聚合的
+        # current_round——并行双平台运行时，一个平台卡在某一轮、另一个
+        # 平台持续推进（或同一轮内动作数增加）不会反映在聚合轮次上，
+        # 仅比较 current_round 会让检查点在这种情况下停留在过期数据。
+        last_checkpoint_signature = None
+
         monitor_error: Exception | None = None
         exit_code: int | None = None
         try:
@@ -644,15 +829,34 @@ class SimulationRunner:
                     twitter_position = cls._read_action_log(
                         twitter_actions_log, twitter_position, state, "twitter"
                     )
-                
+
                 # 读取 Reddit 动作日志
                 if os.path.exists(reddit_actions_log):
                     reddit_position = cls._read_action_log(
                         reddit_actions_log, reddit_position, state, "reddit"
                     )
-                
+
                 # 更新状态
                 cls._save_run_state(state)
+
+                # 每当任一平台的轮次或动作数发生变化时记录一次检查点
+                # （记录"跑到哪儿了"，不代表可真正从该点续跑——见
+                # simulation_checkpoint.py 模块说明）
+                checkpoint_signature = (
+                    state.twitter_current_round,
+                    state.reddit_current_round,
+                    state.twitter_actions_count,
+                    state.reddit_actions_count,
+                )
+                if checkpoint_signature != last_checkpoint_signature:
+                    try:
+                        simulation_checkpoint.save_checkpoint(
+                            sim_dir, simulation_checkpoint.build_checkpoint_from_state(state)
+                        )
+                        last_checkpoint_signature = checkpoint_signature
+                    except Exception:
+                        logger.exception(f"保存检查点失败: simulation_id={simulation_id}")
+
                 time.sleep(2)
             
             # 进程结束后，最后读取一次日志
@@ -729,10 +933,21 @@ class SimulationRunner:
                             desired_status = RunnerStatus.FAILED
                             error_message = f"Zep图谱写入未完整完成: {error}"
 
+                    if desired_status == RunnerStatus.FAILED and error_message:
+                        # 诚实说明：该模拟已跑到的进度不可用于真正续跑，
+                        # 必须从 round 0 重新开始。见 simulation_checkpoint.py。
+                        error_message = (
+                            f"{error_message}\n\n"
+                            f"已到达轮次: twitter={state.twitter_current_round}, "
+                            f"reddit={state.reddit_current_round}（共 {state.total_rounds} 轮）。"
+                            f"{simulation_checkpoint.RESUME_LIMITATION_NOTE}"
+                        )
+
                     state.runner_status = desired_status
                     state.error = error_message
                     state.completed_at = datetime.now().isoformat()
                     cls._save_run_state(state)
+                    cls._save_terminal_checkpoint(simulation_id, state)
                     cls._sync_simulation_status(
                         simulation_id,
                         desired_status,
@@ -762,7 +977,26 @@ class SimulationRunner:
                 except Exception:
                     pass
                 cls._stderr_files.pop(simulation_id, None)
-    
+
+    @classmethod
+    def _save_terminal_checkpoint(cls, simulation_id: str, state: SimulationRunState) -> None:
+        """
+        在运行状态到达终态（COMPLETED/STOPPED/FAILED）时保存最终检查点。
+
+        有两条互不相通的终态路径都需要调用这个方法：_monitor_simulation
+        的收尾（正常场景，有监控线程在跑），以及 stop_simulation 中"没有
+        监控线程时同步完成终态"的分支（例如进程重启后恢复、或测试场景）。
+        只在其中一条路径写检查点会让另一条路径下 GET .../checkpoint
+        继续返回过期的运行中状态。
+        """
+        try:
+            sim_dir = cls._get_sim_dir(simulation_id)
+            simulation_checkpoint.save_checkpoint(
+                sim_dir, simulation_checkpoint.build_checkpoint_from_state(state)
+            )
+        except Exception:
+            logger.exception(f"保存最终检查点失败: simulation_id={simulation_id}")
+
     @classmethod
     def _read_action_log(
         cls, 
@@ -847,7 +1081,14 @@ class SimulationRunner:
                                         state.current_round = round_num
                                     # 总体时间取两个平台的最大值
                                     state.simulated_hours = max(state.twitter_simulated_hours, state.reddit_simulated_hours)
-                                
+
+                                    # 一轮里所有 Agent 都选择 DO_NOTHING 时，本轮不会有任何
+                                    # 动作触发 add_action()，但轮次确实推进了——updated_at
+                                    # 也要在这里更新，否则以它为"最近一次真正进展"依据的
+                                    # 检查点 checkpointed_at 会显得比实际更旧，让一个仍在
+                                    # 正常推进（只是这一轮恰好没人发言）的模拟被误判为卡住。
+                                    state.updated_at = datetime.now().isoformat()
+
                                 continue
                             
                             action = AgentAction(
@@ -888,7 +1129,7 @@ class SimulationRunner:
         Returns:
             True 如果所有启用的平台都已完成
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+        sim_dir = cls._get_sim_dir(state.simulation_id)
         twitter_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
         reddit_log = os.path.join(sim_dir, "reddit", "actions.jsonl")
         
@@ -1054,6 +1295,7 @@ class SimulationRunner:
                         state.completed_at = datetime.now().isoformat()
                         state.error = f"Zep图谱写入未完整完成: {error}"
                         cls._save_run_state(state)
+                        cls._save_terminal_checkpoint(simulation_id, state)
                         cls._sync_simulation_status(
                             simulation_id,
                             RunnerStatus.FAILED,
@@ -1066,6 +1308,7 @@ class SimulationRunner:
                 state.completed_at = datetime.now().isoformat()
                 state.error = None
                 cls._save_run_state(state)
+                cls._save_terminal_checkpoint(simulation_id, state)
                 cls._sync_simulation_status(
                     simulation_id,
                     RunnerStatus.STOPPED,
@@ -1172,7 +1415,7 @@ class SimulationRunner:
         Returns:
             完整的动作列表（按时间戳排序，新的在前）
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         actions = []
         
         # 读取 Twitter 动作文件（根据文件路径自动设置 platform 为 twitter）
@@ -1375,6 +1618,7 @@ class SimulationRunner:
         - twitter_simulation.db（模拟数据库）
         - reddit_simulation.db（模拟数据库）
         - env_status.json（环境状态）
+        - checkpoint.json（检查点）
         
         注意：不会删除配置文件（simulation_config.json）和 profile 文件
         
@@ -1386,7 +1630,7 @@ class SimulationRunner:
         """
         import shutil
         
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         
         if not os.path.exists(sim_dir):
             return {"success": True, "message": "模拟目录不存在，无需清理"}
@@ -1403,6 +1647,7 @@ class SimulationRunner:
             "twitter_simulation.db",  # Twitter 平台数据库
             "reddit_simulation.db",   # Reddit 平台数据库
             "env_status.json",        # 环境状态文件
+            simulation_checkpoint.CHECKPOINT_FILENAME,  # 检查点，否则强制重启失败时会残留上一轮的进度
         ]
         
         # 要删除的目录列表（包含动作日志）
@@ -1647,7 +1892,7 @@ class SimulationRunner:
         Returns:
             True 表示环境存活，False 表示环境已关闭
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             return False
 
@@ -1665,7 +1910,7 @@ class SimulationRunner:
         Returns:
             状态详情字典，包含 status, twitter_available, reddit_available, timestamp
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         status_file = os.path.join(sim_dir, "env_status.json")
         
         default_status = {
@@ -1719,7 +1964,7 @@ class SimulationRunner:
             ValueError: 模拟不存在或环境未运行
             TimeoutError: 等待响应超时
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1781,7 +2026,7 @@ class SimulationRunner:
             ValueError: 模拟不存在或环境未运行
             TimeoutError: 等待响应超时
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1838,7 +2083,7 @@ class SimulationRunner:
         Returns:
             全局采访结果字典
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1891,7 +2136,7 @@ class SimulationRunner:
         Returns:
             操作结果字典
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
         
@@ -2002,7 +2247,7 @@ class SimulationRunner:
         Returns:
             Interview历史记录列表
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         
         results = []
         

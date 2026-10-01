@@ -9,11 +9,18 @@ import warnings
 # 需要在所有其他导入之前设置
 warnings.filterwarnings("ignore", message=".*resource_tracker.*")
 
-from flask import Flask, request
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 
 from .config import Config
 from .utils.logger import setup_logger, get_logger
+from .utils.id_validation import InvalidIdentifierError, PathContainmentError
+from .utils.auth import authenticate_request, AuthenticationError
+from .utils.authorization import ForbiddenError
+from .utils.state_machine import ConcurrentModificationError, InvalidStateTransitionError
+
+# /health 不需要认证；其余路径均为 /api/* 蓝图路由
+AUTH_EXEMPT_PATHS = {'/health'}
 
 
 def create_app(config_class=Config):
@@ -47,7 +54,31 @@ def create_app(config_class=Config):
     SimulationRunner.register_cleanup()
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
-    
+
+    # 立即构造 TaskManager 单例以触发任务崩溃恢复（图谱构建/模拟准备/报告生成
+    # 共用同一套任务状态机），而不是等到第一次 API 请求才被动触发
+    from .models.task import TaskManager
+    TaskManager()
+
+    if should_log_startup and not Config.API_KEYS:
+        logger.warning(
+            "MIROFISH_API_KEYS 未配置：API 认证已禁用，任何人都可以匿名访问所有接口。"
+            "仅适用于本地单用户场景；对外或多用户部署前必须配置该变量。"
+        )
+
+    # 认证中间件：为每个请求解析 API Key 并写入 g.current_user_id，
+    # 供后续基于资源所有权的授权逻辑使用
+    @app.before_request
+    def enforce_authentication():
+        if request.method == 'OPTIONS' or request.path in AUTH_EXEMPT_PATHS:
+            return None
+        try:
+            g.current_user_id = authenticate_request()
+        except AuthenticationError as e:
+            get_logger('mirofish.auth').warning(f"认证失败: {request.method} {request.path}: {e}")
+            return jsonify({"error": "unauthorized", "message": str(e)}), 401
+        return None
+
     # 请求日志中间件
     @app.before_request
     def log_request():
@@ -63,16 +94,47 @@ def create_app(config_class=Config):
         return response
     
     # 注册蓝图
-    from .api import graph_bp, simulation_bp, report_bp
+    from .api import graph_bp, simulation_bp, report_bp, ensemble_bp
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
+    app.register_blueprint(ensemble_bp, url_prefix='/api/ensemble')
     
     # 健康检查
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
-    
+
+    # 统一处理非法标识符 / 路径越界异常，返回 400 而不是 500
+    @app.errorhandler(InvalidIdentifierError)
+    def handle_invalid_identifier(error):
+        get_logger('mirofish.request').warning(f"拒绝非法标识符请求: {error}")
+        return jsonify({"error": "invalid_identifier", "message": str(error)}), 400
+
+    @app.errorhandler(PathContainmentError)
+    def handle_path_containment(error):
+        get_logger('mirofish.request').error(f"检测到路径越界尝试: {error}")
+        return jsonify({"error": "invalid_path", "message": "Invalid resource path"}), 400
+
+    # 统一处理资源所有权授权失败，返回 403
+    @app.errorhandler(ForbiddenError)
+    def handle_forbidden(error):
+        get_logger('mirofish.request').warning(
+            f"拒绝越权访问: {request.method} {request.path} user={getattr(g, 'current_user_id', None)}"
+        )
+        return jsonify({"error": "forbidden", "message": str(error)}), 403
+
+    # 统一处理状态机相关冲突，返回 409
+    @app.errorhandler(InvalidStateTransitionError)
+    def handle_invalid_state_transition(error):
+        get_logger('mirofish.request').warning(f"拒绝非法状态转换: {error}")
+        return jsonify({"error": "invalid_state_transition", "message": str(error)}), 409
+
+    @app.errorhandler(ConcurrentModificationError)
+    def handle_concurrent_modification(error):
+        get_logger('mirofish.request').warning(f"检测到并发修改冲突: {error}")
+        return jsonify({"error": "concurrent_modification", "message": str(error)}), 409
+
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
     

@@ -241,39 +241,64 @@ class OasisProfileGenerator:
     ]
     
     def __init__(
-        self, 
+        self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model_name: Optional[str] = None,
         zep_api_key: Optional[str] = None,
-        graph_id: Optional[str] = None
+        graph_id: Optional[str] = None,
+        random_seed: Optional[int] = None
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
-        
+
         # Zep客户端用于检索丰富上下文
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
         self.zep_client = None
         self.graph_id = graph_id
-        
+
+        # 用于让兜底随机默认值（karma/年龄/性别/MBTI等）可复现的种子。
+        # 见 _entity_rng：每个实体使用独立的 random.Random 实例，而不是
+        # 重新播种进程全局的 random 模块——后者在多个模拟并行准备
+        # （各自在自己的线程池中）时会相互踩踏彼此的随机序列。
+        self.random_seed = random_seed
+
         if self.zep_api_key:
             try:
                 self.zep_client = get_zep_client(self.zep_api_key)
             except Exception as e:
                 logger.warning(f"Zep客户端初始化失败: {e}")
-    
+
+    def _entity_rng(self, entity_uuid: str) -> random.Random:
+        """
+        返回一个仅作用于该实体的独立随机数生成器。
+
+        种子由 (self.random_seed, entity_uuid) 派生，因此：
+        - 同一实体在同一 random_seed 下总是得到相同的兜底默认值；
+        - 不同实体、不同模拟之间互不干扰，即使它们在线程池中并发生成；
+        - 不会像重新播种全局 `random` 模块那样，在并发场景下产生竞争。
+
+        若未提供 random_seed（如独立调用 /generate-profiles 接口，不经过
+        prepare_simulation），则保持原有的真正非确定性行为，直接使用
+        进程全局的 random 模块，而不是把字面量 "None" 当作种子——否则会让
+        原本每次调用都应不同的用户名/兜底人设字段变成确定性的。
+        """
+        if self.random_seed is None:
+            return random
+        return random.Random(f"{self.random_seed}:{entity_uuid}")
+
     def generate_profile_from_entity(
-        self, 
-        entity: EntityNode, 
+        self,
+        entity: EntityNode,
         user_id: int,
         use_llm: bool = True
     ) -> OasisAgentProfile:
@@ -289,14 +314,15 @@ class OasisProfileGenerator:
             OasisAgentProfile
         """
         entity_type = entity.get_entity_type() or "Entity"
-        
+        rng = self._entity_rng(entity.uuid)
+
         # 基础信息
         name = entity.name
-        user_name = self._generate_username(name)
-        
+        user_name = self._generate_username(name, rng)
+
         # 构建上下文信息
         context = self._build_entity_context(entity)
-        
+
         if use_llm:
             # 使用LLM生成详细人设
             profile_data = self._generate_profile_with_llm(
@@ -304,7 +330,8 @@ class OasisProfileGenerator:
                 entity_type=entity_type,
                 entity_summary=entity.summary,
                 entity_attributes=entity.attributes,
-                context=context
+                context=context,
+                rng=rng
             )
         else:
             # 使用规则生成基础人设
@@ -312,19 +339,20 @@ class OasisProfileGenerator:
                 entity_name=name,
                 entity_type=entity_type,
                 entity_summary=entity.summary,
-                entity_attributes=entity.attributes
+                entity_attributes=entity.attributes,
+                rng=rng
             )
-        
+
         return OasisAgentProfile(
             user_id=user_id,
             user_name=user_name,
             name=name,
             bio=profile_data.get("bio", f"{entity_type}: {name}"),
             persona=profile_data.get("persona", entity.summary or f"A {entity_type} named {name}."),
-            karma=profile_data.get("karma", random.randint(500, 5000)),
-            friend_count=profile_data.get("friend_count", random.randint(50, 500)),
-            follower_count=profile_data.get("follower_count", random.randint(100, 1000)),
-            statuses_count=profile_data.get("statuses_count", random.randint(100, 2000)),
+            karma=profile_data.get("karma", rng.randint(500, 5000)),
+            friend_count=profile_data.get("friend_count", rng.randint(50, 500)),
+            follower_count=profile_data.get("follower_count", rng.randint(100, 1000)),
+            statuses_count=profile_data.get("statuses_count", rng.randint(100, 2000)),
             age=profile_data.get("age"),
             gender=profile_data.get("gender"),
             mbti=profile_data.get("mbti"),
@@ -335,14 +363,14 @@ class OasisProfileGenerator:
             source_entity_type=entity_type,
         )
     
-    def _generate_username(self, name: str) -> str:
+    def _generate_username(self, name: str, rng: Optional[random.Random] = None) -> str:
         """生成用户名"""
         # 移除特殊字符，转换为小写
         username = name.lower().replace(" ", "_")
         username = ''.join(c for c in username if c.isalnum() or c == '_')
-        
+
         # 添加随机后缀避免重复
-        suffix = random.randint(100, 999)
+        suffix = (rng or random).randint(100, 999)
         return f"{username}_{suffix}"
     
     def _search_zep_for_entity(self, entity: EntityNode) -> Dict[str, Any]:
@@ -543,7 +571,8 @@ class OasisProfileGenerator:
         entity_type: str,
         entity_summary: str,
         entity_attributes: Dict[str, Any],
-        context: str
+        context: str,
+        rng: Optional[random.Random] = None
     ) -> Dict[str, Any]:
         """
         使用LLM生成非常详细的人设
@@ -621,7 +650,7 @@ class OasisProfileGenerator:
         
         logger.warning(f"LLM生成人设失败（{max_attempts}次尝试）: {last_error}, 使用规则生成")
         return self._generate_profile_rule_based(
-            entity_name, entity_type, entity_summary, entity_attributes
+            entity_name, entity_type, entity_summary, entity_attributes, rng=rng
         )
     
     def _fix_truncated_json(self, content: str) -> str:
@@ -820,33 +849,35 @@ class OasisProfileGenerator:
         entity_name: str,
         entity_type: str,
         entity_summary: str,
-        entity_attributes: Dict[str, Any]
+        entity_attributes: Dict[str, Any],
+        rng: Optional[random.Random] = None
     ) -> Dict[str, Any]:
         """使用规则生成基础人设"""
-        
+        rng = rng or random
+
         # 根据实体类型生成不同的人设
         entity_type_lower = entity_type.lower()
-        
+
         if entity_type_lower in ["student", "alumni"]:
             return {
                 "bio": f"{entity_type} with interests in academics and social issues.",
                 "persona": f"{entity_name} is a {entity_type.lower()} who is actively engaged in academic and social discussions. They enjoy sharing perspectives and connecting with peers.",
-                "age": random.randint(18, 30),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(self.MBTI_TYPES),
-                "country": random.choice(self.COUNTRIES),
+                "age": rng.randint(18, 30),
+                "gender": rng.choice(["male", "female"]),
+                "mbti": rng.choice(self.MBTI_TYPES),
+                "country": rng.choice(self.COUNTRIES),
                 "profession": "Student",
                 "interested_topics": ["Education", "Social Issues", "Technology"],
             }
-        
+
         elif entity_type_lower in ["publicfigure", "expert", "faculty"]:
             return {
                 "bio": f"Expert and thought leader in their field.",
                 "persona": f"{entity_name} is a recognized {entity_type.lower()} who shares insights and opinions on important matters. They are known for their expertise and influence in public discourse.",
-                "age": random.randint(35, 60),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
-                "country": random.choice(self.COUNTRIES),
+                "age": rng.randint(35, 60),
+                "gender": rng.choice(["male", "female"]),
+                "mbti": rng.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
+                "country": rng.choice(self.COUNTRIES),
                 "profession": entity_attributes.get("occupation", "Expert"),
                 "interested_topics": ["Politics", "Economics", "Culture & Society"],
             }
@@ -880,10 +911,10 @@ class OasisProfileGenerator:
             return {
                 "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
                 "persona": entity_summary or f"{entity_name} is a {entity_type.lower()} participating in social discussions.",
-                "age": random.randint(25, 50),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(self.MBTI_TYPES),
-                "country": random.choice(self.COUNTRIES),
+                "age": rng.randint(25, 50),
+                "gender": rng.choice(["male", "female"]),
+                "mbti": rng.choice(self.MBTI_TYPES),
+                "country": rng.choice(self.COUNTRIES),
                 "profession": entity_type,
                 "interested_topics": ["General", "Social Issues"],
             }
@@ -985,7 +1016,7 @@ class OasisProfileGenerator:
                 # 创建一个基础profile
                 fallback_profile = OasisAgentProfile(
                     user_id=idx,
-                    user_name=self._generate_username(entity.name),
+                    user_name=self._generate_username(entity.name, self._entity_rng(entity.uuid)),
                     name=entity.name,
                     bio=f"{entity_type}: {entity.name}",
                     persona=entity.summary or f"A participant in social discussions.",
@@ -1041,7 +1072,7 @@ class OasisProfileGenerator:
                         completed_count[0] += 1
                     profiles[idx] = OasisAgentProfile(
                         user_id=idx,
-                        user_name=self._generate_username(entity.name),
+                        user_name=self._generate_username(entity.name, self._entity_rng(entity.uuid)),
                         name=entity.name,
                         bio=f"{entity_type}: {entity.name}",
                         persona=entity.summary or "A participant in social discussions.",

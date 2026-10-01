@@ -6,7 +6,7 @@ Report API路由
 import os
 import traceback
 import threading
-from flask import request, jsonify, send_file
+from flask import request, jsonify, send_file, g
 
 from . import report_bp
 from ..config import Config
@@ -23,8 +23,23 @@ from ..utils.zep_lifecycle import (
     register_graph_reader,
     unregister_graph_reader,
 )
+from ..utils.authorization import authorize, authorize_any, is_owned_by_current_user
 
 logger = get_logger('mirofish.api.report')
+
+
+def _authorize_report_access(report_id: str) -> None:
+    """校验当前用户是否拥有该报告。不存在时直接返回，交由调用方保留的 404 逻辑处理。"""
+    report = ReportManager.get_report(report_id)
+    if report is not None:
+        authorize(report)
+
+
+def _authorize_simulation_access(simulation_id: str) -> None:
+    """校验当前用户是否拥有该模拟。不存在时直接返回，交由调用方保留的 404 逻辑处理。"""
+    state = SimulationManager().get_simulation(simulation_id)
+    if state is not None:
+        authorize(state)
 
 
 # ============== 报告生成接口 ==============
@@ -80,6 +95,7 @@ def generate_report():
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
+        authorize(state)
 
         run_state = SimulationRunner.get_run_state(simulation_id)
         updater = ZepGraphMemoryManager.get_updater(simulation_id)
@@ -255,7 +271,8 @@ def generate_report():
                     agent = ReportAgent(
                         graph_id=graph_id,
                         simulation_id=simulation_id,
-                        simulation_requirement=simulation_requirement
+                        simulation_requirement=simulation_requirement,
+                        owner_id=state.owner_id
                     )
 
                     def progress_callback(stage, progress, message):
@@ -349,6 +366,7 @@ def get_generate_status():
         
         # 如果提供了simulation_id，先检查是否已有完成的报告
         if simulation_id:
+            _authorize_simulation_access(simulation_id)
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
                 return jsonify({
@@ -414,18 +432,19 @@ def get_report(report_id: str):
     """
     try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+        authorize(report)
+
         return jsonify({
             "success": True,
             "data": report.to_dict()
         })
-        
+
     except Exception as e:
         logger.error(f"获取报告失败: {str(e)}")
         return jsonify({
@@ -439,7 +458,7 @@ def get_report(report_id: str):
 def get_report_by_simulation(simulation_id: str):
     """
     根据模拟ID获取报告
-    
+
     返回：
         {
             "success": true,
@@ -450,15 +469,16 @@ def get_report_by_simulation(simulation_id: str):
         }
     """
     try:
+        _authorize_simulation_access(simulation_id)
         report = ReportManager.get_report_by_simulation(simulation_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.noReportForSim', id=simulation_id),
                 "has_report": False
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": report.to_dict(),
@@ -493,12 +513,12 @@ def list_reports():
     try:
         simulation_id = request.args.get('simulation_id')
         limit = request.args.get('limit', 50, type=int)
-        
-        reports = ReportManager.list_reports(
-            simulation_id=simulation_id,
-            limit=limit
-        )
-        
+
+        reports = [
+            r for r in ReportManager.list_reports(simulation_id=simulation_id, limit=None)
+            if is_owned_by_current_user(r)
+        ][:limit]
+
         return jsonify({
             "success": True,
             "data": [r.to_dict() for r in reports],
@@ -523,13 +543,14 @@ def download_report(report_id: str):
     """
     try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+        authorize(report)
+
         md_path = ReportManager._get_report_markdown_path(report_id)
         
         if not os.path.exists(md_path):
@@ -564,6 +585,7 @@ def download_report(report_id: str):
 def delete_report(report_id: str):
     """删除报告"""
     try:
+        _authorize_report_access(report_id)
         success = ReportManager.delete_report(report_id)
         
         if not success:
@@ -643,6 +665,7 @@ def chat_with_report_agent():
                 "success": False,
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
+        authorize(state)
 
         project = ProjectManager.get_project(state.project_id)
         if not project:
@@ -650,21 +673,22 @@ def chat_with_report_agent():
                 "success": False,
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
-        
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphId')
             }), 400
-        
+
         simulation_requirement = project.simulation_requirement or ""
-        
+
         # 创建Agent并进行对话
         agent = ReportAgent(
             graph_id=graph_id,
             simulation_id=simulation_id,
-            simulation_requirement=simulation_requirement
+            simulation_requirement=simulation_requirement,
+            owner_id=state.owner_id
         )
         
         result = agent.chat(message=message, chat_history=chat_history)
@@ -703,6 +727,7 @@ def get_report_progress(report_id: str):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         progress = ReportManager.get_progress(report_id)
         
@@ -751,6 +776,7 @@ def get_report_sections(report_id: str):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         sections = ReportManager.get_generated_sections(report_id)
         
@@ -791,6 +817,7 @@ def get_single_section(report_id: str, section_index: int):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         section_path = ReportManager._get_section_path(report_id, section_index)
         
@@ -842,9 +869,10 @@ def check_report_status(simulation_id: str):
             }
         }
     """
+    _authorize_simulation_access(simulation_id)
     try:
         report = ReportManager.get_report_by_simulation(simulation_id)
-        
+
         has_report = report is not None
         report_status = report.status.value if report else None
         report_id = report.report_id if report else None
@@ -914,9 +942,10 @@ def get_agent_log(report_id: str):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         from_line = request.args.get('from_line', 0, type=int)
-        
+
         log_data = ReportManager.get_agent_log(report_id, from_line=from_line)
         
         return jsonify({
@@ -947,6 +976,7 @@ def stream_agent_log(report_id: str):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         logs = ReportManager.get_agent_log_stream(report_id)
         
@@ -996,9 +1026,10 @@ def get_console_log(report_id: str):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         from_line = request.args.get('from_line', 0, type=int)
-        
+
         log_data = ReportManager.get_console_log(report_id, from_line=from_line)
         
         return jsonify({
@@ -1029,6 +1060,7 @@ def stream_console_log(report_id: str):
             }
         }
     """
+    _authorize_report_access(report_id)
     try:
         logs = ReportManager.get_console_log_stream(report_id)
         
@@ -1075,7 +1107,8 @@ def search_graph_tool():
                 "success": False,
                 "error": t('api.requireGraphIdAndQuery')
             }), 400
-        
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         from ..services.zep_tools import ZepToolsService
         
         tools = ZepToolsService()
@@ -1119,9 +1152,10 @@ def get_graph_statistics_tool():
                 "success": False,
                 "error": t('api.requireGraphId')
             }), 400
-        
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         from ..services.zep_tools import ZepToolsService
-        
+
         tools = ZepToolsService()
         result = tools.get_graph_statistics(graph_id)
         
