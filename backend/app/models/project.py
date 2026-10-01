@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from ..config import Config
+from ..utils.id_validation import validate_project_id, safe_join, InvalidIdentifierError
 
 
 class ProjectStatus(str, Enum):
@@ -53,7 +54,10 @@ class Project:
     
     # 错误信息
     error: Optional[str] = None
-    
+
+    # 所有权：创建该项目时的 flask.g.current_user_id（认证未启用时为 None）
+    owner_id: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -73,16 +77,17 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
-            "error": self.error
+            "error": self.error,
+            "owner_id": self.owner_id
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Project':
         """从字典创建"""
         status = data.get('status', 'created')
         if isinstance(status, str):
             status = ProjectStatus(status)
-        
+
         return cls(
             project_id=data['project_id'],
             name=data.get('name', 'Unnamed Project'),
@@ -100,7 +105,8 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
-            error=data.get('error')
+            error=data.get('error'),
+            owner_id=data.get('owner_id')
         )
 
 
@@ -118,7 +124,8 @@ class ProjectManager:
     @classmethod
     def _get_project_dir(cls, project_id: str) -> str:
         """获取项目目录路径"""
-        return os.path.join(cls.PROJECTS_DIR, project_id)
+        validate_project_id(project_id)
+        return safe_join(cls.PROJECTS_DIR, project_id)
     
     @classmethod
     def _get_project_meta_path(cls, project_id: str) -> str:
@@ -136,27 +143,29 @@ class ProjectManager:
         return os.path.join(cls._get_project_dir(project_id), 'extracted_text.txt')
     
     @classmethod
-    def create_project(cls, name: str = "Unnamed Project") -> Project:
+    def create_project(cls, name: str = "Unnamed Project", owner_id: Optional[str] = None) -> Project:
         """
         创建新项目
-        
+
         Args:
             name: 项目名称
-            
+            owner_id: 创建者的用户ID（认证未启用时为 None）
+
         Returns:
             新创建的Project对象
         """
         cls._ensure_projects_dir()
-        
+
         project_id = f"proj_{uuid.uuid4().hex[:12]}"
         now = datetime.now().isoformat()
-        
+
         project = Project(
             project_id=project_id,
             name=name,
             status=ProjectStatus.CREATED,
             created_at=now,
-            updated_at=now
+            updated_at=now,
+            owner_id=owner_id
         )
         
         # 创建项目目录结构
@@ -215,7 +224,11 @@ class ProjectManager:
         
         projects = []
         for project_id in os.listdir(cls.PROJECTS_DIR):
-            project = cls.get_project(project_id)
+            try:
+                project = cls.get_project(project_id)
+            except InvalidIdentifierError:
+                # Skip unexpected/legacy directory names rather than failing the whole listing
+                continue
             if project:
                 projects.append(project)
         
