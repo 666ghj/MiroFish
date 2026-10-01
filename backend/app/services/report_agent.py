@@ -22,6 +22,7 @@ from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
+from ..utils.id_validation import validate_report_id, safe_join, InvalidIdentifierError
 from .zep_tools import (
     ZepToolsService, 
     SearchResult, 
@@ -48,9 +49,10 @@ class ReportLogger:
         Args:
             report_id: 报告ID，用于确定日志文件路径
         """
+        validate_report_id(report_id)
         self.report_id = report_id
         self.log_file_path = os.path.join(
-            Config.UPLOAD_FOLDER, 'reports', report_id, 'agent_log.jsonl'
+            safe_join(Config.UPLOAD_FOLDER, 'reports', report_id), 'agent_log.jsonl'
         )
         self.start_time = datetime.now()
         self._ensure_log_file()
@@ -319,9 +321,10 @@ class ReportConsoleLogger:
         Args:
             report_id: 报告ID，用于确定日志文件路径
         """
+        validate_report_id(report_id)
         self.report_id = report_id
         self.log_file_path = os.path.join(
-            Config.UPLOAD_FOLDER, 'reports', report_id, 'console_log.txt'
+            safe_join(Config.UPLOAD_FOLDER, 'reports', report_id), 'console_log.txt'
         )
         self._ensure_log_file()
         self._file_handler = None
@@ -1957,7 +1960,8 @@ class ReportManager:
     @classmethod
     def _get_report_folder(cls, report_id: str) -> str:
         """获取报告文件夹路径"""
-        return os.path.join(cls.REPORTS_DIR, report_id)
+        validate_report_id(report_id)
+        return safe_join(cls.REPORTS_DIR, report_id)
     
     @classmethod
     def _ensure_report_folder(cls, report_id: str) -> str:
@@ -2550,18 +2554,22 @@ class ReportManager:
         
         for item in os.listdir(cls.REPORTS_DIR):
             item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 新格式：文件夹
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report and report.simulation_id == simulation_id:
-                    return report
-            # 兼容旧格式：JSON文件
-            elif item.endswith('.json'):
-                report_id = item[:-5]
-                report = cls.get_report(report_id)
-                if report and report.simulation_id == simulation_id:
-                    return report
-        
+            try:
+                # 新格式：文件夹
+                if os.path.isdir(item_path):
+                    report = cls.get_report(item)
+                    if report and report.simulation_id == simulation_id:
+                        return report
+                # 兼容旧格式：JSON文件
+                elif item.endswith('.json'):
+                    report_id = item[:-5]
+                    report = cls.get_report(report_id)
+                    if report and report.simulation_id == simulation_id:
+                        return report
+            except InvalidIdentifierError:
+                # 跳过不符合预期格式的遗留/意外目录项
+                continue
+
         return None
     
     @classmethod
@@ -2572,19 +2580,23 @@ class ReportManager:
         reports = []
         for item in os.listdir(cls.REPORTS_DIR):
             item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 新格式：文件夹
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report:
-                    if simulation_id is None or report.simulation_id == simulation_id:
-                        reports.append(report)
-            # 兼容旧格式：JSON文件
-            elif item.endswith('.json'):
-                report_id = item[:-5]
-                report = cls.get_report(report_id)
-                if report:
-                    if simulation_id is None or report.simulation_id == simulation_id:
-                        reports.append(report)
+            try:
+                # 新格式：文件夹
+                if os.path.isdir(item_path):
+                    report = cls.get_report(item)
+                    if report:
+                        if simulation_id is None or report.simulation_id == simulation_id:
+                            reports.append(report)
+                # 兼容旧格式：JSON文件
+                elif item.endswith('.json'):
+                    report_id = item[:-5]
+                    report = cls.get_report(report_id)
+                    if report:
+                        if simulation_id is None or report.simulation_id == simulation_id:
+                            reports.append(report)
+            except InvalidIdentifierError:
+                # 跳过不符合预期格式的遗留/意外目录项
+                continue
         
         # 按创建时间倒序
         reports.sort(key=lambda r: r.created_at, reverse=True)

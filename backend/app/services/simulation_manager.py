@@ -14,6 +14,11 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.id_validation import (
+    validate_simulation_id,
+    safe_join,
+    InvalidIdentifierError,
+)
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
@@ -151,7 +156,8 @@ class SimulationManager:
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
-        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        validate_simulation_id(simulation_id)
+        sim_dir = safe_join(self.SIMULATION_DATA_DIR, simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     
@@ -491,7 +497,11 @@ class SimulationManager:
                 if sim_id.startswith('.') or not os.path.isdir(sim_path):
                     continue
                 
-                state = self._load_simulation_state(sim_id)
+                try:
+                    state = self._load_simulation_state(sim_id)
+                except InvalidIdentifierError:
+                    # Skip unexpected/legacy directory names rather than failing the whole listing
+                    continue
                 if state:
                     if project_id is None or state.project_id == project_id:
                         simulations.append(state)

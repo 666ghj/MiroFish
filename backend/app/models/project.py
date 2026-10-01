@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from ..config import Config
+from ..utils.id_validation import validate_project_id, safe_join, InvalidIdentifierError
 
 
 class ProjectStatus(str, Enum):
@@ -118,7 +119,8 @@ class ProjectManager:
     @classmethod
     def _get_project_dir(cls, project_id: str) -> str:
         """获取项目目录路径"""
-        return os.path.join(cls.PROJECTS_DIR, project_id)
+        validate_project_id(project_id)
+        return safe_join(cls.PROJECTS_DIR, project_id)
     
     @classmethod
     def _get_project_meta_path(cls, project_id: str) -> str:
@@ -215,7 +217,11 @@ class ProjectManager:
         
         projects = []
         for project_id in os.listdir(cls.PROJECTS_DIR):
-            project = cls.get_project(project_id)
+            try:
+                project = cls.get_project(project_id)
+            except InvalidIdentifierError:
+                # Skip unexpected/legacy directory names rather than failing the whole listing
+                continue
             if project:
                 projects.append(project)
         
