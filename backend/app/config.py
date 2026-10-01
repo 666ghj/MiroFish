@@ -14,6 +14,29 @@ else:
     load_dotenv(override=True)
 
 
+def _parse_api_keys(raw: str) -> dict:
+    """
+    解析 MIROFISH_API_KEYS 环境变量。
+
+    格式："key1:user1,key2:user2"（也允许省略 ":user_id"，此时以 key 本身作为 user_id）。
+    返回 {api_key: user_id} 字典。
+    """
+    keys: dict[str, str] = {}
+    for entry in raw.split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ':' in entry:
+            key, user_id = entry.split(':', 1)
+        else:
+            key, user_id = entry, entry
+        key = key.strip()
+        user_id = user_id.strip()
+        if key:
+            keys[key] = user_id or key
+    return keys
+
+
 class Config:
     """Flask配置类"""
     
@@ -31,6 +54,9 @@ class Config:
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+
+    # API 认证配置：{api_key: user_id}，为空表示未启用认证（仅限本地/单用户场景）
+    API_KEYS = _parse_api_keys(os.environ.get('MIROFISH_API_KEYS', ''))
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -73,4 +99,11 @@ class Config:
         if cls.DEBUG:
             import warnings
             warnings.warn("Flask DEBUG mode is enabled. Do not use in production.", RuntimeWarning)
+        if not cls.API_KEYS:
+            import warnings
+            warnings.warn(
+                "MIROFISH_API_KEYS 未配置：API 认证已禁用，任何人都可以匿名访问所有接口。"
+                "仅适用于本地单用户场景；对外或多用户部署前必须配置该变量。",
+                RuntimeWarning,
+            )
         return errors

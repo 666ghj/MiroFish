@@ -14,6 +14,11 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.id_validation import (
+    validate_simulation_id,
+    safe_join,
+    InvalidIdentifierError,
+)
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
@@ -76,7 +81,10 @@ class SimulationState:
     
     # 错误信息
     error: Optional[str] = None
-    
+
+    # 所有权：创建该模拟时所属项目的 owner_id（认证未启用时为 None）
+    owner_id: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """完整状态字典（内部使用）"""
         return {
@@ -98,6 +106,7 @@ class SimulationState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "owner_id": self.owner_id,
         }
     
     def get_default_platform(self) -> str:
@@ -151,7 +160,8 @@ class SimulationManager:
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
-        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        validate_simulation_id(simulation_id)
+        sim_dir = safe_join(self.SIMULATION_DATA_DIR, simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     
@@ -200,6 +210,7 @@ class SimulationManager:
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             error=data.get("error"),
+            owner_id=data.get("owner_id"),
         )
         
         self._simulations[simulation_id] = state
@@ -211,22 +222,24 @@ class SimulationManager:
         graph_id: str,
         enable_twitter: bool = True,
         enable_reddit: bool = True,
+        owner_id: Optional[str] = None,
     ) -> SimulationState:
         """
         创建新的模拟
-        
+
         Args:
             project_id: 项目ID
             graph_id: Zep图谱ID
             enable_twitter: 是否启用Twitter模拟
             enable_reddit: 是否启用Reddit模拟
-            
+            owner_id: 所属项目的 owner_id（认证未启用时为 None）
+
         Returns:
             SimulationState
         """
         import uuid
         simulation_id = f"sim_{uuid.uuid4().hex[:12]}"
-        
+
         state = SimulationState(
             simulation_id=simulation_id,
             project_id=project_id,
@@ -234,6 +247,7 @@ class SimulationManager:
             enable_twitter=enable_twitter,
             enable_reddit=enable_reddit,
             status=SimulationStatus.CREATED,
+            owner_id=owner_id,
         )
         
         self._save_simulation_state(state)
@@ -491,7 +505,11 @@ class SimulationManager:
                 if sim_id.startswith('.') or not os.path.isdir(sim_path):
                     continue
                 
-                state = self._load_simulation_state(sim_id)
+                try:
+                    state = self._load_simulation_state(sim_id)
+                except InvalidIdentifierError:
+                    # Skip unexpected/legacy directory names rather than failing the whole listing
+                    continue
                 if state:
                     if project_id is None or state.project_id == project_id:
                         simulations.append(state)

@@ -27,6 +27,7 @@ from ..utils.zep import (
 )
 from .zep_graph_memory_updater import ZepGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
+from ..utils.id_validation import validate_simulation_id, safe_join
 
 logger = get_logger('mirofish.simulation_runner')
 
@@ -239,6 +240,12 @@ class SimulationRunner:
     _manual_stop_requests: set[str] = set()
 
     @classmethod
+    def _get_sim_dir(cls, simulation_id: str) -> str:
+        """获取模拟运行状态目录（校验 simulation_id 格式并确保结果位于 RUN_STATE_DIR 内）"""
+        validate_simulation_id(simulation_id)
+        return safe_join(cls.RUN_STATE_DIR, simulation_id)
+
+    @classmethod
     def _finalization_lock(cls, simulation_id: str) -> threading.Lock:
         with cls._finalization_locks_guard:
             return cls._finalization_locks.setdefault(
@@ -300,7 +307,7 @@ class SimulationRunner:
     @classmethod
     def _load_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """从文件加载运行状态"""
-        state_file = os.path.join(cls.RUN_STATE_DIR, simulation_id, "run_state.json")
+        state_file = os.path.join(cls._get_sim_dir(simulation_id), "run_state.json")
         if not os.path.exists(state_file):
             return None
         
@@ -356,7 +363,7 @@ class SimulationRunner:
     @classmethod
     def _save_run_state(cls, state: SimulationRunState):
         """保存运行状态到文件"""
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+        sim_dir = cls._get_sim_dir(state.simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         state_file = os.path.join(sim_dir, "run_state.json")
         
@@ -390,7 +397,7 @@ class SimulationRunner:
             SimulationRunState
         """
         # 加载模拟配置
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         config_path = os.path.join(sim_dir, "simulation_config.json")
         
         if not os.path.exists(config_path):
@@ -620,7 +627,7 @@ class SimulationRunner:
     def _monitor_simulation(cls, simulation_id: str, locale: str = 'zh'):
         """监控模拟进程，解析动作日志"""
         set_locale(locale)
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         
         # 新的日志结构：分平台的动作日志
         twitter_actions_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
@@ -888,7 +895,7 @@ class SimulationRunner:
         Returns:
             True 如果所有启用的平台都已完成
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
+        sim_dir = cls._get_sim_dir(state.simulation_id)
         twitter_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
         reddit_log = os.path.join(sim_dir, "reddit", "actions.jsonl")
         
@@ -1172,7 +1179,7 @@ class SimulationRunner:
         Returns:
             完整的动作列表（按时间戳排序，新的在前）
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         actions = []
         
         # 读取 Twitter 动作文件（根据文件路径自动设置 platform 为 twitter）
@@ -1386,7 +1393,7 @@ class SimulationRunner:
         """
         import shutil
         
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         
         if not os.path.exists(sim_dir):
             return {"success": True, "message": "模拟目录不存在，无需清理"}
@@ -1647,7 +1654,7 @@ class SimulationRunner:
         Returns:
             True 表示环境存活，False 表示环境已关闭
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             return False
 
@@ -1665,7 +1672,7 @@ class SimulationRunner:
         Returns:
             状态详情字典，包含 status, twitter_available, reddit_available, timestamp
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         status_file = os.path.join(sim_dir, "env_status.json")
         
         default_status = {
@@ -1719,7 +1726,7 @@ class SimulationRunner:
             ValueError: 模拟不存在或环境未运行
             TimeoutError: 等待响应超时
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1781,7 +1788,7 @@ class SimulationRunner:
             ValueError: 模拟不存在或环境未运行
             TimeoutError: 等待响应超时
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1838,7 +1845,7 @@ class SimulationRunner:
         Returns:
             全局采访结果字典
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
 
@@ -1891,7 +1898,7 @@ class SimulationRunner:
         Returns:
             操作结果字典
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         if not os.path.exists(sim_dir):
             raise ValueError(f"模拟不存在: {simulation_id}")
         
@@ -2002,7 +2009,7 @@ class SimulationRunner:
         Returns:
             Interview历史记录列表
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        sim_dir = cls._get_sim_dir(simulation_id)
         
         results = []
         

@@ -8,7 +8,7 @@ import re
 import traceback
 import threading
 from contextlib import ExitStack, nullcontext
-from flask import request, jsonify
+from flask import request, jsonify, g
 from zep_cloud import NotFoundError
 
 from . import graph_bp
@@ -26,6 +26,7 @@ from ..services.simulation_manager import SimulationManager
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
 from ..utils.llm_client import LLMResponseError
+from ..utils.authorization import authorize, authorize_any, is_owned_by_current_user
 
 # 获取日志器
 logger = get_logger('mirofish.api')
@@ -135,12 +136,13 @@ def get_project(project_id: str):
     获取项目详情
     """
     project = ProjectManager.get_project(project_id)
-    
+
     if not project:
         return jsonify({
             "success": False,
             "error": t('api.projectNotFound', id=project_id)
         }), 404
+    authorize(project)
 
     return jsonify({
         "success": True,
@@ -151,11 +153,14 @@ def get_project(project_id: str):
 @graph_bp.route('/project/list', methods=['GET'])
 def list_projects():
     """
-    列出所有项目
+    列出所有项目（仅返回当前用户拥有的项目）
     """
     limit = request.args.get('limit', 50, type=int)
-    projects = ProjectManager.list_projects(limit=limit)
-    
+    # 所有权过滤是在这里做的，而不是 ProjectManager.list_projects() 内部：
+    # 该方法的调用方里也有需要看到全部项目的内部一致性检查场景。
+    projects = [p for p in ProjectManager.list_projects(limit=None) if is_owned_by_current_user(p)]
+    projects = projects if limit is None else projects[:limit]
+
     return jsonify({
         "success": True,
         "data": [p.to_dict() for p in projects],
@@ -179,6 +184,7 @@ def _delete_project_impl(project_id: str):
             "success": False,
             "error": t('api.projectNotFound', id=project_id)
         }), 404
+    authorize(project)
     if _project_has_active_build(project):
         return jsonify({
             "success": False,
@@ -221,12 +227,13 @@ def _reset_project_impl(project_id: str):
     重置项目状态（用于重新构建图谱）
     """
     project = ProjectManager.get_project(project_id)
-    
+
     if not project:
         return jsonify({
             "success": False,
             "error": t('api.projectNotFound', id=project_id)
         }), 404
+    authorize(project)
 
     if _project_has_active_build(project):
         return jsonify({
@@ -317,7 +324,9 @@ def generate_ontology():
             }), 400
         
         # 创建项目
-        project = ProjectManager.create_project(name=project_name)
+        project = ProjectManager.create_project(
+            name=project_name, owner_id=getattr(g, 'current_user_id', None)
+        )
         project.simulation_requirement = simulation_requirement
         logger.info(f"创建项目: {project.project_id}")
         
@@ -511,6 +520,7 @@ def _build_graph_impl():
                 "success": False,
                 "error": t('api.projectNotFound', id=project_id)
             }), 404
+        authorize(project)
 
         # 检查项目状态
         force = data.get('force', False)  # 强制重新构建
@@ -887,7 +897,9 @@ def get_graph_data(graph_id: str):
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
             }), 500
-        
+
+        authorize_any(ProjectManager.find_projects_by_graph_id(graph_id))
+
         builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
         graph_data = builder.get_graph_data(graph_id)
         
@@ -922,6 +934,7 @@ def delete_graph(graph_id: str):
                 "success": False,
                 "error": "No local project references this graph"
             }), 404
+        authorize_any(projects)
         project_ids = sorted({project.project_id for project in projects})
         with ExitStack() as stack:
             for project_id in project_ids:
@@ -931,6 +944,7 @@ def delete_graph(graph_id: str):
             # Re-read under all owning project locks so a concurrent build
             # claim cannot appear between validation and Cloud deletion.
             projects = ProjectManager.find_projects_by_graph_id(graph_id)
+            authorize_any(projects)
             if any(_project_has_active_build(project) for project in projects):
                 return jsonify({
                     "success": False,
