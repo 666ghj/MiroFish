@@ -210,6 +210,9 @@
   "step4": {
     "generatingSection": "Generating {title}...",
     "goToInteraction": "Enter Deep Interaction",
+    "downloadReport": "Download Report",
+    "markdownFormat": "Markdown (.md)",
+    "jsonFormat": "JSON (.json)",
     "waitingForReportAgent": "Waiting for Report Agent...",
     "collapse": "Collapse ▲",
     "expandAll": "Show all {count} ▼",

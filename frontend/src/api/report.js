@@ -49,3 +49,14 @@ export const getReport = (reportId) => {
 export const chatWithReport = (data) => {
   return service.post('/api/report/chat', data)
 }
+
+/**
+ * Get the download URL for a report
+ * @param {string} reportId
+ * @param {string} format - 'markdown' or 'json'
+ * @returns {string} download URL
+ */
+export const getReportDownloadUrl = (reportId, format = 'markdown') => {
+  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'
+  return `${baseURL}/api/report/${reportId}/download?format=${format}`
+}

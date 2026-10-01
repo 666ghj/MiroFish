@@ -127,14 +127,36 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>{{ $t('step4.goToInteraction') }}</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <!-- Download & Next Step Buttons - 在完成后显示 -->
+          <div v-if="isComplete" class="report-actions">
+            <div class="download-dropdown">
+              <button class="download-btn" @click="toggleDownloadMenu">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>{{ $t('step4.downloadReport') }}</span>
+              </button>
+              <div v-if="showDownloadMenu" class="download-menu">
+                <a :href="getReportDownloadUrl(reportId, 'markdown')" class="download-menu-item" @click="showDownloadMenu = false">
+                  <span class="format-icon">MD</span>
+                  <span>{{ $t('step4.markdownFormat') }}</span>
+                </a>
+                <a :href="getReportDownloadUrl(reportId, 'json')" class="download-menu-item" @click="showDownloadMenu = false">
+                  <span class="format-icon">{ }</span>
+                  <span>{{ $t('step4.jsonFormat') }}</span>
+                </a>
+              </div>
+            </div>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>{{ $t('step4.goToInteraction') }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -393,7 +415,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, getReportDownloadUrl } from '../api/report'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -411,6 +433,12 @@ const goToInteraction = () => {
   if (props.reportId) {
     router.push({ name: 'Interaction', params: { reportId: props.reportId } })
   }
+}
+
+// Download menu state
+const showDownloadMenu = ref(false)
+const toggleDownloadMenu = () => {
+  showDownloadMenu.value = !showDownloadMenu.value
 }
 
 // State
@@ -3402,13 +3430,85 @@ watch(() => props.reportId, (newId) => {
   font-size: 14px;
 }
 
+.report-actions {
+  display: flex;
+  gap: 8px;
+  width: calc(100% - 40px);
+  margin: 4px 20px 0 20px;
+}
+
+.download-dropdown {
+  position: relative;
+}
+
+.download-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F2937;
+  background: #F3F4F6;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.download-btn:hover {
+  background: #E5E7EB;
+}
+
+.download-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  z-index: 10;
+  min-width: 180px;
+}
+
+.download-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #374151;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.download-menu-item:hover {
+  background: #F3F4F6;
+}
+
+.format-icon {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6B7280;
+  background: #F3F4F6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 28px;
+  text-align: center;
+}
+
 .next-step-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: calc(100% - 40px);
-  margin: 4px 20px 0 20px;
+  flex: 1;
   padding: 14px 20px;
   font-size: 14px;
   font-weight: 600;

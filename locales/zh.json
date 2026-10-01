@@ -210,6 +210,9 @@
   "step4": {
     "generatingSection": "正在生成{title}...",
     "goToInteraction": "进入深度互动",
+    "downloadReport": "下载报告",
+    "markdownFormat": "Markdown (.md)",
+    "jsonFormat": "JSON (.json)",
     "waitingForReportAgent": "Waiting for Report Agent...",
     "collapse": "收起 ▲",
     "expandAll": "展开全部 {count} 条 ▼",
