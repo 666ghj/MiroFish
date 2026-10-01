@@ -536,7 +536,7 @@ class ParallelIPCHandler:
                 SELECT user_id, info, created_at
                 FROM trace
                 WHERE action = ? AND user_id = ?
-                ORDER BY created_at DESC
+                ORDER BY rowid DESC
                 LIMIT 1
             """, (ActionType.INTERVIEW.value, agent_id))
             
