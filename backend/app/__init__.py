@@ -9,11 +9,12 @@ import warnings
 # 需要在所有其他导入之前设置
 warnings.filterwarnings("ignore", message=".*resource_tracker.*")
 
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from .config import Config
 from .utils.logger import setup_logger, get_logger
+from .utils.id_validation import InvalidIdentifierError, PathContainmentError
 
 
 def create_app(config_class=Config):
@@ -72,6 +73,17 @@ def create_app(config_class=Config):
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
+
+    # 统一处理非法标识符 / 路径越界异常，返回 400 而不是 500
+    @app.errorhandler(InvalidIdentifierError)
+    def handle_invalid_identifier(error):
+        get_logger('mirofish.request').warning(f"拒绝非法标识符请求: {error}")
+        return jsonify({"error": "invalid_identifier", "message": str(error)}), 400
+
+    @app.errorhandler(PathContainmentError)
+    def handle_path_containment(error):
+        get_logger('mirofish.request').error(f"检测到路径越界尝试: {error}")
+        return jsonify({"error": "invalid_path", "message": "Invalid resource path"}), 400
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")

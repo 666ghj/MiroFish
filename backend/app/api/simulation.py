@@ -23,6 +23,7 @@ from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..utils.zep_lifecycle import get_graph_readers, graph_lifecycle_lock
 from ..models.project import ProjectManager
+from ..utils.id_validation import validate_simulation_id, validate_platform_name, safe_join
 
 logger = get_logger('mirofish.api.simulation')
 
@@ -285,8 +286,9 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     """
     import os
     from ..config import Config
-    
-    simulation_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
+    validate_simulation_id(simulation_id)
+    simulation_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
     
     # 检查目录是否存在
     if not os.path.exists(simulation_dir):
@@ -1091,13 +1093,15 @@ def get_simulation_profiles_realtime(simulation_id: str):
     import json
     import csv
     from datetime import datetime
-    
+
+    validate_simulation_id(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
+        validate_platform_name(platform)
 
         # 获取模拟目录
-        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
-        
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         if not os.path.exists(sim_dir):
             return jsonify({
                 "success": False,
@@ -1201,11 +1205,12 @@ def get_simulation_config_realtime(simulation_id: str):
     """
     import json
     from datetime import datetime
-    
+
+    validate_simulation_id(simulation_id)
     try:
         # 获取模拟目录
-        sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
-        
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         if not os.path.exists(sim_dir):
             return jsonify({
                 "success": False,
@@ -2156,15 +2161,14 @@ def get_simulation_posts(simulation_id: str):
     
     返回帖子列表（从SQLite数据库读取）
     """
+    validate_simulation_id(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
+        validate_platform_name(platform)
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
 
         db_file = f"{platform}_simulation.db"
         db_path = os.path.join(sim_dir, db_file)
@@ -2233,17 +2237,16 @@ def get_simulation_comments(simulation_id: str):
         limit: 返回数量
         offset: 偏移量
     """
+    validate_simulation_id(simulation_id)
     try:
         platform = request.args.get('platform') or _get_default_platform(simulation_id)
+        validate_platform_name(platform)
         post_id = request.args.get('post_id')
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
-        
+        sim_dir = safe_join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+
         db_path = os.path.join(sim_dir, f"{platform}_simulation.db")
         
         if not os.path.exists(db_path):
