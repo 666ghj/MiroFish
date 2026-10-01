@@ -1,17 +1,15 @@
 """\n配置管理\n统一从项目根目录的 .env 文件加载配置\n"""
 
 import os
-from dotenv import load_dotenv
+from pathlib import Path
 
-# 加载项目根目录的 .env 文件
-# 路径: MiroFish/.env (相对于 backend/app/config.py)
-project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
+from environment import environment_errors, load_environment
 
-if os.path.exists(project_root_env):
-    load_dotenv(project_root_env, override=True)
-else:
-    # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
-    load_dotenv(override=True)
+# Process environment wins. A local .env only supplies values that were not
+# injected by oprun, CI, or a hosted platform.
+_backend_dir = Path(__file__).resolve().parents[1]
+_project_root = _backend_dir.parent
+load_environment(_project_root, _backend_dir)
 
 
 class Config:
@@ -62,12 +60,8 @@ class Config:
     
     @classmethod
     def validate(cls) -> list[str]:
-        """验证必要配置"""
-        errors: list[str] = []
-        if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+        """Validate required credentials without accepting raw op:// addresses."""
+        errors = environment_errors(("LLM_API_KEY", "ZEP_API_KEY"), ("LLM_BOOST_API_KEY",))
         if os.environ.get("ZEP_API_URL"):
             errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
         if cls.DEBUG:
