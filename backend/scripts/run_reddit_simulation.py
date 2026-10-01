@@ -130,6 +130,8 @@ except ImportError as e:
     print("请先安装: pip install oasis-ai camel-ai")
     sys.exit(1)
 
+from scheduled_events import build_post_actions, group_events_by_round
+
 
 # IPC相关常量
 IPC_COMMANDS_DIR = "ipc_commands"
@@ -592,19 +594,11 @@ class RedditSimulationRunner:
         event_config = self.config.get("event_config", {})
         initial_posts = event_config.get("initial_posts", [])
         # 读取定时事件并按轮次分组（轮次为 1 基：第 1 轮对应首个循环迭代）
-        scheduled_events = event_config.get("scheduled_events", [])
-        events_by_round: Dict[int, List[Dict[str, Any]]] = {}
-        for ev in scheduled_events:
-            try:
-                events_by_round.setdefault(int(ev.get("round", 0)), []).append(ev)
-            except (TypeError, ValueError):
-                print(f"  警告: 定时事件轮次无效，已跳过: {ev}")
-        # 超出实际轮数的事件永远不会触发（total_rounds 可能已被 max_rounds 截断）：
-        # 明确告警，不要静默丢弃
-        out_of_range = sorted(r for r in events_by_round if r < 1 or r > total_rounds)
-        if out_of_range:
-            print(f"  警告: {len(out_of_range)} 条定时事件的轮次超出实际模拟轮数 "
-                  f"(total_rounds={total_rounds})，将不会触发: {out_of_range}")
+        events_by_round, event_warnings = group_events_by_round(
+            event_config.get("scheduled_events", []), total_rounds
+        )
+        for warning in event_warnings:
+            print(f"  警告: {warning}")
 
         if initial_posts:
             print(f"执行初始事件 ({len(initial_posts)}条初始帖子)...")
@@ -645,29 +639,19 @@ class RedditSimulationRunner:
             # 触发本轮的定时事件（在活跃 Agent 决策之前发布）
             round_events = events_by_round.pop(round_num + 1, [])
             if round_events:
-                event_actions = {}
-                for ev in round_events:
-                    agent_id = ev.get("poster_agent_id", 0)
-                    content = ev.get("content", "")
-                    try:
-                        agent = self.env.agent_graph.get_agent(agent_id)
-                        if agent in event_actions:
-                            if not isinstance(event_actions[agent], list):
-                                event_actions[agent] = [event_actions[agent]]
-                            event_actions[agent].append(ManualAction(
-                                action_type=ActionType.CREATE_POST,
-                                action_args={"content": content}
-                            ))
-                        else:
-                            event_actions[agent] = ManualAction(
-                                action_type=ActionType.CREATE_POST,
-                                action_args={"content": content}
-                            )
-                    except Exception as e:
-                        print(f"  警告: 无法为Agent {agent_id}创建定时事件帖子: {e}")
+                event_actions, posted, post_warnings = build_post_actions(
+                    round_events,
+                    self.env.agent_graph.get_agent,
+                    lambda content: ManualAction(
+                        action_type=ActionType.CREATE_POST,
+                        action_args={"content": content}
+                    ),
+                )
+                for warning in post_warnings:
+                    print(f"  警告: {warning}")
                 if event_actions:
                     await self.env.step(event_actions)
-                    print(f"  第 {round_num + 1} 轮触发 {len(round_events)} 条定时事件")
+                    print(f"  第 {round_num + 1} 轮触发 {len(posted)} 条定时事件")
 
             active_agents = self._get_active_agents_for_round(
                 self.env, simulated_hour, round_num

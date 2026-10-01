@@ -156,6 +156,7 @@ def init_logging_for_simulation(simulation_dir: str):
 
 
 from action_logger import SimulationLogManager, PlatformActionLogger
+from scheduled_events import build_post_actions, group_events_by_round
 
 try:
     from camel.models import ModelFactory
@@ -1223,6 +1224,13 @@ async def run_twitter_simulation(
         if total_rounds < original_rounds:
             log_info(f"轮数已截断: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
     
+    # 读取定时事件并按轮次分组（轮次为 1 基：第 1 轮对应首个循环迭代）
+    events_by_round, event_warnings = group_events_by_round(
+        event_config.get("scheduled_events", []), total_rounds
+    )
+    for warning in event_warnings:
+        log_info(f"警告: {warning}")
+    
     start_time = datetime.now()
     
     for round_num in range(total_rounds):
@@ -1244,10 +1252,45 @@ async def run_twitter_simulation(
         if action_logger:
             action_logger.log_round_start(round_num + 1, simulated_hour)
         
+        round_action_count = 0
+        
+        # 触发本轮的定时事件（在活跃 Agent 决策之前发布，即使本轮没有活跃 Agent）
+        round_events = events_by_round.pop(round_num + 1, [])
+        if round_events:
+            event_actions, posted, post_warnings = build_post_actions(
+                round_events,
+                result.env.agent_graph.get_agent,
+                lambda content: ManualAction(
+                    action_type=ActionType.CREATE_POST,
+                    action_args={"content": content}
+                ),
+            )
+            for warning in post_warnings:
+                log_info(f"警告: {warning}")
+            if event_actions:
+                await result.env.step(event_actions)
+                log_info(f"第 {round_num + 1} 轮触发 {len(posted)} 条定时事件")
+                
+                # 与其他动作一致：从数据库读取实际执行的动作，记录到本轮
+                event_db_actions, last_rowid = fetch_new_actions_from_db(
+                    db_path, last_rowid, agent_names
+                )
+                for action_data in event_db_actions:
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=round_num + 1,
+                            agent_id=action_data['agent_id'],
+                            agent_name=action_data['agent_name'],
+                            action_type=action_data['action_type'],
+                            action_args=action_data['action_args']
+                        )
+                        total_actions += 1
+                        round_action_count += 1
+        
         if not active_agents:
-            # 没有活跃agent时也记录round结束（actions_count=0）
+            # 没有活跃agent时也记录round结束（只包含本轮定时事件的动作数）
             if action_logger:
-                action_logger.log_round_end(round_num + 1, 0)
+                action_logger.log_round_end(round_num + 1, round_action_count)
             continue
         
         actions = {agent: LLMAction() for _, agent in active_agents}
@@ -1258,7 +1301,6 @@ async def run_twitter_simulation(
             db_path, last_rowid, agent_names
         )
         
-        round_action_count = 0
         for action_data in actual_actions:
             if action_logger:
                 action_logger.log_action(
@@ -1422,6 +1464,13 @@ async def run_reddit_simulation(
         if total_rounds < original_rounds:
             log_info(f"轮数已截断: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
     
+    # 读取定时事件并按轮次分组（轮次为 1 基：第 1 轮对应首个循环迭代）
+    events_by_round, event_warnings = group_events_by_round(
+        event_config.get("scheduled_events", []), total_rounds
+    )
+    for warning in event_warnings:
+        log_info(f"警告: {warning}")
+    
     start_time = datetime.now()
     
     for round_num in range(total_rounds):
@@ -1443,10 +1492,45 @@ async def run_reddit_simulation(
         if action_logger:
             action_logger.log_round_start(round_num + 1, simulated_hour)
         
+        round_action_count = 0
+        
+        # 触发本轮的定时事件（在活跃 Agent 决策之前发布，即使本轮没有活跃 Agent）
+        round_events = events_by_round.pop(round_num + 1, [])
+        if round_events:
+            event_actions, posted, post_warnings = build_post_actions(
+                round_events,
+                result.env.agent_graph.get_agent,
+                lambda content: ManualAction(
+                    action_type=ActionType.CREATE_POST,
+                    action_args={"content": content}
+                ),
+            )
+            for warning in post_warnings:
+                log_info(f"警告: {warning}")
+            if event_actions:
+                await result.env.step(event_actions)
+                log_info(f"第 {round_num + 1} 轮触发 {len(posted)} 条定时事件")
+                
+                # 与其他动作一致：从数据库读取实际执行的动作，记录到本轮
+                event_db_actions, last_rowid = fetch_new_actions_from_db(
+                    db_path, last_rowid, agent_names
+                )
+                for action_data in event_db_actions:
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=round_num + 1,
+                            agent_id=action_data['agent_id'],
+                            agent_name=action_data['agent_name'],
+                            action_type=action_data['action_type'],
+                            action_args=action_data['action_args']
+                        )
+                        total_actions += 1
+                        round_action_count += 1
+        
         if not active_agents:
-            # 没有活跃agent时也记录round结束（actions_count=0）
+            # 没有活跃agent时也记录round结束（只包含本轮定时事件的动作数）
             if action_logger:
-                action_logger.log_round_end(round_num + 1, 0)
+                action_logger.log_round_end(round_num + 1, round_action_count)
             continue
         
         actions = {agent: LLMAction() for _, agent in active_agents}
@@ -1457,7 +1541,6 @@ async def run_reddit_simulation(
             db_path, last_rowid, agent_names
         )
         
-        round_action_count = 0
         for action_data in actual_actions:
             if action_logger:
                 action_logger.log_action(
