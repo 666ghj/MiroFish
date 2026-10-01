@@ -5,6 +5,9 @@ import SimulationView from '../views/SimulationView.vue'
 import SimulationRunView from '../views/SimulationRunView.vue'
 import ReportView from '../views/ReportView.vue'
 import InteractionView from '../views/InteractionView.vue'
+import StoryTimelineView from '../views/StoryTimelineView.vue'
+import GodModeView from '../views/GodModeView.vue'
+import WorldBuilderView from '../views/WorldBuilderView.vue'
 
 const routes = [
   {
@@ -40,6 +43,24 @@ const routes = [
     path: '/interaction/:reportId',
     name: 'Interaction',
     component: InteractionView,
+    props: true
+  },
+  {
+    path: '/story/:simulationId',
+    name: 'Story',
+    component: StoryTimelineView,
+    props: true
+  },
+  {
+    path: '/godmode/:simulationId',
+    name: 'GodMode',
+    component: GodModeView,
+    props: true
+  },
+  {
+    path: '/world/:simulationId',
+    name: 'World',
+    component: WorldBuilderView,
     props: true
   }
 ]
