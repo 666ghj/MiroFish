@@ -257,7 +257,8 @@ class OasisProfileGenerator:
         
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            default_headers={"User-Agent": "python-requests/2.32.5"}
         )
         
         # Zep客户端用于检索丰富上下文

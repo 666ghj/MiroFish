@@ -222,7 +222,7 @@ def create_simulation():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         project_id = data.get('project_id')
         if not project_id:
@@ -321,7 +321,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     state_file = os.path.join(simulation_dir, "state.json")
     try:
         import json
-        with open(state_file, 'r', encoding='utf-8') as f:
+        with open(state_file, 'r', encoding='utf-8-sig') as f:
             state_data = json.load(f)
         
         status = state_data.get("status", "")
@@ -337,8 +337,9 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - running: 正在运行，说明准备早就完成了
         # - completed: 运行完成，说明准备早就完成了
         # - stopped: 已停止，说明准备早就完成了
+        # - paused: 手动停止后会写入 paused，配置仍然可复用
         # - failed: 运行失败（但准备是完成的）
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
+        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "paused", "failed"]
         if status in prepared_statuses and config_generated:
             # 获取文件统计信息
             profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
@@ -433,7 +434,7 @@ def prepare_simulation():
     from ..config import Config
     
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         if not simulation_id:
@@ -705,7 +706,7 @@ def get_prepare_status():
     from ..models.task import TaskManager
     
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         task_id = data.get('task_id')
         simulation_id = data.get('simulation_id')
@@ -1141,7 +1142,7 @@ def get_simulation_profiles_realtime(simulation_id: str):
         state_file = os.path.join(sim_dir, "state.json")
         if os.path.exists(state_file):
             try:
-                with open(state_file, 'r', encoding='utf-8') as f:
+                with open(state_file, 'r', encoding='utf-8-sig') as f:
                     state_data = json.load(f)
                     status = state_data.get("status", "")
                     is_generating = status == "preparing"
@@ -1243,7 +1244,7 @@ def get_simulation_config_realtime(simulation_id: str):
         state_file = os.path.join(sim_dir, "state.json")
         if os.path.exists(state_file):
             try:
-                with open(state_file, 'r', encoding='utf-8') as f:
+                with open(state_file, 'r', encoding='utf-8-sig') as f:
                     state_data = json.load(f)
                     status = state_data.get("status", "")
                     error = state_data.get("error")
@@ -1438,7 +1439,7 @@ def generate_profiles():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         graph_id = data.get('graph_id')
         if not graph_id:
@@ -1540,7 +1541,7 @@ def start_simulation():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
 
         simulation_id = data.get('simulation_id')
         if not simulation_id:
@@ -1691,6 +1692,40 @@ def start_simulation():
                     "error": t('api.graphIdRequiredForMemory')
                 }), 400
 
+        existing_run_state = SimulationRunner.get_run_state(simulation_id)
+        restartable_statuses = {
+            RunnerStatus.IDLE,
+            RunnerStatus.STOPPED,
+            RunnerStatus.COMPLETED,
+            RunnerStatus.FAILED,
+        }
+        if (
+            existing_run_state
+            and existing_run_state.runner_status in restartable_statuses
+        ):
+            if ZepGraphMemoryManager.get_updater(simulation_id) is not None:
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "The previous simulation still has pending graph "
+                        "memory updates; finalize or reset it before restarting"
+                    ),
+                }), 409
+            logger.info(
+                f"清理已结束的旧运行记录后重新启动: "
+                f"simulation_id={simulation_id}, runner_status={existing_run_state.runner_status.value}"
+            )
+            cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
+            if not cleanup_result.get("success"):
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Failed to clean previous simulation logs: "
+                        f"{cleanup_result.get('errors')}"
+                    ),
+                }), 500
+            force_restarted = True
+
         graph_guard = (
             graph_lifecycle_lock(graph_id)
             if enable_graph_memory_update
@@ -1806,7 +1841,7 @@ def stop_simulation():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         if not simulation_id:
@@ -2353,7 +2388,7 @@ def interview_agent():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         agent_id = data.get('agent_id')
@@ -2475,7 +2510,7 @@ def interview_agents_batch():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
 
         simulation_id = data.get('simulation_id')
         interviews = data.get('interviews')
@@ -2602,7 +2637,7 @@ def interview_all_agents():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
 
         simulation_id = data.get('simulation_id')
         prompt = data.get('prompt')
@@ -2706,7 +2741,7 @@ def get_interview_history():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         platform = data.get('platform')  # 不指定则返回两个平台的历史
@@ -2768,7 +2803,7 @@ def get_env_status():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         
@@ -2835,7 +2870,7 @@ def close_simulation_env():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         timeout = data.get('timeout', 30)

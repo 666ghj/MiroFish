@@ -55,7 +55,7 @@ def generate_report():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         if not simulation_id:
@@ -342,7 +342,7 @@ def get_generate_status():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         task_id = data.get('task_id')
         simulation_id = data.get('simulation_id')
@@ -616,7 +616,7 @@ def chat_with_report_agent():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         simulation_id = data.get('simulation_id')
         message = data.get('message')
@@ -1064,7 +1064,7 @@ def search_graph_tool():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         graph_id = data.get('graph_id')
         query = data.get('query')
@@ -1110,7 +1110,7 @@ def get_graph_statistics_tool():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         graph_id = data.get('graph_id')
         

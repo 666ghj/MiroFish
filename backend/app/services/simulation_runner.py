@@ -12,6 +12,7 @@ import threading
 import subprocess
 import signal
 import atexit
+import psutil
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -305,7 +306,7 @@ class SimulationRunner:
             return None
         
         try:
-            with open(state_file, 'r', encoding='utf-8') as f:
+            with open(state_file, 'r', encoding='utf-8-sig') as f:
                 data = json.load(f)
             
             state = SimulationRunState(
@@ -1652,7 +1653,23 @@ class SimulationRunner:
             return False
 
         ipc_client = SimulationIPCClient(sim_dir)
-        return ipc_client.check_env_alive()
+        if not ipc_client.check_env_alive():
+            return False
+
+        process = cls._processes.get(simulation_id)
+        if process is not None:
+            return process.poll() is None
+
+        state = cls.get_run_state(simulation_id)
+        pid = state.process_pid if state else None
+        if not pid:
+            return False
+
+        try:
+            proc = psutil.Process(pid)
+            return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+        except psutil.Error:
+            return False
 
     @classmethod
     def get_env_status_detail(cls, simulation_id: str) -> Dict[str, Any]:
@@ -1679,12 +1696,13 @@ class SimulationRunner:
             return default_status
         
         try:
-            with open(status_file, 'r', encoding='utf-8') as f:
+            with open(status_file, 'r', encoding='utf-8-sig') as f:
                 status = json.load(f)
+            env_alive = cls.check_env_alive(simulation_id)
             return {
-                "status": status.get("status", "stopped"),
-                "twitter_available": status.get("twitter_available", False),
-                "reddit_available": status.get("reddit_available", False),
+                "status": status.get("status", "stopped") if env_alive else "stopped",
+                "twitter_available": status.get("twitter_available", False) if env_alive else False,
+                "reddit_available": status.get("reddit_available", False) if env_alive else False,
                 "timestamp": status.get("timestamp")
             }
         except (json.JSONDecodeError, OSError):
@@ -1725,7 +1743,7 @@ class SimulationRunner:
 
         ipc_client = SimulationIPCClient(sim_dir)
 
-        if not ipc_client.check_env_alive():
+        if not cls.check_env_alive(simulation_id):
             raise ValueError(f"模拟环境未运行或已关闭，无法执行Interview: {simulation_id}")
 
         logger.info(f"发送Interview命令: simulation_id={simulation_id}, agent_id={agent_id}, platform={platform}")
@@ -1787,7 +1805,7 @@ class SimulationRunner:
 
         ipc_client = SimulationIPCClient(sim_dir)
 
-        if not ipc_client.check_env_alive():
+        if not cls.check_env_alive(simulation_id):
             raise ValueError(f"模拟环境未运行或已关闭，无法执行Interview: {simulation_id}")
 
         logger.info(f"发送批量Interview命令: simulation_id={simulation_id}, count={len(interviews)}, platform={platform}")
@@ -1897,7 +1915,7 @@ class SimulationRunner:
         
         ipc_client = SimulationIPCClient(sim_dir)
         
-        if not ipc_client.check_env_alive():
+        if not cls.check_env_alive(simulation_id):
             return {
                 "success": True,
                 "message": "环境已经关闭"

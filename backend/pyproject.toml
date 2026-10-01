@@ -33,6 +33,7 @@ dependencies = [
     # 工具库
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]

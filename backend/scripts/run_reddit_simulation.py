@@ -464,6 +464,9 @@ class RedditSimulationRunner:
         return ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
             model_type=llm_model,
+            api_key=llm_api_key or None,
+            url=llm_base_url or None,
+            default_headers={"User-Agent": "python-requests/2.32.5"},
         )
     
     def _get_active_agents_for_round(
@@ -617,7 +620,8 @@ class RedditSimulationRunner:
             
             if initial_actions:
                 await self.env.step(initial_actions)
-                print(f"  已发布 {len(initial_actions)} 条初始帖子")
+                posted_count = sum(len(action) if isinstance(action, list) else 1 for action in initial_actions.values())
+                print(f"  已发布 {posted_count} 条初始帖子")
         
         # 主模拟循环
         print("\n开始模拟循环...")

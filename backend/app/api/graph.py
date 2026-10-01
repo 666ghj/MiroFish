@@ -494,7 +494,7 @@ def _build_graph_impl():
             }), 500
         
         # 解析请求
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         project_id = data.get('project_id')
         logger.debug(f"请求参数: project_id={project_id}")
         
