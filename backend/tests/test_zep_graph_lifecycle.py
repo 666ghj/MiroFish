@@ -244,6 +244,130 @@ def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
     assert len(created_threads) == 1
 
 
+def test_failed_build_resumes_a_persisted_successful_batch_without_deleting_graph(
+    monkeypatch,
+):
+    project = _project(ProjectStatus.FAILED)
+    project.error = "temporary batch status read failed"
+    created_threads = []
+    deleted_graphs = []
+
+    class Tasks:
+        def create_task(self, _description):
+            return "task-resumed"
+
+    class Builder:
+        def __init__(self, **_kwargs):
+            pass
+
+        def get_batch_summary(self, batch_id):
+            assert batch_id == "batch-1"
+            return SimpleNamespace(status="succeeded")
+
+    class Thread:
+        def __init__(self, *, target, daemon):
+            created_threads.append((target, daemon))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
+    monkeypatch.setattr(graph_api, "TaskManager", Tasks)
+    monkeypatch.setattr(graph_api, "GraphBuilderService", Builder)
+    monkeypatch.setattr(graph_api.threading, "Thread", Thread)
+    monkeypatch.setattr(
+        graph_api,
+        "_delete_cloud_graph_if_present",
+        lambda graph_id: deleted_graphs.append(graph_id),
+    )
+    monkeypatch.setattr(
+        graph_api.ProjectManager,
+        "get_project",
+        classmethod(lambda _cls, _project_id: project),
+    )
+    monkeypatch.setattr(
+        graph_api.ProjectManager,
+        "get_extracted_text",
+        classmethod(lambda _cls, _project_id: "source text"),
+    )
+    monkeypatch.setattr(
+        graph_api.ProjectManager,
+        "save_project",
+        classmethod(lambda _cls, _project: None),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/api/graph/build",
+        method="POST",
+        json={"project_id": "proj-1"},
+    ):
+        body, status = _json_result(graph_api.build_graph())
+
+    assert status == 200
+    assert body["data"]["resumed"] is True
+    assert project.status == ProjectStatus.GRAPH_BUILDING
+    assert project.graph_id == "graph-1"
+    assert project.zep_batch_id == "batch-1"
+    assert project.zep_batch_operation_id == "operation-1"
+    assert project.error is None
+    assert deleted_graphs == []
+    assert len(created_threads) == 1
+
+
+def test_failed_build_preserves_graph_when_batch_status_cannot_be_reconciled(
+    monkeypatch,
+):
+    project = _project(ProjectStatus.FAILED)
+    project.error = "temporary batch status read failed"
+    deleted_graphs = []
+    saved_projects = []
+
+    class Builder:
+        def __init__(self, **_kwargs):
+            pass
+
+        def get_batch_summary(self, _batch_id):
+            raise ConnectionError("Zep is temporarily unreachable")
+
+    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
+    monkeypatch.setattr(graph_api, "GraphBuilderService", Builder)
+    monkeypatch.setattr(
+        graph_api,
+        "_delete_cloud_graph_if_present",
+        lambda graph_id: deleted_graphs.append(graph_id),
+    )
+    monkeypatch.setattr(
+        graph_api.ProjectManager,
+        "get_project",
+        classmethod(lambda _cls, _project_id: project),
+    )
+    monkeypatch.setattr(
+        graph_api.ProjectManager,
+        "save_project",
+        classmethod(lambda _cls, _project: saved_projects.append(_project)),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/api/graph/build",
+        method="POST",
+        json={"project_id": "proj-1"},
+    ):
+        body, status = _json_result(graph_api.build_graph())
+
+    assert status == 503
+    assert body["recoverable"] is True
+    assert body["graph_id"] == "graph-1"
+    assert body["batch_id"] == "batch-1"
+    assert project.status == ProjectStatus.FAILED
+    assert project.error == "temporary batch status read failed"
+    assert project.graph_id == "graph-1"
+    assert project.zep_batch_id == "batch-1"
+    assert deleted_graphs == []
+    assert saved_projects == []
+
+
 def test_project_delete_removes_cloud_graph_before_local_files(monkeypatch):
     project = _project(ProjectStatus.GRAPH_COMPLETED)
     events = []
