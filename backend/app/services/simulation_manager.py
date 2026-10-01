@@ -6,6 +6,7 @@ OASIS模拟管理器
 
 import os
 import json
+import secrets
 import shutil
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
@@ -14,9 +15,20 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.id_validation import (
+    validate_simulation_id,
+    safe_join,
+    InvalidIdentifierError,
+)
+from ..utils.state_machine import (
+    ConcurrentModificationError,
+    atomic_write_json,
+    next_revision,
+)
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
+from . import reproducibility_manifest
 from ..utils.locale import t
 
 logger = get_logger('mirofish.simulation')
@@ -76,7 +88,17 @@ class SimulationState:
     
     # 错误信息
     error: Optional[str] = None
-    
+
+    # 所有权：创建该模拟时所属项目的 owner_id（认证未启用时为 None）
+    owner_id: Optional[str] = None
+
+    # 持久化修订号，每次成功保存自增，用于乐观并发控制（CAS）
+    revision: int = 0
+
+    # 随机种子：创建时生成，用于在 prepare 阶段控制 MiroFish 自身的非 LLM
+    # 随机性（详见 reproducibility_manifest.py 中 RandomnessInfo 的说明）
+    random_seed: Optional[int] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """完整状态字典（内部使用）"""
         return {
@@ -98,8 +120,11 @@ class SimulationState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "owner_id": self.owner_id,
+            "revision": self.revision,
+            "random_seed": self.random_seed,
         }
-    
+
     def get_default_platform(self) -> str:
         """根据启用状态返回默认平台"""
         if self.enable_twitter and self.enable_reddit:
@@ -151,20 +176,51 @@ class SimulationManager:
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """获取模拟数据目录"""
-        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        validate_simulation_id(simulation_id)
+        sim_dir = safe_join(self.SIMULATION_DATA_DIR, simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     
-    def _save_simulation_state(self, state: SimulationState):
-        """保存模拟状态到文件"""
+    def _read_persisted_revision(self, simulation_id: str) -> Optional[int]:
+        """直接从磁盘读取当前已持久化的 revision（绕过内存缓存）。"""
+        sim_dir = self._get_simulation_dir(simulation_id)
+        state_file = os.path.join(sim_dir, "state.json")
+        if not os.path.exists(state_file):
+            return None
+        try:
+            with open(state_file, 'r', encoding='utf-8') as f:
+                return json.load(f).get("revision", 0)
+        except Exception:
+            return None
+
+    def _save_simulation_state(
+        self,
+        state: SimulationState,
+        *,
+        expected_revision: Optional[int] = None,
+    ):
+        """
+        保存模拟状态到文件（原子写入 + 可选的乐观并发控制）
+
+        注意：state.json 是 run_state.json（SimulationRunner 中的权威运行状态机）
+        的派生投影，其状态字段本身不做严格的转换校验——校验逻辑属于权威来源。
+        这里只保证持久化本身是原子的，并在调用方需要时提供 CAS 保护。
+        """
         sim_dir = self._get_simulation_dir(state.simulation_id)
         state_file = os.path.join(sim_dir, "state.json")
-        
+
+        previous_revision = self._read_persisted_revision(state.simulation_id)
+        if expected_revision is not None and previous_revision != expected_revision:
+            raise ConcurrentModificationError(
+                f"模拟 {state.simulation_id} 的状态已被并发修改: "
+                f"期望 revision={expected_revision}，实际 revision={previous_revision}"
+            )
+
         state.updated_at = datetime.now().isoformat()
-        
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
-        
+        state.revision = next_revision(previous_revision)
+
+        atomic_write_json(state_file, state.to_dict())
+
         self._simulations[state.simulation_id] = state
     
     def _load_simulation_state(self, simulation_id: str) -> Optional[SimulationState]:
@@ -200,6 +256,9 @@ class SimulationManager:
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             error=data.get("error"),
+            owner_id=data.get("owner_id"),
+            revision=data.get("revision", 0),
+            random_seed=data.get("random_seed"),
         )
         
         self._simulations[simulation_id] = state
@@ -211,22 +270,24 @@ class SimulationManager:
         graph_id: str,
         enable_twitter: bool = True,
         enable_reddit: bool = True,
+        owner_id: Optional[str] = None,
     ) -> SimulationState:
         """
         创建新的模拟
-        
+
         Args:
             project_id: 项目ID
             graph_id: Zep图谱ID
             enable_twitter: 是否启用Twitter模拟
             enable_reddit: 是否启用Reddit模拟
-            
+            owner_id: 所属项目的 owner_id（认证未启用时为 None）
+
         Returns:
             SimulationState
         """
         import uuid
         simulation_id = f"sim_{uuid.uuid4().hex[:12]}"
-        
+
         state = SimulationState(
             simulation_id=simulation_id,
             project_id=project_id,
@@ -234,6 +295,8 @@ class SimulationManager:
             enable_twitter=enable_twitter,
             enable_reddit=enable_reddit,
             status=SimulationStatus.CREATED,
+            owner_id=owner_id,
+            random_seed=secrets.randbits(32),
         )
         
         self._save_simulation_state(state)
@@ -276,7 +339,12 @@ class SimulationManager:
         state = self._load_simulation_state(simulation_id)
         if not state:
             raise ValueError(f"模拟不存在: {simulation_id}")
-        
+
+        # 兼容在引入 random_seed 字段之前创建的模拟：补发一个种子，
+        # 使其也能获得可复现、可在清单中记录的随机性。
+        if state.random_seed is None:
+            state.random_seed = secrets.randbits(32)
+
         try:
             state.status = SimulationStatus.PREPARING
             state.error = None
@@ -284,9 +352,19 @@ class SimulationManager:
             state.config_generated = False
             state.config_reasoning = ""
             self._save_simulation_state(state)
-            
+
             sim_dir = self._get_simulation_dir(simulation_id)
-            
+
+            # 清除上一次准备遗留的可复现性清单。如果这次准备中途失败，
+            # 不应该让 GET /manifest 继续返回一份描述"上一次成功准备"的
+            # 旧清单，让调用方误以为它描述的是当前（可能已失败/不一致）的状态。
+            try:
+                old_manifest_path = reproducibility_manifest.manifest_path(sim_dir)
+                if os.path.exists(old_manifest_path):
+                    os.remove(old_manifest_path)
+            except Exception:
+                logger.exception(f"清除旧的可复现性清单失败: simulation_id={simulation_id}")
+
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
                 progress_callback("reading", 0, t('progress.connectingZepGraph'))
@@ -330,8 +408,14 @@ class SimulationManager:
                     total=total_entities
                 )
             
+            # 传入该模拟的随机种子，用于让 Profile 生成过程中的兜底随机默认值
+            # （karma/年龄/性别/MBTI等）可复现。OasisProfileGenerator 内部为
+            # 每个实体构造独立的 random.Random 实例，而不是重新播种进程全局
+            # 的 random 模块——后者会在多个模拟并行准备（各自的线程池中）时
+            # 相互踩踏彼此的随机序列。不影响 LLM 采样本身的确定性，详见
+            # reproducibility_manifest.py 中 RandomnessInfo 的说明。
             # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
-            generator = OasisProfileGenerator(graph_id=state.graph_id)
+            generator = OasisProfileGenerator(graph_id=state.graph_id, random_seed=state.random_seed)
             
             def profile_progress(current, total, msg):
                 if progress_callback:
@@ -446,7 +530,7 @@ class SimulationManager:
             
             state.config_generated = True
             state.config_reasoning = sim_params.generation_reasoning
-            
+
             if progress_callback:
                 progress_callback(
                     "generating_config", 100,
@@ -454,10 +538,26 @@ class SimulationManager:
                     current=3,
                     total=3
                 )
-            
+
+            # 生成并持久化可复现性清单（记录模型/哈希/版本/种子等）。
+            # 这是产物记录，不是准备流程的关键路径——失败不应阻断模拟准备完成。
+            try:
+                from ..models.project import ProjectManager
+                project = ProjectManager.get_project(state.project_id)
+                manifest = reproducibility_manifest.build_manifest(
+                    state=state,
+                    sim_dir=sim_dir,
+                    project=project,
+                    sim_params=sim_params,
+                    document_text=document_text,
+                )
+                reproducibility_manifest.save_manifest(sim_dir, manifest)
+            except Exception:
+                logger.exception(f"生成可复现性清单失败: simulation_id={simulation_id}")
+
             # 注意：运行脚本保留在 backend/scripts/ 目录，不再复制到模拟目录
             # 启动模拟时，simulation_runner 会从 scripts/ 目录运行脚本
-            
+
             # 更新状态
             state.status = SimulationStatus.READY
             self._save_simulation_state(state)
@@ -491,7 +591,11 @@ class SimulationManager:
                 if sim_id.startswith('.') or not os.path.isdir(sim_path):
                     continue
                 
-                state = self._load_simulation_state(sim_id)
+                try:
+                    state = self._load_simulation_state(sim_id)
+                except InvalidIdentifierError:
+                    # Skip unexpected/legacy directory names rather than failing the whole listing
+                    continue
                 if state:
                     if project_id is None or state.project_id == project_id:
                         simulations.append(state)
