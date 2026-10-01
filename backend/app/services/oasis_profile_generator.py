@@ -687,7 +687,7 @@ class OasisProfileGenerator:
                     result = json.loads(json_str)
                     result["_fixed"] = True
                     return result
-                except:
+                except Exception:
                     pass
         
         # 6. 尝试从内容中提取部分信息
