@@ -14,6 +14,13 @@ const service = axios.create({
 service.interceptors.request.use(
   config => {
     config.headers['Accept-Language'] = i18n.global.locale.value
+
+    // 若配置了 VITE_API_KEY，则携带认证凭证（对应后端 MIROFISH_API_KEYS）
+    const apiKey = import.meta.env.VITE_API_KEY
+    if (apiKey) {
+      config.headers['Authorization'] = `Bearer ${apiKey}`
+    }
+
     return config
   },
   error => {
