@@ -1,0 +1,650 @@
+{
+  "name": "MiroFish Prediction Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1360,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "mirofish-base-url",
+              "name": "mirofishBaseUrl",
+              "value": "http://127.0.0.1:5001",
+              "type": "string"
+            },
+            {
+              "id": "project-id",
+              "name": "projectId",
+              "value": "proj_replace_me",
+              "type": "string"
+            },
+            {
+              "id": "graph-name",
+              "name": "graphName",
+              "value": "Prediction Brain Graph",
+              "type": "string"
+            },
+            {
+              "id": "chunk-size",
+              "name": "chunkSize",
+              "value": 500,
+              "type": "number"
+            },
+            {
+              "id": "chunk-overlap",
+              "name": "chunkOverlap",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "enable-twitter",
+              "name": "enableTwitter",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "enable-reddit",
+              "name": "enableReddit",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "use-llm-profiles",
+              "name": "useLlmForProfiles",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "parallel-profile-count",
+              "name": "parallelProfileCount",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "max-rounds",
+              "name": "maxRounds",
+              "value": 24,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-inputs",
+      "name": "Set Inputs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1140,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.mirofishBaseUrl + '/api/graph/build' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { project_id: $json.projectId, graph_name: $json.graphName, chunk_size: $json.chunkSize, chunk_overlap: $json.chunkOverlap } }}",
+        "options": {}
+      },
+      "id": "build-graph",
+      "name": "Build Graph",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -920,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/graph/task/' + $json.data.task_id }}",
+        "options": {}
+      },
+      "id": "poll-graph-task",
+      "name": "Poll Graph Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -700,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "equal",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "graph-complete",
+      "name": "Graph Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 20,
+        "unit": "seconds"
+      },
+      "id": "wait-graph",
+      "name": "Wait Graph",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -480,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/simulation/create' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { project_id: $('Set Inputs').item.json.projectId, enable_twitter: $('Set Inputs').item.json.enableTwitter, enable_reddit: $('Set Inputs').item.json.enableReddit } }}",
+        "options": {}
+      },
+      "id": "create-simulation",
+      "name": "Create Simulation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -260,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/simulation/prepare' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { simulation_id: $json.data.simulation_id, use_llm_for_profiles: $('Set Inputs').item.json.useLlmForProfiles, parallel_profile_count: $('Set Inputs').item.json.parallelProfileCount } }}",
+        "options": {}
+      },
+      "id": "prepare-simulation",
+      "name": "Prepare Simulation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -40,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/simulation/prepare/status' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $json.data.task_id } }}",
+        "options": {}
+      },
+      "id": "poll-prepare-status",
+      "name": "Poll Prepare Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        180,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "equal",
+              "value2": "ready"
+            }
+          ]
+        }
+      },
+      "id": "prepare-ready",
+      "name": "Prepare Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-prepare",
+      "name": "Wait Prepare",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/simulation/start' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { simulation_id: $('Create Simulation').item.json.data.simulation_id, platform: 'parallel', max_rounds: $('Set Inputs').item.json.maxRounds, enable_graph_memory_update: false, force: false } }}",
+        "options": {}
+      },
+      "id": "start-simulation",
+      "name": "Start Simulation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        620,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/simulation/' + $('Create Simulation').item.json.data.simulation_id + '/run-status' }}",
+        "options": {}
+      },
+      "id": "poll-run-status",
+      "name": "Poll Run Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "equal",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "simulation-complete",
+      "name": "Simulation Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "id": "wait-simulation",
+      "name": "Wait Simulation",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1060,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/report/generate' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { simulation_id: $('Create Simulation').item.json.data.simulation_id, force_regenerate: false } }}",
+        "options": {}
+      },
+      "id": "generate-report",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/report/generate/status' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $json.data.task_id } }}",
+        "options": {}
+      },
+      "id": "poll-report-status",
+      "name": "Poll Report Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "equal",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "report-complete",
+      "name": "Report Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1720,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-report",
+      "name": "Wait Report",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1720,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Set Inputs').item.json.mirofishBaseUrl + '/api/report/by-simulation/' + $('Create Simulation').item.json.data.simulation_id }}",
+        "options": {}
+      },
+      "id": "fetch-report",
+      "name": "Fetch Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1940,
+        -160
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Inputs": {
+      "main": [
+        [
+          {
+            "node": "Build Graph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Graph": {
+      "main": [
+        [
+          {
+            "node": "Poll Graph Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Graph Task": {
+      "main": [
+        [
+          {
+            "node": "Graph Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Graph Complete?": {
+      "main": [
+        [
+          {
+            "node": "Create Simulation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Graph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Graph": {
+      "main": [
+        [
+          {
+            "node": "Poll Graph Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Simulation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Simulation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Simulation": {
+      "main": [
+        [
+          {
+            "node": "Poll Prepare Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Prepare Status": {
+      "main": [
+        [
+          {
+            "node": "Prepare Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Ready?": {
+      "main": [
+        [
+          {
+            "node": "Start Simulation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Prepare": {
+      "main": [
+        [
+          {
+            "node": "Poll Prepare Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Simulation": {
+      "main": [
+        [
+          {
+            "node": "Poll Run Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Run Status": {
+      "main": [
+        [
+          {
+            "node": "Simulation Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulation Complete?": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Simulation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Simulation": {
+      "main": [
+        [
+          {
+            "node": "Poll Run Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Poll Report Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Report Status": {
+      "main": [
+        [
+          {
+            "node": "Report Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report Complete?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Report": {
+      "main": [
+        [
+          {
+            "node": "Poll Report Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "versionId": "1"
+}
