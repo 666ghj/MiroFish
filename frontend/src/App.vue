@@ -4,6 +4,21 @@
 
 <script setup>
 // 使用 Vue Router 来管理页面
+import { watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { locale, t } = useI18n()
+
+const applyMetaFromLocale = () => {
+  document.title = t('meta.title')
+  const description = document.querySelector('meta[name="description"]')
+  if (description) {
+    description.setAttribute('content', t('meta.description'))
+  }
+}
+
+onMounted(applyMetaFromLocale)
+watch(locale, applyMetaFromLocale)
 </script>
 
 <style>
