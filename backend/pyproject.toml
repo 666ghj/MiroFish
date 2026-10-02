@@ -33,6 +33,8 @@ dependencies = [
     # 工具库
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
+    # 安全：固定 cryptography 到 CVE-2026-26007 的上游补丁版本
+    "cryptography==46.0.5",
 ]
 
 [project.optional-dependencies]
