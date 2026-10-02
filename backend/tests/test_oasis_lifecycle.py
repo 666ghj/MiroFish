@@ -146,14 +146,16 @@ def test_close_env_guards(monkeypatch, client):
     assert r1.status_code == 400
     assert r1.get_json()["error"] == t("api.closeEnvRequiresConfirm")
 
-    # interview 在飞 → 409
-    simulation_api._INTERVIEW_INFLIGHT["count"] = 1
+    # 本仿真 interview 在飞 → 409（计数按 simulation_id 键控）
+    with simulation_api._INTERVIEW_INFLIGHT_LOCK:
+        simulation_api._INTERVIEW_INFLIGHT["sim-763"] = 1
     try:
         r2 = client.post("/api/simulation/close-env", json={"simulation_id": "sim-763", "confirm": True})
         assert r2.status_code == 409
         assert r2.get_json()["error"] == t("api.envBusy")
     finally:
-        simulation_api._INTERVIEW_INFLIGHT["count"] = 0
+        with simulation_api._INTERVIEW_INFLIGHT_LOCK:
+            simulation_api._INTERVIEW_INFLIGHT.pop("sim-763", None)
 
     # 服务层失败（超时）→ 502，且状态不被写成 COMPLETED（回归旧 :2858 bug）
     monkeypatch.setattr(
@@ -172,3 +174,39 @@ def test_close_env_guards(monkeypatch, client):
     r4 = client.post("/api/simulation/close-env", json={"simulation_id": "sim-763", "confirm": True})
     assert r4.status_code == 200
     assert saved[-1] == SimulationStatus.COMPLETED
+
+
+# 5b) 计数按仿真隔离——他仿真在飞时，本仿真 close-env 不被误拦（#763 并发修正回归）
+def test_close_env_not_blocked_by_other_simulation_inflight(monkeypatch, client):
+    _patch_env(monkeypatch, True)
+    saved = []
+    _patch_state(monkeypatch, SimulationStatus.AWAITING_FINISH, saved)
+    monkeypatch.setattr(
+        SimulationRunner, "close_simulation_env",
+        classmethod(lambda _cls, **_kw: {"success": True, "message": "ok"}),
+    )
+    with simulation_api._INTERVIEW_INFLIGHT_LOCK:
+        simulation_api._INTERVIEW_INFLIGHT["sim-other"] = 1
+    try:
+        resp = client.post("/api/simulation/close-env", json={"simulation_id": "sim-763", "confirm": True})
+        assert resp.status_code == 200
+        assert saved[-1] == SimulationStatus.COMPLETED
+    finally:
+        with simulation_api._INTERVIEW_INFLIGHT_LOCK:
+            simulation_api._INTERVIEW_INFLIGHT.pop("sim-other", None)
+
+
+# 5c) _active_task_count 单测：各仿真各回各值（互不串扰）
+def test_active_task_count_is_per_simulation(monkeypatch):
+    monkeypatch.setattr(
+        ReportManager, "get_report_by_simulation",
+        classmethod(lambda _cls, _sid: None),
+    )
+    with simulation_api._INTERVIEW_INFLIGHT_LOCK:
+        simulation_api._INTERVIEW_INFLIGHT["sim-A"] = 2
+    try:
+        assert simulation_api._active_task_count("sim-A") == 2
+        assert simulation_api._active_task_count("sim-B") == 0
+    finally:
+        with simulation_api._INTERVIEW_INFLIGHT_LOCK:
+            simulation_api._INTERVIEW_INFLIGHT.pop("sim-A", None)

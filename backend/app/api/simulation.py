@@ -4,6 +4,7 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 """
 
 import os
+import threading
 import traceback
 import functools
 from contextlib import nullcontext
@@ -27,25 +28,39 @@ from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
 
-# #763: interview/survey 在飞计数——close-env 守卫用（进行中不允许关环境）
-_INTERVIEW_INFLIGHT = {"count": 0}
+# #763: interview/survey 在飞计数（按 simulation_id 键控）——close-env 守卫用
+# （进行中不允许关环境；键控避免多仿真并发时跨仿真误拦）
+_INTERVIEW_INFLIGHT = {}
+_INTERVIEW_INFLIGHT_LOCK = threading.Lock()
 
 
 def _count_inflight(func):
-    """统计 interview 类请求在飞数量；必须放在 @simulation_bp.route 之下（route 注册包装后的函数）。"""
+    """统计 interview 类请求在飞数量（按 simulation_id 键控）。
+
+    必须放在 @simulation_bp.route 之下（route 注册包装后的函数）。
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        _INTERVIEW_INFLIGHT["count"] += 1
+        payload = request.get_json(silent=True) or {}
+        key = str(payload.get("simulation_id") or "")
+        with _INTERVIEW_INFLIGHT_LOCK:
+            _INTERVIEW_INFLIGHT[key] = _INTERVIEW_INFLIGHT.get(key, 0) + 1
         try:
             return func(*args, **kwargs)
         finally:
-            _INTERVIEW_INFLIGHT["count"] -= 1
+            with _INTERVIEW_INFLIGHT_LOCK:
+                remaining = _INTERVIEW_INFLIGHT.get(key, 1) - 1
+                if remaining > 0:
+                    _INTERVIEW_INFLIGHT[key] = remaining
+                else:
+                    _INTERVIEW_INFLIGHT.pop(key, None)
     return wrapper
 
 
 def _active_task_count(simulation_id: str) -> int:
-    """#763: 活跃任务数 = 在飞 interview 请求 + 报告生成中（ReportStatus.GENERATING）。"""
-    count = int(_INTERVIEW_INFLIGHT["count"])
+    """#763: 活跃任务数 = 该仿真在飞 interview 请求 + 报告生成中（ReportStatus.GENERATING）。"""
+    with _INTERVIEW_INFLIGHT_LOCK:
+        count = int(_INTERVIEW_INFLIGHT.get(str(simulation_id or ""), 0))
     try:
         from ..services.report_agent import ReportManager, ReportStatus
         report = ReportManager.get_report_by_simulation(simulation_id)
