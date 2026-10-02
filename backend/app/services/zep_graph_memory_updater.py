@@ -15,6 +15,8 @@ from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
+    ZEP_PROCESSED_SOFT_WINDOW_SECONDS,
+    ZEP_STOP_DRAIN_SOFT_WINDOW_SECONDS,
     call_zep_read_with_retry,
     get_zep_client,
 )
@@ -285,6 +287,12 @@ class ZepGraphMemoryUpdater:
         self._skipped_count = 0     # 被过滤跳过的活动数（DO_NOTHING）
         self._failed_batches: List[Dict[str, Any]] = []
         self._pending_episode_uuids: List[str] = []
+        # 降级停止的可观测状态：worker 未停时 tail 会被丢弃，调用方必须能从
+        # stats 里看到「带残留停止、丢了多少条」，不能默默当成功。
+        self._stop_degraded = False
+        self._dropped_tail_items = 0
+        # soft-confirm 超时后仍未读确认的 episode 数（ingestion_incomplete 的留痕）
+        self._unconfirmed_episode_count = 0
         
         logger.info(f"ZepGraphMemoryUpdater 初始化完成: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
     
@@ -311,27 +319,79 @@ class ZepGraphMemoryUpdater:
         logger.info(f"ZepGraphMemoryUpdater 已启动: graph_id={self.graph_id}")
     
     def stop(self):
-        """Drain the worker, flush tail events, and wait for Cloud ingestion."""
+        """Drain the worker, flush tail events, and soft-confirm Cloud ingestion.
+
+        The join, the tail flush, and the confirm wait in
+        ``_wait_for_pending_episodes`` each use the soft window, so a worker
+        stuck in a network retry or a slow tail cannot hold the simulation's
+        terminal state behind the full hard timeout (#795 follow-up; the
+        soft-confirm semantics of #798 apply to the drain too). The bound is
+        checkpoint-style, not a wall-clock cap: the deadline is checked
+        between sends, so one in-flight ``graph.add`` (up to the HTTP timeout)
+        or one read-retry sequence can overshoot it, and stop() as a whole can
+        take up to roughly two soft windows.
+
+        Degrading stays observable instead of passing silently: a batch that
+        already failed always raises -- a known-incomplete graph write must
+        not be reported as success -- and a worker that cannot be stopped
+        records the dropped tail in ``get_stats()``.
+        """
         deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        soft_deadline = min(
+            deadline,
+            time.time() + ZEP_STOP_DRAIN_SOFT_WINDOW_SECONDS,
+        )
         # Serialize the accepting->closed transition with add_activity's
         # check+enqueue operation. This closes the small race where a producer
         # could enqueue after both the worker and final flush had exited.
         with self._acceptance_lock:
             self._running = False
 
+        worker_stopped = True
+        join_timeout = 0.0
         if self._worker_thread and self._worker_thread.is_alive():
-            join_timeout = max(0.0, deadline - time.time())
+            join_timeout = max(0.0, soft_deadline - time.time())
             self._worker_thread.join(timeout=join_timeout)
-            if self._worker_thread.is_alive():
-                raise TimeoutError(
-                    f"Zep updater worker did not stop within {join_timeout:.0f}s"
+            worker_stopped = not self._worker_thread.is_alive()
+
+        if worker_stopped:
+            # The worker has drained the queue. Only now is it safe to flush
+            # buffers; doing this before join loses an item already dequeued by
+            # the worker but not yet buffered.
+            try:
+                self._flush_remaining(deadline=soft_deadline)
+            except TimeoutError as error:
+                logger.warning(
+                    "Zep updater tail flush did not finish within the soft "
+                    "window; the remaining activities stay buffered for a "
+                    "later retry (simulation_id=%s): %s",
+                    self.simulation_id,
+                    error,
                 )
+        else:
+            # Between its buffer snapshot and the matching delete, a live
+            # worker may already be sending the same activities a flush would
+            # replay; graph.add() has no idempotency key, so the tail is
+            # deliberately left untouched. The loss is recorded below instead
+            # of passing as a clean stop.
+            queued = self._activity_queue.qsize()
+            buffered = sum(len(items) for items in self._platform_buffers.values())
+            self._stop_degraded = True
+            self._dropped_tail_items += queued + buffered
+            logger.warning(
+                "Zep updater worker did not stop within %.1fs; skipping the "
+                "tail flush so the terminal state is not blocked "
+                "(simulation_id=%s, dropped=%d, queue=%d, buffered=%d)",
+                join_timeout,
+                self.simulation_id,
+                queued + buffered,
+                queued,
+                buffered,
+            )
 
-        # The worker has drained the queue. Only now is it safe to flush
-        # buffers; doing this before join loses an item already dequeued by the
-        # worker but not yet buffered.
-        self._flush_remaining(deadline=deadline)
-
+        # A batch that already failed leaves the graph known-incomplete; that
+        # must surface even when the drain above degraded, because callers
+        # (simulation_runner) gate the terminal status on this raise.
         if self._failed_batches:
             raise RuntimeError(
                 f"{len(self._failed_batches)} Zep activity batch(es) failed; "
@@ -597,34 +657,68 @@ class ZepGraphMemoryUpdater:
                     del self._platform_buffers[platform][:processed_count]
 
     def _wait_for_pending_episodes(self, *, deadline: float | None = None) -> None:
+        """Soft-confirm Zep ingestion without blocking terminal state forever.
+
+        graph.add() returning a UUID is the write-confirmation (issue #795:
+        data is already visible in Zep while the UI is stuck on "waiting for
+        graph write"). `processed` is an async extraction flag that may never
+        flip for a written episode, so it must not gate the terminal state.
+        Poll briefly for readability; episodes still unconfirmed after the
+        soft window are downgraded to a warning instead of raising TimeoutError.
+        """
         pending = set(self._pending_episode_uuids)
         if not pending:
             return
 
         if deadline is None:
             deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        soft_deadline = min(
+            deadline,
+            time.time() + ZEP_PROCESSED_SOFT_WINDOW_SECONDS,
+        )
         while pending:
-            if time.time() >= deadline:
-                raise TimeoutError(
-                    f"Zep simulation ingestion timed out with {len(pending)} "
-                    "episode(s) pending"
-                )
+            if time.time() >= soft_deadline:
+                break
             for episode_uuid in list(pending):
-                episode = call_zep_read_with_retry(
-                    lambda: self.client.graph.episode.get(uuid_=episode_uuid),
-                    operation_name=f"poll simulation episode {episode_uuid}",
-                )
-                if getattr(episode, "processed", False):
+                try:
+                    episode = call_zep_read_with_retry(
+                        lambda: self.client.graph.episode.get(uuid_=episode_uuid),
+                        operation_name=f"poll simulation episode {episode_uuid}",
+                    )
+                except Exception:
+                    # Read-path failure must not block an already-confirmed write.
+                    continue
+                if episode is not None:
                     pending.remove(episode_uuid)
             if pending:
                 time.sleep(3)
+        if pending:
+            self._unconfirmed_episode_count += len(pending)
+            logger.warning(
+                "Zep ingestion soft-confirm window elapsed with %d episode(s) "
+                "written but not read-confirmed; not blocking terminal state "
+                "(simulation_id=%s)",
+                len(pending),
+                self.simulation_id,
+            )
         self._pending_episode_uuids = []
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         with self._buffer_lock:
             buffer_sizes = {p: len(b) for p, b in self._platform_buffers.items()}
-        
+
+        # #795 review: "report when graph data is incomplete" ——
+        # 把三路不完整信号（失败批次 / 降级停止丢弃的 tail / soft-confirm 超时未确认）
+        # 汇总为一个显式、可查询的标志；纯 additive，不改变任何现有行为与终态语义。
+        reasons = []
+        if self._failed_batches:
+            reasons.append("failed_batches")
+        if self._stop_degraded:
+            reasons.append("degraded_stop")
+        if self._unconfirmed_episode_count:
+            reasons.append("unconfirmed_episodes")
+
         return {
             "graph_id": self.graph_id,
             "batch_size": self.BATCH_SIZE,
@@ -637,6 +731,12 @@ class ZepGraphMemoryUpdater:
             "queue_size": self._activity_queue.qsize(),
             "buffer_sizes": buffer_sizes,                # 各平台缓冲区大小
             "running": self._running,
+            # 降级停止的可观测状态（worker 未停 = 带残留停止，不是干净收尾）
+            "stop_degraded": self._stop_degraded,
+            "dropped_tail_items": self._dropped_tail_items,
+            # #795: 显式不完整标志（三路信号汇总，见上 reasons）
+            "ingestion_incomplete": bool(reasons),
+            "ingestion_incomplete_reasons": reasons,
         }
 
 
