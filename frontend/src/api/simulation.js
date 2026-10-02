@@ -159,7 +159,8 @@ export const getSimulationActions = (simulationId, params = {}) => {
  * @param {Object} data - { simulation_id, timeout? }
  */
 export const closeSimulationEnv = (data) => {
-  return service.post('/api/simulation/close-env', data)
+  // #763: 后端要求显式确认；自动流程一律不再关环境，只有显式 Finish 路径会调用本函数。
+  return service.post('/api/simulation/close-env', { confirm: true, ...(data || {}) })
 }
 
 /**

@@ -387,6 +387,8 @@
     "globalInterviewTimeout": "Global interview response timed out: {error}",
     "envRunning": "Environment is running and ready for Interview commands",
     "envNotRunningShort": "Environment not running or closed",
+    "closeEnvRequiresConfirm": "Closing the environment requires explicit confirmation (confirm=true)",
+    "envBusy": "Interview or report generation in progress; cannot close the environment yet",
     "requireGraphIdAndQuery": "Please provide graph_id and query",
     "initReportAgent": "Initializing Report Agent..."
   },
@@ -453,6 +455,7 @@
     "preparingScripts": "Preparing Scripts"
   },
   "log": {
+    "simEnvKeptAlive": "Simulation environment kept alive (no auto-close; explicit confirmation required to close)",
     "preparingGoBack": "Preparing to return to Step 2, closing simulation...",
     "closingSimEnv": "Closing simulation environment...",
     "simEnvClosed": "✓ Simulation environment closed",

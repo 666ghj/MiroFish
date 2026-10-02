@@ -4,7 +4,9 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 """
 
 import os
+import threading
 import traceback
+import functools
 from contextlib import nullcontext
 from flask import request, jsonify, send_file
 
@@ -25,6 +27,48 @@ from ..utils.zep_lifecycle import get_graph_readers, graph_lifecycle_lock
 from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
+
+# #763: interview/survey 在飞计数（按 simulation_id 键控）——close-env 守卫用
+# （进行中不允许关环境；键控避免多仿真并发时跨仿真误拦）
+_INTERVIEW_INFLIGHT = {}
+_INTERVIEW_INFLIGHT_LOCK = threading.Lock()
+
+
+def _count_inflight(func):
+    """统计 interview 类请求在飞数量（按 simulation_id 键控）。
+
+    必须放在 @simulation_bp.route 之下（route 注册包装后的函数）。
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        payload = request.get_json(silent=True) or {}
+        key = str(payload.get("simulation_id") or "")
+        with _INTERVIEW_INFLIGHT_LOCK:
+            _INTERVIEW_INFLIGHT[key] = _INTERVIEW_INFLIGHT.get(key, 0) + 1
+        try:
+            return func(*args, **kwargs)
+        finally:
+            with _INTERVIEW_INFLIGHT_LOCK:
+                remaining = _INTERVIEW_INFLIGHT.get(key, 1) - 1
+                if remaining > 0:
+                    _INTERVIEW_INFLIGHT[key] = remaining
+                else:
+                    _INTERVIEW_INFLIGHT.pop(key, None)
+    return wrapper
+
+
+def _active_task_count(simulation_id: str) -> int:
+    """#763: 活跃任务数 = 该仿真在飞 interview 请求 + 报告生成中（ReportStatus.GENERATING）。"""
+    with _INTERVIEW_INFLIGHT_LOCK:
+        count = int(_INTERVIEW_INFLIGHT.get(str(simulation_id or ""), 0))
+    try:
+        from ..services.report_agent import ReportManager, ReportStatus
+        report = ReportManager.get_report_by_simulation(simulation_id)
+        if report is not None and getattr(report, "status", None) == ReportStatus.GENERATING:
+            count += 1
+    except Exception:
+        pass
+    return count
 
 
 def _get_default_platform(simulation_id: str) -> str:
@@ -2302,6 +2346,7 @@ def get_simulation_comments(simulation_id: str):
 # ============== Interview 采访接口 ==============
 
 @simulation_bp.route('/interview', methods=['POST'])
+@_count_inflight
 def interview_agent():
     """
     采访单个Agent
@@ -2431,6 +2476,7 @@ def interview_agent():
 
 
 @simulation_bp.route('/interview/batch', methods=['POST'])
+@_count_inflight
 def interview_agents_batch():
     """
     批量采访多个Agent
@@ -2569,6 +2615,7 @@ def interview_agents_batch():
 
 
 @simulation_bp.route('/interview/all', methods=['POST'])
+@_count_inflight
 def interview_all_agents():
     """
     全局采访 - 使用相同问题采访所有Agent
@@ -2783,6 +2830,15 @@ def get_env_status():
         # 获取更详细的状态信息
         env_status = SimulationRunner.get_env_status_detail(simulation_id)
 
+        # #763: 生命周期字段（awaiting_finish 表示"跑完但环境仍存活，可 interview"）
+        lifecycle = None
+        try:
+            _state = SimulationManager().get_simulation(simulation_id)
+            lifecycle = _state.status.value if _state and getattr(_state, "status", None) else None
+        except Exception:
+            lifecycle = None
+        active_tasks = _active_task_count(simulation_id)
+
         if env_alive:
             message = t('api.envRunning')
         else:
@@ -2793,6 +2849,9 @@ def get_env_status():
             "data": {
                 "simulation_id": simulation_id,
                 "env_alive": env_alive,
+                "lifecycle": lifecycle,
+                "awaiting_finish": lifecycle == SimulationStatus.AWAITING_FINISH.value,
+                "active_tasks": active_tasks,
                 "twitter_available": env_status.get("twitter_available", False),
                 "reddit_available": env_status.get("reddit_available", False),
                 "message": message
@@ -2845,23 +2904,39 @@ def close_simulation_env():
                 "success": False,
                 "error": t('api.requireSimulationId')
             }), 400
+
+        # #763: 关闭环境必须显式确认（confirm=true），防 UI 流程自动关掉 OASIS
+        if data.get('confirm') is not True:
+            return jsonify({
+                "success": False,
+                "error": t('api.closeEnvRequiresConfirm')
+            }), 400
+
+        # #763: interview/survey 或报告生成进行中 → 不允许关闭环境
+        active_tasks = _active_task_count(simulation_id)
+        if active_tasks > 0:
+            return jsonify({
+                "success": False,
+                "error": t('api.envBusy'),
+                "active_tasks": active_tasks
+            }), 409
         
         result = SimulationRunner.close_simulation_env(
             simulation_id=simulation_id,
             timeout=timeout
         )
         
-        # 更新模拟状态
+        # #763: 只有真正关闭成功才置 COMPLETED（旧实现无条件置 completed，关失败也当成功）
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        if state:
+        if state and result.get("success"):
             state.status = SimulationStatus.COMPLETED
             manager._save_simulation_state(state)
         
         return jsonify({
             "success": result.get("success", False),
             "data": result
-        })
+        }), (200 if result.get("success") else 502)
         
     except ValueError as e:
         return jsonify({

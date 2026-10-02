@@ -849,8 +849,24 @@ def check_report_status(simulation_id: str):
         report_status = report.status.value if report else None
         report_id = report.report_id if report else None
         
-        # 只有报告完成后才解锁interview
-        interview_unlocked = has_report and report.status == ReportStatus.COMPLETED
+        # #763: 报告完成 或 OASIS 环境仍存活（awaiting-finish 期）都可 interview；
+        # 报告生成本身也要用现场采访证据，环境先关会导致证据丢失。
+        env_alive = False
+        try:
+            env_alive = bool(SimulationRunner.check_env_alive(simulation_id))
+        except Exception:
+            env_alive = False
+        lifecycle = None
+        try:
+            _state = SimulationManager().get_simulation(simulation_id)
+            lifecycle = _state.status.value if _state and getattr(_state, "status", None) else None
+        except Exception:
+            lifecycle = None
+        # #763：以"环境活着"为准解锁 interview（旧口径=报告完成，会在环境已关时给出
+        # 误导性解锁——调用仍会 400）。环境状态不可得时回退到旧的报告完成口径。
+        interview_unlocked = bool(env_alive) or (
+            has_report and report.status == ReportStatus.COMPLETED and lifecycle is None
+        )
         
         return jsonify({
             "success": True,
@@ -859,7 +875,9 @@ def check_report_status(simulation_id: str):
                 "has_report": has_report,
                 "report_status": report_status,
                 "report_id": report_id,
-                "interview_unlocked": interview_unlocked
+                "interview_unlocked": interview_unlocked,
+                "env_alive": env_alive,
+                "lifecycle": lifecycle
             }
         })
         

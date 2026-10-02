@@ -31,6 +31,7 @@ class SimulationStatus(str, Enum):
     STOPPING = "stopping"
     PAUSED = "paused"
     STOPPED = "stopped"      # 模拟被手动停止
+    AWAITING_FINISH = "awaiting_finish"  # #763: 跑完但 OASIS 仍存活，等待显式 Finish/close-env
     COMPLETED = "completed"  # 模拟自然完成
     FAILED = "failed"
 

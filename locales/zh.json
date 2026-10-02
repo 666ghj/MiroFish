@@ -387,6 +387,8 @@
     "globalInterviewTimeout": "等待全局Interview响应超时: {error}",
     "envRunning": "环境正在运行，可以接收Interview命令",
     "envNotRunningShort": "环境未运行或已关闭",
+    "closeEnvRequiresConfirm": "关闭环境需要显式确认（confirm=true）",
+    "envBusy": "采访或报告生成进行中，暂不能关闭环境",
     "requireGraphIdAndQuery": "请提供 graph_id 和 query",
     "initReportAgent": "初始化Report Agent..."
   },
@@ -453,6 +455,7 @@
     "preparingScripts": "准备模拟脚本"
   },
   "log": {
+    "simEnvKeptAlive": "已保留模拟环境（不再自动关闭，环境关闭需显式确认）",
     "preparingGoBack": "准备返回 Step 2，正在关闭模拟...",
     "closingSimEnv": "正在关闭模拟环境...",
     "simEnvClosed": "✓ 模拟环境已关闭",

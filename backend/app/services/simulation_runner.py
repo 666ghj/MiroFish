@@ -266,6 +266,14 @@ class SimulationRunner:
         status = status_map.get(runner_status)
         if status is None:
             return
+        # #763: 跑完（COMPLETED/STOPPED）但 OASIS 仍存活 → awaiting_finish，
+        # 允许 interview/survey；只有显式 close-env 成功后才落到终态。
+        if runner_status in (RunnerStatus.COMPLETED, RunnerStatus.STOPPED):
+            try:
+                if cls.check_env_alive(simulation_id):
+                    status = SimulationStatus.AWAITING_FINISH
+            except Exception:
+                pass
         try:
             manager = SimulationManager()
             simulation = manager.get_simulation(simulation_id)
@@ -1900,6 +1908,7 @@ class SimulationRunner:
         if not ipc_client.check_env_alive():
             return {
                 "success": True,
+                "already_closed": True,
                 "message": "环境已经关闭"
             }
         
@@ -1908,17 +1917,26 @@ class SimulationRunner:
         try:
             response = ipc_client.send_close_env(timeout=timeout)
             
+            ok = response.status.value == "completed"
+            if ok:
+                # #763: 显式关闭成功 → 落终态（awaiting_finish → completed）
+                try:
+                    cls._sync_simulation_status(simulation_id, RunnerStatus.COMPLETED)
+                except Exception as sync_error:
+                    logger.error(f"关闭后状态同步失败: {sync_error}")
             return {
-                "success": response.status.value == "completed",
+                "success": ok,
                 "message": "环境关闭命令已发送",
                 "result": response.result,
                 "timestamp": response.timestamp
             }
         except TimeoutError:
-            # 超时可能是因为环境正在关闭
+            # #763: 不再静默返回成功——无法确认环境已关闭时必须如实上报，
+            # 否则 close-env 会把失败也写成 COMPLETED（:2858 旧 bug 的服务层来源）。
             return {
-                "success": True,
-                "message": "环境关闭命令已发送（等待响应超时，环境可能正在关闭）"
+                "success": False,
+                "timeout": True,
+                "message": "环境关闭命令等待响应超时，未能确认环境已关闭"
             }
     
     @classmethod
