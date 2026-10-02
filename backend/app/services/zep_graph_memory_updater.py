@@ -291,6 +291,8 @@ class ZepGraphMemoryUpdater:
         # stats 里看到「带残留停止、丢了多少条」，不能默默当成功。
         self._stop_degraded = False
         self._dropped_tail_items = 0
+        # soft-confirm 超时后仍未读确认的 episode 数（ingestion_incomplete 的留痕）
+        self._unconfirmed_episode_count = 0
         
         logger.info(f"ZepGraphMemoryUpdater 初始化完成: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
     
@@ -691,6 +693,7 @@ class ZepGraphMemoryUpdater:
             if pending:
                 time.sleep(3)
         if pending:
+            self._unconfirmed_episode_count += len(pending)
             logger.warning(
                 "Zep ingestion soft-confirm window elapsed with %d episode(s) "
                 "written but not read-confirmed; not blocking terminal state "
@@ -704,7 +707,18 @@ class ZepGraphMemoryUpdater:
         """获取统计信息"""
         with self._buffer_lock:
             buffer_sizes = {p: len(b) for p, b in self._platform_buffers.items()}
-        
+
+        # #795 review: "report when graph data is incomplete" ——
+        # 把三路不完整信号（失败批次 / 降级停止丢弃的 tail / soft-confirm 超时未确认）
+        # 汇总为一个显式、可查询的标志；纯 additive，不改变任何现有行为与终态语义。
+        reasons = []
+        if self._failed_batches:
+            reasons.append("failed_batches")
+        if self._stop_degraded:
+            reasons.append("degraded_stop")
+        if self._unconfirmed_episode_count:
+            reasons.append("unconfirmed_episodes")
+
         return {
             "graph_id": self.graph_id,
             "batch_size": self.BATCH_SIZE,
@@ -720,6 +734,9 @@ class ZepGraphMemoryUpdater:
             # 降级停止的可观测状态（worker 未停 = 带残留停止，不是干净收尾）
             "stop_degraded": self._stop_degraded,
             "dropped_tail_items": self._dropped_tail_items,
+            # #795: 显式不完整标志（三路信号汇总，见上 reasons）
+            "ingestion_incomplete": bool(reasons),
+            "ingestion_incomplete_reasons": reasons,
         }
 
 

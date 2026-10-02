@@ -62,6 +62,7 @@ def test_stop_drains_an_immediately_queued_tail_activity(monkeypatch):
     assert len(writes) == 1
     assert updater.get_stats()["items_sent"] == 1
     assert updater.get_stats()["queue_size"] == 0
+    assert updater.get_stats()["ingestion_incomplete"] is False
 
 
 def test_network_write_happens_outside_the_buffer_lock(monkeypatch):
@@ -335,6 +336,30 @@ def test_wait_read_failure_on_one_episode_does_not_block_others(monkeypatch):
     assert updater.get_stats()["pending_episode_count"] == 0
 
 
+def test_soft_confirm_timeout_leaves_an_incomplete_marker(monkeypatch):
+    # Soft-confirm 超时降级为 warning 的同时，未确认数必须留痕：调用方不翻日志
+    # 也能从 get_stats() 读到 ingestion_incomplete（#795 review 的"report"面）。
+    updater = _updater(
+        monkeypatch,
+        lambda **_kwargs: SimpleNamespace(uuid_="episode-1"),
+    )
+    updater._pending_episode_uuids = ["episode-x"]
+    updater.client.graph.episode.get = lambda **_kwargs: None
+    monkeypatch.setattr(updater_module, "ZEP_PROCESSED_SOFT_WINDOW_SECONDS", 1)
+    monkeypatch.setattr(updater_module.logger, "warning", lambda *args: None)
+    timestamps = iter([0.0, 0.0, 5.0])
+    monkeypatch.setattr(updater_module.time, "time", lambda: next(timestamps))
+    monkeypatch.setattr(updater_module.time, "sleep", lambda _seconds: None)
+
+    updater._wait_for_pending_episodes()
+
+    stats = updater.get_stats()
+    assert updater._unconfirmed_episode_count == 1
+    assert stats["pending_episode_count"] == 0  # 列表按原语义清空
+    assert stats["ingestion_incomplete"] is True
+    assert "unconfirmed_episodes" in stats["ingestion_incomplete_reasons"]
+
+
 def test_stop_degrades_when_the_worker_does_not_stop_in_the_soft_window(monkeypatch):
     # #795 follow-up: the drain join used to be bounded only by the 600s hard
     # deadline, so a worker stuck in a network retry held the simulation's
@@ -380,6 +405,8 @@ def test_stop_degrades_when_the_worker_does_not_stop_in_the_soft_window(monkeypa
     stats = updater.get_stats()
     assert stats["stop_degraded"] is True
     assert stats["dropped_tail_items"] == 1
+    assert stats["ingestion_incomplete"] is True
+    assert "degraded_stop" in stats["ingestion_incomplete_reasons"]
 
 
 def test_stop_still_reports_failed_batches_when_the_worker_never_stops(monkeypatch):
@@ -412,6 +439,10 @@ def test_stop_still_reports_failed_batches_when_the_worker_never_stops(monkeypat
     finally:
         release.set()
         worker.join(timeout=1)
+
+    stats = updater.get_stats()
+    assert stats["ingestion_incomplete"] is True
+    assert "failed_batches" in stats["ingestion_incomplete_reasons"]
 
 
 def test_stop_degrades_to_a_warning_when_the_tail_flush_misses_its_window(monkeypatch):
