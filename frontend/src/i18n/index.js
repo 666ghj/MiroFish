@@ -14,7 +14,8 @@ for (const path in localeFiles) {
   }
 }
 
-const savedLocale = localStorage.getItem('locale') || 'en'
+const browserLocale = (typeof navigator !== 'undefined' && navigator.language && navigator.language.toLowerCase().startsWith('pt')) ? 'pt-BR' : 'en'
+const savedLocale = localStorage.getItem('locale') || browserLocale
 
 const i18n = createI18n({
   legacy: false,
