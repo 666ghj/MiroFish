@@ -3,7 +3,17 @@
 </template>
 
 <script setup>
-// 使用 Vue Router 来管理页面
+import { watchEffect } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t, locale } = useI18n()
+
+watchEffect(() => {
+  document.title = t('meta.title')
+  document.querySelector('meta[name="description"]')
+    ?.setAttribute('content', t('meta.description'))
+  document.documentElement.lang = locale.value
+})
 </script>
 
 <style>
