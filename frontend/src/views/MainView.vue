@@ -275,10 +275,11 @@ const updatePhaseByStatus = (status) => {
 const startBuildGraph = async () => {
   try {
     currentPhase.value = 1
-    buildProgress.value = { progress: 0, message: 'Starting build...' }
-    addLog('Initiating graph build...')
+    buildProgress.value = { progress: 0, message: t('progress.startBuildingGraph') }
+    addLog(t('progress.startBuildingGraph'))
     
-    const res = await buildGraph({ project_id: currentProjectId.value })
+    const currentLoc = localStorage.getItem('locale') || (i18n.global?.locale?.value || 'pt-BR')
+    const res = await buildGraph({ project_id: currentProjectId.value, locale: currentLoc })
     if (res.success) {
       if (res.data.reused && res.data.graph_id) {
         currentPhase.value = 2
@@ -291,11 +292,11 @@ const startBuildGraph = async () => {
         return
       }
 
-      addLog(`Graph build task started. Task ID: ${res.data.task_id}`)
+      addLog(`${t('api.graphBuildStarted', { taskId: res.data.task_id })}`)
       startPollingTask(res.data.task_id)
     } else {
       error.value = res.error
-      addLog(`Error starting build: ${res.error}`)
+      addLog(`${t('common.error')}: ${res.error}`)
     }
   } catch (err) {
     error.value = err.message
@@ -346,7 +347,7 @@ const pollTaskStatus = async (taskId) => {
       buildProgress.value = { progress: task.progress || 0, message: task.message }
       
       if (task.status === 'completed') {
-        addLog('Graph build task completed.')
+        addLog(t('progress.graphBuildComplete'))
         stopPolling()
         stopGraphPolling() // Stop polling, do final load
         currentPhase.value = 2
@@ -360,7 +361,7 @@ const pollTaskStatus = async (taskId) => {
       } else if (task.status === 'failed') {
         stopPolling()
         error.value = task.error
-        addLog(`Graph build task failed: ${task.error}`)
+        addLog(`${t('progress.buildFailed', { error: task.error })}`)
       }
     }
   } catch (e) {
@@ -370,17 +371,17 @@ const pollTaskStatus = async (taskId) => {
 
 const loadGraph = async (graphId) => {
   graphLoading.value = true
-  addLog(`Loading full graph data: ${graphId}`)
+  addLog(t('log.loadingSimData', { id: graphId }))
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('Graph data loaded successfully.')
+      addLog(t('log.graphDataLoadSuccess'))
     } else {
-      addLog(`Failed to load graph data: ${res.error}`)
+      addLog(`${t('log.graphLoadFailed', { error: res.error })}`)
     }
   } catch (e) {
-    addLog(`Exception loading graph: ${e.message}`)
+    addLog(`${t('log.loadException', { error: e.message })}`)
   } finally {
     graphLoading.value = false
   }
