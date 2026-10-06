@@ -33,6 +33,10 @@ from .zep_tools import (
 logger = get_logger('mirofish.report_agent')
 
 
+class UnexecutedToolCallError(RuntimeError):
+    """章节最终内容仍是未执行的工具调用，不能作为分析结果保存"""
+
+
 class ReportLogger:
     """
     Report Agent 详细日志记录器
@@ -830,6 +834,12 @@ REACT_UNUSED_TOOLS_HINT = "\n💡 你还没有使用过: {unused_list}，建议�
 
 REACT_FORCE_FINAL_MSG = "已达到工具调用限制，请直接输出 Final Answer: 并生成章节内容。"
 
+REACT_UNEXECUTED_TOOL_CALL_MSG = (
+    "【格式错误】你的回复中包含无法执行的工具调用（标签或 JSON 格式不完整），它不会被执行，也不能作为章节内容。\n"
+    "请重新回复：要么输出一个格式完整的 <tool_call>{...}</tool_call>，"
+    '要么以 "Final Answer:" 开头输出不含任何工具调用的章节正文。'
+)
+
 # ── Chat prompt ──
 
 CHAT_SYSTEM_PROMPT_TEMPLATE = """\
@@ -1081,13 +1091,19 @@ class ReportAgent:
         tool_calls = []
 
         # 格式1: XML风格（标准格式）
-        xml_pattern = r'<tool_call>\s*(\{.*?\})\s*</tool_call>'
-        for match in re.finditer(xml_pattern, response, re.DOTALL):
+        # 从 <tool_call> 之后直接解码 JSON，不依赖闭合标签：
+        # 模型偶尔会写出 </tool_cal> 之类的残缺闭合标签，或干脆省略闭合标签 (#599)
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r'<tool_call>\s*', response):
+            start = match.end()
+            if not response.startswith('{', start):
+                continue
             try:
-                call_data = json.loads(match.group(1))
-                tool_calls.append(call_data)
+                call_data, _ = decoder.raw_decode(response, start)
             except json.JSONDecodeError:
-                pass
+                continue
+            if isinstance(call_data, dict):
+                tool_calls.append(call_data)
 
         if tool_calls:
             return tool_calls
@@ -1129,7 +1145,13 @@ class ReportAgent:
                 data["parameters"] = data.pop("params")
             return True
         return False
-    
+
+    def _has_unexecuted_tool_call(self, content: str) -> bool:
+        """章节正文中是否残留了未执行的工具调用（标签或可解析的工具调用 JSON）"""
+        if re.search(r'<\s*/?\s*tool_ca', content, re.IGNORECASE):
+            return True
+        return bool(self._parse_tool_calls(content))
+
     def _get_tools_description(self) -> str:
         """生成工具描述文本"""
         desc_parts = ["可用工具："]
@@ -1431,6 +1453,11 @@ class ReportAgent:
 
                 # 正常结束
                 final_answer = cleaned_response.split("Final Answer:")[-1].strip()
+                if self._has_unexecuted_tool_call(final_answer):
+                    logger.warning(t('report.sectionUnexecutedToolCall', title=section.title, iteration=iteration + 1))
+                    messages.append({"role": "assistant", "content": cleaned_response})
+                    messages.append({"role": "user", "content": REACT_UNEXECUTED_TOOL_CALL_MSG})
+                    continue
                 logger.info(t('report.sectionGenDone', title=section.title, count=tool_calls_count))
 
                 if self.report_logger:
@@ -1514,6 +1541,12 @@ class ReportAgent:
             cleaned_response = ReportAgent._strip_fake_tool_results(response)
             messages.append({"role": "assistant", "content": cleaned_response})
 
+            # 回复里有工具调用的痕迹但无法解析：不能当作正文采纳
+            if self._has_unexecuted_tool_call(cleaned_response):
+                logger.warning(t('report.sectionUnexecutedToolCall', title=section.title, iteration=iteration + 1))
+                messages.append({"role": "user", "content": REACT_UNEXECUTED_TOOL_CALL_MSG})
+                continue
+
             if tool_calls_count < min_tool_calls:
                 # 工具调用次数不足，推荐未用过的工具
                 unused_tools = all_tools - used_tools
@@ -1561,6 +1594,14 @@ class ReportAgent:
             final_answer = response.split("Final Answer:")[-1].strip()
         else:
             final_answer = response
+
+        if response is not None:
+            final_answer = ReportAgent._strip_fake_tool_results(final_answer)
+            if self._has_unexecuted_tool_call(final_answer):
+                logger.error(t('report.sectionUnexecutedToolCallFailed', title=section.title))
+                raise UnexecutedToolCallError(
+                    t('report.sectionUnexecutedToolCallFailed', title=section.title)
+                )
         
         # 记录章节内容生成完成日志
         if self.report_logger:
