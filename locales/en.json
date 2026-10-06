@@ -597,6 +597,8 @@
     "sectionMaxIter": "Section {title} reached max iterations, forcing generation",
     "sectionForceFailed": "Section {title} force-finish LLM returned None, using default error message",
     "sectionGenFailedContent": "(This section failed to generate: LLM returned empty response, please retry later)",
+    "sectionUnexecutedToolCall": "Section {title} response contains a tool call that could not be executed (iteration {iteration}); asking the LLM to reply again",
+    "sectionUnexecutedToolCallFailed": "Section {title} still contains an unexecuted tool call after forced finish; refusing to save it as section content",
     "outlineSavedToFile": "Outline saved to file: {reportId}/outline.json",
     "sectionSaved": "Section saved: {reportId}/section_{sectionNum}.md",
     "reportGenDone": "Report generation complete: {reportId}",
