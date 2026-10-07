@@ -101,9 +101,10 @@
               <span>{{ $t('step5.chatWithReportAgent') }}</span>
             </button>
             <div class="agent-dropdown" v-if="profiles.length > 0">
-              <button 
+              <button
                 class="tab-pill agent-pill"
                 :class="{ active: activeTab === 'chat' && chatTarget === 'agent' }"
+                :disabled="isSending"
                 @click="toggleAgentDropdown"
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -528,6 +529,8 @@ const toggleAgentDropdown = () => {
 }
 
 const selectAgent = (agent, idx) => {
+  // 发送中不允许切换：切换会整体替换 chatHistory，等待中的回复会写错归属
+  if (isSending.value) return
   // 保存当前对话记录
   saveChatHistory()
   
@@ -713,9 +716,16 @@ const sendToAgent = async (message) => {
   if (!selectedAgent.value || selectedAgentIndex.value === null) {
     throw new Error(t('step5.selectAgentFirst'))
   }
-  
-  addLog(t('log.sendToAgent', { name: selectedAgent.value.username, message: message.substring(0, 50) }))
-  
+
+  // 先锁定目标身份再发请求。此前在 await 之后才读 selectedAgentIndex，
+  // 用户在等待回复期间切换 agent 时，回复会被推进切换后 agent 的聊天框
+  // 并以其名义缓存（issue #351）。
+  const targetIndex = selectedAgentIndex.value
+  const targetName = selectedAgent.value.username
+  const targetKey = `agent_${targetIndex}`
+
+  addLog(t('log.sendToAgent', { name: targetName, message: message.substring(0, 50) }))
+
   // Build prompt with chat history
   let prompt = message
   if (chatHistory.value.length > 1) {
@@ -726,11 +736,11 @@ const sendToAgent = async (message) => {
       .join('\n')
     prompt = `以下是我们之前的对话：\n${historyContext}\n\n现在我的新问题是：${message}`
   }
-  
+
   const res = await interviewAgents({
     simulation_id: props.simulationId,
     interviews: [{
-      agent_id: selectedAgentIndex.value,
+      agent_id: targetIndex,
       prompt: prompt
     }]
   })
@@ -743,12 +753,11 @@ const sendToAgent = async (message) => {
     
     // 将对象字典转换为数组，优先获取 reddit 平台的回复
     let responseContent = null
-    const agentId = selectedAgentIndex.value
-    
+
     if (typeof resultsDict === 'object' && !Array.isArray(resultsDict)) {
       // 优先使用 reddit 平台回复，其次 twitter
-      const redditKey = `reddit_${agentId}`
-      const twitterKey = `twitter_${agentId}`
+      const redditKey = `reddit_${targetIndex}`
+      const twitterKey = `twitter_${targetIndex}`
       const agentResult = resultsDict[redditKey] || resultsDict[twitterKey] || Object.values(resultsDict)[0]
       if (agentResult) {
         responseContent = agentResult.response || agentResult.answer
@@ -757,14 +766,23 @@ const sendToAgent = async (message) => {
       // 兼容数组格式
       responseContent = resultsDict[0].response || resultsDict[0].answer
     }
-    
+
     if (responseContent) {
-      chatHistory.value.push({
+      const reply = {
         role: 'assistant',
         content: responseContent,
         timestamp: new Date().toISOString()
-      })
-      addLog(t('log.agentReplied', { name: selectedAgent.value.username }))
+      }
+      if (selectedAgentIndex.value === targetIndex && chatTarget.value === 'agent') {
+        // 用户仍停留在原 agent：直接进当前聊天框
+        chatHistory.value.push(reply)
+      } else {
+        // 等待期间已切走：回复归属原 agent 的缓存，不污染当前聊天框
+        const cached = chatHistoryCache.value[targetKey] || []
+        cached.push(reply)
+        chatHistoryCache.value[targetKey] = cached
+      }
+      addLog(t('log.agentReplied', { name: targetName }))
     } else {
       throw new Error(t('step5.noResponse'))
     }
