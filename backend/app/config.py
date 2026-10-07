@@ -1,6 +1,8 @@
 """\n配置管理\n统一从项目根目录的 .env 文件加载配置\n"""
 
 import os
+import secrets
+import warnings
 from dotenv import load_dotenv
 
 # 加载项目根目录的 .env 文件
@@ -18,8 +20,26 @@ class Config:
     """Flask配置类"""
     
     # Flask配置
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
+    # 若未设置 SECRET_KEY，每次启动生成一个随机值（而非硬编码默认值）
+    # 注意：重启后会变化，若使用会话/Cookie 签名请在 .env 中固定设置
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    if not SECRET_KEY:
+        SECRET_KEY = secrets.token_hex(32)
+        warnings.warn(
+            "SECRET_KEY 未在 .env 中配置，已生成随机临时密钥（重启后失效）。"
+            "如需持久化会话，请在 .env 中设置 SECRET_KEY。",
+            RuntimeWarning,
+        )
     DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+
+    # CORS配置：允许的来源，逗号分隔；默认仅允许本地前端开发地址
+    CORS_ORIGINS = [
+        origin.strip()
+        for origin in os.environ.get(
+            'CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000'
+        ).split(',')
+        if origin.strip()
+    ]
     
     # JSON配置 - 禁用ASCII转义，让中文直接显示
     JSON_AS_ASCII = False
