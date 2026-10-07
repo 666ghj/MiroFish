@@ -4,6 +4,7 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 """
 
 import os
+import re
 import traceback
 from contextlib import nullcontext
 from flask import request, jsonify, send_file
@@ -48,6 +49,27 @@ def _get_default_platform(simulation_id: str) -> str:
     except Exception:
         pass
     return "reddit"
+
+
+# simulation_id 与 platform 都直接来自请求（URL 路径 / 查询参数），未校验就
+# 拼进文件路径时 `..` 可以逃出 uploads/simulations/，进而打开磁盘上任意
+# *_simulation.db 并把内容当 JSON 返回（issue #489）。合法 id 由
+# SimulationManager 生成（sim_ + 12 位十六进制），平台只有两个。
+_SIMULATION_ID_PATTERN = re.compile(r"^sim_[0-9a-fA-F]{12}$")
+_SIMULATION_DB_PLATFORMS = ("twitter", "reddit")
+
+
+def _resolve_simulation_db_path(simulation_id: str, platform: str) -> str:
+    """校验请求参数并返回平台 SQLite 数据库路径；非法输入抛 ValueError。"""
+    if not _SIMULATION_ID_PATTERN.match(simulation_id or ""):
+        raise ValueError(f"invalid simulation_id: {simulation_id!r}")
+    if platform not in _SIMULATION_DB_PLATFORMS:
+        raise ValueError(f"invalid platform: {platform!r}")
+    sim_dir = os.path.join(
+        os.path.dirname(__file__),
+        f"../../uploads/simulations/{simulation_id}",
+    )
+    return os.path.normpath(os.path.join(sim_dir, f"{platform}_simulation.db"))
 
 
 # Interview prompt 优化前缀
@@ -2161,14 +2183,14 @@ def get_simulation_posts(simulation_id: str):
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
+        try:
+            db_path = _resolve_simulation_db_path(simulation_id, platform)
+        except ValueError as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc)
+            }), 400
 
-        db_file = f"{platform}_simulation.db"
-        db_path = os.path.join(sim_dir, db_file)
-        
         if not os.path.exists(db_path):
             return jsonify({
                 "success": True,
@@ -2239,13 +2261,14 @@ def get_simulation_comments(simulation_id: str):
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        sim_dir = os.path.join(
-            os.path.dirname(__file__),
-            f'../../uploads/simulations/{simulation_id}'
-        )
-        
-        db_path = os.path.join(sim_dir, f"{platform}_simulation.db")
-        
+        try:
+            db_path = _resolve_simulation_db_path(simulation_id, platform)
+        except ValueError as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc)
+            }), 400
+
         if not os.path.exists(db_path):
             return jsonify({
                 "success": True,
