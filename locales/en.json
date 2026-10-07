@@ -178,6 +178,8 @@
   },
   "step3": {
     "startGenerateReport": "Generate Report",
+    "restartRunBtn": "Restart Simulation",
+    "restartRunConfirm": "Restarting wipes all data of the current run and simulates from scratch. Continue?",
     "generatingReport": "Starting...",
     "waitingForActions": "Waiting for agent actions...",
     "errorMissingSimId": "Error: missing simulationId",
@@ -525,6 +527,7 @@
     "loadConfigFailed": "Failed to load config: {error}",
     "step2Init": "Step 2 environment setup initialized",
     "step3Init": "Step 3 simulation run initialized",
+    "resumedExistingRun": "Existing simulation run detected (status: {status}); reattached without restarting",
     "startingDualSim": "Starting dual-platform parallel simulation...",
     "setMaxRounds": "Max simulation rounds set to: {rounds}",
     "graphMemoryUpdateEnabled": "Dynamic graph memory update enabled",
