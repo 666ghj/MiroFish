@@ -178,6 +178,8 @@
   },
   "step3": {
     "startGenerateReport": "开始生成结果报告",
+    "restartRunBtn": "重新开始模拟",
+    "restartRunConfirm": "重新开始将清除当前运行的全部数据并从头模拟，确定？",
     "generatingReport": "启动中...",
     "waitingForActions": "Waiting for agent actions...",
     "errorMissingSimId": "错误：缺少 simulationId",
@@ -525,6 +527,7 @@
     "loadConfigFailed": "加载配置失败: {error}",
     "step2Init": "Step2 环境搭建初始化",
     "step3Init": "Step3 模拟运行初始化",
+    "resumedExistingRun": "检测到已有模拟运行（状态：{status}），已恢复实时跟踪，不重启",
     "startingDualSim": "正在启动双平台并行模拟...",
     "setMaxRounds": "设置最大模拟轮数: {rounds}",
     "graphMemoryUpdateEnabled": "已开启动态图谱更新模式",

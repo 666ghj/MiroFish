@@ -91,7 +91,16 @@
       </div>
 
       <div class="action-controls">
-        <button 
+        <button
+          v-if="phase === 2 && runStatus && Object.keys(runStatus).length > 0"
+          class="action-btn"
+          :disabled="isStarting"
+          @click="restartRun"
+        >
+          <span v-if="isStarting" class="loading-spinner-small"></span>
+          {{ $t('step3.restartRunBtn') }}
+        </button>
+        <button
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
           @click="handleNextStep"
@@ -437,16 +446,45 @@ const doStartSimulation = async () => {
   }
 }
 
+// 刷新/重新进入本页时，先探测服务端已持久化的运行状态再决定动作。
+// 此前无条件 doStartSimulation()（force: true）会在每次浏览器刷新时
+// 强制清空并重启模拟，永久删除本次运行的全部数据（issue #757）。
+const resumeOrStart = async () => {
+  try {
+    const res = await getRunStatus(props.simulationId)
+    const status = res?.success && res.data ? res.data.runner_status : null
+    if (status && status !== 'idle') {
+      addLog(t('log.resumedExistingRun', { status }))
+      resetAllState()
+      phase.value = 1
+      runStatus.value = res.data
+      startStatusPolling()
+      startDetailPolling()
+      return
+    }
+  } catch (err) {
+    console.warn('查询已有运行状态失败，回退到全新启动:', err)
+  }
+  doStartSimulation()
+}
+
+// 显式重启入口：仅当已有一次运行（phase 2 到达）时出现，强制清空并重跑。
+const restartRun = () => {
+  if (!props.simulationId) return
+  if (!window.confirm(t('step3.restartRunConfirm'))) return
+  doStartSimulation()
+}
+
 // 停止模拟
 const handleStopSimulation = async () => {
   if (!props.simulationId) return
-  
+
   isStopping.value = true
   addLog(t('log.stoppingSim'))
-  
+
   try {
     const res = await stopSimulation({ simulation_id: props.simulationId })
-    
+
     if (res.success) {
       addLog(t('log.simStoppedSuccess'))
       phase.value = 2
@@ -691,13 +729,14 @@ watch(() => props.systemLogs?.length, () => {
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    resumeOrStart()
   }
 })
 
 onUnmounted(() => {
   stopPolling()
 })
+
 </script>
 
 <style scoped>
