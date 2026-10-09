@@ -496,6 +496,9 @@ class SimulationManager:
                     if project_id is None or state.project_id == project_id:
                         simulations.append(state)
         
+        # History applies its limit to this list. Directory iteration order can
+        # change after a redeploy, so select recent simulations deterministically.
+        simulations.sort(key=lambda state: (state.created_at, state.simulation_id), reverse=True)
         return simulations
     
     def get_profiles(self, simulation_id: str, platform: str = None) -> List[Dict[str, Any]]:
