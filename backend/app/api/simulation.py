@@ -11,7 +11,10 @@ from flask import request, jsonify, send_file
 from . import simulation_bp
 from ..config import Config
 from ..services.zep_entity_reader import ZepEntityReader
-from ..services.oasis_profile_generator import OasisProfileGenerator
+from ..services.oasis_profile_generator import (
+    OasisProfileGenerator,
+    partition_persona_entities,
+)
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import (
     SimulationRunner,
@@ -510,9 +513,11 @@ def prepare_simulation():
                 enrich_with_edges=False  # 不获取边信息，加快速度
             )
             # 保存实体数量到状态（供前端立即获取）
-            state.entities_count = filtered_preview.filtered_count
+            # 与准备流程使用同一套过滤规则，避免前端预期的Agent总数永远达不到
+            usable_preview, _ = partition_persona_entities(filtered_preview.entities)
+            state.entities_count = len(usable_preview)
             state.entity_types = list(filtered_preview.entity_types)
-            logger.info(f"预期实体数量: {filtered_preview.filtered_count}, 类型: {filtered_preview.entity_types}")
+            logger.info(f"预期实体数量: {len(usable_preview)}, 类型: {filtered_preview.entity_types}")
         except Exception as e:
             logger.warning(f"同步获取实体数量失败（将在后台任务中重试）: {e}")
             # 失败不影响后续流程，后台任务会重新获取

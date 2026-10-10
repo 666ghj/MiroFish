@@ -10,8 +10,9 @@ OASIS Agent Profile生成器
 
 import json
 import random
+import re
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -74,6 +75,160 @@ def _coerce_to_str_list(value: Any) -> List[str]:
         return result
     text = _coerce_to_str(value)
     return [text] if text else []
+
+
+# 抽取流水线的占位符与图谱API词汇。整词精确匹配（统一转小写后比较），
+# 不做前缀/子串匹配，所以 "Nonesuch Capital"、"Edgewater Inc." 这类真名不受影响。
+# 注意这是一份**词汇表**而不是结构判断：靠的是"这些词本身就不是名字"。
+_NON_ENTITY_NAME_PLACEHOLDERS = {
+    # 英文占位符与序列化产物
+    "none", "null", "n/a", "undefined", "unknown",
+    # 图谱API自身的词汇
+    "entity", "node", "nodes", "edge", "edges",
+    # 中日文等价词：zh 是默认语言，这些词同样会被抽成"实体"
+    # （"边"/"空" 也是极罕见的中文姓氏，但单字姓氏不会作为完整实体名出现，
+    #   这里按图谱产物处理；如遇误伤，从本集合移除即可）
+    "无", "未知", "节点", "边", "实体", "空", "なし", "不明",
+}
+
+# 产品自身的名称：出现在输入文本里时会被抽成实体，但它是跑模拟的工具，不是参与者。
+# 同样是整词精确匹配，所以名字只是以它开头的真实公司不受影响。
+_SELF_REFERENCE_NAMES = {"mirofish"}
+
+# 名称长度上限：只作为兜底，拦截明显是整段文本的抽取产物。
+# 取值留足余量——语料里最长的真实机构名是
+# "Chinese Academy of Sciences Institute of Automation Research Center for
+#  Brain-Inspired Intelligence"（99字符），所以阈值必须远高于100。
+# 真正精确的散文信号是换行和"冒号+空格"，不是长度。
+_MAX_ENTITY_NAME_CHARS = 160
+
+# 并列连词：真实的多逗号机构名几乎总是以连词收尾
+# （"Bureau of Alcohol, Tobacco, Firearms and Explosives"），
+# 而被误抽的枚举短语（"…, management call parsing, unit economics"）不会。
+_LIST_CONJUNCTIONS = {"and", "&"}
+# 中文连词不靠空格分词，按子串匹配
+_LIST_CONJUNCTIONS_CJK = ("和", "与", "及", "暨")
+
+# 清单分隔符：ASCII逗号与中文顿号
+_CLAUSE_SEPARATORS = (',', '、')
+
+_WHITESPACE_RUN_RE = re.compile(r'\s+')
+
+
+def _persona_entity_reject_reason(name: Any) -> Optional[str]:
+    """Return a reason code if a name cannot be a persona entity name, else None.
+
+    Deliberately conservative: it rejects only names that are *unambiguously*
+    not names, because dropping a real participant is worse than letting a
+    junk entity through. Two kinds of check are mixed here, and it is worth
+    being clear about which is which:
+
+    * ``empty_name`` / ``prose_fragment`` / ``clause_list`` are structural --
+      they look at the shape of the string only.
+    * ``placeholder`` / ``self_reference`` are **vocabulary** lists, i.e.
+      policy rather than structure. They match the whole name exactly.
+
+    Entity *type* is never consulted. Organizations and groups are valid
+    personas (see ``_build_group_persona_prompt``) and are never rejected here.
+
+    What it does NOT catch, by design:
+
+    * Capitalised descriptive phrases -- ``Market Event``, ``Bear Case``,
+      ``Breaking News``, ``Person``, ``Client``. The previous all-lowercase
+      heuristic that caught the lowercase spelling of these also rejected
+      ``elon musk``, ``goldman sachs`` and ``bell hooks``, so it was removed.
+    * Short prose sentences such as ``The deal closed.`` -- the rule that
+      caught those also rejected ``The Goldman Sachs Group, Inc.``.
+    """
+    if not isinstance(name, str):
+        return "empty_name"
+
+    stripped = name.strip()
+    if not stripped:
+        return "empty_name"
+
+    # 行内换行说明这是跨行的文本块，名字不会跨行
+    # （先 strip 再判断，所以抓取时带上的首尾换行不算）
+    if '\n' in stripped or '\r' in stripped:
+        return "prose_fragment"
+
+    # 统一不换行空格/制表符/全角空格等，避免用别种空白绕过后面的检查
+    normalized = _WHITESPACE_RUN_RE.sub(' ', stripped)
+
+    lowered = normalized.lower()
+    if lowered in _NON_ENTITY_NAME_PLACEHOLDERS:
+        return "placeholder"
+    if lowered in _SELF_REFERENCE_NAMES:
+        return "self_reference"
+
+    # "标签: 内容" 结构。冒号不会出现在名字里，这是比任何长度阈值都精确的
+    # 散文信号，也正是报告里那条121字符片段的特征
+    # （"Posts 3-5 times daily: cross-asset takes, …"）。
+    # 用"冒号+空格"而非裸冒号，以免误伤 "3:1"、"12:30" 这类写法。
+    if ': ' in normalized or '：' in normalized:
+        return "prose_fragment"
+
+    # 句末终止符。只保留不会出现在名字里的几个：
+    # 句号/分号已被排除在外，而 '!' '?' 要留给 "Yahoo!"、"Wham!"、"Guess Who?"。
+    if normalized[-1] in '。；;':
+        return "prose_fragment"
+
+    if len(normalized) > _MAX_ENTITY_NAME_CHARS:
+        return "prose_fragment"
+
+    # 枚举式短语清单（三段以上），例如 "supply chain detail, management call
+    # parsing, unit economics"。两道豁免把真实机构名放过去：
+    #   1) 末段带并列连词（"… Firearms and Explosives"）；
+    #   2) ASCII逗号的情形还要求至少两段是多词短语，
+    #      这样 "Smith, John, Jr."、"Skadden, Arps, Slate, Meagher & Flom"
+    #      这种单词分段的人名/事务所名不会被判为清单。
+    for separator in _CLAUSE_SEPARATORS:
+        segments = [segment.strip() for segment in normalized.split(separator)]
+        if len(segments) < 3:
+            continue
+        if _has_list_conjunction(segments[-1]):
+            continue
+        if separator == ',' and sum(1 for s in segments if ' ' in s) < 2:
+            continue
+        return "clause_list"
+
+    return None
+
+
+def _has_list_conjunction(segment: str) -> bool:
+    """Whether a clause segment ends a list, e.g. ``Firearms and Explosives``.
+
+    Matched on whole tokens so that ``Rand``, ``Anderson`` and ``brands`` do
+    not count as an ``and``.
+    """
+    tokens = segment.lower().split()
+    if any(token in _LIST_CONJUNCTIONS for token in tokens):
+        return True
+    return any(conjunction in segment for conjunction in _LIST_CONJUNCTIONS_CJK)
+
+
+def partition_persona_entities(
+    entities: List[EntityNode]
+) -> Tuple[List[EntityNode], List[Tuple[EntityNode, str]]]:
+    """Split entities into persona candidates and rejected (entity, reason) pairs.
+
+    Callers that fan the same entity list out to several consumers (profiles and
+    agent activity configs) must filter once up front and pass the surviving
+    list to all of them, so that profile ``user_id`` and config ``agent_id``
+    keep referring to the same entity. The function is pure, so applying it to
+    an already filtered list is a no-op.
+    """
+    candidates: List[EntityNode] = []
+    skipped: List[Tuple[EntityNode, str]] = []
+
+    for entity in entities:
+        reason = _persona_entity_reject_reason(getattr(entity, 'name', None))
+        if reason:
+            skipped.append((entity, reason))
+        else:
+            candidates.append(entity)
+
+    return candidates, skipped
 
 
 @dataclass
@@ -924,6 +1079,17 @@ class OasisProfileGenerator:
         if graph_id:
             self.graph_id = graph_id
         
+        # 兜底：剔除结构上不可能是实体名的抽取噪声（占位符、散文片段等），
+        # 再分配user_id，保证编号连续、不留空洞。
+        # 需要同时生成Agent配置的调用方应在上游先过滤，详见 partition_persona_entities
+        entities, skipped_entities = partition_persona_entities(entities)
+        for skipped_entity, reason in skipped_entities:
+            logger.warning(t(
+                'progress.personaEntitySkipped',
+                name=getattr(skipped_entity, 'name', ''),
+                reason=reason
+            ))
+
         total = len(entities)
         profiles = [None] * total  # 预分配列表保持顺序
         completed_count = [0]  # 使用列表以便在闭包中修改
@@ -994,6 +1160,15 @@ class OasisProfileGenerator:
                 )
                 return idx, fallback_profile, str(e)
         
+        # 把剔除情况透出到进度回调，便于操作者看到少了哪些实体
+        # （total为0时不回调，调用方会用total计算百分比）
+        if skipped_entities and total and progress_callback:
+            progress_callback(
+                0,
+                total,
+                t('progress.personaEntitiesSkipped', count=len(skipped_entities), total=total)
+            )
+
         logger.info(f"开始并行生成 {total} 个Agent人设（并行数: {parallel_count}）...")
         print(f"\n{'='*60}")
         print(f"开始生成Agent人设 - 共 {total} 个实体，并行数: {parallel_count}")
