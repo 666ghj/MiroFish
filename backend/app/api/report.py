@@ -16,6 +16,7 @@ from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
 from ..models.project import ProjectManager, ProjectStatus
 from ..models.task import TaskManager, TaskStatus
+from ..utils.llm_client import LLMResponseError
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..utils.zep_lifecycle import (
@@ -673,7 +674,19 @@ def chat_with_report_agent():
             "success": True,
             "data": result
         })
-        
+
+    except LLMResponseError as e:
+        # 响应被截断或不可用：这是上游 LLM 的问题，不是服务端缺陷。
+        # 返回可操作的安全提示（不含 traceback），与本体生成接口保持一致。
+        logger.warning(
+            "Report chat LLM response unusable: finish_reason=%s",
+            e.finish_reason or "unknown",
+        )
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 502
+
     except Exception as e:
         logger.error(f"对话失败: {str(e)}")
         return jsonify({

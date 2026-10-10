@@ -6,7 +6,7 @@ LLM客户端封装
 import json
 import logging
 import re
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from openai import OpenAI
 
 from ..config import Config
@@ -72,6 +72,69 @@ def _clean_chat_text(content: str) -> str:
     cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\n?```\s*$', '', cleaned)
     return cleaned.strip()
+
+
+def _usable_completion_text(
+    response: Any,
+    *,
+    kind: str,
+    strict_finish_reason: bool = True,
+) -> Tuple[str, Optional[str]]:
+    """Return cleaned completion text plus finish_reason, rejecting unusable ones.
+
+    A provider that runs out of output budget reports finish_reason="length".
+    Reasoning models can reach that limit while still inside reasoning_content,
+    in which case `message.content` is null and the extracted text is empty. An
+    empty body must never be handed back as if generation had succeeded, so the
+    truncation is reported instead.
+
+    `strict_finish_reason` keeps the JSON contract: any reason other than "stop"
+    is refused outright, because a retry is available and a half-built object is
+    worthless. Free text has no retry, and `LLM_BASE_URL` may point at any
+    OpenAI-compatible endpoint, some of which report vendor-specific success
+    tokens. With the flag off, an unrecognized reason is only fatal when the body
+    is also empty; a complete body is returned and the reason logged.
+    """
+
+    choices = getattr(response, "choices", None) or []
+    if not choices:
+        raise LLMResponseError("LLM returned no choices")
+
+    finish_reason = getattr(choices[0], "finish_reason", None)
+    if finish_reason == "length":
+        raise LLMResponseError(
+            f"LLM {kind} output was truncated at the token limit",
+            finish_reason=finish_reason,
+        )
+
+    unrecognized_finish_reason = finish_reason not in {None, "stop"}
+    if unrecognized_finish_reason and strict_finish_reason:
+        raise LLMResponseError(
+            f"LLM {kind} generation stopped unexpectedly ({finish_reason})",
+            finish_reason=finish_reason,
+        )
+
+    content = _clean_chat_text(extract_chat_completion_text(response))
+    if not content:
+        if unrecognized_finish_reason:
+            raise LLMResponseError(
+                f"LLM {kind} generation stopped unexpectedly ({finish_reason})",
+                finish_reason=finish_reason,
+            )
+        raise LLMResponseError(
+            f"LLM returned empty {kind} content",
+            finish_reason=finish_reason,
+        )
+
+    if unrecognized_finish_reason:
+        logger.warning(
+            "LLM %s completion reported an unrecognized finish_reason=%s; "
+            "the body is complete, so it is used as-is",
+            kind,
+            finish_reason,
+        )
+
+    return content, finish_reason
 
 
 def _contains_additional_json_container(content: str) -> bool:
@@ -146,6 +209,9 @@ class LLMClient:
             
         Returns:
             模型响应文本
+
+        Raises:
+            LLMResponseError: 响应被截断或内容为空（不可用）
         """
         response = self._create_completion(
             messages=messages,
@@ -153,8 +219,12 @@ class LLMClient:
             max_tokens=max_tokens,
             response_format=response_format,
         )
-        content = extract_chat_completion_text(response)
-        return _clean_chat_text(content)
+        content, _ = _usable_completion_text(
+            response,
+            kind="text",
+            strict_finish_reason=False,
+        )
+        return content
     
     def chat_json(
         self,
@@ -233,29 +303,7 @@ class LLMClient:
 
     @staticmethod
     def _parse_json_response(response: Any) -> Dict[str, Any]:
-        choices = getattr(response, "choices", None) or []
-        if not choices:
-            raise LLMResponseError("LLM returned no choices")
-
-        choice = choices[0]
-        finish_reason = getattr(choice, "finish_reason", None)
-        if finish_reason == "length":
-            raise LLMResponseError(
-                "LLM JSON output was truncated at the token limit",
-                finish_reason=finish_reason,
-            )
-        if finish_reason not in {None, "stop"}:
-            raise LLMResponseError(
-                f"LLM JSON generation stopped unexpectedly ({finish_reason})",
-                finish_reason=finish_reason,
-            )
-
-        content = _clean_chat_text(extract_chat_completion_text(response))
-        if not content:
-            raise LLMResponseError(
-                "LLM returned empty JSON content",
-                finish_reason=finish_reason,
-            )
+        content, finish_reason = _usable_completion_text(response, kind="JSON")
 
         try:
             value = json.loads(content)

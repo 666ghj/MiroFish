@@ -19,7 +19,7 @@ from datetime import datetime
 from enum import Enum
 
 from ..config import Config
-from ..utils.llm_client import LLMClient
+from ..utils.llm_client import LLMClient, LLMResponseError
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
 from .zep_tools import (
@@ -1328,6 +1328,9 @@ class ReportAgent:
         conflict_retries = 0  # 工具调用与Final Answer同时出现的连续冲突次数
         used_tools = set()  # 记录已调用过的工具名
         all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
+        # 输出预算：一旦因超出预算被截断，后续尝试改用模型自身的输出上限，
+        # 否则每一轮都会在同一个位置截断（与 chat_json 的有界重试同样的策略）。
+        section_max_tokens: Optional[int] = 4096
 
         # 报告上下文，用于InsightForge的子问题生成
         report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement}"
@@ -1341,15 +1344,32 @@ class ReportAgent:
                 )
             
             # 调用LLM
-            response = self.llm.chat(
-                messages=messages,
-                temperature=0.5,
-                max_tokens=4096
-            )
+            try:
+                response = self.llm.chat(
+                    messages=messages,
+                    temperature=0.5,
+                    max_tokens=section_max_tokens
+                )
+            except LLMResponseError as e:
+                # 响应被截断或为空：不能当作章节正文，走与 None 相同的重试/强制收尾路径
+                logger.warning(t(
+                    'report.sectionIterUnusable',
+                    title=section.title,
+                    iteration=iteration + 1,
+                    reason=str(e)
+                ))
+                if e.finish_reason == "length" and section_max_tokens is not None:
+                    # 截断是预算用尽造成的，重试必须改变条件才有意义
+                    section_max_tokens = None
+                    logger.warning(t('report.sectionRetryNoTokenCap', title=section.title))
+                response = None
+            else:
+                # 检查 LLM 返回是否为 None（API 异常或内容为空）
+                if response is None:
+                    logger.warning(t('report.sectionIterNone', title=section.title, iteration=iteration + 1))
 
-            # 检查 LLM 返回是否为 None（API 异常或内容为空）
+            # 本轮响应不可用
             if response is None:
-                logger.warning(t('report.sectionIterNone', title=section.title, iteration=iteration + 1))
                 # 如果还有迭代次数，添加消息并重试
                 if iteration < max_iterations - 1:
                     messages.append({"role": "assistant", "content": "（响应为空）"})
@@ -1431,7 +1451,12 @@ class ReportAgent:
 
                 # 正常结束
                 final_answer = cleaned_response.split("Final Answer:")[-1].strip()
-                logger.info(t('report.sectionGenDone', title=section.title, count=tool_calls_count))
+                if not final_answer.strip():
+                    # "Final Answer:" 之后没有正文：不能当作生成成功
+                    logger.error(t('report.sectionEmptyBody', title=section.title))
+                    final_answer = t('report.sectionGenFailedContent')
+                else:
+                    logger.info(t('report.sectionGenDone', title=section.title, count=tool_calls_count))
 
                 if self.report_logger:
                     self.report_logger.log_section_content(
@@ -1531,8 +1556,13 @@ class ReportAgent:
 
             # 工具调用已足够，LLM 输出了内容但没带 "Final Answer:" 前缀
             # 直接将这段内容作为最终答案，不再空转
-            logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
             final_answer = cleaned_response
+            if not final_answer.strip():
+                # 清理后已无正文（例如整段都是伪造的 tool_result）：按失败处理
+                logger.error(t('report.sectionEmptyBody', title=section.title))
+                final_answer = t('report.sectionGenFailedContent')
+            else:
+                logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
 
             if self.report_logger:
                 self.report_logger.log_section_content(
@@ -1547,21 +1577,33 @@ class ReportAgent:
         logger.warning(t('report.sectionMaxIter', title=section.title))
         messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
         
-        response = self.llm.chat(
-            messages=messages,
-            temperature=0.5,
-            max_tokens=4096
-        )
+        try:
+            response = self.llm.chat(
+                messages=messages,
+                temperature=0.5,
+                max_tokens=section_max_tokens
+            )
+        except LLMResponseError as e:
+            # 截断或空响应：保留明确的失败提示，而不是把空内容写进章节
+            logger.error(t('report.sectionForceUnusable', title=section.title, reason=str(e)))
+            response = None
+        else:
+            # 检查强制收尾时 LLM 返回是否为 None
+            if response is None:
+                logger.error(t('report.sectionForceFailed', title=section.title))
 
-        # 检查强制收尾时 LLM 返回是否为 None
         if response is None:
-            logger.error(t('report.sectionForceFailed', title=section.title))
             final_answer = t('report.sectionGenFailedContent')
         elif "Final Answer:" in response:
             final_answer = response.split("Final Answer:")[-1].strip()
         else:
             final_answer = response
-        
+
+        if not final_answer.strip():
+            # 强制收尾也只拿到空正文：写入明确的失败提示而不是空章节
+            logger.error(t('report.sectionEmptyBody', title=section.title))
+            final_answer = t('report.sectionGenFailedContent')
+
         # 记录章节内容生成完成日志
         if self.report_logger:
             self.report_logger.log_section_content(
