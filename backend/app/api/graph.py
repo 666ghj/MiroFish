@@ -5,10 +5,12 @@
 
 import os
 import re
-import traceback
 import threading
 from contextlib import ExitStack, nullcontext
+import httpx
 from flask import request, jsonify
+from openai import APIConnectionError
+from werkzeug.exceptions import HTTPException
 from zep_cloud import NotFoundError
 
 from . import graph_bp
@@ -117,6 +119,146 @@ def _project_has_active_build(project) -> bool:
         task
         and task.status in {TaskStatus.PENDING, TaskStatus.PROCESSING}
     )
+
+
+def _provider_status(error: Exception) -> int | None:
+    """Return the upstream HTTP status an exception carries, if it carries one.
+
+    Both SDKs expose the status as an attribute -- zep_cloud on
+    ApiError.status_code, openai on APIStatusError.status_code -- so this never
+    parses a provider body. That is what makes it work for the failure in #836:
+    a retired model answers 410 with {'type': 'about:blank', 'title': 'Gone',
+    ...} instead of the usual {'error': {...}} envelope, and would not survive
+    body parsing.
+
+    The range check keeps a non-status integer out and, because bool is a
+    subclass of int, also rejects a status_code of True.
+    """
+
+    status = getattr(error, "status_code", None)
+    if isinstance(status, int) and 100 <= status <= 599:
+        return status
+    return None
+
+
+def _provider_request_id(error: Exception) -> str | None:
+    """Return a provider request id from wherever the SDK left it.
+
+    openai sets APIStatusError.request_id directly. zep_cloud's ApiError has no
+    such attribute at all and leaves the id in the response headers, so fall
+    back to a case-insensitive header scan.
+
+    A request id is a nicety, and this runs while handling a failure, so an
+    exception object that does not cooperate costs the id rather than replacing
+    the error being reported.
+    """
+
+    try:
+        request_id = getattr(error, "request_id", None)
+        if request_id:
+            return str(request_id)
+
+        headers = getattr(error, "headers", None)
+        items = getattr(headers, "items", None)
+        if not callable(items):
+            return None
+        for name, value in items():
+            if str(name).lower() == "x-request-id" and value:
+                return str(value)
+    except Exception:  # noqa: BLE001 - never let id lookup mask the failure
+        logger.debug("Could not read a request id from %s", type(error).__name__)
+    return None
+
+
+def _public_request_id(request_id: str | None) -> str:
+    """Render a request id that is safe to put in a response body.
+
+    An allowlist, not a denylist: CR, LF, NUL, quotes, angle brackets, ANSI
+    escapes and Unicode line separators all drop out without anyone having to
+    enumerate them. The id is interpolated into a JSON body and into log lines,
+    so the threats are body-context escaping and log-line forgery.
+    """
+
+    if not request_id:
+        return ""
+    return re.sub(r"[^a-zA-Z0-9._:-]", "", str(request_id))[:128]
+
+
+def _classify_failure(error: Exception, operation: str, *, log=None) -> tuple[str, int]:
+    """Map an exception to a client-safe message and an HTTP status.
+
+    The status tells the caller what to do about the failure: a resource the
+    provider does not have stays a 404, an unreachable provider and every other
+    upstream status become a 502, an aborted request keeps the status it already
+    carries, and only an unexplained failure is a 500.
+
+    The response carries neither the provider's body, which may echo request
+    content, nor a stack. The server log carries both, and that split is the
+    point: the provider's own message is the one thing that distinguishes a
+    retired model from a bad key, and a log is where it belongs. A stack is
+    logged whenever the failure cannot be explained.
+    """
+
+    target_log = log or logger
+
+    if isinstance(error, HTTPException):
+        # flask.abort and a rejected request body already carry the right
+        # status. A bare `except Exception` must not flatten a 400 into a 500,
+        # and these handlers answer in JSON, so pass the status through rather
+        # than re-raising into Flask's HTML error page.
+        target_log.info("%s rejected the request: %s", operation, error)
+        return error.description or "Bad request", error.code or 500
+
+    # Unreachable from the four handlers that call this: they only talk to Zep.
+    # Kept so the helper stays correct for an LLM-backed caller -- note that
+    # generate_ontology, the one such caller, keeps its own copy of this logic.
+    if isinstance(error, LLMResponseError):
+        target_log.exception("%s hit an unusable LLM response", operation)
+        return str(error), 502
+
+    if isinstance(error, (httpx.TransportError, APIConnectionError)):
+        # The request never got an HTTP reply, so there is no upstream status to
+        # report -- but this is squarely a gateway failure, not a server bug.
+        # Both types already cover their own timeout subclasses.
+        target_log.error(
+            "%s could not reach the provider: type=%s detail=%s",
+            operation,
+            type(error).__name__,
+            error,
+        )
+        return "Provider unreachable or timed out", 502
+
+    provider_status = _provider_status(error)
+    if provider_status is not None:
+        if provider_status == 404:
+            # Absent is not broken. A 502 tells every proxy and retry layer in
+            # the path that the upstream is down, and pages someone, for what is
+            # usually a stale or mistyped id.
+            public_error = "Requested resource was not found at the provider (HTTP 404)"
+            response_status = 404
+        else:
+            public_error = f"Provider request failed (HTTP {provider_status})"
+            response_status = 502
+
+        request_id = _provider_request_id(error)
+        safe_request_id = _public_request_id(request_id)
+        if safe_request_id:
+            public_error += f" (request_id: {safe_request_id})"
+
+        # The provider's message stays out of the response and goes in the log:
+        # it is where a provider says things like "has reached its end of life".
+        target_log.error(
+            "%s failed at the provider: type=%s status=%s request_id=%s detail=%s",
+            operation,
+            type(error).__name__,
+            provider_status,
+            request_id or "unknown",
+            error,
+        )
+        return public_error, response_status
+
+    target_log.exception("%s failed unexpectedly", operation)
+    return f"{operation} failed; check the server logs", 500
 
 
 def allowed_file(filename: str) -> bool:
@@ -493,8 +635,9 @@ def _build_graph_impl():
                 "error": t('api.configError', details="; ".join(errors))
             }), 500
         
-        # 解析请求
-        data = request.get_json() or {}
+        # 解析请求。silent 与 build_graph 的预读保持一致：请求体畸形时走下面的
+        # project_id 校验返回可操作的 400，而不是让 werkzeug 的异常冒泡成 500
+        data = request.get_json(silent=True) or {}
         project_id = data.get('project_id')
         logger.debug(f"请求参数: project_id={project_id}")
         
@@ -799,20 +942,23 @@ def _build_graph_impl():
                     )
                 
             except Exception as e:
+                # 任务状态会直接回传给客户端，只写入安全信息，堆栈留在服务端日志
+                public_error, _ = _classify_failure(
+                    e, "Graph build", log=build_logger
+                )
+                build_logger.error(f"[{task_id}] 图谱构建失败: {public_error}")
+
                 # 更新项目状态为失败
-                build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
-                build_logger.debug(traceback.format_exc())
-                
                 with _project_build_lock(project_id):
                     project.status = ProjectStatus.FAILED
-                    project.error = str(e)
+                    project.error = public_error
                     ProjectManager.save_project(project)
 
                     task_manager.update_task(
                         task_id,
                         status=TaskStatus.FAILED,
-                        message=t('progress.buildFailed', error=str(e)),
-                        error=traceback.format_exc()
+                        message=t('progress.buildFailed', error=public_error),
+                        error=public_error
                     )
         
         # 启动后台线程
@@ -832,11 +978,11 @@ def _build_graph_impl():
     except GraphInUseError as e:
         return jsonify({"success": False, "error": str(e)}), 409
     except Exception as e:
+        public_error, response_status = _classify_failure(e, "Graph build request")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+            "error": public_error
+        }), response_status
 
 
 # ============== 任务查询接口 ==============
@@ -897,11 +1043,11 @@ def get_graph_data(graph_id: str):
         })
         
     except Exception as e:
+        public_error, response_status = _classify_failure(e, "Graph data request")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+            "error": public_error
+        }), response_status
 
 
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
@@ -956,8 +1102,8 @@ def delete_graph(graph_id: str):
     except GraphInUseError as e:
         return jsonify({"success": False, "error": str(e)}), 409
     except Exception as e:
+        public_error, response_status = _classify_failure(e, "Graph deletion")
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+            "error": public_error
+        }), response_status
