@@ -431,9 +431,14 @@ class SimulationRunner:
                 RunnerStatus.PAUSED,
                 RunnerStatus.STOPPING,
             }
+            live_process = cls._processes.get(simulation_id)
             if (
-                existing and existing.runner_status in active_statuses
-            ) or ZepGraphMemoryManager.get_updater(simulation_id) is not None:
+                (existing and existing.runner_status in active_statuses)
+                or ZepGraphMemoryManager.get_updater(simulation_id) is not None
+                # COMPLETED can be published while the process idles in
+                # interview-ready mode; never start a second one on top.
+                or (live_process is not None and live_process.poll() is None)
+            ):
                 raise ValueError(f"模拟已在运行或结束处理中: {simulation_id}")
             cls._save_run_state(state)
         
@@ -637,6 +642,7 @@ class SimulationRunner:
         
         monitor_error: Exception | None = None
         exit_code: int | None = None
+        results_published = False
         try:
             while process.poll() is None:  # 进程仍在运行
                 # 读取 Twitter 动作日志
@@ -653,6 +659,17 @@ class SimulationRunner:
                 
                 # 更新状态
                 cls._save_run_state(state)
+
+                # After the last round the script idles in command-wait mode
+                # so agents can still be interviewed, and never exits on its
+                # own. Publish COMPLETED as soon as every enabled platform has
+                # ended and Zep ingestion has drained, leaving the process
+                # alive for interviews.
+                if not results_published and cls._check_all_platforms_completed(state):
+                    results_published = cls._publish_completion_while_idle(
+                        simulation_id, state
+                    )
+
                 time.sleep(2)
             
             # 进程结束后，最后读取一次日志
@@ -878,6 +895,51 @@ class SimulationRunner:
             logger.warning(f"读取动作日志失败: {log_path}, error={e}")
             return position
     
+    @classmethod
+    def _publish_completion_while_idle(
+        cls, simulation_id: str, state: SimulationRunState
+    ) -> bool:
+        """Publish COMPLETED once Zep has drained, keeping the process alive.
+
+        Returns True when the state was published, or when no further attempt
+        should be made; False to retry on the next monitor tick.
+        """
+        with cls._finalization_lock(simulation_id):
+            latest = cls.get_run_state(simulation_id)
+            if latest is None or latest.runner_status != RunnerStatus.RUNNING:
+                # Stop/failure paths own the final state.
+                return True
+            if simulation_id in cls._manual_stop_requests:
+                return True
+
+            error_message = None
+            desired_status = RunnerStatus.COMPLETED
+            if cls._graph_memory_enabled.get(simulation_id, False):
+                latest.runner_status = RunnerStatus.STOPPING
+                cls._save_run_state(latest)
+                cls._sync_simulation_status(simulation_id, RunnerStatus.STOPPING)
+                try:
+                    ZepGraphMemoryManager.stop_updater(simulation_id)
+                    cls._graph_memory_enabled.pop(simulation_id, None)
+                except Exception as error:
+                    logger.error(f"停止图谱记忆更新器失败: {error}")
+                    desired_status = RunnerStatus.FAILED
+                    error_message = f"Zep图谱写入未完整完成: {error}"
+
+            latest.twitter_running = False
+            latest.reddit_running = False
+            latest.runner_status = desired_status
+            latest.error = error_message
+            latest.completed_at = datetime.now().isoformat()
+            cls._save_run_state(latest)
+            cls._sync_simulation_status(simulation_id, desired_status, error_message)
+            # The monitor loop keeps mutating its own state object.
+            state.runner_status = desired_status
+            state.error = error_message
+            state.completed_at = latest.completed_at
+            logger.info(f"模拟完成（环境保持运行以支持采访）: {simulation_id}")
+            return True
+
     @classmethod
     def _check_all_platforms_completed(cls, state: SimulationRunState) -> bool:
         """

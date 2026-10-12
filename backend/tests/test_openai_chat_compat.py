@@ -121,3 +121,32 @@ def test_extracts_text_from_supported_content_shapes():
 
     assert extract_chat_completion_text(response) == "first second third"
     assert extract_chat_completion_text(SimpleNamespace(choices=[])) == ""
+
+
+def test_claude_models_omit_temperature():
+    recorder = CompletionRecorder()
+
+    create_chat_completion(
+        client_for(recorder),
+        model="claude-haiku-5-5",
+        messages=[{"role": "user", "content": "hello"}],
+        temperature=0.3,
+        max_tokens=100,
+    )
+
+    assert "temperature" not in recorder.calls[0]
+    assert recorder.calls[0]["max_tokens"] == 100
+
+
+def test_anthropic_json_object_rejection_is_detected():
+    from app.utils.llm_client import _is_response_format_unsupported
+
+    class Rejected(Exception):
+        status_code = 400
+        body = {
+            "code": "invalid_request_error",
+            "message": "response_format.type: Input should be 'json_schema'",
+            "param": None,
+        }
+
+    assert _is_response_format_unsupported(Rejected()) is True

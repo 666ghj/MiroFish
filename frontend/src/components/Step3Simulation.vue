@@ -688,10 +688,33 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
+// On refresh, reattach to a simulation that is already live instead of
+// force-restarting it (which would stop the running process).
+const ACTIVE_RUNNER_STATUSES = ['starting', 'running', 'paused', 'stopping']
+
+const attachOrStartSimulation = async () => {
+  try {
+    const res = await getRunStatus(props.simulationId)
+    const status = res.success && res.data ? res.data.runner_status : null
+    if (ACTIVE_RUNNER_STATUSES.includes(status)) {
+      addLog(t('log.reattachingSim'))
+      phase.value = 1
+      runStatus.value = res.data
+      emit('update-status', 'processing')
+      startStatusPolling()
+      startDetailPolling()
+      return
+    }
+  } catch (err) {
+    console.warn('获取运行状态失败，按全新模拟启动:', err)
+  }
+  doStartSimulation()
+}
+
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    attachOrStartSimulation()
   }
 })
 

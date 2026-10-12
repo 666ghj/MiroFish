@@ -30,7 +30,8 @@
     "description": "MiroFish - Social Media Opinion Simulation System"
   },
   "nav": {
-    "visitGithub": "Visit our Github page"
+    "visitGithub": "Visit our Github page",
+    "reports": "Reports"
   },
   "home": {
     "tagline": "Concise & Universal Swarm Intelligence Engine",
@@ -75,7 +76,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -530,6 +537,7 @@
     "graphMemoryUpdateEnabled": "Dynamic graph memory update enabled",
     "oldSimCleared": "✓ Old simulation logs cleared, restarting simulation",
     "engineStarted": "✓ Simulation engine started successfully",
+    "reattachingSim": "Simulation already in progress, reattaching to live status",
     "startFailed": "✗ Start failed: {error}",
     "startException": "✗ Start error: {error}",
     "stoppingSim": "Stopping simulation...",
@@ -663,5 +671,57 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "reportsPage": {
+    "title": "Reports",
+    "subtitle": "Generated simulation reports",
+    "search": "Search reports...",
+    "all": "All",
+    "empty": "No reports yet",
+    "noMatch": "No reports match your search",
+    "loadFailed": "Failed to load reports",
+    "open": "Open",
+    "download": "Download",
+    "interact": "Interview",
+    "sections": "sections",
+    "simulation": "Simulation",
+    "created": "Created",
+    "back": "Back to home",
+    "count": "{n} reports",
+    "realitySeed": "Reality Seed",
+    "simulationPrompt": "Simulation Prompt",
+    "downloadMd": "Markdown (.md)",
+    "downloadPdf": "PDF (.pdf)",
+    "noSeed": "No seed documents found for this report",
+    "noPrompt": "No simulation prompt recorded",
+    "loadingContext": "Loading...",
+    "contextFailed": "Failed to load details",
+    "seedFiles": "Source files",
+    "seedText": "Extracted text",
+    "hide": "Hide",
+    "simStats": "Simulation Stats",
+    "agents": "agents",
+    "active": "active",
+    "rounds": "rounds",
+    "actions": "actions",
+    "hours": "simulated hours",
+    "model": "Model",
+    "duration": "Run time",
+    "platforms": "Platforms",
+    "entityTypes": "Agent types",
+    "topAgents": "Most active agents",
+    "actionMix": "Actions",
+    "twitter": "X / Twitter-style",
+    "reddit": "Reddit-style",
+    "noStats": "No simulation stats available",
+    "keyQuotes": "Key Quotes",
+    "activityByRound": "Activity by round",
+    "round": "Round",
+    "topPosts": "Most-engaged posts",
+    "topComments": "Most-liked comments",
+    "likes": "likes",
+    "shares": "shares",
+    "noQuotes": "No liked posts or comments yet",
+    "personas": "personas"
   }
 }
