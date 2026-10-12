@@ -537,6 +537,7 @@
     "graphMemoryUpdateEnabled": "已开启动态图谱更新模式",
     "oldSimCleared": "✓ 已清理旧的模拟日志，重新开始模拟",
     "engineStarted": "✓ 模拟引擎启动成功",
+    "reattachingSim": "模拟已在运行，正在重新连接实时状态",
     "startFailed": "✗ 启动失败: {error}",
     "startException": "✗ 启动异常: {error}",
     "stoppingSim": "正在停止模拟...",

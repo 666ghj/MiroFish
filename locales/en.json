@@ -537,6 +537,7 @@
     "graphMemoryUpdateEnabled": "Dynamic graph memory update enabled",
     "oldSimCleared": "✓ Old simulation logs cleared, restarting simulation",
     "engineStarted": "✓ Simulation engine started successfully",
+    "reattachingSim": "Simulation already in progress, reattaching to live status",
     "startFailed": "✗ Start failed: {error}",
     "startException": "✗ Start error: {error}",
     "stoppingSim": "Stopping simulation...",

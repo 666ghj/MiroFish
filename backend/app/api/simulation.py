@@ -336,9 +336,10 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - preparing: 如果 config_generated=True 说明已完成
         # - running: 正在运行，说明准备早就完成了
         # - completed: 运行完成，说明准备早就完成了
+        # - stopping: 正在停止（可能卡在终止流程），说明准备早就完成了
         # - stopped: 已停止，说明准备早就完成了
         # - failed: 运行失败（但准备是完成的）
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
+        prepared_statuses = ["ready", "preparing", "running", "stopping", "completed", "stopped", "failed"]
         if status in prepared_statuses and config_generated:
             # 获取文件统计信息
             profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
