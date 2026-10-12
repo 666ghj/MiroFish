@@ -49,3 +49,19 @@ export const getReport = (reportId) => {
 export const chatWithReport = (data) => {
   return service.post('/api/report/chat', data)
 }
+
+/**
+ * 获取报告列表
+ * @param {Object} params - { simulation_id?, limit? }
+ */
+export const listReports = (params = {}) => {
+  return service.get('/api/report/list', { params })
+}
+
+/**
+ * 获取报告来源上下文（Reality Seed 与 Simulation Prompt）
+ * @param {string} reportId
+ */
+export const getReportContext = (reportId) => {
+  return service.get(`/api/report/${reportId}/context`)
+}

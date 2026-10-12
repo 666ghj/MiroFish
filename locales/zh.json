@@ -30,7 +30,8 @@
     "description": "MiroFish - 社交媒体舆论模拟系统"
   },
   "nav": {
-    "visitGithub": "访问我们的Github主页"
+    "visitGithub": "访问我们的Github主页",
+    "reports": "报告"
   },
   "home": {
     "tagline": "简洁通用的群体智能引擎",
@@ -75,7 +76,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -663,5 +670,33 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "reportsPage": {
+    "title": "报告",
+    "subtitle": "已生成的模拟报告",
+    "search": "搜索报告...",
+    "all": "全部",
+    "empty": "暂无报告",
+    "noMatch": "没有匹配的报告",
+    "loadFailed": "加载报告失败",
+    "open": "打开",
+    "download": "下载",
+    "interact": "采访",
+    "sections": "个章节",
+    "simulation": "模拟",
+    "created": "创建时间",
+    "back": "返回首页",
+    "count": "{n} 份报告",
+    "realitySeed": "现实种子",
+    "simulationPrompt": "模拟需求",
+    "downloadMd": "Markdown (.md)",
+    "downloadPdf": "PDF (.pdf)",
+    "noSeed": "未找到该报告的种子文档",
+    "noPrompt": "未记录模拟需求",
+    "loadingContext": "加载中...",
+    "contextFailed": "加载详情失败",
+    "seedFiles": "源文件",
+    "seedText": "提取文本",
+    "hide": "收起"
   }
 }

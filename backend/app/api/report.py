@@ -3,6 +3,7 @@ Report API路由
 提供模拟报告生成、获取、对话等接口
 """
 
+import io
 import os
 import traceback
 import threading
@@ -517,42 +518,121 @@ def list_reports():
 @report_bp.route('/<report_id>/download', methods=['GET'])
 def download_report(report_id: str):
     """
-    下载报告（Markdown格式）
-    
-    返回Markdown文件
+    下载报告
+
+    Query参数：
+        format: md（默认）或 pdf
     """
     try:
         report = ReportManager.get_report(report_id)
-        
+
         if not report:
             return jsonify({
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
-        
+
+        fmt = (request.args.get('format') or 'md').lower()
+        if fmt not in ('md', 'pdf'):
+            return jsonify({
+                "success": False,
+                "error": "format must be 'md' or 'pdf'"
+            }), 400
+
         md_path = ReportManager._get_report_markdown_path(report_id)
-        
-        if not os.path.exists(md_path):
-            # 如果MD文件不存在，生成一个临时文件
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                f.write(report.markdown_content)
-                temp_path = f.name
-            
+
+        if fmt == 'pdf':
+            from ..utils.report_pdf import markdown_to_pdf_bytes
+
+            if os.path.exists(md_path):
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    md_text = f.read()
+            else:
+                md_text = report.markdown_content or ''
             return send_file(
-                temp_path,
+                io.BytesIO(markdown_to_pdf_bytes(md_text)),
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f"{report_id}.pdf"
+            )
+
+        if not os.path.exists(md_path):
+            return send_file(
+                io.BytesIO((report.markdown_content or '').encode('utf-8')),
+                mimetype='text/markdown',
                 as_attachment=True,
                 download_name=f"{report_id}.md"
             )
-        
+
         return send_file(
             md_path,
             as_attachment=True,
             download_name=f"{report_id}.md"
         )
-        
+
     except Exception as e:
         logger.error(f"下载报告失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@report_bp.route('/<report_id>/context', methods=['GET'])
+def get_report_context(report_id: str):
+    """
+    获取报告的来源上下文：Reality Seed（上传的种子文档）与 Simulation Prompt
+
+    返回：
+        {
+            "success": true,
+            "data": {
+                "simulation_id": "...",
+                "project_id": "...",
+                "simulation_prompt": "...",
+                "seed_files": [{"filename": "...", "size": 123}],
+                "seed_text": "..."
+            }
+        }
+    """
+    try:
+        report = ReportManager.get_report(report_id)
+        if not report:
+            return jsonify({
+                "success": False,
+                "error": t('api.reportNotFound', id=report_id)
+            }), 404
+
+        project = None
+        state = SimulationManager().get_simulation(report.simulation_id)
+        if state and state.project_id:
+            project = ProjectManager.get_project(state.project_id)
+
+        seed_text = ''
+        if project:
+            seed_text = ProjectManager.get_extracted_text(project.project_id) or ''
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "simulation_id": report.simulation_id,
+                "project_id": project.project_id if project else None,
+                "simulation_prompt": (
+                    (project.simulation_requirement if project else None)
+                    or report.simulation_requirement
+                    or ''
+                ),
+                "seed_files": [
+                    {"filename": f.get("filename"), "size": f.get("size")}
+                    for f in ((project.files if project else []) or [])
+                ],
+                "seed_text": seed_text,
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取报告上下文失败: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
