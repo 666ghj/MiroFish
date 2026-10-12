@@ -58,6 +58,14 @@
           <h2 class="card-title">{{ r.outline?.title || r.report_id }}</h2>
           <p v-if="r.outline?.summary" class="card-summary">{{ r.outline.summary }}</p>
           <p v-else-if="r.simulation_requirement" class="card-summary">{{ r.simulation_requirement }}</p>
+          <div v-if="r.stats" class="chips">
+            <span class="stat-chip"><b>{{ r.stats.agents }}</b> {{ $t('reportsPage.agents') }} / {{ $t('reportsPage.personas') }}</span>
+            <span v-for="p in r.stats.platforms" :key="p.key" class="stat-chip platform">
+              {{ platformLabel(p.key) }} · <b>{{ p.actions }}</b> {{ $t('reportsPage.actions') }}
+            </span>
+            <span class="stat-chip"><b>{{ r.stats.rounds }}</b>/{{ r.stats.total_rounds }} {{ $t('reportsPage.rounds') }}</span>
+            <span v-if="r.stats.model" class="stat-chip mono">{{ r.stats.model }}</span>
+          </div>
           <div class="card-foot">
             <span class="meta mono">
               {{ r.simulation_id }}
@@ -66,6 +74,16 @@
               </template>
             </span>
             <span class="actions">
+              <button
+                class="text-btn"
+                :class="{ on: panel[r.report_id] === 'stats' }"
+                @click.stop="togglePanel(r, 'stats')"
+              >{{ $t('reportsPage.simStats') }}</button>
+              <button
+                class="text-btn"
+                :class="{ on: panel[r.report_id] === 'quotes' }"
+                @click.stop="togglePanel(r, 'quotes')"
+              >{{ $t('reportsPage.keyQuotes') }}</button>
               <button
                 class="text-btn"
                 :class="{ on: panel[r.report_id] === 'seed' }"
@@ -96,7 +114,101 @@
             <div v-if="ctxLoading[r.report_id]" class="detail-note">{{ $t('reportsPage.loadingContext') }}</div>
             <div v-else-if="ctxError[r.report_id]" class="detail-note error">{{ ctxError[r.report_id] }}</div>
             <template v-else-if="ctx[r.report_id]">
-              <template v-if="panel[r.report_id] === 'seed'">
+              <template v-if="panel[r.report_id] === 'stats'">
+                <div class="detail-label">{{ $t('reportsPage.simStats') }}</div>
+                <div v-if="!ctx[r.report_id].stats" class="detail-note">{{ $t('reportsPage.noStats') }}</div>
+                <template v-else>
+                  <div class="kpis">
+                    <div class="kpi"><span class="kpi-v">{{ ctx[r.report_id].stats.agents }}</span><span class="kpi-l">{{ $t('reportsPage.agents') }}</span></div>
+                    <div class="kpi"><span class="kpi-v">{{ ctx[r.report_id].stats.active_agents }}</span><span class="kpi-l">{{ $t('reportsPage.active') }}</span></div>
+                    <div class="kpi"><span class="kpi-v">{{ ctx[r.report_id].stats.total_actions }}</span><span class="kpi-l">{{ $t('reportsPage.actions') }}</span></div>
+                    <div class="kpi"><span class="kpi-v">{{ ctx[r.report_id].stats.rounds }}</span><span class="kpi-l">{{ $t('reportsPage.rounds') }}</span></div>
+                    <div v-if="ctx[r.report_id].stats.simulated_hours != null" class="kpi"><span class="kpi-v">{{ ctx[r.report_id].stats.simulated_hours }}</span><span class="kpi-l">{{ $t('reportsPage.hours') }}</span></div>
+                    <div v-if="ctx[r.report_id].stats.duration_seconds != null" class="kpi"><span class="kpi-v">{{ formatDuration(ctx[r.report_id].stats.duration_seconds) }}</span><span class="kpi-l">{{ $t('reportsPage.duration') }}</span></div>
+                  </div>
+
+                  <div v-if="ctx[r.report_id].stats.timeline.length" class="stat-block">
+                    <div class="stat-title">{{ $t('reportsPage.activityByRound') }}</div>
+                    <svg class="chart" :viewBox="`0 0 ${CHART_W} ${CHART_H}`" preserveAspectRatio="none">
+                      <line v-for="g in chartGrid(ctx[r.report_id].stats.timeline)" :key="g.y" :x1="PAD_L" :x2="CHART_W - PAD_R" :y1="g.y" :y2="g.y" class="grid" />
+                      <text v-for="g in chartGrid(ctx[r.report_id].stats.timeline)" :key="'t' + g.y" :x="PAD_L - 6" :y="g.y + 3" class="axis" text-anchor="end">{{ g.label }}</text>
+                      <polyline
+                        v-for="(p, i) in ctx[r.report_id].stats.platforms"
+                        :key="p.key"
+                        :points="chartPoints(ctx[r.report_id].stats.timeline, p.key)"
+                        fill="none"
+                        :stroke="SERIES_COLORS[i % SERIES_COLORS.length]"
+                        stroke-width="2"
+                        stroke-linejoin="round"
+                        vector-effect="non-scaling-stroke"
+                      />
+                      <text
+                        v-for="x in chartXLabels(ctx[r.report_id].stats.timeline)"
+                        :key="'x' + x.round"
+                        :x="x.x" :y="CHART_H - 4" class="axis" text-anchor="middle"
+                      >{{ x.round }}</text>
+                    </svg>
+                    <div class="legend">
+                      <span v-for="(p, i) in ctx[r.report_id].stats.platforms" :key="p.key" class="legend-item">
+                        <i :style="{ background: SERIES_COLORS[i % SERIES_COLORS.length] }"></i>{{ platformLabel(p.key) }}
+                      </span>
+                      <span class="dim">· {{ $t('reportsPage.round') }}</span>
+                    </div>
+                  </div>
+
+                  <div v-for="p in ctx[r.report_id].stats.platforms" :key="p.key" class="stat-block">
+                    <div class="stat-title">{{ platformLabel(p.key) }}
+                      <span class="dim mono">· {{ p.active_agents }} {{ $t('reportsPage.active') }} · {{ p.actions }} {{ $t('reportsPage.actions') }}</span>
+                    </div>
+                    <div v-for="a in p.action_types" :key="a.type" class="bar-row">
+                      <span class="bar-label mono">{{ a.type }}</span>
+                      <span class="bar-track"><span class="bar-fill" :style="{ width: barWidth(a.count, p.action_types) }"></span></span>
+                      <span class="bar-num mono">{{ a.count }}</span>
+                    </div>
+                  </div>
+
+                  <div class="stat-block">
+                    <div class="stat-title">{{ $t('reportsPage.entityTypes') }}</div>
+                    <div v-for="e in ctx[r.report_id].stats.entity_types" :key="e.type" class="bar-row">
+                      <span class="bar-label mono">{{ e.type }}</span>
+                      <span class="bar-track"><span class="bar-fill" :style="{ width: barWidth(e.count, ctx[r.report_id].stats.entity_types) }"></span></span>
+                      <span class="bar-num mono">{{ e.count }}</span>
+                    </div>
+                  </div>
+
+                  <div v-if="ctx[r.report_id].stats.top_agents.length" class="stat-block">
+                    <div class="stat-title">{{ $t('reportsPage.topAgents') }}</div>
+                    <div v-for="a in ctx[r.report_id].stats.top_agents" :key="a.agent_id" class="top-row">
+                      <span>{{ a.name }} <span class="dim mono">{{ a.type }}</span></span>
+                      <span class="mono">{{ a.actions }}</span>
+                    </div>
+                  </div>
+
+                  <div v-if="ctx[r.report_id].stats.model" class="detail-note">
+                    {{ $t('reportsPage.model') }}: <span class="mono">{{ ctx[r.report_id].stats.model }}</span>
+                  </div>
+                </template>
+              </template>
+              <template v-else-if="panel[r.report_id] === 'quotes'">
+                <div class="detail-label">{{ $t('reportsPage.keyQuotes') }}</div>
+                <div v-if="!ctx[r.report_id].stats?.quotes?.length" class="detail-note">{{ $t('reportsPage.noQuotes') }}</div>
+                <template v-else>
+                  <div v-for="group in quoteGroups(ctx[r.report_id].stats.quotes)" :key="group.kind" class="stat-block">
+                    <div class="stat-title">{{ group.kind === 'post' ? $t('reportsPage.topPosts') : $t('reportsPage.topComments') }}</div>
+                    <blockquote v-for="(q, i) in group.items" :key="i" class="quote">
+                      <p>{{ q.content }}</p>
+                      <footer>
+                        <b>{{ q.author }}</b>
+                        <span v-if="q.author_type" class="dim mono"> · {{ q.author_type }}</span>
+                        <span class="dim mono"> · {{ platformLabel(q.platform) }}</span>
+                        <span v-if="q.round" class="dim mono"> · {{ $t('reportsPage.round') }} {{ q.round }}</span>
+                        <span class="quote-score mono">♥ {{ q.likes }}<template v-if="q.shares"> · ⇄ {{ q.shares }}</template></span>
+                      </footer>
+                    </blockquote>
+                  </div>
+                </template>
+              </template>
+              <template v-else-if="panel[r.report_id] === 'seed'">
                 <div class="detail-label">01 / {{ $t('reportsPage.realitySeed') }}</div>
                 <div v-if="!ctx[r.report_id].seed_text && !ctx[r.report_id].seed_files.length" class="detail-note">
                   {{ $t('reportsPage.noSeed') }}
@@ -175,6 +287,60 @@ const formatDate = (iso) => {
 }
 
 const downloadUrl = (r, format) => `${API_BASE}/api/report/${r.report_id}/download?format=${format}`
+
+const CHART_W = 600
+const CHART_H = 150
+const PAD_L = 28
+const PAD_R = 8
+const PAD_T = 8
+const PAD_B = 18
+const SERIES_COLORS = ['#000000', '#ff4500', '#2e86de']
+
+const chartMax = (timeline) => {
+  let max = 1
+  for (const row of timeline) {
+    for (const k of Object.keys(row)) if (k !== 'round') max = Math.max(max, row[k])
+  }
+  return max
+}
+
+const chartX = (i, n) => PAD_L + (n <= 1 ? 0 : (i / (n - 1)) * (CHART_W - PAD_L - PAD_R))
+const chartY = (v, max) => PAD_T + (1 - v / max) * (CHART_H - PAD_T - PAD_B)
+
+const chartPoints = (timeline, key) => {
+  const max = chartMax(timeline)
+  return timeline.map((row, i) => `${chartX(i, timeline.length)},${chartY(row[key] || 0, max)}`).join(' ')
+}
+
+const chartGrid = (timeline) => {
+  const max = chartMax(timeline)
+  return [0, 0.5, 1].map(f => ({ y: chartY(max * f, max), label: Math.round(max * f) }))
+}
+
+const chartXLabels = (timeline) => {
+  const step = Math.max(1, Math.ceil(timeline.length / 10))
+  return timeline
+    .map((row, i) => ({ round: row.round, x: chartX(i, timeline.length) }))
+    .filter((_, i) => i % step === 0 || i === timeline.length - 1)
+}
+
+const quoteGroups = (quotes) =>
+  ['post', 'comment']
+    .map(kind => ({ kind, items: quotes.filter(q => q.kind === kind) }))
+    .filter(g => g.items.length)
+
+const platformLabel = (key) => t(`reportsPage.${key}`)
+
+const barWidth = (count, rows) => {
+  const max = Math.max(...rows.map(r => r.count), 1)
+  return `${Math.max((count / max) * 100, 2)}%`
+}
+
+const formatDuration = (sec) => {
+  if (sec < 60) return `${sec}s`
+  const m = Math.floor(sec / 60)
+  return m < 60 ? `${m}m ${sec % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`
+}
 
 const toggleMenu = (id) => {
   menuOpen.value = menuOpen.value === id ? null : id
@@ -536,5 +702,155 @@ h1 {
 
 .dim {
   color: #888;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.stat-chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  background: #f4f4f4;
+  color: #333;
+}
+
+.stat-chip.platform {
+  background: #000;
+  color: #fff;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.kpi {
+  border: 1px solid #eee;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kpi-v {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.kpi-l {
+  font-size: 11px;
+  color: #777;
+}
+
+.stat-block {
+  margin-bottom: 18px;
+}
+
+.stat-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 170px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.bar-track {
+  height: 8px;
+  background: #f0f0f0;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: #000;
+}
+
+.bar-num {
+  text-align: right;
+}
+
+.chart {
+  width: 100%;
+  height: 150px;
+  display: block;
+}
+
+.chart .grid {
+  stroke: #eee;
+  stroke-width: 1;
+}
+
+.chart .axis {
+  font-size: 9px;
+  fill: #888;
+  font-family: inherit;
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-item i {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+}
+
+.quote {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-left: 3px solid #000;
+  background: #fafafa;
+}
+
+.quote p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.quote footer {
+  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  align-items: baseline;
+}
+
+.quote-score {
+  margin-left: auto;
+  color: #444;
+}
+
+.top-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid #f2f2f2;
 }
 </style>

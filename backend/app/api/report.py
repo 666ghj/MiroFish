@@ -12,6 +12,7 @@ from flask import request, jsonify, send_file
 from . import report_bp
 from ..config import Config
 from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
+from ..services import report_stats
 from ..services.simulation_manager import SimulationManager
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
@@ -500,9 +501,15 @@ def list_reports():
             limit=limit
         )
         
+        data = []
+        for r in reports:
+            item = r.to_dict()
+            item["stats"] = report_stats.get_summary(r.simulation_id)
+            data.append(item)
+
         return jsonify({
             "success": True,
-            "data": [r.to_dict() for r in reports],
+            "data": data,
             "count": len(reports)
         })
         
@@ -628,6 +635,7 @@ def get_report_context(report_id: str):
                     for f in ((project.files if project else []) or [])
                 ],
                 "seed_text": seed_text,
+                "stats": report_stats.get_detail(report.simulation_id),
             }
         })
 
