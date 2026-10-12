@@ -46,6 +46,11 @@ def _is_response_format_unsupported(error: Exception) -> bool:
     if "response_format" not in message:
         return False
 
+    # Anthropic's OpenAI-compatible endpoint rejects json_object with
+    # "response_format.type: Input should be 'json_schema'".
+    if message.startswith("response_format"):
+        return True
+
     code = str(details.get("code") or "").lower()
     unsupported_codes = {
         "unsupported_parameter",
