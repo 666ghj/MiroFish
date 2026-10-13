@@ -10,10 +10,13 @@ try {
 }
 
 const local = provider === 'graphiti'
+const services = ['backend']
+if (!process.argv.includes('--no-frontend')) services.push('frontend')
+if (local) services.push('graph')
+services.push('mcp')
 const args = ['node_modules/concurrently/dist/bin/concurrently.js', '--kill-others',
-  '-n', local ? 'backend,frontend,graph' : 'backend,frontend', '-c', 'green,cyan,magenta',
-  'npm run backend', 'npm run frontend']
-if (local) args.push('npm run graph')
+  '-n', services.join(','), '-c', 'green,cyan,magenta,yellow',
+  ...services.map(service => `npm run ${service}`)]
 const child = spawn(process.execPath, args, { stdio: 'inherit' })
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal))
 child.on('exit', (code) => { process.exitCode = code || 0 })

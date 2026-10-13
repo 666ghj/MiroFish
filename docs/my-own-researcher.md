@@ -23,15 +23,16 @@ Choose **Sign in with ChatGPT** during Codex login. The CLI and login must be av
 
 The configuration helper selects local/Codex mode and generates credentials in the ignored `.env` with owner-only permissions, preserving existing secrets. Keep the generated Neo4j password: changing it in `.env` does not change an initialized database's password.
 
-Open **http://localhost:3000/?lang=en**. Wait for graph readiness before uploading; the first graph-service start downloads two pinned neural search models. Docker runs Neo4j, while the app, graph service, and Codex run on the host. Use `compose.local-graph.yml` for Neo4j; this setup does not provide a full-application container image.
+Open **http://localhost:4317/?lang=en**. Wait for graph readiness before uploading; the first graph-service start downloads two pinned neural search models. Docker runs Neo4j, while the app, graph service, and Codex run on the host. Use `compose.local-graph.yml` for Neo4j; this setup does not provide a full-application container image.
 
-For later starts, use `npm run graph:up` then `npm run dev`. Stop the app with Ctrl+C. `npm run graph:down` stops Neo4j while preserving its data. Keep the services running if active ingestion or memory saving needs to finish.
+For later starts, use `npm run graph:up` then `npm run dev`. For agent-only use, run `npm run dev:agent` instead; it starts the backend, MCP, and configured local graph service without a browser. See the [MCP guide](mcp.md) for connection settings and the agent workflow. Stop the app with Ctrl+C. `npm run graph:down` stops Neo4j while preserving its data. Keep the services running if active ingestion or memory saving needs to finish.
 
 ## Components and data
 
 | Component | Address or location | Purpose |
 | --- | --- | --- |
-| Vue interface | `localhost:3000` | Upload, graph, simulation controls, reports, interaction |
+| Vue interface | `localhost:4317` | Upload, graph, simulation controls, reports, interaction |
+| MCP adapter | `127.0.0.1:4318/mcp` | Agent tools over Streamable HTTP; stdio also supported |
 | Flask/OASIS backend | `127.0.0.1:5001` | Projects, agents, simulation, and reports |
 | Local graph service | `127.0.0.1:5002` | Compatibility API and durable ingestion |
 | Neo4j Community 5.26 | `127.0.0.1:7687` / `127.0.0.1:7474` | Graphiti entities, temporal facts, and provenance |

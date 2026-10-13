@@ -7,6 +7,8 @@
     "setup:backend": "cd backend && uv sync",
     "setup:all": "npm run setup && npm run setup:backend && npm run setup:graph",
     "dev": "node scripts/dev.mjs",
+    "dev:agent": "node scripts/dev.mjs --no-frontend",
+    "mcp": "uv run --project backend python backend/mcp_server.py --transport streamable-http",
     "backend": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
