@@ -8,6 +8,11 @@ import InteractionView from '../views/InteractionView.vue'
 
 const routes = [
   {
+    path: '/demo',
+    name: 'Demo',
+    component: () => import('../views/DemoView.vue')
+  },
+  {
     path: '/',
     name: 'Home',
     component: Home
@@ -46,7 +51,12 @@ const routes = [
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.path === '/' && to.hash === '#research') return { el: '#research' }
+    if (to.path !== from.path) return { top: 0 }
+  }
 })
 
 export default router
