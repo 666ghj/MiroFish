@@ -1,12 +1,13 @@
 # My Own Researcher
 
-**An independent fork of [MiroFish](https://github.com/666ghj/MiroFish), licensed under [AGPL-3.0](LICENSE).** This repository adapts MiroFish's document → graph → simulation → report workflow into a personal research workbench with Codex inference and local Graphiti/Neo4j storage.
+**An independent fork of [MiroFish](https://github.com/666ghj/MiroFish), licensed under [AGPL-3.0](LICENSE).** This repository adapts MiroFish's document → graph → simulation → report workflow into a personal research workbench with selectable agent CLI inference and local Graphiti/Neo4j storage.
 
 Upload source material, describe a question, explore how simulated agents respond, and download the resulting report. Use it to examine assumptions and possible scenarios; simulation output is generated evidence for exploration, not a guarantee of real-world predictions.
 
 ## What this fork adds
 
 - **Your own Codex login:** use the ChatGPT-authenticated Codex CLI and your account's available allowance. No LLM API key is required in local mode, and there is no automatic paid API fallback.
+- **More agent providers:** select any of the 14 additional agent CLIs below for inference, and generate provider-specific MCP connection settings.
 - **Local graph storage:** Graphiti and Neo4j replace the subset of Zep operations this application uses. Local mode needs no Zep account or key.
 - **English interface:** English is the default, with the inherited language selector available.
 - **Recovery checkpoints:** resume unfinished graph ingestion, agent preparation, memory saving, and report sections while retaining completed work. Simulation process restarts begin at round 1; they do not resume an interrupted OASIS process mid-round.
@@ -16,7 +17,7 @@ Upload source material, describe a question, explore how simulated agents respon
 - **PDF download:** download the saved report from the report or final interaction view without another AI call.
 - **MCP for research agents:** use the same projects, graphs, simulations, and reports through local Streamable HTTP or stdio tools. Run the workflow without opening a browser.
 
-**Local storage does not mean offline AI.** Document text, extracted content, and simulation conversations are sent to OpenAI through Codex. Model inference uses your account's allowance and remains subject to account/model limits; this is not free or unlimited inference. Graph finalization and report generation also make AI calls and can take time after you stop a simulation.
+**Local storage does not mean offline AI.** Document text, extracted content, and simulation conversations go to the selected CLI's configured model service (OpenAI in the default Codex setup). Its authentication, billing, and account/model limits apply; this is not free or unlimited inference. Graph finalization and report generation also make AI calls and can take time after you stop a simulation.
 
 ## Compared with the inherited MiroFish setup
 
@@ -25,7 +26,7 @@ This comparison describes the upstream baseline inherited by this fork, not a cl
 | Area | Inherited MiroFish baseline | This fork's local setup |
 | --- | --- | --- |
 | Research workflow | Source documents, graph, OASIS simulation, report, interaction | Retains that workflow |
-| Language inference | OpenAI-compatible API configuration | ChatGPT-authenticated Codex CLI; optional API mode retained |
+| Language inference | OpenAI-compatible API configuration | Codex or another supported agent CLI; optional API mode retained |
 | Graph service | Zep Cloud credentials | Local Graphiti + Neo4j; no Zep account required |
 | Interface | Upstream multilingual interface | English default and fork identity |
 | Interrupted work | Existing task and run handling | Additional checkpoints, visible retries, and manual recovery |
@@ -34,7 +35,7 @@ This comparison describes the upstream baseline inherited by this fork, not a cl
 
 ## Install and run
 
-Use macOS, Linux, or WSL with Node.js 22.12+, Python 3.11–3.12, [uv](https://docs.astral.sh/uv/), Docker with Compose, and the [official Codex CLI](https://learn.chatgpt.com/docs/cli). Sign in using your own ChatGPT account with Codex access. Docker must be running.
+Use macOS, Linux, or WSL with Node.js 22.12+, Python 3.11–3.12, [uv](https://docs.astral.sh/uv/), Docker with Compose, and your selected agent CLI. The quickstart below uses the [official Codex CLI](https://learn.chatgpt.com/docs/cli) and your ChatGPT login. For another provider, replace the configuration and login steps using [Choose your inference provider](#choose-your-inference-provider). Docker must be running.
 
 ```sh
 git clone https://github.com/Handriantog/My-Own-Researcher.git
@@ -51,11 +52,63 @@ npm run dev
 
 Open **http://localhost:4317/?lang=en** and wait for graph readiness before uploading. The first graph-service start downloads the local embedding and reranking models. MCP is available at **http://127.0.0.1:4318/mcp**.
 
-The commented [`.env.example`](.env.example) explains provider settings, local credentials, and timeouts. The configuration helper selects `LLM_PROVIDER=codex` and `GRAPH_PROVIDER=graphiti`, creates private credentials in the ignored `.env`, and preserves existing secrets. Codex owns its login credentials; do not copy them into `.env`.
+The commented [`.env.example`](.env.example) explains provider settings, local credentials, and timeouts. The configuration helper defaults to `LLM_PROVIDER=codex`, preserves an existing selection, accepts `--provider`, and selects `GRAPH_PROVIDER=graphiti`. It creates private credentials in the ignored `.env` and preserves existing secrets. Each CLI owns its login credentials; do not copy them into `.env`.
 
-Docker runs Neo4j. The frontend, backend, graph service, MCP adapter, and Codex run on the host. `npm run graph:up` uses `compose.local-graph.yml` for Neo4j only; run the application and Codex natively on the host.
+Docker runs Neo4j. The frontend, backend, graph service, MCP adapter, and selected agent CLI run on the host. `npm run graph:up` uses `compose.local-graph.yml` for Neo4j only; run the application and CLI natively on the host.
 
 For subsequent starts, run `npm run graph:up` and `npm run dev`. Stop the app with Ctrl+C; `npm run graph:down` stops Neo4j while retaining its data.
+
+## Choose your inference provider
+
+Install and sign in to the CLI you have access to, under the same OS user who runs the app. Use the provider ID below for both `LLM_PROVIDER` and the MCP configuration generator. **Inference and MCP are independent:** for example, Cursor can drive research through MCP while Claude Code performs the underlying inference.
+
+| Agent | Provider ID | Inference executable | MCP configuration destination |
+| --- | --- | --- | --- |
+| Codex | `codex` | `codex` | `~/.codex/config.toml` |
+| Claude Code | `claude-code` | `claude` | `.mcp.json` |
+| Antigravity | `antigravity` | `agy` (CLI required) | `.agents/mcp_config.json` |
+| Cursor | `cursor` | `agent` | `.cursor/mcp.json` |
+| Devin CLI | `devin` | `devin` | `.devin/mcp_config.json` |
+| Factory Droid | `factory-droid` | `droid` | `.factory/mcp.json` |
+| Gemini CLI | `gemini` | `gemini` | `.gemini/settings.json` |
+| GitHub Copilot CLI | `copilot` | `copilot` | `~/.copilot/mcp-config.json` |
+| Grok Build CLI | `grok` | `grok` | `~/.grok/config.toml` |
+| Kimi Code | `kimi` | `kimi` (current Node.js CLI) | `.kimi-code/mcp.json` |
+| OpenCode | `opencode` | `opencode` (v2) | `opencode.json` |
+| Pi | `pi` | `pi` (current native MCP release) | `.pi/mcp.json` |
+| Qwen Code | `qwen` | `qwen` | `.qwen/settings.json` |
+| Hermes Agent | `hermes` | `hermes` | `~/.hermes/config.yaml` |
+| Muse | `muse` | `muse` (Meta Muse Code) | `~/.config/muse/settings.json` |
+
+For example, after installing and signing in to Claude Code:
+
+```sh
+python3 scripts/configure_local_graph.py --provider claude-code
+uv run --project backend python backend/scripts/check_agent.py --provider claude-code
+```
+
+The second command checks configuration and executable availability **without running inference**. To verify login, text/JSON output, simulation actions, and graph response compatibility, opt into a small live check that uses your account allowance:
+
+```sh
+uv run --project backend python backend/scripts/check_agent.py --provider claude-code --live
+# Optional: also exercise two agents in a temporary OASIS simulation
+uv run --project backend python backend/scripts/check_agent.py --provider claude-code --live --oasis
+```
+
+Replace `claude-code` with your provider ID. In the root `.env`, optional settings for non-Codex agents are:
+
+```dotenv
+LLM_PROVIDER=claude-code
+GRAPH_PROVIDER=graphiti
+# AGENT_BIN=/absolute/path/to/claude
+# AGENT_MODEL=an-exact-model-id-available-to-your-account
+AGENT_TIMEOUT_SECONDS=600
+AGENT_QUEUE_TIMEOUT_SECONDS=600
+```
+
+Restart the application after changes. Document analysis, personas, configuration, simulations, reports, and interviews use this selection. **Local Graphiti extraction follows it too**, so another CLI provider does not require a Codex login. `GRAPH_LLM_PROVIDER` can explicitly select a different graph CLI; when `LLM_PROVIDER=openai`, graph extraction keeps its existing Codex default unless overridden. `AGENT_MODEL` applies to non-Codex CLI requests; Codex retains its `CODEX_*` settings. API and boost keys never select an automatic fallback.
+
+The new native presets are **experimental and version-sensitive**. Their command construction, parsers, and routing are tested with local fake executables; live account compatibility must be checked on your installation. CLI tool restrictions vary and are not an OS sandbox: some clients retain native tools, user configuration, hooks, or MCP discovery. See the [provider setup guide](docs/agent-providers.md) for official install/login references, exact version requirements, tool-control limitations, and the `AGENT_COMMAND_JSON` wrapper option for a different CLI version or a controlled runtime.
 
 ## Use it from another AI agent
 
@@ -68,7 +121,18 @@ npm run dev:agent
 
 This starts the backend, the configured local graph service, and MCP. Connect your agent's MCP client with **Streamable HTTP**, URL **`http://127.0.0.1:4318/mcp`**, and a **tool timeout of at least 900 seconds**. If `npm run dev` is already running, MCP is already available; do not start another backend. `npm run mcp` starts only the adapter when the backend/graph services are already running separately.
 
-For a client that launches **stdio** servers, use this configuration, replacing both `/absolute/path/My-Own-Researcher` paths with your checkout:
+Generate the correct configuration for your client, using its provider ID from the table above:
+
+```sh
+python3 scripts/agent_mcp.py --provider claude-code
+python3 scripts/agent_mcp.py --provider gemini
+python3 scripts/agent_mcp.py --provider cursor --transport stdio
+python3 scripts/agent_mcp.py --list
+```
+
+The generator prints configuration only. Merge its `my-own-researcher` entry into the destination listed above, preserving your other servers and settings, then restart or reload the agent. Use `--url http://127.0.0.1:YOUR_PORT/mcp` for a custom port; stdio automatically uses absolute checkout paths and resolves `uv` when available. Ask the agent to call `get_status` to verify the connection without inference. The [per-agent MCP guide](docs/agent-mcp.md) includes global locations, client-specific schemas, timeout units, and compatibility notes. Use stdio for Hermes when calls can exceed its HTTP idle limit.
+
+For other clients that accept generic **stdio** settings, use this configuration, replacing both `/absolute/path/My-Own-Researcher` paths with your checkout:
 
 ```json
 {
@@ -100,11 +164,11 @@ See the **[MCP guide](docs/mcp.md)** for tool names, example inputs, polling, re
 4. Let the simulation finish, or use **Stop simulation** and confirm the warning. Keep the services running while saved activity is added to graph memory.
 5. Generate the report, inspect its evidence and coverage notes, and use **Download PDF**. Continue with agent or report interaction when available.
 
-Start with a small source and a few agents. Codex requests are serialized, so larger graphs, more agents, and additional rounds can take substantial time and allowance. Effort percentages scale round counts, not total runtime or token consumption.
+Start with a small source and a few agents. CLI requests are serialized, so larger graphs, more agents, and additional rounds can take substantial time and allowance. Effort percentages scale round counts, not total runtime or token consumption.
 
 ## Storage and operating limits
 
-This is a **single-user local application**. Keep services on loopback and run one backend process; multiple backend workers and shared public hosting are unsupported. Local files and graph storage remain on your machine, but inference content is sent to OpenAI.
+This is a **single-user local application**. Keep services on loopback and run one backend process; multiple backend workers and shared public hosting are unsupported. Local files and graph storage remain on your machine, but inference content goes to your CLI's configured model provider.
 
 Projects and checkpoints live in `backend/uploads/`; Neo4j data lives in its Docker volume. Back up both together. The graph compatibility layer implements the operations this app needs, not the complete Zep product. Existing projects retain their graph provider; changing configuration does not migrate their data.
 

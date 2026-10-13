@@ -1,9 +1,9 @@
 """Preserve provider failures that OASIS otherwise returns as action results."""
 
-import os
-
 import oasis
 from oasis.environment.env import OasisEnv
+
+from .provider_factory import agent_provider
 
 
 class CodexSimulationEnv(OasisEnv):
@@ -15,6 +15,6 @@ class CodexSimulationEnv(OasisEnv):
 
 
 def make_simulation_env(*args, **kwargs):
-    if os.environ.get('LLM_PROVIDER', 'openai').strip().lower() == 'codex':
+    if agent_provider() is not None:
         return CodexSimulationEnv(*args, **kwargs)
     return oasis.make(*args, **kwargs)

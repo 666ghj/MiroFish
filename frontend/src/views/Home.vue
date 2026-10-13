@@ -29,8 +29,7 @@
             <p>
               <i18n-t keypath="home.heroDesc" tag="span">
                 <template #brand><span class="highlight-bold">{{ $t('home.heroDescBrand') }}</span></template>
-                <template #agentScale><span class="highlight-orange">{{ $t('home.heroDescAgentScale') }}</span></template>
-                <template #optimalSolution><span class="highlight-code">{{ $t('home.heroDescOptimalSolution') }}</span></template>
+                <template #providerChoice><span class="highlight-orange">{{ $t('home.heroDescProviderChoice') }}</span></template>
               </i18n-t>
             </p>
             <p class="slogan-text">
@@ -44,7 +43,7 @@
         <div class="hero-right">
           <!-- Logo 区域 -->
           <div class="logo-container">
-            <div class="hero-logo research-wordmark">My Own<br />Researcher<span>LOCAL GRAPH · CODEX</span></div>
+            <div class="hero-logo research-wordmark">My Own<br />Researcher<span>{{ $t('home.wordmarkTagline') }}</span></div>
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">
@@ -69,12 +68,12 @@
           <!-- 数据指标卡片 -->
           <div class="metrics-row">
             <div class="metric-card">
-              <div class="metric-value">{{ $t('home.metricLowCost') }}</div>
-              <div class="metric-label">{{ $t('home.metricLowCostDesc') }}</div>
+              <div class="metric-label">{{ $t('home.configuredAI') }}</div>
+              <div class="metric-value">{{ providerName }}</div>
             </div>
             <div class="metric-card">
-              <div class="metric-value">{{ $t('home.metricHighAvail') }}</div>
-              <div class="metric-label">{{ $t('home.metricHighAvailDesc') }}</div>
+              <div class="metric-label">{{ $t('home.knowledgeGraph') }}</div>
+              <div class="metric-value">{{ graphName }}</div>
             </div>
           </div>
 
@@ -205,6 +204,25 @@
         </div>
       </section>
 
+      <section class="integration-section" aria-labelledby="integration-title">
+        <h2 id="integration-title" class="section-title">{{ $t('home.connectAI') }}</h2>
+        <p class="section-desc">{{ $t('home.connectAIDesc') }}</p>
+        <div class="integration-grid">
+          <a href="https://github.com/Handriantog/My-Own-Researcher/blob/main/docs/agent-providers.md"
+             target="_blank" rel="noopener noreferrer" class="integration-card">
+            <h3>{{ $t('home.inferenceTitle') }}</h3>
+            <p>{{ $t('home.inferenceDesc') }}</p>
+            <span class="integration-link">{{ $t('home.inferenceLink') }} ↗</span>
+          </a>
+          <a href="https://github.com/Handriantog/My-Own-Researcher/blob/main/docs/agent-mcp.md"
+             target="_blank" rel="noopener noreferrer" class="integration-card">
+            <h3>{{ $t('home.mcpTitle') }}</h3>
+            <p>{{ $t('home.mcpDesc') }}</p>
+            <span class="integration-link">{{ $t('home.mcpLink') }} ↗</span>
+          </a>
+        </div>
+      </section>
+
       <!-- 历史项目数据库 -->
       <HistoryDatabase />
     </div>
@@ -222,6 +240,24 @@ import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 const router = useRouter()
 const { t } = useI18n()
 const system = ref(null)
+const providerNames = {
+  codex: 'Codex', 'claude-code': 'Claude Code', antigravity: 'Antigravity',
+  cursor: 'Cursor', devin: 'Devin CLI', 'factory-droid': 'Factory Droid',
+  gemini: 'Gemini CLI', copilot: 'GitHub Copilot CLI', grok: 'Grok Build CLI',
+  kimi: 'Kimi Code', opencode: 'OpenCode', pi: 'Pi', qwen: 'Qwen Code',
+  hermes: 'Hermes Agent', muse: 'Muse', openai: 'OpenAI-compatible',
+}
+const providerName = computed(() => {
+  if (!system.value) return t('home.providerChecking')
+  const provider = system.value.llm_provider
+  return providerNames[provider] || provider || t('home.providerUnknown')
+})
+const graphName = computed(() => {
+  if (!system.value) return t('home.providerChecking')
+  const provider = system.value.graph_provider
+  return { graphiti: 'Graphiti + Neo4j', zep: 'Zep' }[provider]
+    || provider || t('home.providerUnknown')
+})
 const statusText = computed(() => {
   if (!system.value) return t('home.systemChecking')
   return ['ready', 'configured'].includes(system.value.graph?.status)
@@ -619,20 +655,66 @@ const startSimulation = () => {
 
 .metric-card {
   border: 1px solid var(--border);
-  padding: 20px 30px;
-  min-width: 150px;
+  padding: 20px;
+  flex: 1;
+  min-width: 0;
 }
 
 .metric-value {
   font-family: var(--font-mono);
-  font-size: 1.8rem;
+  font-size: 1.2rem;
   font-weight: 520;
-  margin-bottom: 5px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
 }
 
 .metric-label {
   font-size: 0.85rem;
   color: #999;
+}
+
+.integration-section {
+  margin-top: 60px;
+  border-top: 1px solid var(--border);
+  padding-top: 40px;
+}
+
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.integration-card {
+  border: 1px solid var(--border);
+  padding: 28px;
+  color: var(--black);
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.integration-card:hover,
+.integration-card:focus-visible {
+  border-color: var(--orange);
+}
+
+.integration-card h3 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.integration-card p {
+  color: var(--gray-text);
+  line-height: 1.6;
+  margin: 0 0 20px;
+}
+
+.integration-link {
+  margin-top: auto;
+  color: var(--orange);
+  font-weight: 600;
 }
 
 /* 项目模拟步骤介绍 */
@@ -900,6 +982,12 @@ const startSimulation = () => {
 
 /* 响应式适配 */
 @media (max-width: 1024px) {
+  .dashboard-section .left-panel,
+  .dashboard-section .right-panel {
+    width: 100%;
+    min-width: 0;
+  }
+
   .dashboard-section {
     flex-direction: column;
   }
@@ -916,6 +1004,31 @@ const startSimulation = () => {
   .hero-logo {
     max-width: 200px;
     margin-bottom: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  .navbar {
+    padding: 16px 20px;
+    height: auto;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .main-content {
+    padding: 40px 20px;
+  }
+
+  .tag-row {
+    flex-wrap: wrap;
+  }
+
+  .main-title {
+    font-size: 3rem;
+  }
+
+  .integration-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

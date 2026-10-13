@@ -434,9 +434,10 @@ class TwitterSimulationRunner:
         - LLM_BASE_URL: API基础URL
         - LLM_MODEL_NAME: 模型名称
         """
-        if os.environ.get('LLM_PROVIDER', 'openai').strip().lower() == 'codex':
-            from app.utils.codex_model import CodexModel
-            return CodexModel()
+        from app.utils.provider_factory import create_agent_model
+        agent_model = create_agent_model()
+        if agent_model is not None:
+            return agent_model
 
         # 优先从 .env 读取配置
         llm_api_key = os.environ.get("LLM_API_KEY", "")

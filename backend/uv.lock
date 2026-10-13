@@ -2079,6 +2079,12 @@ wheels = [
 name = "research-codex-transport"
 version = "0.1.0"
 source = { editable = "../shared/codex-transport" }
+dependencies = [
+    { name = "jsonschema" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jsonschema", specifier = ">=4.0.0" }]
 
 [[package]]
 name = "rfc3339-validator"

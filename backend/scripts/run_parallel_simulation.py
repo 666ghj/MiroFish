@@ -996,9 +996,10 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         config: 模拟配置字典
         use_boost: 是否使用加速 LLM 配置（如果可用）
     """
-    if os.environ.get('LLM_PROVIDER', 'openai').strip().lower() == 'codex':
-        from app.utils.codex_model import CodexModel
-        return CodexModel()
+    from app.utils.provider_factory import create_agent_model
+    agent_model = create_agent_model()
+    if agent_model is not None:
+        return agent_model
 
     # 检查是否有加速配置
     boost_api_key = os.environ.get("LLM_BOOST_API_KEY", "")

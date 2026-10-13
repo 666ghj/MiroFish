@@ -43,29 +43,29 @@ def _environment() -> dict[str, str]:
 
 
 @contextmanager
-def _request_slot(cancel_event=None):
+def _request_slot(cancel_event=None, *, prefix='CODEX', label='Codex'):
     if os.name != 'posix':
-        raise CodexProviderError('The experimental Codex provider requires macOS or Linux.')
+        raise CodexProviderError(f'{label} provider requires macOS or Linux.')
     import fcntl
 
-    default = Path(__file__).resolve().parents[3] / 'backend' / 'uploads' / '.codex' / 'requests.lock'
-    path = Path(os.environ.get('CODEX_LOCK_PATH', str(default))).expanduser()
+    default = Path(__file__).resolve().parents[3] / 'backend' / 'uploads' / ('.' + prefix.lower()) / 'requests.lock'
+    path = Path(os.environ.get(f'{prefix}_LOCK_PATH', str(default))).expanduser()
     if not path.is_absolute():
-        raise CodexProviderError('CODEX_LOCK_PATH must be an absolute path shared by all MiroFish processes.')
+        raise CodexProviderError(f'{prefix}_LOCK_PATH must be an absolute path shared by all MiroFish processes.')
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + _positive_seconds('CODEX_QUEUE_TIMEOUT_SECONDS', '600')
+    deadline = time.monotonic() + _positive_seconds(f'{prefix}_QUEUE_TIMEOUT_SECONDS', '600')
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         while True:
             if cancel_event is not None and cancel_event.is_set():
-                raise CodexProviderError('Codex request cancelled.')
+                raise CodexProviderError(f'{label} request cancelled.')
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise CodexProviderError('Codex request queue timed out. Reduce simultaneous agents and retry.')
+                    raise CodexProviderError(f'{label} request queue timed out. Reduce simultaneous agents and retry.')
                 time.sleep(0.05)
         yield
     finally:
@@ -73,7 +73,8 @@ def _request_slot(cancel_event=None):
 
 
 def _run(args: list[str], *, env: dict[str, str], timeout: float,
-         cwd: str, prompt: str | None = None, cancel_event=None) -> tuple[int, str, str]:
+         cwd: str, prompt: str | None = None, cancel_event=None,
+         label='Codex', timeout_setting='CODEX_TIMEOUT_SECONDS') -> tuple[int, str, str]:
     try:
         worker = Path(__file__).with_name('codex_worker.py')
         process = subprocess.Popen(
@@ -82,13 +83,13 @@ def _run(args: list[str], *, env: dict[str, str], timeout: float,
             text=True, encoding='utf-8', env=env, cwd=cwd, start_new_session=True,
         )
     except OSError:
-        raise CodexProviderError('Cannot start Codex. Install the Codex CLI and check CODEX_BIN.') from None
+        raise CodexProviderError(f'Cannot start {label}. Check the configured CLI executable.') from None
     try:
         deadline = time.monotonic() + timeout
         first = True
         while True:
             if cancel_event is not None and cancel_event.is_set():
-                raise CodexProviderError('Codex request cancelled.')
+                raise CodexProviderError(f'{label} request cancelled.')
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(args[0], timeout)
@@ -107,7 +108,7 @@ def _run(args: list[str], *, env: dict[str, str], timeout: float,
             pass
         process.communicate()
         if isinstance(error, subprocess.TimeoutExpired):
-            raise CodexProviderError('Codex request timed out. Reduce the prompt or increase CODEX_TIMEOUT_SECONDS.') from None
+            raise CodexProviderError(f'{label} request timed out. Reduce the prompt or increase {timeout_setting}.') from None
         raise
 
 
