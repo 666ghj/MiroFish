@@ -17,6 +17,7 @@ dependencies = [
     # Zep Cloud
     "zep-cloud==3.25.0",
     "httpx>=0.27.0",
+    "mcp>=1.24,<2",
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",
@@ -51,7 +52,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["app", "research_mcp"]
 
 [tool.uv.sources]
 research-codex-transport = { path = "../shared/codex-transport", editable = true }

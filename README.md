@@ -14,6 +14,7 @@ Upload source material, describe a question, explore how simulated agents respon
 - **Simulation effort:** Quick uses 25% of planned rounds, Moderate 50%, and Full 100%. Full is the default; the interface shows the round count before starting.
 - **Stop and report:** a confirmation warns before stopping a simulation. Saved actions can support a clearly labeled partial report after graph memory finishes saving.
 - **PDF download:** download the saved report from the report or final interaction view without another AI call.
+- **MCP for research agents:** use the same projects, graphs, simulations, and reports through local Streamable HTTP or stdio tools. Run the workflow without opening a browser.
 
 **Local storage does not mean offline AI.** Document text, extracted content, and simulation conversations are sent to OpenAI through Codex. Model inference uses your account's allowance and remains subject to account/model limits; this is not free or unlimited inference. Graph finalization and report generation also make AI calls and can take time after you stop a simulation.
 
@@ -48,13 +49,48 @@ npm run graph:up
 npm run dev
 ```
 
-Open **http://localhost:3000/?lang=en** and wait for graph readiness before uploading. The first graph-service start downloads the local embedding and reranking models.
+Open **http://localhost:4317/?lang=en** and wait for graph readiness before uploading. The first graph-service start downloads the local embedding and reranking models. MCP is available at **http://127.0.0.1:4318/mcp**.
 
 The commented [`.env.example`](.env.example) explains provider settings, local credentials, and timeouts. The configuration helper selects `LLM_PROVIDER=codex` and `GRAPH_PROVIDER=graphiti`, creates private credentials in the ignored `.env`, and preserves existing secrets. Codex owns its login credentials; do not copy them into `.env`.
 
-Docker runs Neo4j. The frontend, backend, graph service, and Codex run on the host. `npm run graph:up` uses `compose.local-graph.yml` for Neo4j only; run the application and Codex natively on the host.
+Docker runs Neo4j. The frontend, backend, graph service, MCP adapter, and Codex run on the host. `npm run graph:up` uses `compose.local-graph.yml` for Neo4j only; run the application and Codex natively on the host.
 
 For subsequent starts, run `npm run graph:up` and `npm run dev`. Stop the app with Ctrl+C; `npm run graph:down` stops Neo4j while retaining its data.
+
+## Use it from another AI agent
+
+Complete the installation above once. For research without the browser UI:
+
+```sh
+npm run graph:up
+npm run dev:agent
+```
+
+This starts the backend, the configured local graph service, and MCP. Connect your agent's MCP client with **Streamable HTTP**, URL **`http://127.0.0.1:4318/mcp`**, and a **tool timeout of at least 900 seconds**. If `npm run dev` is already running, MCP is already available; do not start another backend. `npm run mcp` starts only the adapter when the backend/graph services are already running separately.
+
+For a client that launches **stdio** servers, use this configuration, replacing both `/absolute/path/My-Own-Researcher` paths with your checkout:
+
+```json
+{
+  "mcpServers": {
+    "my-own-researcher": {
+      "command": "uv",
+      "args": [
+        "run", "--project", "/absolute/path/My-Own-Researcher/backend", "--frozen",
+        "python", "/absolute/path/My-Own-Researcher/backend/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+Stdio launches an adapter, so the backend and graph services must still be running. Use an absolute path to `uv` if your agent's environment does not have it on `PATH`. Set the client's tool timeout separately; its configuration field varies by client.
+
+The server advertises typed tools and a `research://workflow` resource. An agent can call `get_status`, submit text/Markdown using `create_project`, build and search the graph, prepare and run simulations, poll progress, and retrieve a report's Markdown with `get_report`. Browser-uploaded projects, including PDFs, are also available. For example, give your agent:
+
+> Use the my-own-researcher MCP tools to research the supplied sources. Check readiness, create a project with a unique upload_id, build its graph, and prepare a Reddit-only simulation. Run a two-round pilot, wait for simulation and memory saving to finish, then generate and retrieve the report. Preserve evidence and coverage limitations. Read research://workflow for the call sequence and recovery rules.
+
+See the **[MCP guide](docs/mcp.md)** for tool names, example inputs, polling, retries, and access from another machine through SSH. Inference tools use your configured provider and account allowance. Defaults are web **4317**, MCP **4318**, backend **5001**, and graph **5002**; override `FRONTEND_PORT`, `MCP_PORT`, or `FLASK_PORT` in the root `.env`. The web server fails clearly if its port is occupied instead of silently choosing another.
 
 ## Start a research run
 
