@@ -7,6 +7,7 @@ OASIS模拟管理器
 import os
 import json
 import shutil
+import hashlib
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,10 +15,10 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
-from .zep_entity_reader import ZepEntityReader, FilteredEntities
-from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
+from .zep_entity_reader import ZepEntityReader, FilteredEntities, EntityNode
+from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile, atomic_write_json
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
-from ..utils.locale import t
+from ..utils.locale import t, get_locale
 
 logger = get_logger('mirofish.simulation')
 
@@ -162,8 +163,7 @@ class SimulationManager:
         
         state.updated_at = datetime.now().isoformat()
         
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+        atomic_write_json(state_file, state.to_dict())
         
         self._simulations[state.simulation_id] = state
     
@@ -249,7 +249,8 @@ class SimulationManager:
         defined_entity_types: Optional[List[str]] = None,
         use_llm_for_profiles: bool = True,
         progress_callback: Optional[callable] = None,
-        parallel_profile_count: int = 3
+        parallel_profile_count: int = 3,
+        force_regenerate: bool = False,
     ) -> SimulationState:
         """
         准备模拟环境（全程自动化）
@@ -275,33 +276,61 @@ class SimulationManager:
         """
         state = self._load_simulation_state(simulation_id)
         if not state:
-            raise ValueError(f"模拟不存在: {simulation_id}")
+            raise ValueError(f"Simulation not found: {simulation_id}")
         
         try:
+            sim_dir = self._get_simulation_dir(simulation_id)
+            manifest_path = os.path.join(sim_dir, "prepare_manifest.json")
+            config_path = os.path.join(sim_dir, "simulation_config.json")
+            inputs = {
+                "graph_id": state.graph_id, "entity_types": sorted(defined_entity_types or []),
+                "use_llm_for_profiles": use_llm_for_profiles, "locale": get_locale(),
+                "enable_twitter": state.enable_twitter, "enable_reddit": state.enable_reddit,
+                "requirement_hash": hashlib.sha256(simulation_requirement.encode()).hexdigest(),
+                "document_hash": hashlib.sha256(document_text.encode()).hexdigest(),
+            }
+            if force_regenerate:
+                # Explicit invalidation only. Ordinary retries retain all successful work.
+                for name in ("prepare_manifest.json", "profiles_checkpoint.json", "reddit_profiles.json",
+                             "twitter_profiles.csv", "simulation_config.json"):
+                    path = os.path.join(sim_dir, name)
+                    if os.path.exists(path):
+                        os.unlink(path)
+                state.profiles_count = 0
+            manifest = None
+            if os.path.exists(manifest_path):
+                with open(manifest_path, encoding="utf-8") as handle:
+                    manifest = json.load(handle)
+                if manifest.get("inputs") != inputs:
+                    raise ValueError("Preparation inputs changed; use force_regenerate to replace saved work")
             state.status = SimulationStatus.PREPARING
             state.error = None
             state.profiles_generated = False
             state.config_generated = False
             state.config_reasoning = ""
             self._save_simulation_state(state)
-            
-            sim_dir = self._get_simulation_dir(simulation_id)
-            
-            # ========== 阶段1: 读取并过滤实体 ==========
+
             if progress_callback:
                 progress_callback("reading", 0, t('progress.connectingZepGraph'))
-            
-            reader = ZepEntityReader()
-            
-            if progress_callback:
-                progress_callback("reading", 30, t('progress.readingNodeData'))
-            
-            filtered = reader.filter_defined_entities(
-                graph_id=state.graph_id,
-                defined_entity_types=defined_entity_types,
-                enrich_with_edges=True
-            )
-            
+            if manifest:
+                saved = manifest["filtered_entities"]
+                filtered = FilteredEntities(
+                    entities=[EntityNode(**entity) for entity in saved["entities"]],
+                    entity_types=set(saved["entity_types"]), total_count=saved["total_count"],
+                    filtered_count=saved["filtered_count"],
+                )
+            else:
+                reader = ZepEntityReader()
+                if progress_callback:
+                    progress_callback("reading", 30, t('progress.readingNodeData'))
+                filtered = reader.filter_defined_entities(
+                    graph_id=state.graph_id, defined_entity_types=defined_entity_types,
+                    enrich_with_edges=True,
+                )
+                if filtered.filtered_count:
+                    manifest = {"version": 1, "inputs": inputs, "filtered_entities": filtered.to_dict()}
+                    atomic_write_json(manifest_path, manifest)
+
             state.entities_count = filtered.filtered_count
             state.entity_types = list(filtered.entity_types)
             
@@ -315,7 +344,7 @@ class SimulationManager:
             
             if filtered.filtered_count == 0:
                 state.status = SimulationStatus.FAILED
-                state.error = "没有找到符合条件的实体，请检查图谱是否正确构建"
+                state.error = "No matching entities found. Check that the graph was built successfully."
                 self._save_simulation_state(state)
                 raise ValueError(state.error)
             
@@ -334,6 +363,8 @@ class SimulationManager:
             generator = OasisProfileGenerator(graph_id=state.graph_id)
             
             def profile_progress(current, total, msg):
+                state.profiles_count = current
+                self._save_simulation_state(state)
                 if progress_callback:
                     progress_callback(
                         "generating_profiles", 
@@ -364,6 +395,9 @@ class SimulationManager:
                 output_platform=realtime_platform  # 输出格式
             )
             
+            # Legacy migration may restore IDs from a previous graph read order.
+            entities_by_uuid = {entity.uuid: entity for entity in filtered.entities}
+            filtered.entities = [entities_by_uuid[profile.source_entity_uuid] for profile in profiles]
             state.profiles_count = len(profiles)
             state.profiles_generated = len(profiles) > 0
             self._save_simulation_state(state)
@@ -401,60 +435,28 @@ class SimulationManager:
                     total=len(profiles)
                 )
             
-            # ========== 阶段3: LLM智能生成模拟配置 ==========
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 0,
-                    t('progress.analyzingRequirements'),
-                    current=0,
-                    total=3
+            # A complete atomic config survives an interruption before READY was saved.
+            if os.path.exists(config_path):
+                with open(config_path, encoding="utf-8") as handle:
+                    saved_config = json.load(handle)
+                if saved_config.get("simulation_id") != simulation_id:
+                    raise ValueError("Saved config belongs to another simulation; use force_regenerate")
+                state.config_reasoning = saved_config.get("generation_reasoning", "")
+            else:
+                if progress_callback:
+                    progress_callback("generating_config", 0, t('progress.analyzingRequirements'), current=0, total=3)
+                sim_params = SimulationConfigGenerator().generate_config(
+                    simulation_id=simulation_id, project_id=state.project_id, graph_id=state.graph_id,
+                    simulation_requirement=simulation_requirement, document_text=document_text,
+                    entities=filtered.entities, enable_twitter=state.enable_twitter,
+                    enable_reddit=state.enable_reddit,
                 )
-            
-            config_generator = SimulationConfigGenerator()
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 30,
-                    t('progress.callingLLMConfig'),
-                    current=1,
-                    total=3
-                )
-            
-            sim_params = config_generator.generate_config(
-                simulation_id=simulation_id,
-                project_id=state.project_id,
-                graph_id=state.graph_id,
-                simulation_requirement=simulation_requirement,
-                document_text=document_text,
-                entities=filtered.entities,
-                enable_twitter=state.enable_twitter,
-                enable_reddit=state.enable_reddit
-            )
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 70,
-                    t('progress.savingConfigFiles'),
-                    current=2,
-                    total=3
-                )
-            
-            # 保存配置文件
-            config_path = os.path.join(sim_dir, "simulation_config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(sim_params.to_json())
-            
+                atomic_write_json(config_path, json.loads(sim_params.to_json()))
+                state.config_reasoning = sim_params.generation_reasoning
             state.config_generated = True
-            state.config_reasoning = sim_params.generation_reasoning
-            
             if progress_callback:
-                progress_callback(
-                    "generating_config", 100,
-                    t('progress.configComplete'),
-                    current=3,
-                    total=3
-                )
-            
+                progress_callback("generating_config", 100, t('progress.configComplete'), current=3, total=3)
+
             # 注意：运行脚本保留在 backend/scripts/ 目录，不再复制到模拟目录
             # 启动模拟时，simulation_runner 会从 scripts/ 目录运行脚本
             
@@ -502,13 +504,13 @@ class SimulationManager:
         """获取模拟的Agent Profile"""
         state = self._load_simulation_state(simulation_id)
         if not state:
-            raise ValueError(f"模拟不存在: {simulation_id}")
+            raise ValueError(f"Simulation not found: {simulation_id}")
 
         if platform is None:
             platform = state.get_default_platform()
 
         if platform not in {"twitter", "reddit"}:
-            raise ValueError(f"不支持的平台: {platform}")
+            raise ValueError(f"Unsupported platform: {platform}")
 
         sim_dir = self._get_simulation_dir(simulation_id)
         profile_path = os.path.join(

@@ -6,11 +6,15 @@ Report API路由
 import os
 import traceback
 import threading
+from io import BytesIO
+from datetime import datetime
 from flask import request, jsonify, send_file
 
 from . import report_bp
 from ..config import Config
-from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
+from ..services.report_agent import (
+    Report, ReportAgent, ReportManager, ReportStatus, build_run_summary,
+)
 from ..services.simulation_manager import SimulationManager
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
@@ -25,6 +29,10 @@ from ..utils.zep_lifecycle import (
 )
 
 logger = get_logger('mirofish.api.report')
+
+# Claims are guarded by the graph lifecycle lock; a refresh attaches to the
+# same worker rather than creating another generation.
+_active_report_tasks = {}
 
 
 # ============== 报告生成接口 ==============
@@ -70,6 +78,9 @@ def generate_report():
                 "success": False,
                 "error": "force_regenerate must be a JSON boolean",
             }), 400
+        resume = data.get('resume', True)
+        if not isinstance(resume, bool):
+            return jsonify({"success": False, "error": "resume must be a JSON boolean"}), 400
         
         # 获取模拟信息
         manager = SimulationManager()
@@ -208,6 +219,16 @@ def generate_report():
                     ),
                 }), 409
 
+            run_summary = build_run_summary(refreshed_run_state)
+            active = _active_report_tasks.get(simulation_id)
+            if active:
+                return jsonify({"success": True, "data": {
+                    "simulation_id": simulation_id, **active,
+                    "status": "generating", "reused": True,
+                    "already_generated": False,
+                }})
+
+            resume_report = False
             # Cached-report reuse is now part of the same atomic barrier, so a
             # concurrent rerun cannot make the returned report stale between
             # the status check and response.
@@ -215,6 +236,18 @@ def generate_report():
                 existing_report = ReportManager.get_report_by_simulation(
                     simulation_id
                 )
+                requested_id = data.get('report_id')
+                if requested_id:
+                    existing_report = ReportManager.get_report(requested_id)
+                    if not existing_report or existing_report.simulation_id != simulation_id:
+                        return jsonify({"success": False, "error": "Report does not belong to this simulation"}), 400
+                # A restarted simulation is new evidence. Never reuse sections
+                # from an earlier run against a changed graph.
+                started_at = getattr(refreshed_run_state, 'started_at', None)
+                if existing_report and started_at and getattr(existing_report, 'created_at', '') < started_at:
+                    if requested_id:
+                        return jsonify({"success": False, "error": "This report belongs to an earlier simulation run. Generate a new report."}), 409
+                    existing_report = None
                 if (
                     existing_report
                     and existing_report.status == ReportStatus.COMPLETED
@@ -229,6 +262,12 @@ def generate_report():
                             "already_generated": True
                         }
                     })
+                if existing_report and resume:
+                    if (existing_report.graph_id != graph_id
+                            or existing_report.simulation_requirement != simulation_requirement):
+                        return jsonify({"success": False, "error": "Saved report does not match current simulation inputs"}), 409
+                    report_id = existing_report.report_id
+                    resume_report = True
 
             task_manager = TaskManager()
             task_id = task_manager.create_task(
@@ -241,6 +280,7 @@ def generate_report():
             )
             current_locale = get_locale()
             register_graph_reader(graph_id, report_id)
+            _active_report_tasks[simulation_id] = {"task_id": task_id, "report_id": report_id}
 
             def run_generate():
                 set_locale(current_locale)
@@ -257,6 +297,7 @@ def generate_report():
                         simulation_id=simulation_id,
                         simulation_requirement=simulation_requirement
                     )
+                    agent.run_summary = run_summary
 
                     def progress_callback(stage, progress, message):
                         task_manager.update_task(
@@ -265,10 +306,10 @@ def generate_report():
                             message=f"[{stage}] {message}"
                         )
 
-                    report = agent.generate_report(
-                        progress_callback=progress_callback,
-                        report_id=report_id
-                    )
+                    kwargs = {"progress_callback": progress_callback, "report_id": report_id}
+                    if resume_report:
+                        kwargs['resume'] = True
+                    report = agent.generate_report(**kwargs)
                     ReportManager.save_report(report)
 
                     if report.status == ReportStatus.COMPLETED:
@@ -288,13 +329,30 @@ def generate_report():
                 except Exception as e:
                     logger.error(f"报告生成失败: {str(e)}")
                     task_manager.fail_task(task_id, str(e))
+                    failed = ReportManager.get_report(report_id)
+                    if failed:
+                        failed.status = ReportStatus.FAILED
+                        failed.error = str(e)
+                        ReportManager.save_report(failed)
                 finally:
-                    unregister_graph_reader(graph_id, report_id)
+                    with graph_lifecycle_lock(graph_id):
+                        _active_report_tasks.pop(simulation_id, None)
+                        unregister_graph_reader(graph_id, report_id)
 
             try:
+                pending = existing_report if resume_report else Report(
+                    report_id=report_id, simulation_id=simulation_id,
+                    graph_id=graph_id, simulation_requirement=simulation_requirement,
+                    status=ReportStatus.PENDING, created_at=datetime.now().isoformat(),
+                )
+                pending.status = ReportStatus.PENDING
+                pending.error = None
+                pending.run_summary = run_summary
+                ReportManager.save_report(pending)
                 thread = threading.Thread(target=run_generate, daemon=True)
                 thread.start()
             except Exception:
+                _active_report_tasks.pop(simulation_id, None)
                 unregister_graph_reader(graph_id, report_id)
                 raise
         
@@ -305,6 +363,7 @@ def generate_report():
                 "report_id": report_id,
                 "task_id": task_id,
                 "status": "generating",
+                "run_summary": run_summary,
                 "message": t('api.reportGenerateStarted'),
                 "already_generated": False
             }
@@ -348,7 +407,7 @@ def get_generate_status():
         simulation_id = data.get('simulation_id')
         
         # 如果提供了simulation_id，先检查是否已有完成的报告
-        if simulation_id:
+        if simulation_id and not task_id:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
                 return jsonify({
@@ -420,6 +479,15 @@ def get_report(report_id: str):
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
+
+        with graph_lifecycle_lock(report.graph_id):
+            report = ReportManager.get_report(report_id) or report
+            if report.status in {ReportStatus.PENDING, ReportStatus.PLANNING, ReportStatus.GENERATING} and report.simulation_id not in _active_report_tasks:
+                # Workers are process-local. Persisted in-progress state after
+                # a server restart is recoverable, not a task to poll forever.
+                report.status = ReportStatus.FAILED
+                report.error = "Report generation was interrupted. Resume to keep completed sections."
+                ReportManager.save_report(report)
         
         return jsonify({
             "success": True,
@@ -522,6 +590,9 @@ def download_report(report_id: str):
     返回Markdown文件
     """
     try:
+        export_format = request.args.get('format', 'md').lower()
+        if export_format not in {'md', 'pdf'}:
+            return jsonify({"success": False, "error": "Choose PDF or Markdown format."}), 400
         report = ReportManager.get_report(report_id)
         
         if not report:
@@ -529,6 +600,19 @@ def download_report(report_id: str):
                 "success": False,
                 "error": t('api.reportNotFound', id=report_id)
             }), 404
+
+        if export_format == 'pdf':
+            if report.status != ReportStatus.COMPLETED or not report.markdown_content.strip():
+                return jsonify({"success": False, "error": "The report must finish generating before downloading its PDF."}), 409
+            from ..services.report_pdf import render_report_pdf
+            try:
+                content = render_report_pdf(report.markdown_content,
+                    report.outline.title if report.outline else 'Research report')
+            except Exception:
+                logger.exception('PDF export failed for %s', report_id)
+                return jsonify({"success": False, "error": "PDF export failed. Please try downloading again."}), 500
+            return send_file(BytesIO(content), mimetype='application/pdf',
+                as_attachment=True, download_name=f'{report_id}.pdf', max_age=0)
         
         md_path = ReportManager._get_report_markdown_path(report_id)
         
@@ -666,6 +750,8 @@ def chat_with_report_agent():
             simulation_id=simulation_id,
             simulation_requirement=simulation_requirement
         )
+        latest_report = ReportManager.get_report_by_simulation(simulation_id)
+        agent.run_summary = getattr(latest_report, 'run_summary', None)
         
         result = agent.chat(message=message, chat_history=chat_history)
         

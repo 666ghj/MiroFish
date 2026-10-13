@@ -2,7 +2,9 @@
 # MiroFish Backend Dependencies
 # ===========================================
 # Python 3.11+ required
-# Install: pip install -r requirements.txt
+# Install from backend/: pip install -r requirements.txt
+# Prefer uv sync --project backend from the repository root.
+-e ../shared/codex-transport
 # ===========================================
 
 # ============= 核心框架 =============
@@ -24,6 +26,7 @@ camel-ai==0.2.78
 
 # ============= 文件处理 =============
 PyMuPDF>=1.24.0
+markdown-it-py>=3,<5
 # 编码检测（支持非UTF-8编码的文本文件）
 charset-normalizer>=3.0.0
 chardet>=5.0.0
@@ -34,3 +37,4 @@ python-dotenv>=1.0.0
 
 # 数据验证
 pydantic>=2.0.0
+jsonschema>=4.0.0

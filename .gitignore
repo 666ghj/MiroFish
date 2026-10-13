@@ -1,16 +1,37 @@
-# OS
+# Private configuration and credentials
+.env
+.env.*
+!.env.example
+.codex/
+.auth/
+auth.json
+credentials.json
+*.pem
+*.key
+
+# Local research, uploads, reports, databases and logs
+backend/uploads/
+backend/logs/
+data/
+output/
+tmp/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# OS and editors
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+.cursor/
+.claude/
+.worktrees/
+*.swp
+*.swo
 
-# 环境变量（保护敏感信息）
-.env
-.env.local
-.env.*.local
-.env.development
-.env.test
-.env.production
-
-# Python
+# Python environments, caches and build output
 __pycache__/
 *.py[cod]
 *$py.class
@@ -23,38 +44,19 @@ ENV/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Node.js
+# JavaScript dependencies and caches
 node_modules/
+.vite/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 测试
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Cursor
-.cursor/
-.claude/
-
-# 文档与测试程序
+# Local scratch work
 mydoc/
 mytest/
-
-# 日志文件
-backend/logs/
-*.log
-
-# 上传文件
-backend/uploads/
-
-# Docker 数据
-data/

@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH</div>
+        <div class="brand" @click="router.push('/')">My Own Researcher</div>
       </div>
       
       <div class="header-center">
@@ -35,6 +35,7 @@
       </div>
     </header>
 
+    <RecoveryBanner :error="loadError" :retry-key="`interaction-view:${currentReportId}`" :auto-retry="!!currentReportId" :completed="dataLoaded && !loadError" :busy="recoveringData" :label="$t('recovery.reconnect')" @retry="recoverData" />
     <!-- Main Content Area -->
     <main class="content-area">
       <!-- Left Panel: Graph -->
@@ -67,6 +68,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import RecoveryBanner from '../components/RecoveryBanner.vue'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step5Interaction from '../components/Step5Interaction.vue'
 import { getProject, getGraphData } from '../api/graph'
@@ -93,6 +95,15 @@ const projectData = ref(null)
 const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
+const loadError = ref('')
+const dataLoaded = ref(false)
+const recoveringData = ref(false)
+const recoverData = async () => {
+  if (recoveringData.value) return
+  recoveringData.value = true
+  loadError.value = ''
+  try { await loadReportData() } finally { recoveringData.value = false }
+}
 const currentStatus = ref('ready') // ready | processing | completed | error
 
 // --- Computed Layout Styles ---
@@ -144,6 +155,8 @@ const toggleMaximize = (target) => {
 
 // --- Data Logic ---
 const loadReportData = async () => {
+  dataLoaded.value = false
+  loadError.value = ''
   try {
     addLog(t('log.loadReportData', { id: currentReportId.value }))
 
@@ -178,8 +191,9 @@ const loadReportData = async () => {
       addLog(t('log.getReportInfoFailed', { error: reportRes.error || t('common.unknownError') }))
     }
   } catch (err) {
+    loadError.value = err.message
     addLog(t('log.loadException', { error: err.message }))
-  }
+  } finally { dataLoaded.value = !loadError.value }
 }
 
 const loadGraph = async (graphId) => {
@@ -192,6 +206,7 @@ const loadGraph = async (graphId) => {
       addLog(t('log.graphDataLoadSuccess'))
     }
   } catch (err) {
+    loadError.value = err.message
     addLog(t('log.graphLoadFailed', { error: err.message }))
   } finally {
     graphLoading.value = false

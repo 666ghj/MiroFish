@@ -14,12 +14,20 @@ for (const path in localeFiles) {
   }
 }
 
-const savedLocale = localStorage.getItem('locale') || 'zh'
+// A language link also updates an existing browser preference.
+const pageUrl = new URL(window.location.href)
+const requestedLocale = pageUrl.searchParams.get('lang')
+if (Object.hasOwn(messages, requestedLocale)) {
+  localStorage.setItem('locale', requestedLocale)
+  pageUrl.searchParams.delete('lang')
+  window.history.replaceState(window.history.state, '', pageUrl)
+}
+const savedLocale = localStorage.getItem('locale')
 
 const i18n = createI18n({
   legacy: false,
-  locale: savedLocale,
-  fallbackLocale: 'zh',
+  locale: Object.hasOwn(messages, savedLocale) ? savedLocale : 'en',
+  fallbackLocale: 'en',
   messages
 })
 

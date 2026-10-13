@@ -85,7 +85,7 @@ def test_zero_entities_persists_failed_state_and_raises(tmp_path, monkeypatch):
     )
     manager._save_simulation_state(state)
 
-    with pytest.raises(ValueError, match="没有找到符合条件的实体"):
+    with pytest.raises(ValueError, match="No matching entities found"):
         manager.prepare_simulation(
             simulation_id=state.simulation_id,
             simulation_requirement="requirement",
@@ -99,4 +99,4 @@ def test_zero_entities_persists_failed_state_and_raises(tmp_path, monkeypatch):
     assert persisted["profiles_generated"] is False
     assert persisted["config_generated"] is False
     assert persisted["config_reasoning"] == ""
-    assert "没有找到符合条件的实体" in persisted["error"]
+    assert "No matching entities found" in persisted["error"]

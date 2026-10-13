@@ -67,11 +67,28 @@ def create_app(config_class=Config):
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
+    from .local_graph.routing import check_project_provider
+    app.before_request(check_project_provider)
     
     # 健康检查
     @app.route('/health')
     def health():
-        return {'status': 'ok', 'service': 'MiroFish Backend'}
+        return {'status': 'ok', 'service': 'My Own Researcher', 'graph_provider': Config.GRAPH_PROVIDER,
+                'llm_provider': Config.LLM_PROVIDER}
+
+    @app.route('/api/system/status')
+    def system_status():
+        result = {'name': 'My Own Researcher', 'graph_provider': Config.GRAPH_PROVIDER,
+                  'llm_provider': Config.LLM_PROVIDER}
+        if Config.GRAPH_PROVIDER == 'graphiti':
+            from .utils.zep import get_zep_client
+            try:
+                result['graph'] = get_zep_client(timeout=5).health()
+            except Exception:
+                result['graph'] = {'status': 'unavailable', 'error': 'Start the local graph platform and check its configuration.'}
+        else:
+            result['graph'] = {'status': 'configured' if Config.ZEP_API_KEY else 'unconfigured'}
+        return {'success': True, 'data': result}
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")

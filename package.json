@@ -1,21 +1,25 @@
 {
-  "name": "mirofish",
+  "name": "my-own-researcher",
   "version": "0.1.0",
-  "description": "MiroFish - 简洁通用的群体智能引擎，预测万物",
+  "description": "Local research simulations with Codex and Graphiti",
   "scripts": {
     "setup": "npm install && cd frontend && npm install",
     "setup:backend": "cd backend && uv sync",
-    "setup:all": "npm run setup && npm run setup:backend",
-    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
+    "setup:all": "npm run setup && npm run setup:backend && npm run setup:graph",
+    "dev": "node scripts/dev.mjs",
     "backend": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "graph": "uv run --project graph_platform python -m research_graph.main",
+    "graph:up": "docker compose -f compose.local-graph.yml up -d",
+    "graph:down": "docker compose -f compose.local-graph.yml down",
+    "setup:graph": "uv sync --project graph_platform"
   },
   "devDependencies": {
     "concurrently": "^9.2.4"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "license": "AGPL-3.0"
 }

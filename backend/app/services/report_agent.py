@@ -33,6 +33,84 @@ from .zep_tools import (
 logger = get_logger('mirofish.report_agent')
 
 
+def build_run_summary(run_state) -> Dict[str, Any]:
+    """Snapshot completed activity, separately from the requested run budget."""
+    def count(name, default=0):
+        return max(0, int(getattr(run_state, name, default) or 0))
+
+    status = getattr(run_state, 'runner_status', '')
+    status = getattr(status, 'value', status)
+    selected = count('total_rounds')
+    full = count('planned_full_rounds', selected) or selected
+    twitter_actions = count('twitter_actions_count')
+    reddit_actions = count('reddit_actions_count')
+    effort = getattr(run_state, 'simulation_effort', 'full') or 'full'
+    return {
+        'runner_status': status,
+        'simulation_effort': effort,
+        'current_round': count('current_round'),
+        'planned_selected_rounds': selected,
+        'planned_full_rounds': full,
+        'twitter_current_round': count('twitter_current_round'),
+        'reddit_current_round': count('reddit_current_round'),
+        'twitter_actions_count': twitter_actions,
+        'reddit_actions_count': reddit_actions,
+        'total_actions_count': twitter_actions + reddit_actions,
+        'stop_requested': bool(getattr(run_state, 'stop_requested', False)),
+        'stopped_early': status == 'stopped',
+        'budget_reduced': effort in {'quick', 'moderate'} or full > selected,
+        'no_agent_activity': (
+            twitter_actions + reddit_actions == 0
+            and (hasattr(run_state, 'twitter_actions_count')
+                 or hasattr(run_state, 'reddit_actions_count'))
+        ),
+    }
+
+
+def run_coverage_markdown(summary: Optional[Dict[str, Any]]) -> str:
+    """Deterministic coverage notice that cannot be omitted by the model."""
+    if not summary:
+        return ''
+    if summary.get('no_agent_activity'):
+        notice = ('No agent activity was recorded. There is no simulation evidence '
+                  'for a forecast; source graph material is background context only.')
+    elif summary.get('stopped_early'):
+        notice = ('Partial simulation: stopped before natural completion. Findings cover '
+                  'recorded activity only and do not establish the full scenario outcome.')
+    elif summary.get('budget_reduced'):
+        notice = ('Reduced-budget simulation: the selected run completed. Findings cover '
+                  'this limited budget and do not establish the full planned scenario outcome.')
+    else:
+        notice = 'Findings are limited to recorded simulation activity; forecasts remain uncertain.'
+    return (
+        f'> **Simulation coverage — {summary.get("simulation_effort", "full")} effort**\n'
+        f'> {notice}\n>\n'
+        f'> Status: {summary.get("runner_status", "unknown")}; '
+        f'actual round reached: {summary.get("current_round", 0)}; '
+        f'selected budget: {summary.get("planned_selected_rounds", 0)} rounds; '
+        f'full planned budget: {summary.get("planned_full_rounds", 0)} rounds.\n'
+        f'> Twitter: {summary.get("twitter_current_round", 0)} rounds, '
+        f'{summary.get("twitter_actions_count", 0)} actions. '
+        f'Reddit: {summary.get("reddit_current_round", 0)} rounds, '
+        f'{summary.get("reddit_actions_count", 0)} actions.\n\n'
+    )
+
+
+def _atomic_write(path: str, content: str) -> None:
+    """Publish a complete checkpoint, never a partially written JSON/section."""
+    import tempfile
+    descriptor, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.checkpoint-')
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 class ReportLogger:
     """
     Report Agent 详细日志记录器
@@ -451,6 +529,7 @@ class Report:
     created_at: str = ""
     completed_at: str = ""
     error: Optional[str] = None
+    run_summary: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -463,7 +542,8 @@ class Report:
             "markdown_content": self.markdown_content,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
-            "error": self.error
+            "error": self.error,
+            "run_summary": self.run_summary,
         }
 
 
@@ -550,19 +630,19 @@ TOOL_DESC_INTERVIEW_AGENTS = """\
 # ── 大纲规划 prompt ──
 
 PLAN_SYSTEM_PROMPT = """\
-你是一个「未来预测报告」的撰写专家，拥有对模拟世界的「上帝视角」——你可以洞察模拟中每一位Agent的行为、言论和互动。
+你是一个「Forecast report」的撰写专家，拥有对模拟世界的「上帝视角」——你可以洞察模拟中每一位Agent的行为、言论和互动。
 
 【核心理念】
 我们构建了一个模拟世界，并向其中注入了特定的「模拟需求」作为变量。模拟世界的演化结果，就是对未来可能发生情况的预测。你正在观察的不是"实验数据"，而是"未来的预演"。
 
 【你的任务】
-撰写一份「未来预测报告」，回答：
+撰写一份「Forecast report」，回答：
 1. 在我们设定的条件下，未来发生了什么？
 2. 各类Agent（人群）是如何反应和行动？
 3. 这个模拟揭示了哪些值得关注的未来趋势和风险？
 
 【报告定位】
-- ✅ 这是一份基于模拟的未来预测报告，揭示"如果这样，未来会怎样"
+- ✅ 这是一份基于模拟的Forecast report，揭示"如果这样，未来会怎样"
 - ✅ 聚焦于预测结果：事件走向、群体反应、涌现现象、潜在风险
 - ✅ 模拟世界中的Agent言行就是对未来人群行为的预测
 - ❌ 不是对现实世界现状的分析
@@ -613,7 +693,7 @@ PLAN_USER_PROMPT_TEMPLATE = """\
 # ── 章节生成 prompt ──
 
 SECTION_SYSTEM_PROMPT_TEMPLATE = """\
-你是一个「未来预测报告」的撰写专家，正在撰写报告的一个章节。
+你是一个「Forecast report」的撰写专家，正在撰写报告的一个章节。
 
 报告标题: {report_title}
 报告摘要: {report_summary}
@@ -893,7 +973,8 @@ class ReportAgent:
         simulation_id: str,
         simulation_requirement: str,
         llm_client: Optional[LLMClient] = None,
-        zep_tools: Optional[ZepToolsService] = None
+        zep_tools: Optional[ZepToolsService] = None,
+        run_summary: Optional[Dict[str, Any]] = None,
     ):
         """
         初始化Report Agent
@@ -908,6 +989,7 @@ class ReportAgent:
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
+        self.run_summary = run_summary
         
         self.llm = llm_client or LLMClient()
         self.zep_tools = zep_tools or ZepToolsService()
@@ -921,6 +1003,23 @@ class ReportAgent:
         self.console_logger: Optional[ReportConsoleLogger] = None
         
         logger.info(t('report.agentInitDone', graphId=graph_id, simulationId=simulation_id))
+
+    def _coverage_instructions(self) -> str:
+        summary = getattr(self, 'run_summary', None)
+        if not summary:
+            return ''
+        return (
+            '\n\nSIMULATION EVIDENCE BOUNDARY (takes precedence over forecast framing):\n'
+            + json.dumps(summary, ensure_ascii=False, sort_keys=True)
+            + '\nDescribe only activity actually recorded in this run. Never imply the full '
+            'planned scenario completed when stopped_early or budget_reduced is true. '
+            'A naturally completed quick/moderate run is a reduced-budget run, not a human stop. '
+            'Distinguish source graph background from observed agent activity; graph facts '
+            'alone are not evidence that agents performed an action. State coverage and '
+            'uncertainty prominently. If no_agent_activity is true, explicitly say no agent '
+            'activity was recorded and no evidence-based simulation forecast is available. '
+            'Do not invent reactions, trajectories, consensus, or completion.\n'
+        )
     
     def _define_tools(self) -> Dict[str, Dict[str, Any]]:
         """定义可用工具"""
@@ -1061,11 +1160,11 @@ class ReportAgent:
                 return json.dumps(result, ensure_ascii=False, indent=2)
             
             else:
-                return f"未知工具: {tool_name}。请使用以下工具之一: insight_forge, panorama_search, quick_search"
+                return f"Unknown tool: {tool_name}Use one of these tools: insight_forge, panorama_search, quick_search"
                 
         except Exception as e:
             logger.error(t('report.toolExecFailed', toolName=tool_name, error=str(e)))
-            return f"工具执行失败: {str(e)}"
+            return f"Tool execution failed: {str(e)}"
     
     # 合法的工具名称集合，用于裸 JSON 兜底解析时校验
     VALID_TOOL_NAMES = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
@@ -1203,6 +1302,7 @@ class ReportAgent:
             progress_callback("planning", 30, t('progress.generatingOutline'))
         
         system_prompt = f"{PLAN_SYSTEM_PROMPT}\n\n{get_language_instruction()}"
+        system_prompt += self._coverage_instructions()
         user_prompt = PLAN_USER_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
             total_nodes=context.get('graph_statistics', {}).get('total_nodes', 0),
@@ -1231,9 +1331,11 @@ class ReportAgent:
                     title=section_data.get("title", ""),
                     content=""
                 ))
+            if not sections or any(not section.title.strip() for section in sections):
+                raise ValueError("Report outline is missing titled sections. Resume to retry planning.")
             
             outline = ReportOutline(
-                title=response.get("title", "模拟分析报告"),
+                title=response.get("title", "Simulation analysis report"),
                 summary=response.get("summary", ""),
                 sections=sections
             )
@@ -1246,16 +1348,8 @@ class ReportAgent:
             
         except Exception as e:
             logger.error(t('report.outlinePlanFailed', error=str(e)))
-            # 返回默认大纲（3个章节，作为fallback）
-            return ReportOutline(
-                title="未来预测报告",
-                summary="基于模拟预测的未来趋势与风险分析",
-                sections=[
-                    ReportSection(title="预测场景与核心发现"),
-                    ReportSection(title="人群行为预测分析"),
-                    ReportSection(title="趋势展望与风险提示")
-                ]
-            )
+            # A failed plan is unfinished work, not a completed checkpoint.
+            raise
     
     def _generate_section_react(
         self, 
@@ -1299,6 +1393,7 @@ class ReportAgent:
             tools_description=self._get_tools_description(),
         )
         system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        system_prompt += self._coverage_instructions()
 
         # 构建用户prompt - 每个已完成章节各传入最大4000字
         if previous_sections:
@@ -1576,7 +1671,8 @@ class ReportAgent:
     def generate_report(
         self, 
         progress_callback: Optional[Callable[[str, int, str], None]] = None,
-        report_id: Optional[str] = None
+        report_id: Optional[str] = None,
+        resume: bool = False,
     ) -> Report:
         """
         生成完整报告（分章节实时输出）
@@ -1612,11 +1708,44 @@ class ReportAgent:
             graph_id=self.graph_id,
             simulation_requirement=self.simulation_requirement,
             status=ReportStatus.PENDING,
-            created_at=datetime.now().isoformat()
+            created_at=datetime.now().isoformat(),
+            run_summary=getattr(self, 'run_summary', None),
         )
+        if resume:
+            saved = ReportManager.get_report(report_id)
+            if saved:
+                if (saved.simulation_id != self.simulation_id
+                        or saved.graph_id != self.graph_id
+                        or saved.simulation_requirement != self.simulation_requirement):
+                    raise ValueError("Saved report does not match the current simulation inputs")
+                if saved.status == ReportStatus.COMPLETED:
+                    return saved
+                report = saved
+                report.error = None
+                report.status = ReportStatus.PENDING
+                # A section file is the completion checkpoint. It can precede
+                # the next metadata write when the process is interrupted.
+                if report.outline:
+                    for i, section in enumerate(report.outline.sections, 1):
+                        path = ReportManager._get_section_path(report_id, i)
+                        section.content = ""
+                        if os.path.exists(path):
+                            with open(path, encoding='utf-8') as f:
+                                content = f.read()
+                            prefix = f"## {section.title}\n\n"
+                            if content.startswith(prefix):
+                                section.content = content[len(prefix):].strip()
+
+        if getattr(self, 'run_summary', None) is None:
+            self.run_summary = report.run_summary
+        else:
+            report.run_summary = self.run_summary
         
         # 已完成的章节标题列表（用于进度追踪）
-        completed_section_titles = []
+        completed_section_titles = [
+            section.title for section in (report.outline.sections if report.outline else [])
+            if section.content.strip()
+        ]
         
         try:
             # 初始化：创建报告文件夹并保存初始状态
@@ -1635,7 +1764,7 @@ class ReportAgent:
             
             ReportManager.update_progress(
                 report_id, "pending", 0, t('progress.initReport'),
-                completed_sections=[]
+                completed_sections=completed_section_titles
             )
             ReportManager.save_report(report)
             
@@ -1643,7 +1772,7 @@ class ReportAgent:
             report.status = ReportStatus.PLANNING
             ReportManager.update_progress(
                 report_id, "planning", 5, t('progress.startPlanningOutline'),
-                completed_sections=[]
+                completed_sections=completed_section_titles
             )
             
             # 记录规划开始日志
@@ -1652,7 +1781,14 @@ class ReportAgent:
             if progress_callback:
                 progress_callback("planning", 0, t('progress.startPlanningOutline'))
             
-            outline = self.plan_outline(
+            no_activity = bool((report.run_summary or {}).get('no_agent_activity'))
+            if no_activity and report.outline is None:
+                report.outline = ReportOutline(
+                    title='Simulation activity report',
+                    summary='No agent activity was recorded; no simulation forecast is available.',
+                    sections=[ReportSection(title='Evidence limitations')],
+                )
+            outline = report.outline or self.plan_outline(
                 progress_callback=lambda stage, prog, msg: 
                     progress_callback(stage, prog // 5, msg) if progress_callback else None
             )
@@ -1665,7 +1801,7 @@ class ReportAgent:
             ReportManager.save_outline(report_id, outline)
             ReportManager.update_progress(
                 report_id, "planning", 15, t('progress.outlineDone', count=len(outline.sections)),
-                completed_sections=[]
+                completed_sections=completed_section_titles
             )
             ReportManager.save_report(report)
             
@@ -1680,6 +1816,9 @@ class ReportAgent:
             for i, section in enumerate(outline.sections):
                 section_num = i + 1
                 base_progress = 20 + int((i / total_sections) * 70)
+                if resume and section.content.strip():
+                    generated_sections.append(f"## {section.title}\n\n{section.content}")
+                    continue
                 
                 # 更新进度
                 ReportManager.update_progress(
@@ -1697,7 +1836,11 @@ class ReportAgent:
                     )
                 
                 # 生成主章节内容
-                section_content = self._generate_section_react(
+                section_content = (
+                    'No agent activity was recorded in this run. There is no simulation '
+                    'evidence to support a forecast, participant reactions, or a scenario '
+                    'outcome. Source graph information may provide background context only.'
+                ) if no_activity else self._generate_section_react(
                     section=section,
                     outline=outline,
                     previous_sections=generated_sections,
@@ -1748,7 +1891,9 @@ class ReportAgent:
             )
             
             # 使用ReportManager组装完整报告
-            report.markdown_content = ReportManager.assemble_full_report(report_id, outline)
+            report.markdown_content = ReportManager.assemble_full_report(
+                report_id, outline, run_summary=report.run_summary,
+            )
             report.status = ReportStatus.COMPLETED
             report.completed_at = datetime.now().isoformat()
             
@@ -1840,16 +1985,17 @@ class ReportAgent:
                 # 限制报告长度，避免上下文过长
                 report_content = report.markdown_content[:15000]
                 if len(report.markdown_content) > 15000:
-                    report_content += "\n\n... [报告内容已截断] ..."
+                    report_content += "\n\n... [Report content truncated] ..."
         except Exception as e:
             logger.warning(t('report.fetchReportFailed', error=e))
         
         system_prompt = CHAT_SYSTEM_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
-            report_content=report_content if report_content else "（暂无报告）",
+            report_content=report_content if report_content else "(No report yet)",
             tools_description=self._get_tools_description(),
         )
         system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        system_prompt += self._coverage_instructions()
 
         # 构建消息
         messages = [{"role": "system", "content": system_prompt}]
@@ -2133,8 +2279,7 @@ class ReportManager:
         """
         cls._ensure_report_folder(report_id)
         
-        with open(cls._get_outline_path(report_id), 'w', encoding='utf-8') as f:
-            json.dump(outline.to_dict(), f, ensure_ascii=False, indent=2)
+        _atomic_write(cls._get_outline_path(report_id), json.dumps(outline.to_dict(), ensure_ascii=False, indent=2))
         
         logger.info(t('report.outlineSaved', reportId=report_id))
     
@@ -2169,8 +2314,7 @@ class ReportManager:
         # 保存文件
         file_suffix = f"section_{section_index:02d}.md"
         file_path = os.path.join(cls._get_report_folder(report_id), file_suffix)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(md_content)
+        _atomic_write(file_path, md_content)
 
         logger.info(t('report.sectionFileSaved', reportId=report_id, fileSuffix=file_suffix))
         return file_path
@@ -2269,8 +2413,7 @@ class ReportManager:
             "updated_at": datetime.now().isoformat()
         }
         
-        with open(cls._get_progress_path(report_id), 'w', encoding='utf-8') as f:
-            json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        _atomic_write(cls._get_progress_path(report_id), json.dumps(progress_data, ensure_ascii=False, indent=2))
     
     @classmethod
     def get_progress(cls, report_id: str) -> Optional[Dict[str, Any]]:
@@ -2315,7 +2458,8 @@ class ReportManager:
         return sections
     
     @classmethod
-    def assemble_full_report(cls, report_id: str, outline: ReportOutline) -> str:
+    def assemble_full_report(cls, report_id: str, outline: ReportOutline,
+                             run_summary: Optional[Dict[str, Any]] = None) -> str:
         """
         组装完整报告
         
@@ -2325,6 +2469,7 @@ class ReportManager:
         
         # 构建报告头部
         md_content = f"# {outline.title}\n\n"
+        md_content += run_coverage_markdown(run_summary)
         md_content += f"> {outline.summary}\n\n"
         md_content += f"---\n\n"
         
@@ -2335,6 +2480,8 @@ class ReportManager:
         
         # 后处理：清理整个报告的标题问题
         md_content = cls._post_process_report(md_content, outline)
+        if run_summary:
+            md_content += '\n\n---\n\n' + run_coverage_markdown(run_summary)
         
         # 保存完整报告
         full_path = cls._get_report_markdown_path(report_id)
@@ -2476,8 +2623,7 @@ class ReportManager:
         cls._ensure_report_folder(report.report_id)
         
         # 保存元信息JSON
-        with open(cls._get_report_path(report.report_id), 'w', encoding='utf-8') as f:
-            json.dump(report.to_dict(), f, ensure_ascii=False, indent=2)
+        _atomic_write(cls._get_report_path(report.report_id), json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
         
         # 保存大纲
         if report.outline:
@@ -2540,30 +2686,16 @@ class ReportManager:
             markdown_content=markdown_content,
             created_at=data.get('created_at', ''),
             completed_at=data.get('completed_at', ''),
-            error=data.get('error')
+            error=data.get('error'),
+            run_summary=data.get('run_summary'),
         )
     
     @classmethod
     def get_report_by_simulation(cls, simulation_id: str) -> Optional[Report]:
-        """根据模拟ID获取报告"""
-        cls._ensure_reports_dir()
-        
-        for item in os.listdir(cls.REPORTS_DIR):
-            item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 新格式：文件夹
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report and report.simulation_id == simulation_id:
-                    return report
-            # 兼容旧格式：JSON文件
-            elif item.endswith('.json'):
-                report_id = item[:-5]
-                report = cls.get_report(report_id)
-                if report and report.simulation_id == simulation_id:
-                    return report
-        
-        return None
-    
+        """Return the latest generation, including its current progress/failure."""
+        reports = cls.list_reports(simulation_id=simulation_id, limit=1)
+        return reports[0] if reports else None
+
     @classmethod
     def list_reports(cls, simulation_id: Optional[str] = None, limit: int = 50) -> List[Report]:
         """列出报告"""

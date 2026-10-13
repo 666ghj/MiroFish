@@ -52,7 +52,7 @@ def _get_default_platform(simulation_id: str) -> str:
 
 # Interview prompt 优化前缀
 # 添加此前缀可以避免Agent调用工具，直接用文本回复
-INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
+INTERVIEW_PROMPT_PREFIX = "Using your persona, memories, and previous actions, reply in English directly without calling tools: "
 
 
 def optimize_interview_prompt(prompt: str) -> str:
@@ -87,7 +87,7 @@ def get_graph_entities(graph_id: str):
         enrich: 是否获取相关边信息（默认true）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if Config.GRAPH_PROVIDER == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
@@ -124,7 +124,7 @@ def get_graph_entities(graph_id: str):
 def get_entity_detail(graph_id: str, entity_uuid: str):
     """获取单个实体的详细信息"""
     try:
-        if not Config.ZEP_API_KEY:
+        if Config.GRAPH_PROVIDER == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
@@ -157,7 +157,7 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
 def get_entities_by_type(graph_id: str, entity_type: str):
     """获取指定类型的所有实体"""
     try:
-        if not Config.ZEP_API_KEY:
+        if Config.GRAPH_PROVIDER == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
@@ -292,14 +292,19 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     if not os.path.exists(simulation_dir):
         return False, {"reason": "模拟目录不存在"}
     
-    # 必要文件列表（不包括脚本，脚本位于 backend/scripts/）
-    required_files = [
-        "state.json",
-        "simulation_config.json",
-        "reddit_profiles.json",
-        "twitter_profiles.csv"
-    ]
-    
+    import json
+    state_file = os.path.join(simulation_dir, "state.json")
+    try:
+        with open(state_file, encoding='utf-8') as handle:
+            state_data = json.load(handle)
+    except (OSError, ValueError) as error:
+        return False, {"reason": f"Cannot read simulation state: {error}"}
+    required_files = ["state.json", "simulation_config.json"]
+    if state_data.get("enable_reddit", True):
+        required_files.append("reddit_profiles.json")
+    if state_data.get("enable_twitter", True):
+        required_files.append("twitter_profiles.csv")
+
     # 检查文件是否存在
     existing_files = []
     missing_files = []
@@ -349,6 +354,10 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
                 with open(profiles_file, 'r', encoding='utf-8') as f:
                     profiles_data = json.load(f)
                     profiles_count = len(profiles_data) if isinstance(profiles_data, list) else 0
+            elif state_data.get("enable_twitter", True):
+                import csv
+                with open(os.path.join(simulation_dir, "twitter_profiles.csv"), encoding='utf-8', newline='') as handle:
+                    profiles_count = sum(1 for _ in csv.DictReader(handle))
             
             # 如果状态是preparing但文件已完成，自动更新状态为ready
             if status == "preparing":
@@ -386,7 +395,48 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         return False, {"reason": f"读取状态文件失败: {str(e)}"}
 
 
+def _prepare_task_path(simulation_id):
+    return os.path.join(SimulationManager()._get_simulation_dir(simulation_id), "prepare_task.json")
+
+
+def _active_prepare_task(simulation_id):
+    """A held OS lock identifies a live worker, including in another process."""
+    import fcntl
+    import json
+    from ..models.task import TaskManager
+    path = _prepare_task_path(simulation_id)
+    with open(path + ".worker.lock", "a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    saved = json.load(handle)
+            except (OSError, ValueError):
+                return {"simulation_id": simulation_id, "status": "preparing", "progress": 0}
+            task = TaskManager().get_task(saved.get("task_id"))
+            return task.to_dict() if task else saved
+    return None
+
+
+def _serialize_prepare_request(function):
+    """Serialize the read/check/claim sequence across threads and server workers."""
+    from functools import wraps
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        import fcntl
+        simulation_id = (request.get_json(silent=True) or {}).get("simulation_id")
+        if not simulation_id:
+            return function(*args, **kwargs)
+        path = _prepare_task_path(simulation_id)
+        with open(path + ".request.lock", "a+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            return function(*args, **kwargs)
+    return wrapped
+
+
 @simulation_bp.route('/prepare', methods=['POST'])
+@_serialize_prepare_request
 def prepare_simulation():
     """
     准备模拟环境（异步任务，LLM智能生成所有参数）
@@ -451,6 +501,11 @@ def prepare_simulation():
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
         
+        active = _active_prepare_task(simulation_id)
+        if active:
+            active.update(simulation_id=simulation_id, already_prepared=False)
+            return jsonify({"success": True, "data": active})
+
         # 检查是否强制重新生成
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"开始处理 /prepare 请求: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
@@ -498,25 +553,18 @@ def prepare_simulation():
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
         
-        # ========== 同步获取实体数量（在后台任务启动前） ==========
-        # 这样前端在调用prepare后立即就能获取到预期Agent总数
-        try:
-            logger.info(f"同步获取实体数量: graph_id={state.graph_id}")
-            reader = ZepEntityReader()
-            # 快速读取实体（不需要边信息，只统计数量）
-            filtered_preview = reader.filter_defined_entities(
-                graph_id=state.graph_id,
-                defined_entity_types=entity_types_list,
-                enrich_with_edges=False  # 不获取边信息，加快速度
-            )
-            # 保存实体数量到状态（供前端立即获取）
-            state.entities_count = filtered_preview.filtered_count
-            state.entity_types = list(filtered_preview.entity_types)
-            logger.info(f"预期实体数量: {filtered_preview.filtered_count}, 类型: {filtered_preview.entity_types}")
-        except Exception as e:
-            logger.warning(f"同步获取实体数量失败（将在后台任务中重试）: {e}")
-            # 失败不影响后续流程，后台任务会重新获取
-        
+        # Restore the original options on an ordinary retry with no overrides.
+        import json
+        manifest_path = os.path.join(manager._get_simulation_dir(simulation_id), "prepare_manifest.json")
+        if not force_regenerate and os.path.exists(manifest_path):
+            with open(manifest_path, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            previous_inputs = manifest.get("inputs", {})
+            if "entity_types" not in data:
+                entity_types_list = previous_inputs.get("entity_types") or None
+            if "use_llm_for_profiles" not in data:
+                use_llm_for_profiles = previous_inputs.get("use_llm_for_profiles", True)
+
         # 创建异步任务
         task_manager = TaskManager()
         task_id = task_manager.create_task(
@@ -527,8 +575,16 @@ def prepare_simulation():
             }
         )
         
+        from ..services.oasis_profile_generator import atomic_write_json
+        import fcntl
+        task_path = _prepare_task_path(simulation_id)
+        worker_lock = open(task_path + ".worker.lock", "a+")
+        fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        atomic_write_json(task_path, task_manager.get_task(task_id).to_dict())
+
         # 更新模拟状态（包含预先获取的实体数量）
         state.status = SimulationStatus.PREPARING
+        state.error = None
         manager._save_simulation_state(state)
         
         # Capture locale before spawning background thread
@@ -609,6 +665,7 @@ def prepare_simulation():
                         message=detailed_message,
                         progress_detail=progress_detail_data
                     )
+                    atomic_write_json(task_path, task_manager.get_task(task_id).to_dict())
                 
                 result_state = manager.prepare_simulation(
                     simulation_id=simulation_id,
@@ -617,7 +674,8 @@ def prepare_simulation():
                     defined_entity_types=entity_types_list,
                     use_llm_for_profiles=use_llm_for_profiles,
                     progress_callback=progress_callback,
-                    parallel_profile_count=parallel_profile_count
+                    parallel_profile_count=parallel_profile_count,
+                    force_regenerate=force_regenerate,
                 )
 
                 if result_state.status == SimulationStatus.FAILED:
@@ -641,10 +699,19 @@ def prepare_simulation():
                     state.status = SimulationStatus.FAILED
                     state.error = str(e)
                     manager._save_simulation_state(state)
-        
+            finally:
+                try:
+                    atomic_write_json(task_path, task_manager.get_task(task_id).to_dict())
+                finally:
+                    worker_lock.close()
+
         # 启动后台线程
         thread = threading.Thread(target=run_prepare, daemon=True)
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            worker_lock.close()
+            raise
         
         return jsonify({
             "success": True,
@@ -675,6 +742,7 @@ def prepare_simulation():
 
 
 @simulation_bp.route('/prepare/status', methods=['POST'])
+@_serialize_prepare_request
 def get_prepare_status():
     """
     查询准备任务进度
@@ -710,6 +778,12 @@ def get_prepare_status():
         task_id = data.get('task_id')
         simulation_id = data.get('simulation_id')
         
+        if simulation_id:
+            active = _active_prepare_task(simulation_id)
+            if active:
+                active.update(simulation_id=simulation_id, already_prepared=False)
+                return jsonify({"success": True, "data": active})
+
         # 如果提供了simulation_id，先检查是否已准备完成
         if simulation_id:
             is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
@@ -726,6 +800,21 @@ def get_prepare_status():
                     }
                 })
         
+        if simulation_id:
+            state = SimulationManager().get_simulation(simulation_id)
+            if state and state.status in (SimulationStatus.FAILED, SimulationStatus.PREPARING):
+                error = state.error or "Preparation was interrupted. Retry to resume saved work."
+                if state.status == SimulationStatus.PREPARING:
+                    state.status = SimulationStatus.FAILED
+                    state.error = error
+                    SimulationManager()._save_simulation_state(state)
+                return jsonify({"success": True, "data": {
+                    "simulation_id": simulation_id, "status": "failed", "error": error,
+                    "message": error, "resumable": True, "already_prepared": False,
+                    "progress": 0, "profiles_count": state.profiles_count,
+                    "entities_count": state.entities_count,
+                }})
+
         # 如果没有task_id，返回错误
         if not task_id:
             if simulation_id:
@@ -1551,6 +1640,9 @@ def start_simulation():
 
         platform = data.get('platform', 'parallel')
         max_rounds = data.get('max_rounds')  # 可选：最大模拟轮数
+        simulation_effort = data.get('simulation_effort', 'full')
+        if simulation_effort not in ('quick', 'moderate', 'full'):
+            return jsonify({"success": False, "error": "simulation_effort must be quick, moderate, or full"}), 400
         enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # 可选：是否启用图谱记忆更新
         force = data.get('force', False)  # 可选：强制重新开始
         if not isinstance(enable_graph_memory_update, bool):
@@ -1754,7 +1846,8 @@ def start_simulation():
                 platform=platform,
                 max_rounds=max_rounds,
                 enable_graph_memory_update=enable_graph_memory_update,
-                graph_id=graph_id
+                graph_id=graph_id,
+                simulation_effort=simulation_effort,
             )
         
         response_data = run_state.to_dict()
@@ -1815,13 +1908,20 @@ def stop_simulation():
                 "error": t('api.requireSimulationId')
             }), 400
         
+        wait = data.get('wait', True)
+        if not isinstance(wait, bool):
+            return jsonify({"success": False, "error": "wait must be a JSON boolean"}), 400
+        if not wait:
+            run_state = SimulationRunner.request_stop(simulation_id)
+            pending = run_state.runner_status not in {RunnerStatus.STOPPED, RunnerStatus.COMPLETED}
+            return jsonify({"success": True, "pending": pending, "data": run_state.to_dict()}), 202 if pending else 200
         run_state = SimulationRunner.stop_simulation(simulation_id)
         
         # 更新模拟状态
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         if state:
-            state.status = SimulationStatus.STOPPED
+            state.status = SimulationStatus.COMPLETED if run_state.runner_status == RunnerStatus.COMPLETED else SimulationStatus.STOPPED
             state.error = None
             manager._save_simulation_state(state)
         

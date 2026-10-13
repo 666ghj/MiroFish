@@ -1,5 +1,21 @@
 import service from './index'
 
+export const downloadReportPdf = async (reportId) => {
+  try {
+    return await service.get(`/api/report/${encodeURIComponent(reportId)}/download`, {
+      params: { format: 'pdf' }, responseType: 'blob'
+    })
+  } catch (error) {
+    if (error.response?.data instanceof Blob) {
+      try {
+        const detail = JSON.parse(await error.response.data.text())
+        if (detail.error) error.message = detail.error
+      } catch { /* Keep the original network/HTTP error for non-JSON responses. */ }
+    }
+    throw error
+  }
+}
+
 /**
  * 开始报告生成
  * @param {Object} data - { simulation_id, force_regenerate? }
@@ -12,8 +28,8 @@ export const generateReport = (data) => {
  * 获取报告生成状态
  * @param {string} reportId
  */
-export const getReportStatus = (reportId) => {
-  return service.get(`/api/report/generate/status`, { params: { report_id: reportId } })
+export const getReportStatus = (data) => {
+  return service.post('/api/report/generate/status', data)
 }
 
 /**

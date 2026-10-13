@@ -295,3 +295,28 @@ def test_report_reader_lease_blocks_graph_start_and_delete(monkeypatch):
     finally:
         if report_id:
             unregister_graph_reader("graph-1", report_id)
+
+
+def test_regeneration_status_prefers_requested_task_over_old_report(monkeypatch):
+    monkeypatch.setattr(report_api.ReportManager, 'get_report_by_simulation', classmethod(
+        lambda cls, sid: SimpleNamespace(status=report_api.ReportStatus.COMPLETED, report_id='old')))
+    monkeypatch.setattr(report_api, 'TaskManager', lambda: SimpleNamespace(get_task=lambda tid:
+        SimpleNamespace(to_dict=lambda: {'task_id': tid, 'status': 'processing', 'progress': 20})))
+    app = Flask(__name__)
+    with app.test_request_context('/api/report/generate/status', method='POST',
+                                  json={'simulation_id': 'sim1', 'task_id': 'new-task'}):
+        response = report_api.get_generate_status()
+    assert response.json['data']['status'] == 'processing'
+    assert response.json['data']['task_id'] == 'new-task'
+
+
+def test_report_lookup_returns_latest_generation(monkeypatch, tmp_path):
+    from app.services.report_agent import Report, ReportManager, ReportStatus
+    monkeypatch.setattr(ReportManager, 'REPORTS_DIR', str(tmp_path))
+    for rid, date in [('old', '2026-10-12T00:00:00'), ('new', '2026-10-13T00:00:00')]:
+        ReportManager.save_report(Report(report_id=rid, simulation_id='sim1', graph_id='g1',
+            simulation_requirement='Test', status=ReportStatus.COMPLETED, created_at=date))
+    # Force filesystem order to make the legacy first-match bug reproducible.
+    import app.services.report_agent as module
+    monkeypatch.setattr(module.os, 'listdir', lambda path: ['old', 'new'])
+    assert ReportManager.get_report_by_simulation('sim1').report_id == 'new'

@@ -24,13 +24,17 @@ class Config:
     # JSON配置 - 禁用ASCII转义，让中文直接显示
     JSON_AS_ASCII = False
     
-    # LLM配置（统一使用OpenAI格式）
+    # LLM配置（OpenAI API or local ChatGPT-authenticated Codex CLI）
+    LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai').strip().lower()
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    GRAPH_PROVIDER = os.environ.get('GRAPH_PROVIDER', 'zep').strip().lower()
+    LOCAL_GRAPH_URL = os.environ.get('LOCAL_GRAPH_URL', 'http://127.0.0.1:5002')
+    LOCAL_GRAPH_TOKEN = os.environ.get('LOCAL_GRAPH_TOKEN')
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -64,11 +68,23 @@ class Config:
     def validate(cls) -> list[str]:
         """验证必要配置"""
         errors: list[str] = []
-        if not cls.LLM_API_KEY:
+        if cls.LLM_PROVIDER not in {'openai', 'codex'}:
+            errors.append('LLM_PROVIDER must be openai or codex')
+        if cls.LLM_PROVIDER == 'openai' and not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
+        if cls.LLM_PROVIDER == 'codex':
+            import shutil
+            if os.name != 'posix':
+                errors.append('Codex provider requires macOS or Linux')
+            if not shutil.which(os.environ.get('CODEX_BIN', 'codex')):
+                errors.append('Codex CLI not found; install it or set CODEX_BIN')
+        if cls.GRAPH_PROVIDER not in {'zep', 'graphiti'}:
+            errors.append('GRAPH_PROVIDER must be zep or graphiti')
+        if cls.GRAPH_PROVIDER == 'graphiti' and not cls.LOCAL_GRAPH_TOKEN:
+            errors.append('LOCAL_GRAPH_TOKEN is required')
+        if cls.GRAPH_PROVIDER == 'zep' and not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
-        if os.environ.get("ZEP_API_URL"):
+        if cls.GRAPH_PROVIDER == 'zep' and os.environ.get("ZEP_API_URL"):
             errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
         if cls.DEBUG:
             import warnings

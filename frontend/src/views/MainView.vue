@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH</div>
+        <div class="brand" @click="router.push('/')">My Own Researcher</div>
       </div>
       
       <div class="header-center">
@@ -35,6 +35,7 @@
       </div>
     </header>
 
+    <RecoveryBanner :error="error" :retry-key="`project:${currentProjectId === 'new' ? getPendingUpload().uploadId : currentProjectId}`" :auto-retry="!needsFiles && !!currentProjectId" :completed="projectCompleted && !error" :busy="loading || recovering" :label="$t(needsFiles ? 'recovery.selectFiles' : connectionError ? 'recovery.reconnect' : 'recovery.resume')" :hint="needsFiles ? '' : $t('recovery.saved')" @retry="recoverProject" />
     <!-- Main Content Area -->
     <main class="content-area">
       <!-- Left Panel: Graph -->
@@ -80,10 +81,11 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import RecoveryBanner from '../components/RecoveryBanner.vue'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, resumeOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
@@ -103,6 +105,10 @@ const currentProjectId = ref(route.params.projectId)
 const loading = ref(false)
 const graphLoading = ref(false)
 const error = ref('')
+const projectCompleted = ref(false)
+const recovering = ref(false)
+const connectionError = ref(false)
+const needsFiles = computed(() => currentProjectId.value === 'new' && !getPendingUpload().files.length)
 const projectData = ref(null)
 const graphData = ref(null)
 const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
@@ -194,7 +200,7 @@ const initProject = async () => {
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   if (!pending.isPending || pending.files.length === 0) {
-    error.value = 'No pending files found.'
+    error.value = t('recovery.missingFiles')
     addLog('Error: No pending files found for new project.')
     return
   }
@@ -208,6 +214,7 @@ const handleNewProject = async () => {
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
     formData.append('simulation_requirement', pending.simulationRequirement)
+    if (pending.uploadId) formData.append('upload_id', pending.uploadId)
     
     const res = await generateOntology(formData)
     if (res.success) {
@@ -224,6 +231,12 @@ const handleNewProject = async () => {
       addLog(`Error generating ontology: ${error.value}`)
     }
   } catch (err) {
+    const savedProjectId = err.response?.data?.data?.project_id
+    if (savedProjectId) {
+      currentProjectId.value = savedProjectId
+      router.replace({ name: 'Process', params: { projectId: savedProjectId } })
+      try { projectData.value = (await getProject(savedProjectId)).data } catch {}
+    }
     error.value = err.message
     addLog(`Exception in handleNewProject: ${err.message}`)
   } finally {
@@ -241,7 +254,9 @@ const loadProject = async () => {
       updatePhaseByStatus(res.data.status)
       addLog(`Project loaded. Status: ${res.data.status}`)
       
-      if (res.data.status === 'ontology_generated' && !res.data.graph_id) {
+      if (!res.data.ontology && res.data.status !== 'graph_completed') {
+        error.value = res.data.error || t('recovery.interrupted')
+      } else if (res.data.status === 'ontology_generated' && !res.data.graph_id) {
         await startBuildGraph()
       } else if (res.data.status === 'graph_building' && res.data.graph_build_task_id) {
         currentPhase.value = 1
@@ -255,6 +270,7 @@ const loadProject = async () => {
       addLog(`Error loading project: ${res.error}`)
     }
   } catch (err) {
+    connectionError.value = true
     error.value = err.message
     addLog(`Exception in loadProject: ${err.message}`)
   } finally {
@@ -268,11 +284,13 @@ const updatePhaseByStatus = (status) => {
     case 'ontology_generated': currentPhase.value = 0; break;
     case 'graph_building': currentPhase.value = 1; break;
     case 'graph_completed': currentPhase.value = 2; break;
-    case 'failed': error.value = 'Project failed'; break;
+    case 'failed': error.value = projectData.value?.error || t('common.unknownError'); break;
   }
 }
 
 const startBuildGraph = async () => {
+  error.value = ''
+  connectionError.value = false
   try {
     currentPhase.value = 1
     buildProgress.value = { progress: 0, message: 'Starting build...' }
@@ -328,6 +346,7 @@ const fetchGraphData = async () => {
 }
 
 const startPollingTask = (taskId) => {
+  stopPolling()
   pollTaskStatus(taskId)
   pollTimer = setInterval(() => pollTaskStatus(taskId), 2000)
 }
@@ -359,27 +378,34 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
-        error.value = task.error
+        connectionError.value = false
+        error.value = task.error || task.message || t('common.unknownError')
         addLog(`Graph build task failed: ${task.error}`)
       }
     }
   } catch (e) {
-    console.error(e)
+    stopPolling()
+    connectionError.value = true
+    error.value = e.message
   }
 }
 
 const loadGraph = async (graphId) => {
+  projectCompleted.value = false
   graphLoading.value = true
   addLog(`Loading full graph data: ${graphId}`)
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
+      projectCompleted.value = currentPhase.value >= 2
       addLog('Graph data loaded successfully.')
     } else {
       addLog(`Failed to load graph data: ${res.error}`)
     }
   } catch (e) {
+    connectionError.value = true
+    error.value = e.message
     addLog(`Exception loading graph: ${e.message}`)
   } finally {
     graphLoading.value = false
@@ -406,6 +432,28 @@ const stopGraphPolling = () => {
     graphPollTimer = null
     addLog('Graph polling stopped.')
   }
+}
+
+const recoverProject = async () => {
+  if (recovering.value || loading.value) return
+  recovering.value = true
+  const reconnect = connectionError.value
+  projectCompleted.value = false
+  error.value = ''
+  connectionError.value = false
+  try {
+    if (needsFiles.value) router.push('/')
+    else if (currentProjectId.value === 'new') await handleNewProject()
+    else if (reconnect || !projectData.value) await loadProject()
+    else if (!projectData.value.ontology) {
+      await resumeOntology(currentProjectId.value)
+      projectData.value = (await getProject(currentProjectId.value)).data
+      await startBuildGraph()
+    } else await startBuildGraph()
+  } catch (err) {
+    error.value = err.message
+    connectionError.value = !err.response
+  } finally { recovering.value = false }
 }
 
 onMounted(() => {

@@ -101,13 +101,13 @@ class LLMClient:
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
         
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        if Config.LLM_PROVIDER == 'codex':
+            from .codex_provider import CodexClient
+            self.client = CodexClient()
+        else:
+            if not self.api_key:
+                raise ValueError("LLM_API_KEY 未配置")
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
     def _create_completion(
         self,

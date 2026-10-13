@@ -107,7 +107,7 @@ def test_manual_stop_timeout_leaves_monitor_owned_state_stopping(monkeypatch):
     SimulationRunner._graph_memory_enabled.pop("sim-timeout", None)
 
     try:
-        with pytest.raises(TimeoutError, match="仍在停止中"):
+        with pytest.raises(TimeoutError, match="still stopping"):
             SimulationRunner.stop_simulation("sim-timeout")
         assert state.runner_status == RunnerStatus.STOPPING
     finally:
@@ -285,7 +285,7 @@ def test_monitor_start_failure_terminates_the_spawned_process(monkeypatch, tmp_p
         }),
         encoding="utf-8",
     )
-    (scripts_dir / "run_twitter_simulation.py").write_text("pass\n", encoding="utf-8")
+    (scripts_dir / "run_parallel_simulation.py").write_text("pass\n", encoding="utf-8")
 
     class Process:
         pid = 123
@@ -482,3 +482,65 @@ def test_shutdown_drain_failure_remains_failed_and_retryable(monkeypatch):
         SimulationRunner._cleanup_done = False
         SimulationRunner._graph_memory_enabled.pop(simulation_id, None)
         SimulationRunner._manual_stop_requests.discard(simulation_id)
+
+
+@pytest.mark.parametrize('drain_error', [None, 'Graph ingestion failed'])
+def test_interview_ready_run_finishes_after_memory_barrier(monkeypatch, tmp_path, drain_error):
+    sid = 'sim-interview-ready'
+    directory = tmp_path / sid / 'reddit'
+    directory.mkdir(parents=True)
+    (directory / 'actions.jsonl').write_text('')
+    state = SimulationRunState(simulation_id=sid, runner_status=RunnerStatus.RUNNING,
+                               reddit_running=False, reddit_completed=True)
+    monkeypatch.setattr(SimulationRunner, 'RUN_STATE_DIR', str(tmp_path))
+    monkeypatch.setattr(SimulationRunner, '_save_run_state', classmethod(lambda cls, value: None))
+    monkeypatch.setattr(SimulationRunner, '_sync_simulation_status', classmethod(lambda cls, *args: None))
+    monkeypatch.setattr(SimulationRunner, 'check_env_alive', classmethod(lambda cls, value: True))
+    def drain(cls, simulation_id):
+        assert state.runner_status == RunnerStatus.STOPPING
+        if drain_error:
+            raise RuntimeError(drain_error)
+    monkeypatch.setattr(runner_module.ZepGraphMemoryManager, 'stop_updater', classmethod(drain))
+    SimulationRunner._graph_memory_enabled[sid] = True
+    try:
+        SimulationRunner._finalize_interview_ready(state)
+        assert state.runner_status == (RunnerStatus.FAILED if drain_error else RunnerStatus.COMPLETED)
+        assert bool(state.error) == bool(drain_error)
+    finally:
+        SimulationRunner._graph_memory_enabled.pop(sid, None)
+
+
+def test_end_event_without_interview_readiness_is_not_finalized(monkeypatch):
+    state = SimulationRunState(simulation_id='sim-incomplete', runner_status=RunnerStatus.RUNNING)
+    monkeypatch.setattr(SimulationRunner, '_check_all_platforms_completed', classmethod(lambda cls, value: True))
+    monkeypatch.setattr(SimulationRunner, 'check_env_alive', classmethod(lambda cls, value: False))
+    SimulationRunner._finalize_interview_ready(state)
+    assert state.runner_status == RunnerStatus.RUNNING
+
+
+@pytest.mark.parametrize('platform,flag', [('twitter', '--twitter-only'), ('reddit', '--reddit-only')])
+def test_single_platform_uses_logged_runner(monkeypatch, tmp_path, platform, flag):
+    sid = 'sim-logged-' + platform
+    directory = tmp_path / sid
+    directory.mkdir()
+    (directory / 'simulation_config.json').write_text(json.dumps({'time_config': {}}))
+    launched = []
+    class NoThread:
+        def __init__(self, **kwargs): pass
+        def start(self): pass
+    monkeypatch.setattr(SimulationRunner, 'RUN_STATE_DIR', str(tmp_path))
+    monkeypatch.setattr(SimulationRunner, '_sync_simulation_status', classmethod(lambda cls, *a: None))
+    monkeypatch.setattr(runner_module.threading, 'Thread', NoThread)
+    monkeypatch.setattr(runner_module.subprocess, 'Popen', lambda command, **kwargs:
+                        launched.append(command) or SimpleNamespace(pid=123))
+    try:
+        SimulationRunner.start_simulation(sid, platform=platform)
+        assert launched[0][1].endswith('run_parallel_simulation.py')
+        assert flag in launched[0]
+    finally:
+        handle = SimulationRunner._stdout_files.pop(sid, None)
+        if handle: handle.close()
+        for mapping in [SimulationRunner._run_states, SimulationRunner._processes,
+                        SimulationRunner._action_queues, SimulationRunner._monitor_threads,
+                        SimulationRunner._stderr_files, SimulationRunner._graph_memory_enabled]:
+            mapping.pop(sid, None)
