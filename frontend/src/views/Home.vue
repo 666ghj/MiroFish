@@ -4,6 +4,7 @@
     <nav class="navbar">
       <div class="nav-brand">My Own Researcher</div>
       <div class="nav-links">
+        <RouterLink to="/demo" class="demo-nav-link">{{ $t('nav.demo') }}</RouterLink>
         <LanguageSwitcher />
         <a href="https://github.com/Handriantog/My-Own-Researcher" target="_blank" rel="noopener noreferrer" class="github-link">
           {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
@@ -37,7 +38,6 @@
             </p>
           </div>
            
-          <div class="decoration-square"></div>
         </div>
         
         <div class="hero-right">
@@ -53,7 +53,7 @@
       </section>
 
       <!-- 下半部分：双栏布局 -->
-      <section class="dashboard-section">
+      <section id="research" class="dashboard-section">
         <!-- 左栏：状态与步骤 -->
         <div class="left-panel">
           <div class="panel-header">
@@ -419,6 +419,11 @@ const startSimulation = () => {
   align-items: center;
   gap: 16px;
 }
+
+.demo-nav-link { color: #161616; background: #fff; text-decoration: none; font-size: .9rem; font-weight: 600; padding: 7px 12px; border: 1px solid #b8b8b8; }
+.demo-nav-link:hover { background: #fff1eb; border-color: #dc461d; color: #a6320d; }
+.demo-nav-link:focus-visible { outline: 3px solid #ff4500; outline-offset: 4px; }
+#research { scroll-margin-top: 30px; }
 
 .github-link {
   color: var(--white);

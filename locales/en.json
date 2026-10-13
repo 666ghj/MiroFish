@@ -30,6 +30,7 @@
     "description": "Local research and simulation with your own graph platform"
   },
   "nav": {
+    "demo": "Demo",
     "visitGithub": "Visit our Github page"
   },
   "home": {

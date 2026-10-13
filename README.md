@@ -58,6 +58,8 @@ Docker runs Neo4j. The frontend, backend, graph service, MCP adapter, and select
 
 For subsequent starts, run `npm run graph:up` and `npm run dev`. Stop the app with Ctrl+C; `npm run graph:down` stops Neo4j while retaining its data.
 
+The homepage **Demo** tab opens a self-contained LoopLunch walkthrough at `/demo`: source brief, knowledge graph, generated personas, recorded discussion and the saved report. It uses bundled fictional example data and makes no backend or AI requests. To explore only the demo, run `npm run frontend` after installing frontend dependencies. The example run stopped early at round 37 of 336, with 102 recorded actions; its report describes that partial coverage.
+
 ## Choose your inference provider
 
 Install and sign in to the CLI you have access to, under the same OS user who runs the app. Use the provider ID below for both `LLM_PROVIDER` and the MCP configuration generator. **Inference and MCP are independent:** for example, Cursor can drive research through MCP while Claude Code performs the underlying inference.
