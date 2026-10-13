@@ -1,5 +1,37 @@
 <template>
   <div class="simulation-panel">
+    <RecoveryBanner :retry-key="`${simulationId}:run`" :auto-retry="!stopRequested" :completed="canGenerateReport" :error="startError" :busy="isStarting || recovering" :label="$t(connectionError ? 'recovery.reconnect' : 'recovery.restart')" :hint="connectionError ? '' : $t('recovery.restartHint')" @retry="recoverSimulation" />
+    <RecoveryBanner :retry-key="`${simulationId}:report`" :error="reportError" :busy="isGeneratingReport" @retry="handleNextStep" />
+    <RecoveryBanner :retry-key="`${simulationId}:stop`" :error="stopError" :busy="isStopping" :completed="runStatus.runner_status === 'stopped' && canGenerateReport" :label="$t('step3.retryStop')" @retry="handleStopSimulation" />
+    <RecoveryBanner :retry-key="`${simulationId}:effort-config`" :error="configError" :busy="loadingConfig" :completed="!!fullRounds && !configError" @retry="loadEffortConfig" />
+    <section v-if="phase === 0 && !stopRequested" class="effort-selector" aria-labelledby="effort-title">
+      <h3 id="effort-title">{{ $t('step3.effortTitle') }}</h3>
+      <p>{{ $t('step3.effortDescription') }}</p>
+      <fieldset :disabled="isStarting || restoring || loadingConfig">
+        <legend class="sr-only">{{ $t('step3.effortTitle') }}</legend>
+        <label v-for="effort in simulationEfforts" :key="effort" class="effort-card" :class="{ selected: selectedEffort === effort }">
+          <input type="radio" name="simulation-effort" :value="effort" :checked="selectedEffort === effort" @change="selectEffort(effort)">
+          <strong>{{ $t(`step3.effort_${effort}`) }}</strong>
+          <span>{{ fullRounds ? $t('step3.effortRounds', { rounds: roundsForEffort(fullRounds, effort) }) : $t('step3.loadingPlan') }}</span>
+          <small>{{ $t(`step3.effort_${effort}Description`) }}</small>
+        </label>
+      </fieldset>
+      <button class="action-btn primary" :disabled="isStarting || restoring || !fullRounds || !!startError" @click="doStartSimulation()">
+        {{ $t(isStarting ? 'step3.startingSimulation' : 'step3.startSimulation') }}
+      </button>
+    </section>
+    <p v-if="stopRequested && !canGenerateReport && !stopError" class="run-notice" role="status">{{ $t('step3.stoppingNotice') }}</p>
+    <p v-if="runStatus.runner_status === 'stopped'" class="run-notice" role="status">{{ $t('step3.stoppedNotice') }}</p>
+    <div v-if="showStopConfirmation" class="stop-overlay" @click.self="cancelStop">
+      <section class="stop-dialog" ref="stopDialog" role="dialog" aria-modal="true" aria-labelledby="stop-title" aria-describedby="stop-warning" @keydown="handleDialogKeydown">
+        <h3 id="stop-title">{{ $t('step3.stopTitle') }}</h3>
+        <p id="stop-warning">{{ $t('step3.stopWarning') }}</p>
+        <div class="action-controls">
+          <button class="action-btn secondary" autofocus @click="cancelStop">{{ $t('step3.keepRunning') }}</button>
+          <button class="action-btn primary" @click="confirmStop">{{ $t('step3.confirmStop') }}</button>
+        </div>
+      </section>
+    </div>
     <!-- Top Control Bar -->
     <div class="control-bar">
       <div class="status-group">
@@ -19,7 +51,7 @@
           <div class="platform-stats">
             <span class="stat">
               <span class="stat-label">ROUND</span>
-              <span class="stat-value mono">{{ runStatus.twitter_current_round || 0 }}<span class="stat-total">/{{ runStatus.total_rounds || maxRounds || '-' }}</span></span>
+              <span class="stat-value mono">{{ runStatus.twitter_current_round || 0 }}<span class="stat-total">/{{ runStatus.total_rounds || selectedRounds || '-' }}</span></span>
             </span>
             <span class="stat">
               <span class="stat-label">TIME</span>
@@ -60,7 +92,7 @@
           <div class="platform-stats">
             <span class="stat">
               <span class="stat-label">ROUND</span>
-              <span class="stat-value mono">{{ runStatus.reddit_current_round || 0 }}<span class="stat-total">/{{ runStatus.total_rounds || maxRounds || '-' }}</span></span>
+              <span class="stat-value mono">{{ runStatus.reddit_current_round || 0 }}<span class="stat-total">/{{ runStatus.total_rounds || selectedRounds || '-' }}</span></span>
             </span>
             <span class="stat">
               <span class="stat-label">TIME</span>
@@ -91,13 +123,14 @@
       </div>
 
       <div class="action-controls">
+        <button v-if="canStop" class="action-btn secondary" @click="requestStop">{{ $t('step3.stopSimulation') }}</button>
         <button 
           class="action-btn primary"
-          :disabled="phase !== 2 || isGeneratingReport"
+          :disabled="!canGenerateReport || isGeneratingReport"
           @click="handleNextStep"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
-          {{ isGeneratingReport ? $t('step3.generatingReportBtn') : $t('step3.startGenerateReportBtn') }}
+          {{ isGeneratingReport ? $t('step3.generatingReportBtn') : $t(runStatus.runner_status === 'stopped' ? 'step3.generatePartialReport' : 'step3.startGenerateReportBtn') }}
           <span v-if="!isGeneratingReport" class="arrow-icon">→</span>
         </button>
       </div>
@@ -287,21 +320,23 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import RecoveryBanner from './RecoveryBanner.vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   startSimulation,
   stopSimulation,
   getRunStatus,
-  getRunStatusDetail
+  getRunStatusDetail,
+  getSimulationConfig
 } from '../api/simulation'
 import { generateReport } from '../api/report'
+import { simulationEfforts, normalizeSimulationEffort, plannedSimulationRounds, roundsForEffort } from '../utils/simulationEffort'
 
 const { t } = useI18n()
 
 const props = defineProps({
   simulationId: String,
-  maxRounds: Number, // 从Step2传入的最大轮数
   minutesPerRound: {
     type: Number,
     default: 30 // 默认每轮30分钟
@@ -319,9 +354,47 @@ const router = useRouter()
 const isGeneratingReport = ref(false)
 const phase = ref(0) // 0: 未开始, 1: 运行中, 2: 已完成
 const isStarting = ref(false)
+const startRequested = ref(false)
 const isStopping = ref(false)
+const loadingFinalActivity = ref(false)
 const startError = ref(null)
+const connectionError = ref(false)
+const reportError = ref('')
 const runStatus = ref({})
+const restoring = ref(true)
+const simulationConfig = ref(null)
+const loadingConfig = ref(false)
+const configError = ref('')
+const stopError = ref('')
+const showStopConfirmation = ref(false)
+const stopDialog = ref(null)
+let stopTrigger = null
+const effortStorageKey = `simulation:${props.simulationId}:effort`
+const stopStorageKey = `simulation:${props.simulationId}:stop-requested`
+const readStored = key => { try { return localStorage.getItem(key) } catch { return null } }
+const saveStored = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Browser storage is optional. */ } }
+const selectedEffort = ref(normalizeSimulationEffort(readStored(effortStorageKey)))
+const stopRequested = ref(readStored(stopStorageKey) === 'true')
+const fullRounds = computed(() => plannedSimulationRounds(simulationConfig.value))
+const selectedRounds = computed(() => roundsForEffort(fullRounds.value, selectedEffort.value))
+const canStop = computed(() => !stopRequested.value && (isStarting.value || ['starting', 'running', 'paused'].includes(runStatus.value.runner_status)))
+const canGenerateReport = computed(() => ['completed', 'stopped'].includes(runStatus.value.runner_status) && !startError.value && !stopError.value && !isStopping.value && !loadingFinalActivity.value)
+const selectEffort = effort => {
+  selectedEffort.value = normalizeSimulationEffort(effort)
+  saveStored(effortStorageKey, selectedEffort.value)
+}
+const loadEffortConfig = async () => {
+  if (loadingConfig.value) return
+  loadingConfig.value = true
+  configError.value = ''
+  try {
+    const response = await getSimulationConfig(props.simulationId)
+    if (!response.success || !plannedSimulationRounds(response.data)) throw new Error(response.error || t('step3.invalidPlan'))
+    simulationConfig.value = response.data
+  } catch (error) { configError.value = error.message }
+  finally { loadingConfig.value = false }
+}
+let runGeneration = 0
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
@@ -380,16 +453,20 @@ const resetAllState = () => {
 }
 
 // 启动模拟
-const doStartSimulation = async () => {
+const doStartSimulation = async (force = false) => {
+  if (isStarting.value || stopRequested.value) return
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
   }
 
-  // 先重置所有状态，确保不会受到上一次模拟的影响
-  resetAllState()
+  if (!fullRounds.value) await loadEffortConfig()
+  if (!fullRounds.value) return
+  runGeneration += 1
+  stopPolling()
   
   isStarting.value = true
+  startRequested.value = true
   startError.value = null
   addLog(t('log.startingDualSim'))
   emit('update-status', 'processing')
@@ -398,22 +475,21 @@ const doStartSimulation = async () => {
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: true,  // 强制重新开始
+      simulation_effort: selectedEffort.value,
+      force,  // Only an explicit recovery restarts a failed run.
       enable_graph_memory_update: true  // 开启动态图谱更新
-    }
-    
-    if (props.maxRounds) {
-      params.max_rounds = props.maxRounds
-      addLog(t('log.setMaxRounds', { rounds: props.maxRounds }))
     }
     
     addLog(t('log.graphMemoryUpdateEnabled'))
     
     const res = await startSimulation(params)
     
+    if (stopRequested.value) return
     if (res.success && res.data) {
+      startRequested.value = false
       if (res.data.force_restarted) {
-        addLog(t('log.oldSimCleared'))
+        allActions.value = []
+        actionIds.value = new Set()
       }
       addLog(t('log.engineStarted'))
       addLog(`  ├─ PID: ${res.data.process_pid || '-'}`)
@@ -424,42 +500,84 @@ const doStartSimulation = async () => {
       startStatusPolling()
       startDetailPolling()
     } else {
-      startError.value = res.error || '启动失败'
+      startError.value = res.error || t('common.unknownError')
       addLog(t('log.startFailed', { error: res.error || t('common.unknownError') }))
       emit('update-status', 'error')
     }
   } catch (err) {
+    connectionError.value = !err.response
     startError.value = err.message
     addLog(t('log.startException', { error: err.message }))
     emit('update-status', 'error')
   } finally {
     isStarting.value = false
+    if (stopRequested.value) await handleStopSimulation()
   }
 }
 
-// 停止模拟
+// Confirmation changes only local intent until the user explicitly accepts.
+const requestStop = event => {
+  if (!canStop.value) return
+  stopTrigger = event?.currentTarget
+  showStopConfirmation.value = true
+  nextTick(() => stopDialog.value?.querySelector('button')?.focus())
+}
+const cancelStop = () => {
+  showStopConfirmation.value = false
+  stopTrigger?.focus()
+}
+const handleDialogKeydown = event => {
+  if (event.key === 'Escape') { event.preventDefault(); cancelStop() }
+  if (event.key !== 'Tab') return
+  const buttons = stopDialog.value?.querySelectorAll('button')
+  if (!buttons?.length) return
+  if (event.shiftKey && event.target === buttons[0]) { event.preventDefault(); buttons[buttons.length - 1].focus() }
+  else if (!event.shiftKey && event.target === buttons[buttons.length - 1]) { event.preventDefault(); buttons[0].focus() }
+}
+const confirmStop = async () => {
+  if (!showStopConfirmation.value || stopRequested.value) return
+  showStopConfirmation.value = false
+  stopRequested.value = true
+  saveStored(stopStorageKey, 'true')
+  runGeneration += 1
+  startError.value = null
+  stopPolling()
+  if (!isStarting.value) await handleStopSimulation()
+}
+
 const handleStopSimulation = async () => {
-  if (!props.simulationId) return
-  
+  if (!props.simulationId || isStopping.value) return
+  stopRequested.value = true
+  saveStored(stopStorageKey, 'true')
   isStopping.value = true
-  addLog(t('log.stoppingSim'))
-  
+  stopError.value = ''
+  startError.value = null
+  phase.value = 1
+  runGeneration += 1
+  stopPolling()
   try {
-    const res = await stopSimulation({ simulation_id: props.simulationId })
-    
-    if (res.success) {
-      addLog(t('log.simStoppedSuccess'))
+    if (['completed', 'stopped'].includes(runStatus.value.runner_status)) {
       phase.value = 2
-      stopPolling()
-      emit('update-status', 'completed')
-    } else {
-      addLog(t('log.stopFailed', { error: res.error || t('common.unknownError') }))
+      await fetchRunStatusDetail()
+      return
     }
-  } catch (err) {
-    addLog(t('log.stopException', { error: err.message }))
-  } finally {
-    isStopping.value = false
-  }
+    const res = await stopSimulation({ simulation_id: props.simulationId, wait: false })
+    if (!res.success) throw new Error(res.error || t('common.unknownError'))
+    runStatus.value = { ...runStatus.value, ...res.data }
+    if (res.data?.runner_status === 'failed') throw new Error(res.data.error || t('log.simFailed'))
+    if (res.data?.runner_status === 'stopped' || res.data?.runner_status === 'completed') {
+      phase.value = 2
+      emit('update-status', 'completed')
+      await fetchRunStatusDetail()
+    } else {
+      runStatus.value.runner_status = 'stopping'
+      startStatusPolling()
+      startDetailPolling()
+    }
+  } catch (error) {
+    stopError.value = error.message
+    emit('update-status', 'error')
+  } finally { isStopping.value = false }
 }
 
 // 轮询状态
@@ -467,10 +585,12 @@ let statusTimer = null
 let detailTimer = null
 
 const startStatusPolling = () => {
+  if (statusTimer) clearInterval(statusTimer)
   statusTimer = setInterval(fetchRunStatus, 2000)
 }
 
 const startDetailPolling = () => {
+  if (detailTimer) clearInterval(detailTimer)
   detailTimer = setInterval(fetchRunStatusDetail, 3000)
 }
 
@@ -490,15 +610,22 @@ const prevTwitterRound = ref(0)
 const prevRedditRound = ref(0)
 
 const fetchRunStatus = async () => {
-  if (!props.simulationId) return
+  if (!props.simulationId || loadingFinalActivity.value) return
   
+  const generation = runGeneration
   try {
     const res = await getRunStatus(props.simulationId)
+    if (generation !== runGeneration) return
     
     if (res.success && res.data) {
       const data = res.data
       
       runStatus.value = data
+      if (data.runner_status !== 'idle' && data.simulation_effort) selectEffort(data.simulation_effort)
+      if (data.stop_requested || ['stopping', 'stopped'].includes(data.runner_status)) {
+        stopRequested.value = true
+        saveStored(stopStorageKey, 'true')
+      }
       
       // 分别检测各平台的轮次变化并输出日志
       if (data.twitter_current_round > prevTwitterRound.value) {
@@ -518,19 +645,41 @@ const fetchRunStatus = async () => {
       // runner_status is authoritative because the backend only publishes a
       // terminal state after the Zep ingestion barrier has completed.
       if (isFailed) {
+        connectionError.value = false
+        if (stopRequested.value) stopError.value = data.error || t('log.simFailed')
+        else startError.value = data.error || t('log.simFailed')
         addLog(t('log.simFailed') + (data.error ? `: ${data.error}` : ''))
         phase.value = 2
         stopPolling()
         emit('update-status', 'error')
       } else if (isCompleted) {
-        addLog(t('log.simCompleted'))
-        phase.value = 2
+        startError.value = null
+        stopError.value = ''
+        loadingFinalActivity.value = true
         stopPolling()
-        emit('update-status', 'completed')
+        try {
+          // Status and detail use separate polling intervals. Fetch once after
+          // the terminal barrier so the last saved actions cannot be missed.
+          await fetchRunStatusDetail()
+          if (generation !== runGeneration) return
+          if (!startError.value && !stopError.value) {
+            addLog(t('log.simCompleted'))
+            phase.value = 2
+            emit('update-status', 'completed')
+          } else emit('update-status', 'error')
+        } finally { loadingFinalActivity.value = false }
+      } else if (data.runner_status !== 'idle') {
+        phase.value = 1
       }
-    }
+      return data
+    } else { throw new Error(res.error || t('common.unknownError')) }
   } catch (err) {
-    console.warn('获取运行状态失败:', err)
+    if (generation !== runGeneration) return
+    stopPolling()
+    connectionError.value = true
+    if (stopRequested.value) stopError.value = err.message
+    else startError.value = err.message
+    emit('update-status', 'error')
   }
 }
 
@@ -561,8 +710,10 @@ const checkPlatformsCompleted = (data) => {
 const fetchRunStatusDetail = async () => {
   if (!props.simulationId) return
   
+  const generation = runGeneration
   try {
     const res = await getRunStatusDetail(props.simulationId)
+    if (generation !== runGeneration) return
     
     if (res.success && res.data) {
       // 使用 all_actions 获取完整的动作列表
@@ -584,11 +735,14 @@ const fetchRunStatusDetail = async () => {
         }
       })
       
-      // 不自动滚动，让用户自由查看时间轴
-      // 新动作会在底部追加
-    }
+      // New activity remains available without moving the user's scroll position.
+    } else { throw new Error(res.error || t('common.unknownError')) }
   } catch (err) {
-    console.warn('获取详细状态失败:', err)
+    if (generation !== runGeneration) return
+    stopPolling()
+    connectionError.value = true
+    if (stopRequested.value) stopError.value = err.message
+    else startError.value = err.message
   }
 }
 
@@ -643,6 +797,7 @@ const formatActionTime = (timestamp) => {
 }
 
 const handleNextStep = async () => {
+  if (!canGenerateReport.value) return
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
@@ -653,13 +808,13 @@ const handleNextStep = async () => {
     return
   }
   
+  reportError.value = ''
   isGeneratingReport.value = true
   addLog(t('log.startingReportGen'))
   
   try {
     const res = await generateReport({
-      simulation_id: props.simulationId,
-      force_regenerate: true
+      simulation_id: props.simulationId
     })
     
     if (res.success && res.data) {
@@ -669,10 +824,12 @@ const handleNextStep = async () => {
       // 跳转到报告页面
       router.push({ name: 'Report', params: { reportId } })
     } else {
+      reportError.value = res.error || t('common.unknownError')
       addLog(t('log.reportGenFailed', { error: res.error || t('common.unknownError') }))
       isGeneratingReport.value = false
     }
   } catch (err) {
+    reportError.value = err.message
     addLog(t('log.reportGenException', { error: err.message }))
     isGeneratingReport.value = false
   }
@@ -688,10 +845,52 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
+const restoreSimulation = async () => {
+  restoring.value = true
+  startError.value = null
+  connectionError.value = false
+  try {
+    const data = await fetchRunStatus()
+    if (!data) return
+    if (!['completed', 'stopped'].includes(data.runner_status)) await fetchRunStatusDetail()
+    if (startError.value || stopError.value) return
+    if (stopRequested.value && !['stopping', 'stopped', 'completed'].includes(data.runner_status)) {
+      await handleStopSimulation()
+      return
+    }
+    if (data.runner_status === 'idle') {
+      phase.value = 0
+      emit('update-status', 'idle')
+      await loadEffortConfig()
+    } else if (!['completed', 'stopped', 'failed'].includes(data.runner_status)) {
+      phase.value = 1
+      emit('update-status', 'processing')
+      startStatusPolling()
+      startDetailPolling()
+    }
+  } finally { restoring.value = false }
+}
+
+const recovering = ref(false)
+const recoverSimulation = async () => {
+  if (stopRequested.value) return handleStopSimulation()
+  if (recovering.value || isStarting.value) return
+  recovering.value = true
+  try {
+    if (connectionError.value) {
+      const retryRequestedStart = startRequested.value
+      await restoreSimulation()
+      if (retryRequestedStart && runStatus.value.runner_status === 'idle' && !startError.value && !stopError.value && !configError.value) {
+        await doStartSimulation(false)
+      }
+    } else await doStartSimulation(true)
+  } finally { recovering.value = false }
+}
+
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    restoreSimulation()
   }
 })
 
@@ -701,6 +900,23 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.effort-selector { padding: 20px 24px; border-bottom: 1px solid #e5e7eb; background: #fafafa; flex-shrink: 0; }
+.effort-selector h3, .stop-dialog h3 { margin: 0 0 8px; font-size: 16px; }
+.effort-selector p, .stop-dialog p { margin: 0 0 16px; color: #555; font-size: 13px; line-height: 1.6; }
+.effort-selector fieldset { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0; border: 0; margin: 0 0 16px; }
+.effort-card { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1px solid #d9dde3; border-radius: 8px; background: white; cursor: pointer; font-size: 12px; }
+.effort-card.selected { border: 2px solid #111; padding: 11px; }
+.effort-card input { align-self: flex-start; accent-color: #111; }
+.effort-card small { color: #666; line-height: 1.4; }
+.effort-card:focus-within { outline: 2px solid #526ff0; outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.run-notice { margin: 0; padding: 12px 24px; background: #fff7e6; color: #725322; font-size: 13px; line-height: 1.5; flex-shrink: 0; }
+.stop-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(0,0,0,.45); }
+.stop-dialog { max-width: 460px; border-radius: 12px; background: white; padding: 24px; box-shadow: 0 16px 56px rgba(0,0,0,.2); }
+.action-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.stop-dialog .action-controls { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; }
+@media (max-width: 600px) { .effort-selector { padding: 12px; } .effort-selector fieldset { gap: 6px; } .effort-card { padding: 8px; } .effort-card.selected { padding: 7px; } }
+
 .simulation-panel {
   height: 100%;
   display: flex;

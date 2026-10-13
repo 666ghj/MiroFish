@@ -21,6 +21,7 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
+from ..utils.codex_transport import CodexProviderError
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
@@ -233,13 +234,13 @@ class SimulationConfigGenerator:
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
         
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        if Config.LLM_PROVIDER == 'codex':
+            from ..utils.codex_provider import CodexClient
+            self.client = CodexClient()
+        else:
+            if not self.api_key:
+                raise ValueError("LLM_API_KEY 未配置")
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
     
     def generate_config(
         self,
@@ -474,6 +475,8 @@ class SimulationConfigGenerator:
                     
                     last_error = e
                     
+            except CodexProviderError:
+                raise
             except Exception as e:
                 logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
                 last_error = e
@@ -592,6 +595,8 @@ class SimulationConfigGenerator:
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
+        except CodexProviderError:
+            raise
         except Exception as e:
             logger.warning(f"时间配置LLM生成失败: {e}, 使用默认配置")
             return self._get_default_time_config(num_entities)
@@ -709,6 +714,8 @@ class SimulationConfigGenerator:
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
+        except CodexProviderError:
+            raise
         except Exception as e:
             logger.warning(f"事件配置LLM生成失败: {e}, 使用默认配置")
             return {
@@ -874,6 +881,8 @@ class SimulationConfigGenerator:
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)
             llm_configs = {cfg["agent_id"]: cfg for cfg in result.get("agent_configs", [])}
+        except CodexProviderError:
+            raise
         except Exception as e:
             logger.warning(f"Agent配置批次LLM生成失败: {e}, 使用规则生成")
             llm_configs = {}

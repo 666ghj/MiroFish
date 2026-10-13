@@ -9,6 +9,10 @@ OASIS Agent Profile生成器
 """
 
 import json
+import os
+import tempfile
+import hashlib
+import shutil
 import random
 import time
 from typing import Dict, Any, List, Optional
@@ -19,6 +23,7 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ..utils.codex_transport import CodexProviderError
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
 from ..utils.zep import (
     call_zep_read_with_retry,
@@ -29,6 +34,22 @@ from ..utils.zep import (
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
+
+
+def atomic_write_json(path, value):
+    """Replace a durable JSON checkpoint without exposing partially written files."""
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=directory, prefix=".checkpoint-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _coerce_to_str(value: Any) -> str:
@@ -252,20 +273,20 @@ class OasisProfileGenerator:
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
         
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        if Config.LLM_PROVIDER == 'codex':
+            from ..utils.codex_provider import CodexClient
+            self.client = CodexClient()
+        else:
+            if not self.api_key:
+                raise ValueError("LLM_API_KEY 未配置")
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         
         # Zep客户端用于检索丰富上下文
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
         self.zep_client = None
         self.graph_id = graph_id
         
-        if self.zep_api_key:
+        if self.zep_api_key or Config.GRAPH_PROVIDER == 'graphiti':
             try:
                 self.zep_client = get_zep_client(self.zep_api_key)
             except Exception as e:
@@ -613,6 +634,8 @@ class OasisProfileGenerator:
                     
                     last_error = je
                     
+            except CodexProviderError:
+                raise
             except Exception as e:
                 logger.warning(f"LLM调用失败 (attempt {attempt+1}): {str(e)[:80]}")
                 last_error = e
@@ -755,7 +778,7 @@ class OasisProfileGenerator:
 3. age: 年龄数字（必须是整数）
 4. gender: 性别，必须是英文: "male" 或 "female"
 5. mbti: MBTI类型（如INTJ、ENFP等）
-6. country: 国家（使用中文，如"中国"）
+6. country: Country name in the requested response language (e.g. "China" for English)
 7. profession: 职业
 8. interested_topics: 感兴趣话题数组
 
@@ -804,7 +827,7 @@ class OasisProfileGenerator:
 3. age: 固定填30（机构账号的虚拟年龄）
 4. gender: 固定填"other"（机构账号使用other表示非个人）
 5. mbti: MBTI类型，用于描述账号风格，如ISTJ代表严谨保守
-6. country: 国家（使用中文，如"中国"）
+6. country: Country name in the requested response language (e.g. "China" for English)
 7. profession: 机构职能描述
 8. interested_topics: 关注领域数组
 
@@ -900,163 +923,131 @@ class OasisProfileGenerator:
         graph_id: Optional[str] = None,
         parallel_count: int = 5,
         realtime_output_path: Optional[str] = None,
-        output_platform: str = "reddit"
+        output_platform: str = "reddit",
+        force_regenerate: bool = False,
     ) -> List[OasisAgentProfile]:
-        """
-        批量从实体生成Agent Profile（支持并行生成）
-        
-        Args:
-            entities: 实体列表
-            use_llm: 是否使用LLM生成详细人设
-            progress_callback: 进度回调函数 (current, total, message)
-            graph_id: 图谱ID，用于Zep检索获取更丰富上下文
-            parallel_count: 并行生成数量，默认5
-            realtime_output_path: 实时写入的文件路径（如果提供，每生成一个就写入一次）
-            output_platform: 输出平台格式 ("reddit" 或 "twitter")
-            
-        Returns:
-            Agent Profile列表
-        """
+        """Generate missing personas, durably preserving successes across retries."""
         import concurrent.futures
-        from threading import Lock
-        
-        # 设置graph_id用于Zep检索
+        import csv
+
         if graph_id:
             self.graph_id = graph_id
-        
-        total = len(entities)
-        profiles = [None] * total  # 预分配列表保持顺序
-        completed_count = [0]  # 使用列表以便在闭包中修改
-        lock = Lock()
-        
-        # 实时写入文件的辅助函数
-        def save_profiles_realtime():
-            """实时保存已生成的 profiles 到文件"""
-            if not realtime_output_path:
-                return
-            
-            with lock:
-                # 过滤出已生成的 profiles
-                existing_profiles = [p for p in profiles if p is not None]
-                if not existing_profiles:
-                    return
-                
-                try:
-                    if output_platform == "reddit":
-                        # Reddit JSON 格式
-                        profiles_data = [p.to_reddit_format() for p in existing_profiles]
-                        with open(realtime_output_path, 'w', encoding='utf-8') as f:
-                            json.dump(profiles_data, f, ensure_ascii=False, indent=2)
-                    else:
-                        # Twitter CSV 格式
-                        import csv
-                        profiles_data = [p.to_twitter_format() for p in existing_profiles]
-                        if profiles_data:
-                            fieldnames = list(profiles_data[0].keys())
-                            with open(realtime_output_path, 'w', encoding='utf-8', newline='') as f:
-                                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                                writer.writeheader()
-                                writer.writerows(profiles_data)
-                except Exception as e:
-                    logger.warning(f"实时保存 profiles 失败: {e}")
-        
-        # Capture locale before spawning thread pool workers
         current_locale = get_locale()
+        entities = list(entities)
+        by_uuid = {entity.uuid: entity for entity in entities}
+        if len(by_uuid) != len(entities):
+            raise ValueError("Entity UUIDs must be unique")
+        inputs = {
+            "graph_id": getattr(self, "graph_id", None),
+            "use_llm": use_llm,
+            "locale": current_locale,
+            "entities": ({entity.uuid: entity.to_dict() for entity in entities}
+                         if realtime_output_path else {}),
+        }
+        fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
+        checkpoint_path = (os.path.join(os.path.dirname(realtime_output_path), "profiles_checkpoint.json")
+                           if realtime_output_path else None)
+        checkpoint = {"version": 1, "fingerprint": fingerprint,
+                      "entity_order": list(by_uuid), "profiles": {}}
+        if checkpoint_path and os.path.exists(checkpoint_path) and not force_regenerate:
+            with open(checkpoint_path, encoding="utf-8") as handle:
+                checkpoint = json.load(handle)
+            if checkpoint.get("version") != 1 or checkpoint.get("fingerprint") != fingerprint:
+                raise ValueError("Preparation inputs changed; use force_regenerate to replace saved personas")
+            entities = [by_uuid[uuid] for uuid in checkpoint["entity_order"]]
+        elif realtime_output_path and os.path.exists(realtime_output_path) and not force_regenerate:
+            # Older releases saved only platform projections. Match unambiguous names
+            # and preserve their numeric IDs; keep the source file as a backup.
+            shutil.copy2(realtime_output_path, realtime_output_path + ".legacy.bak")
+            with open(realtime_output_path, encoding="utf-8", newline="") as handle:
+                rows = json.load(handle) if output_platform == "reddit" else list(csv.DictReader(handle))
+            assignments = {}
+            for row in rows:
+                matches = [entity for entity in entities if entity.name == row.get("name")]
+                if len(matches) != 1:
+                    raise ValueError("Legacy personas cannot be matched safely; use force_regenerate")
+                entity = matches[0]
+                idx = int(row.get("user_id", row.get("user_id:token", -1)))
+                if idx < 0 or idx >= len(entities) or idx in assignments or entity in assignments.values():
+                    raise ValueError("Legacy persona IDs are incompatible; use force_regenerate")
+                assignments[idx] = entity
+                fields = {key: value for key, value in row.items() if key in OasisAgentProfile.__dataclass_fields__}
+                fields.update(user_id=idx, user_name=row.get("username", row.get("user_name", entity.name)),
+                              name=entity.name, bio=row.get("bio", row.get("description", entity.summary)),
+                              persona=row.get("persona", row.get("user_char", entity.summary)),
+                              source_entity_uuid=entity.uuid, source_entity_type=entity.get_entity_type())
+                for key in ("karma", "friend_count", "follower_count", "statuses_count", "age"):
+                    if fields.get(key) not in (None, ""):
+                        fields[key] = int(fields[key])
+                checkpoint["profiles"][entity.uuid] = OasisAgentProfile(**fields).to_dict()
+            remaining = iter(entity for entity in entities if entity not in assignments.values())
+            entities = [assignments[idx] if idx in assignments else next(remaining) for idx in range(len(entities))]
+            checkpoint["entity_order"] = [entity.uuid for entity in entities]
 
-        def generate_single_profile(idx: int, entity: EntityNode) -> tuple:
-            """生成单个profile的工作函数"""
+        profiles = [OasisAgentProfile(**checkpoint["profiles"][entity.uuid])
+                    if entity.uuid in checkpoint["profiles"] else None for entity in entities]
+        for idx, existing in enumerate(profiles):
+            if existing and (existing.user_id != idx or existing.source_entity_uuid != entities[idx].uuid):
+                raise ValueError("Invalid persona checkpoint; use force_regenerate")
+
+        def save():
+            if not checkpoint_path:
+                return
+            checkpoint["profiles"] = {p.source_entity_uuid: p.to_dict() for p in profiles if p is not None}
+            atomic_write_json(checkpoint_path, checkpoint)
+            existing = [p for p in profiles if p is not None]
+            if output_platform == "reddit":
+                atomic_write_json(realtime_output_path, [p.to_reddit_format() for p in existing])
+            else:
+                rows = [p.to_twitter_format() for p in existing]
+                if rows:
+                    keys = list(dict.fromkeys(key for row in rows for key in row))
+                    temporary = realtime_output_path + ".tmp"
+                    with open(temporary, "w", encoding="utf-8", newline="") as handle:
+                        writer = csv.DictWriter(handle, fieldnames=keys)
+                        writer.writeheader()
+                        writer.writerows(rows)
+                    os.replace(temporary, realtime_output_path)
+
+        save()  # Persist the original entity order before any calls can fail.
+        completed = sum(p is not None for p in profiles)
+        if progress_callback:
+            progress_callback(completed, len(entities), f"Resuming {completed}/{len(entities)} saved personas")
+
+        def generate(idx, entity):
             set_locale(current_locale)
-            entity_type = entity.get_entity_type() or "Entity"
-            
-            try:
-                profile = self.generate_profile_from_entity(
-                    entity=entity,
-                    user_id=idx,
-                    use_llm=use_llm
-                )
-                
-                # 实时输出生成的人设到控制台和日志
-                self._print_generated_profile(entity.name, entity_type, profile)
-                
-                return idx, profile, None
-                
-            except Exception as e:
-                logger.error(f"生成实体 {entity.name} 的人设失败: {str(e)}")
-                # 创建一个基础profile
-                fallback_profile = OasisAgentProfile(
-                    user_id=idx,
-                    user_name=self._generate_username(entity.name),
-                    name=entity.name,
-                    bio=f"{entity_type}: {entity.name}",
-                    persona=entity.summary or f"A participant in social discussions.",
-                    source_entity_uuid=entity.uuid,
-                    source_entity_type=entity_type,
-                )
-                return idx, fallback_profile, str(e)
-        
-        logger.info(f"开始并行生成 {total} 个Agent人设（并行数: {parallel_count}）...")
-        print(f"\n{'='*60}")
-        print(f"开始生成Agent人设 - 共 {total} 个实体，并行数: {parallel_count}")
-        print(f"{'='*60}\n")
-        
-        # 使用线程池并行执行
-        with concurrent.futures.ThreadPoolExecutor(max_workers=parallel_count) as executor:
-            # 提交所有任务
-            future_to_entity = {
-                executor.submit(generate_single_profile, idx, entity): (idx, entity)
-                for idx, entity in enumerate(entities)
-            }
-            
-            # 收集结果
-            for future in concurrent.futures.as_completed(future_to_entity):
-                idx, entity = future_to_entity[future]
-                entity_type = entity.get_entity_type() or "Entity"
-                
+            result = self.generate_profile_from_entity(entity=entity, user_id=idx, use_llm=use_llm)
+            result.source_entity_uuid = entity.uuid
+            result.user_id = idx
+            self._print_generated_profile(entity.name, entity.get_entity_type() or "Entity", result)
+            return result
+
+        error = None
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, parallel_count)) as executor:
+            futures = {executor.submit(generate, idx, entity): idx
+                       for idx, entity in enumerate(entities) if profiles[idx] is None}
+            for future in concurrent.futures.as_completed(futures):
+                if future.cancelled():
+                    continue
                 try:
-                    result_idx, profile, error = future.result()
-                    profiles[result_idx] = profile
-                    
-                    with lock:
-                        completed_count[0] += 1
-                        current = completed_count[0]
-                    
-                    # 实时写入文件
-                    save_profiles_realtime()
-                    
-                    if progress_callback:
-                        progress_callback(
-                            current, 
-                            total, 
-                            f"已完成 {current}/{total}: {entity.name}（{entity_type}）"
-                        )
-                    
-                    if error:
-                        logger.warning(f"[{current}/{total}] {entity.name} 使用备用人设: {error}")
-                    else:
-                        logger.info(f"[{current}/{total}] 成功生成人设: {entity.name} ({entity_type})")
-                        
-                except Exception as e:
-                    logger.error(f"处理实体 {entity.name} 时发生异常: {str(e)}")
-                    with lock:
-                        completed_count[0] += 1
-                    profiles[idx] = OasisAgentProfile(
-                        user_id=idx,
-                        user_name=self._generate_username(entity.name),
-                        name=entity.name,
-                        bio=f"{entity_type}: {entity.name}",
-                        persona=entity.summary or "A participant in social discussions.",
-                        source_entity_uuid=entity.uuid,
-                        source_entity_type=entity_type,
-                    )
-                    # 实时写入文件（即使是备用人设）
-                    save_profiles_realtime()
-        
-        print(f"\n{'='*60}")
-        print(f"人设生成完成！共生成 {len([p for p in profiles if p])} 个Agent")
-        print(f"{'='*60}\n")
-        
+                    result = future.result()
+                except Exception as exc:
+                    if error is None:
+                        error = exc
+                    # Drain running workers to checkpoint successful siblings before
+                    # surfacing the provider failure; avoid starting queued work.
+                    for pending in futures:
+                        pending.cancel()
+                    continue
+                profiles[futures[future]] = result
+                completed += 1
+                save()
+                if progress_callback:
+                    progress_callback(completed, len(entities), f"Completed {completed}/{len(entities)}: {result.name}")
+        if error:
+            raise error
         return profiles
-    
+
     def _print_generated_profile(self, entity_name: str, entity_type: str, profile: OasisAgentProfile):
         """实时输出生成的人设到控制台（完整内容，不截断）"""
         separator = "-" * 70

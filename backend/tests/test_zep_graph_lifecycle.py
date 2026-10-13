@@ -148,6 +148,7 @@ def test_repeated_build_request_reuses_the_existing_task(monkeypatch):
 
 
 def test_stale_build_after_restart_is_recoverable_instead_of_reused(monkeypatch):
+    monkeypatch.setattr(graph_api.Config, "GRAPH_PROVIDER", "zep")
     project = _project(ProjectStatus.GRAPH_BUILDING)
     project.zep_batch_id = None
     project.zep_batch_operation_id = None
@@ -184,7 +185,9 @@ def test_stale_build_after_restart_is_recoverable_instead_of_reused(monkeypatch)
 
 
 def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
+    from app.services.graph_builder import GraphBuilderService
     project = _project(ProjectStatus.GRAPH_BUILDING)
+    project.zep_batch_operation_id = GraphBuilderService.build_operation_id("graph-1", ["source text"])
     created_threads = []
 
     class Tasks:
@@ -195,6 +198,10 @@ def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
             return "task-resumed"
 
     class Builder:
+        from app.services.graph_builder import GraphBuilderService as RealBuilder
+        validate_batch_chunks = staticmethod(RealBuilder.validate_batch_chunks)
+        build_operation_id = staticmethod(RealBuilder.build_operation_id)
+
         def __init__(self, **_kwargs):
             pass
 

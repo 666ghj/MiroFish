@@ -32,6 +32,9 @@ class Project:
     created_at: str
     updated_at: str
     
+    # Idempotency key for browser upload retries.
+    upload_id: Optional[str] = None
+
     # 文件信息
     files: List[Dict[str, str]] = field(default_factory=list)  # [{filename, path, size}]
     total_text_length: int = 0
@@ -42,12 +45,14 @@ class Project:
     
     # 图谱信息（接口2完成后填充）
     graph_id: Optional[str] = None
+    graph_provider: str = 'zep'
     graph_build_task_id: Optional[str] = None
     zep_batch_id: Optional[str] = None
     zep_batch_operation_id: Optional[str] = None
     
     # 配置
     simulation_requirement: Optional[str] = None
+    additional_context: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
     
@@ -58,6 +63,7 @@ class Project:
         """转换为字典"""
         return {
             "project_id": self.project_id,
+            "upload_id": self.upload_id,
             "name": self.name,
             "status": self.status.value if isinstance(self.status, ProjectStatus) else self.status,
             "created_at": self.created_at,
@@ -67,10 +73,12 @@ class Project:
             "ontology": self.ontology,
             "analysis_summary": self.analysis_summary,
             "graph_id": self.graph_id,
+            "graph_provider": self.graph_provider,
             "graph_build_task_id": self.graph_build_task_id,
             "zep_batch_id": self.zep_batch_id,
             "zep_batch_operation_id": self.zep_batch_operation_id,
             "simulation_requirement": self.simulation_requirement,
+            "additional_context": self.additional_context,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "error": self.error
@@ -85,6 +93,7 @@ class Project:
         
         return cls(
             project_id=data['project_id'],
+            upload_id=data.get('upload_id'),
             name=data.get('name', 'Unnamed Project'),
             status=status,
             created_at=data.get('created_at', ''),
@@ -94,10 +103,12 @@ class Project:
             ontology=data.get('ontology'),
             analysis_summary=data.get('analysis_summary'),
             graph_id=data.get('graph_id'),
+            graph_provider=data.get('graph_provider', 'zep'),
             graph_build_task_id=data.get('graph_build_task_id'),
             zep_batch_id=data.get('zep_batch_id'),
             zep_batch_operation_id=data.get('zep_batch_operation_id'),
             simulation_requirement=data.get('simulation_requirement'),
+            additional_context=data.get('additional_context'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
             error=data.get('error')
@@ -156,7 +167,8 @@ class ProjectManager:
             name=name,
             status=ProjectStatus.CREATED,
             created_at=now,
-            updated_at=now
+            updated_at=now,
+            graph_provider=Config.GRAPH_PROVIDER,
         )
         
         # 创建项目目录结构
@@ -223,6 +235,12 @@ class ProjectManager:
         projects.sort(key=lambda p: p.created_at, reverse=True)
         
         return projects if limit is None else projects[:limit]
+
+    @classmethod
+    def find_project_by_upload_id(cls, upload_id: str) -> Optional[Project]:
+        """Find an exact persisted upload claim, including failed projects."""
+        return next((project for project in cls.list_projects(limit=None)
+                     if project.upload_id == upload_id), None)
 
     @classmethod
     def find_projects_by_graph_id(cls, graph_id: str) -> List[Project]:

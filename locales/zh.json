@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -174,7 +180,9 @@
     "genderOther": "其他",
     "yearsOld": "岁",
     "initializing": "初始化",
-    "generating": "生成中"
+    "generating": "生成中",
+    "effortNextStep": "Choose Quick, Moderate, or Full effort in the next step. Full is selected by default.",
+    "continueSimulation": "Continue to simulation"
   },
   "step3": {
     "startGenerateReport": "开始生成结果报告",
@@ -205,7 +213,29 @@
     "forceStopSuccess": "模拟已强制停止",
     "forceStopFailed": "强制停止失败: {error}",
     "startGenerateReportBtn": "开始生成结果报告",
-    "generatingReportBtn": "启动中..."
+    "generatingReportBtn": "启动中...",
+    "effortTitle": "Choose simulation effort",
+    "effortDescription": "More rounds explore more interactions and use more time and model allowance. Actual runtime varies.",
+    "effort_quick": "Quick",
+    "effort_moderate": "Moderate",
+    "effort_full": "Full",
+    "effortRounds": "{rounds} rounds per platform",
+    "loadingPlan": "Loading the simulation plan…",
+    "effort_quickDescription": "25% of the planned rounds",
+    "effort_moderateDescription": "50% of the planned rounds",
+    "effort_fullDescription": "All planned rounds (default)",
+    "startingSimulation": "Starting simulation…",
+    "startSimulation": "Start simulation",
+    "invalidPlan": "The simulation plan could not be loaded. Retry to load the planned rounds.",
+    "stopSimulation": "Stop simulation",
+    "stopTitle": "Stop this simulation early?",
+    "stopWarning": "Saved activity will be retained, but an in-flight action may be interrupted. Stopping early gives the report less evidence. This run cannot resume from the exact round. Reporting becomes available after activity and graph memory finish saving.",
+    "keepRunning": "Keep running",
+    "confirmStop": "Stop and save progress",
+    "stoppingNotice": "Stopping and saving completed activity. You can generate the report when saving finishes.",
+    "stoppedNotice": "Simulation stopped. Generate a report from the activity saved so far.",
+    "retryStop": "Retry saving and stopping",
+    "generatePartialReport": "Generate partial report"
   },
   "step4": {
     "generatingSection": "正在生成{title}...",
@@ -663,5 +693,28 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "recovery": {
+    "attention": "需要处理",
+    "working": "处理中…",
+    "retry": "重试",
+    "reconnect": "重新连接",
+    "resume": "继续未完成的工作",
+    "saved": "已完成的工作已保存，将从最近保存的进度继续。",
+    "restart": "重新运行模拟",
+    "restartHint": "模拟无法从精确的运行时状态继续。重新运行会开始新一轮模拟，并保留准备工作和此前的运行文件。",
+    "stopped": "模拟在完成前已停止。",
+    "retryMessage": "重试此消息",
+    "retrySurvey": "重试未完成的访谈",
+    "interrupted": "在收到回复前连接已中断，请重试此消息。",
+    "selectFiles": "重新选择文件",
+    "missingFiles": "此浏览器标签页中的待上传文件已丢失，请重新选择文件继续。",
+    "retrying": "Retrying {attempt}/{max}…"
+  },
+  "reportExport": {
+    "downloadPdf": "Download PDF",
+    "preparing": "Preparing PDF…",
+    "retry": "Retry PDF download",
+    "failed": "PDF download failed. Please try again."
   }
 }

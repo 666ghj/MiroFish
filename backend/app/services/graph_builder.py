@@ -23,6 +23,7 @@ from ..utils.ontology import (
 )
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
+    get_ingestion_wait_timeout,
     call_zep_read_with_retry,
     get_zep_client,
     is_retryable_zep_error,
@@ -66,7 +67,7 @@ class GraphBuilderService:
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
+        if Config.GRAPH_PROVIDER == 'zep' and not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
         
         self.client = get_zep_client(self.api_key)
@@ -127,7 +128,7 @@ class GraphBuilderService:
         chunk_size: int,
         chunk_overlap: int,
         batch_size: int,
-        locale: str = 'zh'
+        locale: str = 'en'
     ):
         """图谱构建工作线程"""
         set_locale(locale)
@@ -628,6 +629,25 @@ class GraphBuilderService:
             operation_name=f"get batch {batch_id}",
         )
 
+    def resume_text_batch(self, graph_id, batch_id, operation_id, chunks):
+        """Resume the saved operation without creating replacement episodes."""
+        self.validate_batch_chunks(chunks)
+        if operation_id != self.build_operation_id(graph_id, chunks):
+            raise ValueError('Persisted batch does not match the current graph input')
+        summary = self.get_batch_summary(batch_id)
+        status = getattr(summary, 'status', None)
+        if getattr(self.client, 'provider', None) == 'graphiti':
+            metadata = getattr(summary, 'metadata', None) or {}
+            if metadata.get('graph_id') != graph_id or metadata.get('mirofish_operation_id') != operation_id:
+                raise ValueError('Persisted batch does not match the current graph input')
+            if status not in {'queued', 'processing', 'succeeded'}:
+                self.client.batch.resume(batch_id=batch_id, operation_id=operation_id, chunks=chunks)
+        elif status not in {'queued', 'processing', 'succeeded'}:
+            raise RuntimeError(
+                f'Zep Cloud does not support resuming this {status} batch. '
+                'The existing graph and batch have been preserved; an explicit rebuild is required.')
+        return BatchSubmission(batch_id, operation_id, [], len(chunks))
+
     def _wait_for_batch(
         self,
         submission: BatchSubmission,
@@ -636,7 +656,7 @@ class GraphBuilderService:
     ) -> List[str]:
         """Wait for a Batch API terminal state and validate every item."""
 
-        timeout = timeout or ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        timeout = timeout or get_ingestion_wait_timeout(ZEP_INGESTION_WAIT_TIMEOUT_SECONDS)
         start_time = time.time()
         terminal_states = {"succeeded", "partial", "failed", "invalid", "canceled"}
 
@@ -721,7 +741,7 @@ class GraphBuilderService:
         self,
         episode_uuids: List[str],
         progress_callback: Optional[Callable] = None,
-        timeout: int = ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        timeout: int | None = None
     ):
         """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
         if not episode_uuids:
@@ -729,6 +749,7 @@ class GraphBuilderService:
                 progress_callback(t('progress.noEpisodesWait'), 1.0)
             return
         
+        timeout = timeout or get_ingestion_wait_timeout(ZEP_INGESTION_WAIT_TIMEOUT_SECONDS)
         start_time = time.time()
         pending_episodes = set(episode_uuids)
         completed_count = 0

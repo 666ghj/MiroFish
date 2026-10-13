@@ -26,6 +26,13 @@ ZEP_HTTP_REQUEST_TIMEOUT_SECONDS = 60.0
 # Zep ingestion is asynchronous and may take several minutes. Preserve the
 # original GraphBuilder deadline while keeping it separate from HTTP timeout.
 ZEP_INGESTION_WAIT_TIMEOUT_SECONDS = 600
+
+
+def get_ingestion_wait_timeout(cloud_timeout=ZEP_INGESTION_WAIT_TIMEOUT_SECONDS):
+    if Config.GRAPH_PROVIDER == 'graphiti':
+        return max(1, int(os.environ.get('LOCAL_GRAPH_WAIT_SECONDS', '7200')))
+    return cloud_timeout
+
 MAX_ZEP_SEARCH_QUERY_CHARS = 400
 MAX_ZEP_SEARCH_RESULTS = 50
 
@@ -65,6 +72,10 @@ def _cached_zep_client(api_key: str, timeout: float) -> Zep:
 def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> Zep:
     """Return a process-shared, explicitly configured Zep Cloud client."""
 
+    if Config.GRAPH_PROVIDER == 'graphiti':
+        return _cached_local_client(Config.LOCAL_GRAPH_URL, Config.LOCAL_GRAPH_TOKEN,
+                                    timeout or ZEP_HTTP_REQUEST_TIMEOUT_SECONDS)
+
     # zep-cloud gives ZEP_API_URL precedence even when base_url is explicit.
     # Reject it so this Cloud-only integration cannot silently target a
     # self-hosted or compatibility endpoint.
@@ -83,10 +94,17 @@ def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> 
     return _cached_zep_client(normalized_key, request_timeout)
 
 
+@lru_cache(maxsize=4)
+def _cached_local_client(url, token, timeout):
+    from ..local_graph.client import LocalGraphClient
+    return LocalGraphClient(url, token, timeout)
+
+
 def clear_zep_client_cache() -> None:
     """Clear cached clients. Intended for tests and controlled reconfiguration."""
 
     _cached_zep_client.cache_clear()
+    _cached_local_client.cache_clear()
 
 
 def is_retryable_zep_error(error: BaseException) -> bool:

@@ -5,6 +5,8 @@ Zep图谱记忆更新服务
 
 import time
 import threading
+import json
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,6 +17,7 @@ from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
+    get_ingestion_wait_timeout,
     call_zep_read_with_retry,
     get_zep_client,
 )
@@ -257,7 +260,7 @@ class ZepGraphMemoryUpdater:
         self.simulation_id = simulation_id or "unknown"
         self.api_key = api_key or Config.ZEP_API_KEY
         
-        if not self.api_key:
+        if Config.GRAPH_PROVIDER == 'zep' and not self.api_key:
             raise ValueError("ZEP_API_KEY未配置")
         
         self.client = get_zep_client(self.api_key)
@@ -312,7 +315,7 @@ class ZepGraphMemoryUpdater:
     
     def stop(self):
         """Drain the worker, flush tail events, and wait for Cloud ingestion."""
-        deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        deadline = time.time() + get_ingestion_wait_timeout(ZEP_INGESTION_WAIT_TIMEOUT_SECONDS)
         # Serialize the accepting->closed transition with add_activity's
         # check+enqueue operation. This closes the small race where a producer
         # could enqueue after both the worker and final flush had exited.
@@ -338,7 +341,9 @@ class ZepGraphMemoryUpdater:
                 "simulation graph ingestion is incomplete"
             )
 
+        self._save_ingestion_checkpoint()
         self._wait_for_pending_episodes(deadline=deadline)
+        self._save_ingestion_checkpoint()
         
         logger.info(f"ZepGraphMemoryUpdater 已停止: graph_id={self.graph_id}, "
                    f"total_activities={self._total_activities}, "
@@ -347,6 +352,23 @@ class ZepGraphMemoryUpdater:
                    f"failed={self._failed_count}, "
                    f"skipped={self._skipped_count}")
     
+    @staticmethod
+    def checkpoint_path(simulation_id):
+        return Path(Config.OASIS_SIMULATION_DATA_DIR) / simulation_id / 'ingestion_checkpoint.json'
+
+    def _save_ingestion_checkpoint(self):
+        # Only a fully flushed local uploader can be recovered after restart.
+        # Never infer completeness from a graph that may be missing unsent events.
+        if getattr(self.client, 'provider', None) != 'graphiti':
+            return
+        path = self.checkpoint_path(self.simulation_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'simulation_id': self.simulation_id,
+            'graph_id': self.graph_id, 'provider': 'graphiti',
+            'episode_uuids': self._pending_episode_uuids}), encoding='utf-8')
+        temporary.replace(path)
+
     def add_activity(self, activity: AgentActivity):
         """
         添加一个agent活动到队列
@@ -407,7 +429,7 @@ class ZepGraphMemoryUpdater:
         
         self.add_activity(activity)
     
-    def _worker_loop(self, locale: str = 'zh'):
+    def _worker_loop(self, locale: str = 'en'):
         """后台工作循环 - 按平台批量发送活动到Zep"""
         set_locale(locale)
         while self._running or not self._activity_queue.empty():
@@ -602,7 +624,7 @@ class ZepGraphMemoryUpdater:
             return
 
         if deadline is None:
-            deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+            deadline = time.time() + get_ingestion_wait_timeout(ZEP_INGESTION_WAIT_TIMEOUT_SECONDS)
         while pending:
             if time.time() >= deadline:
                 raise TimeoutError(
@@ -683,6 +705,39 @@ class ZepGraphMemoryManager:
         """获取模拟的更新器"""
         with cls._lock:
             return cls._updaters.get(simulation_id)
+
+    @classmethod
+    def has_ingestion_checkpoint(cls, simulation_id):
+        return Config.GRAPH_PROVIDER == 'graphiti' and ZepGraphMemoryUpdater.checkpoint_path(simulation_id).exists()
+
+    @classmethod
+    def resume_updater(cls, simulation_id):
+        """Requeue failed local extraction, including a fully flushed saved run."""
+        if Config.GRAPH_PROVIDER != 'graphiti':
+            return False
+        updater = cls.get_updater(simulation_id)
+        if updater is None:
+            if not cls.has_ingestion_checkpoint(simulation_id):
+                return False
+            saved = json.loads(ZepGraphMemoryUpdater.checkpoint_path(simulation_id).read_text())
+            if saved.get('simulation_id') != simulation_id or saved.get('provider') != 'graphiti':
+                raise ValueError('Graph ingestion checkpoint does not match this simulation')
+            updater = ZepGraphMemoryUpdater(saved['graph_id'], simulation_id=simulation_id)
+            updater._pending_episode_uuids = saved['episode_uuids']
+            with cls._lock:
+                cls._updaters[simulation_id] = updater
+                cls._stop_all_done = False
+        if getattr(updater.client, 'provider', None) != 'graphiti':
+            return False
+        if updater._running or (updater._worker_thread and updater._worker_thread.is_alive()):
+            return False
+        if updater._failed_batches:
+            raise RuntimeError('Activity upload failed before extraction; cannot replay an ambiguous write')
+        if updater._pending_episode_uuids:
+            result = updater.client.graph.resume_simulation(
+                graph_id=updater.graph_id, simulation_id=simulation_id)
+            updater._pending_episode_uuids = list(result.episode_uuids)
+        return True
 
     @classmethod
     def get_simulation_ids_for_graph(cls, graph_id: str) -> List[str]:

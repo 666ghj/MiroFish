@@ -30,7 +30,9 @@ service.interceptors.response.use(
     // 如果返回的状态码不是success，则抛出错误
     if (!res.success && res.success !== undefined) {
       console.error('API Error:', res.error || res.message || 'Unknown error')
-      return Promise.reject(new Error(res.error || res.message || 'Error'))
+      const error = new Error(res.error || res.message || 'Error')
+      error.response = response
+      return Promise.reject(error)
     }
     
     return res

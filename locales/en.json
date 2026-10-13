@@ -26,8 +26,8 @@
     "files": "files"
   },
   "meta": {
-    "title": "MiroFish - Predict Everything",
-    "description": "MiroFish - Social Media Opinion Simulation System"
+    "title": "My Own Researcher",
+    "description": "Local research and simulation with your own graph platform"
   },
   "nav": {
     "visitGithub": "Visit our Github page"
@@ -38,17 +38,17 @@
     "heroTitle1": "Upload Reports,",
     "heroTitle2": "Predict the Future",
     "heroDesc": "From a single document, {brand} extracts reality seeds to auto-generate a parallel world with up to {agentScale}. Inject variables from a god's-eye view to find the {optimalSolution} in complex group dynamics.",
-    "heroDescBrand": "MiroFish",
-    "heroDescAgentScale": "million-scale Agents",
+    "heroDescBrand": "My Own Researcher",
+    "heroDescAgentScale": "a small group of agents",
     "heroDescOptimalSolution": "\"local optimum\"",
     "slogan": "Let Agents rehearse the future, let decisions prevail",
     "systemStatus": "System Status",
     "systemReady": "Ready",
-    "systemReadyDesc": "Prediction engine on standby. Upload unstructured data to initialize a simulation sequence.",
-    "metricLowCost": "Low Cost",
-    "metricLowCostDesc": "Avg. $5/sim",
-    "metricHighAvail": "Scalable",
-    "metricHighAvailDesc": "Millions of Agents",
+    "systemReadyDesc": "Upload a document to build a local knowledge graph and explore a scenario with simulated agents.",
+    "metricLowCost": "Codex",
+    "metricLowCostDesc": "Uses your subscription allowance",
+    "metricHighAvail": "Local memory",
+    "metricHighAvailDesc": "Graphiti + Neo4j",
     "workflowSequence": "Workflow",
     "step01Title": "Graph Build",
     "step01Desc": "Seed extraction & memory injection & GraphRAG construction",
@@ -69,13 +69,23 @@
     "promptPlaceholder": "// Describe your simulation or prediction requirement in natural language",
     "engineBadge": "Engine: MiroFish-V1.0",
     "startEngine": "Start Engine",
-    "initializing": "Initializing..."
+    "initializing": "Initializing...",
+    "systemChecking": "Checking services…",
+    "systemCheckingDesc": "Checking the research engine and graph service.",
+    "systemUnavailable": "Services need attention",
+    "systemUnavailableDesc": "The research engine or graph service is unavailable. Start the local services and check their logs."
   },
   "main": {
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -85,7 +95,7 @@
     "ontologyDesc": "LLM analyzes document content and simulation requirements, extracts reality seeds, and auto-generates a suitable ontology structure",
     "analyzingDocs": "Analyzing documents...",
     "graphRagBuild": "GraphRAG Build",
-    "graphRagDesc": "Based on the generated ontology, documents are auto-chunked and sent to Zep to build a knowledge graph, extracting entities and relations, forming temporal memory and community summaries",
+    "graphRagDesc": "Based on the generated ontology, documents are auto-chunked and sent to Graph engine to build a knowledge graph, extracting entities and relations, forming temporal memory for research",
     "entityNodes": "Entity Nodes",
     "relationEdges": "Relation Edges",
     "schemaTypes": "Schema Types",
@@ -174,7 +184,9 @@
     "genderOther": "Other",
     "yearsOld": "years old",
     "initializing": "Initializing",
-    "generating": "Generating"
+    "generating": "Generating",
+    "effortNextStep": "Choose Quick, Moderate, or Full effort in the next step. Full is selected by default.",
+    "continueSimulation": "Continue to simulation"
   },
   "step3": {
     "startGenerateReport": "Generate Report",
@@ -205,7 +217,29 @@
     "forceStopSuccess": "Simulation force stopped",
     "forceStopFailed": "Force stop failed: {error}",
     "startGenerateReportBtn": "Generate Report",
-    "generatingReportBtn": "Starting..."
+    "generatingReportBtn": "Starting...",
+    "effortTitle": "Choose simulation effort",
+    "effortDescription": "More rounds explore more interactions and use more time and model allowance. Actual runtime varies.",
+    "effort_quick": "Quick",
+    "effort_moderate": "Moderate",
+    "effort_full": "Full",
+    "effortRounds": "{rounds} rounds per platform",
+    "loadingPlan": "Loading the simulation plan…",
+    "effort_quickDescription": "25% of the planned rounds",
+    "effort_moderateDescription": "50% of the planned rounds",
+    "effort_fullDescription": "All planned rounds (default)",
+    "startingSimulation": "Starting simulation…",
+    "startSimulation": "Start simulation",
+    "invalidPlan": "The simulation plan could not be loaded. Retry to load the planned rounds.",
+    "stopSimulation": "Stop simulation",
+    "stopTitle": "Stop this simulation early?",
+    "stopWarning": "Saved activity will be retained, but an in-flight action may be interrupted. Stopping early gives the report less evidence. This run cannot resume from the exact round. Reporting becomes available after activity and graph memory finish saving.",
+    "keepRunning": "Keep running",
+    "confirmStop": "Stop and save progress",
+    "stoppingNotice": "Stopping and saving completed activity. You can generate the report when saving finishes.",
+    "stoppedNotice": "Simulation stopped. Generate a report from the activity saved so far.",
+    "retryStop": "Retry saving and stopping",
+    "generatePartialReport": "Generate partial report"
   },
   "step4": {
     "generatingSection": "Generating {title}...",
@@ -393,10 +427,10 @@
   "progress": {
     "initGraphService": "Initializing graph build service...",
     "textChunking": "Chunking text...",
-    "creatingZepGraph": "Creating Zep graph...",
+    "creatingZepGraph": "Creating Graph engine graph...",
     "settingOntology": "Setting ontology definition...",
     "addingChunks": "Adding {count} text chunks...",
-    "waitingZepProcess": "Waiting for Zep to process data...",
+    "waitingZepProcess": "Waiting for Graph engine to process data...",
     "fetchingGraphData": "Fetching graph data...",
     "graphBuildComplete": "Graph build complete",
     "buildFailed": "Build failed: {error}",
@@ -410,12 +444,12 @@
     "noEpisodesWait": "No episodes to wait for",
     "waitingEpisodes": "Waiting for {count} text chunks to process...",
     "episodesTimeout": "Some chunks timed out, {completed}/{total} completed",
-    "zepProcessing": "Zep processing... {completed}/{total} done, {pending} pending ({elapsed}s)",
+    "zepProcessing": "Graph engine processing... {completed}/{total} done, {pending} pending ({elapsed}s)",
     "processingComplete": "Processing complete: {completed}/{total}",
     "taskComplete": "Task complete",
     "taskFailed": "Task failed",
     "startPreparingEnv": "Preparing simulation environment...",
-    "connectingZepGraph": "Connecting to Zep graph...",
+    "connectingZepGraph": "Connecting to Graph engine graph...",
     "readingNodeData": "Reading node data...",
     "readingComplete": "Done, {count} entities found",
     "startGenerating": "Starting generation...",
@@ -492,7 +526,7 @@
     "detectedExistingPrep": "Detected existing preparation, using it directly",
     "prepareTaskStarted": "Preparation task started",
     "prepareTaskId": "  └─ Task ID: {taskId}",
-    "zepEntitiesFound": "Found {count} entities from Zep graph",
+    "zepEntitiesFound": "Found {count} entities from Graph engine graph",
     "entityTypes": "  └─ Entity types: {types}",
     "startPollingProgress": "Polling preparation progress...",
     "prepareFailed": "Preparation failed: {error}",
@@ -612,13 +646,13 @@
     "redirectToInsightForge": "get_simulation_context redirected to insight_forge"
   },
   "console": {
-    "zepToolsInitialized": "ZepToolsService initialized",
-    "zepRetryAttempt": "Zep {operation} attempt {attempt} failed: {error}, retrying in {delay}s...",
-    "zepAllRetriesFailed": "Zep {operation} failed after {retries} attempts: {error}",
+    "zepToolsInitialized": "Graph tools initialized",
+    "zepRetryAttempt": "Graph engine {operation} attempt {attempt} failed: {error}, retrying in {delay}s...",
+    "zepAllRetriesFailed": "Graph engine {operation} failed after {retries} attempts: {error}",
     "graphSearch": "Graph search: graph_id={graphId}, query={query}...",
     "graphSearchOp": "Graph search (graph={graphId})",
     "searchComplete": "Search complete: found {count} relevant facts",
-    "zepSearchApiFallback": "Zep Search API failed, falling back to local search: {error}",
+    "zepSearchApiFallback": "Graph search failed, falling back to local search: {error}",
     "usingLocalSearch": "Using local search: query={query}...",
     "localSearchComplete": "Local search complete: found {count} relevant facts",
     "localSearchFailed": "Local search failed: {error}",
@@ -663,5 +697,28 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "recovery": {
+    "attention": "Action needed",
+    "working": "Working…",
+    "retry": "Retry",
+    "reconnect": "Reconnect",
+    "resume": "Resume unfinished work",
+    "saved": "Completed work is saved. Resume continues from the last saved checkpoint.",
+    "restart": "Restart simulation",
+    "restartHint": "The simulation cannot continue from an exact runtime checkpoint. Restart begins a new run; preparation and previous run files are preserved.",
+    "stopped": "The simulation stopped before completing.",
+    "retryMessage": "Retry this message",
+    "retrySurvey": "Retry unanswered interviews",
+    "interrupted": "The connection ended before a reply was received. Retry this message.",
+    "selectFiles": "Select files again",
+    "missingFiles": "The upload files are no longer available in this browser tab. Select the files again to continue.",
+    "retrying": "Retrying {attempt}/{max}…"
+  },
+  "reportExport": {
+    "downloadPdf": "Download PDF",
+    "preparing": "Preparing PDF…",
+    "retry": "Retry PDF download",
+    "failed": "PDF download failed. Please try again."
   }
 }

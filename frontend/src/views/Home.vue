@@ -2,10 +2,10 @@
   <div class="home-container">
     <!-- 顶部导航栏 -->
     <nav class="navbar">
-      <div class="nav-brand">MIROFISH</div>
+      <div class="nav-brand">My Own Researcher</div>
       <div class="nav-links">
         <LanguageSwitcher />
-        <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
+        <a href="https://github.com/Handriantog/My-Own-Researcher" target="_blank" rel="noopener noreferrer" class="github-link">
           {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
         </a>
       </div>
@@ -44,7 +44,7 @@
         <div class="hero-right">
           <!-- Logo 区域 -->
           <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="MiroFish Logo" class="hero-logo" />
+            <div class="hero-logo research-wordmark">My Own<br />Researcher<span>LOCAL GRAPH · CODEX</span></div>
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">
@@ -61,9 +61,9 @@
             <span class="status-dot">■</span> {{ $t('home.systemStatus') }}
           </div>
           
-          <h2 class="section-title">{{ $t('home.systemReady') }}</h2>
+          <h2 class="section-title">{{ statusText }}</h2>
           <p class="section-desc">
-            {{ $t('home.systemReadyDesc') }}
+            {{ statusDescription }}
           </p>
           
           <!-- 数据指标卡片 -->
@@ -212,12 +212,33 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import service from '../api'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
 const router = useRouter()
+const { t } = useI18n()
+const system = ref(null)
+const statusText = computed(() => {
+  if (!system.value) return t('home.systemChecking')
+  return ['ready', 'configured'].includes(system.value.graph?.status)
+    ? t('home.systemReady') : t('home.systemUnavailable')
+})
+const statusDescription = computed(() => {
+  if (!system.value) return t('home.systemCheckingDesc')
+  return ['ready', 'configured'].includes(system.value.graph?.status)
+    ? t('home.systemReadyDesc') : t('home.systemUnavailableDesc')
+})
+let statusTimer
+const refreshStatus = async () => {
+  try { system.value = (await service.get('/api/system/status', { timeout: 8000 })).data }
+  catch { system.value = { graph: { status: 'unavailable' } } }
+}
+onMounted(() => { refreshStatus(); statusTimer = setInterval(refreshStatus, 15000) })
+onUnmounted(() => clearInterval(statusTimer))
 
 // 表单数据
 const formData = ref({
@@ -312,6 +333,9 @@ const startSimulation = () => {
 </script>
 
 <style scoped>
+.research-wordmark { font-family: Inter, sans-serif; font-size: clamp(2rem, 4vw, 4.5rem); font-weight: 800; line-height: 1.08; letter-spacing: -0.05em; color: #161616; }
+.research-wordmark span { display: block; margin-top: 1.5rem; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.16em; color: #777; }
+
 /* 全局变量与重置 */
 :root {
   --black: #000000;

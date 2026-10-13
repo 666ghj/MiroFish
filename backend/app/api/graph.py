@@ -14,7 +14,7 @@ from zep_cloud import NotFoundError
 from . import graph_bp
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
-from ..services.graph_builder import BatchSubmission, GraphBuilderService
+from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
@@ -264,6 +264,20 @@ def _reset_project_impl(project_id: str):
 
 @graph_bp.route('/ontology/generate', methods=['POST'])
 def generate_ontology():
+    """Serialize retries for one upload, even when its first response was lost."""
+    upload_id = request.form.get('upload_id')
+    if upload_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', upload_id):
+        return jsonify({"success": False, "error": "upload_id must contain 1–128 letters, numbers, underscores or hyphens."}), 400
+    if not upload_id:
+        return _generate_ontology_impl()
+    with _project_build_lock(f"upload:{upload_id}"):
+        project = ProjectManager.find_project_by_upload_id(upload_id)
+        if project and (project.ontology or ProjectManager.get_extracted_text(project.project_id)):
+            return _resume_ontology_project(project.project_id)
+        return _generate_ontology_impl(upload_id=upload_id, project=project)
+
+
+def _generate_ontology_impl(upload_id=None, project=None):
     """
     接口1：上传文件，分析生成本体定义
     
@@ -290,7 +304,6 @@ def generate_ontology():
             }
         }
     """
-    project = None
     try:
         logger.info("=== 开始生成本体定义 ===")
         
@@ -317,8 +330,13 @@ def generate_ontology():
             }), 400
         
         # 创建项目
-        project = ProjectManager.create_project(name=project_name)
+        if project is None:
+            project = ProjectManager.create_project(name=project_name)
+        project.upload_id = upload_id
+        project.files = []
         project.simulation_requirement = simulation_requirement
+        project.additional_context = additional_context
+        ProjectManager.save_project(project)
         logger.info(f"创建项目: {project.project_id}")
         
         # 保存文件并提取文本
@@ -350,98 +368,153 @@ def generate_ontology():
                 "success": False,
                 "error": t('api.noDocProcessed')
             }), 400
-        
-        # 保存提取的文本
-        project.total_text_length = len(all_text)
-        ProjectManager.save_extracted_text(project.project_id, all_text)
-        logger.info(f"文本提取完成，共 {len(all_text)} 字符")
-        
-        # 生成本体
-        logger.info("调用 LLM 生成本体定义...")
-        generator = OntologyGenerator()
-        ontology = generator.generate(
-            document_texts=document_texts,
-            simulation_requirement=simulation_requirement,
-            additional_context=additional_context if additional_context else None
-        )
-        
-        # 保存本体到项目
-        entity_count = len(ontology.get("entity_types", []))
-        edge_count = len(ontology.get("edge_types", []))
-        logger.info(f"本体生成完成: {entity_count} 个实体类型, {edge_count} 个关系类型")
-        
-        project.ontology = {
-            "entity_types": ontology.get("entity_types", []),
-            "edge_types": ontology.get("edge_types", [])
-        }
-        project.analysis_summary = ontology.get("analysis_summary", "")
-        project.status = ProjectStatus.ONTOLOGY_GENERATED
-        ProjectManager.save_project(project)
-        logger.info(f"=== 本体生成完成 === 项目ID: {project.project_id}")
-        
-        return jsonify({
-            "success": True,
-            "data": {
-                "project_id": project.project_id,
-                "project_name": project.name,
-                "ontology": project.ontology,
-                "analysis_summary": project.analysis_summary,
-                "files": project.files,
-                "total_text_length": project.total_text_length
-            }
-        })
-        
-    except Exception as error:
-        provider_status = getattr(error, "status_code", None)
-        request_id = getattr(error, "request_id", None)
 
-        if isinstance(error, LLMResponseError):
-            public_error = str(error)
-            response_status = 502
-            logger.exception("LLM returned an unusable ontology response")
-        elif isinstance(provider_status, int):
-            public_error = f"LLM provider request failed (HTTP {provider_status})"
-            if request_id:
-                safe_request_id = re.sub(
-                    r"[^a-zA-Z0-9._:-]", "", str(request_id)
-                )[:128]
-                if safe_request_id:
-                    public_error += f" (request_id: {safe_request_id})"
-            response_status = 502
-            # Provider exception bodies may echo request content. Keep the
-            # server log useful without serializing the exception body.
-            logger.error(
-                "Ontology provider request failed: type=%s status=%s request_id=%s",
-                type(error).__name__,
-                provider_status,
-                request_id or "unknown",
-            )
-        else:
-            public_error = "Ontology generation failed; check the server logs"
-            response_status = 500
-            logger.exception("Unexpected ontology generation failure")
-
-        response_data = None
-        if project is not None:
-            project.status = ProjectStatus.FAILED
-            project.error = public_error
+        with _project_build_lock(project.project_id):
             try:
+                # 保存提取的文本
+                project.total_text_length = len(all_text)
+                ProjectManager.save_extracted_text(project.project_id, all_text)
+                logger.info(f"文本提取完成，共 {len(all_text)} 字符")
+
                 ProjectManager.save_project(project)
-            except Exception:
-                logger.exception(
-                    "Failed to persist ontology failure for project %s",
-                    project.project_id,
+
+                # 生成本体
+                logger.info("调用 LLM 生成本体定义...")
+                generator = OntologyGenerator()
+                ontology = generator.generate(
+                    document_texts=document_texts,
+                    simulation_requirement=simulation_requirement,
+                    additional_context=additional_context if additional_context else None
                 )
-            response_data = {"project_id": project.project_id}
 
-        payload = {
-            "success": False,
-            "error": public_error,
-        }
-        if response_data is not None:
-            payload["data"] = response_data
-        return jsonify(payload), response_status
+                # 保存本体到项目
+                entity_count = len(ontology.get("entity_types", []))
+                edge_count = len(ontology.get("edge_types", []))
+                logger.info(f"本体生成完成: {entity_count} 个实体类型, {edge_count} 个关系类型")
 
+                project.ontology = {
+                    "entity_types": ontology.get("entity_types", []),
+                    "edge_types": ontology.get("edge_types", [])
+                }
+                project.analysis_summary = ontology.get("analysis_summary", "")
+                project.status = ProjectStatus.ONTOLOGY_GENERATED
+                project.error = None
+                ProjectManager.save_project(project)
+                logger.info(f"=== 本体生成完成 === 项目ID: {project.project_id}")
+
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "project_id": project.project_id,
+                        "project_name": project.name,
+                        "ontology": project.ontology,
+                        "analysis_summary": project.analysis_summary,
+                        "files": project.files,
+                        "total_text_length": project.total_text_length
+                    }
+                })
+            except Exception as error:
+                return _ontology_failure(project, error)
+
+    except Exception as error:
+        return _ontology_failure(project, error)
+
+
+@graph_bp.route('/ontology/resume', methods=['POST'])
+def resume_ontology():
+    """Retry ontology generation from the saved source under the build lock."""
+    data = request.get_json(silent=True) or {}
+    project_id = data.get('project_id')
+    if not isinstance(project_id, str) or not project_id:
+        return jsonify({"success": False, "error": t('api.requireProjectId')}), 400
+    return _resume_ontology_project(project_id)
+
+
+def _resume_ontology_project(project_id):
+    with _project_build_lock(project_id):
+        project = ProjectManager.get_project(project_id)
+        if project is None:
+            return jsonify({"success": False, "error": t('api.projectNotFound', id=project_id)}), 404
+        reused = bool(project.ontology)
+        if not reused:
+            if project.graph_id or _project_has_active_build(project):
+                return jsonify({"success": False, "error": "Cannot replace ontology while a graph already exists."}), 409
+            text = ProjectManager.get_extracted_text(project_id)
+            if not text or not project.simulation_requirement:
+                return jsonify({"success": False, "data": {"project_id": project_id},
+                                "error": "Saved source text and simulation requirement are required to resume ontology generation."}), 400
+            try:
+                ontology = OntologyGenerator().generate(
+                    document_texts=[text],
+                    simulation_requirement=project.simulation_requirement,
+                    additional_context=project.additional_context or None,
+                )
+                project.ontology = {"entity_types": ontology.get("entity_types", []),
+                                    "edge_types": ontology.get("edge_types", [])}
+                project.analysis_summary = ontology.get("analysis_summary", "")
+                project.status = ProjectStatus.ONTOLOGY_GENERATED
+                project.error = None
+                ProjectManager.save_project(project)
+            except Exception as error:
+                return _ontology_failure(project, error)
+        return jsonify({"success": True, "data": {
+            "project_id": project_id, "project_name": project.name,
+            "ontology": project.ontology, "analysis_summary": project.analysis_summary,
+            "files": project.files, "total_text_length": project.total_text_length,
+            "reused": reused,
+        }})
+
+
+def _ontology_failure(project, error):
+    provider_status = getattr(error, "status_code", None)
+    request_id = getattr(error, "request_id", None)
+
+    if isinstance(error, LLMResponseError):
+        public_error = str(error)
+        response_status = 502
+        logger.exception("LLM returned an unusable ontology response")
+    elif isinstance(provider_status, int):
+        public_error = f"LLM provider request failed (HTTP {provider_status})"
+        if request_id:
+            safe_request_id = re.sub(
+                r"[^a-zA-Z0-9._:-]", "", str(request_id)
+            )[:128]
+            if safe_request_id:
+                public_error += f" (request_id: {safe_request_id})"
+        response_status = 502
+        # Provider exception bodies may echo request content. Keep the
+        # server log useful without serializing the exception body.
+        logger.error(
+            "Ontology provider request failed: type=%s status=%s request_id=%s",
+            type(error).__name__,
+            provider_status,
+            request_id or "unknown",
+        )
+    else:
+        public_error = "Ontology generation failed; check the server logs"
+        response_status = 500
+        logger.exception("Unexpected ontology generation failure")
+
+    response_data = None
+    if project is not None:
+        project.status = ProjectStatus.FAILED
+        project.error = public_error
+        try:
+            ProjectManager.save_project(project)
+        except Exception:
+            logger.exception(
+                "Failed to persist ontology failure for project %s",
+                project.project_id,
+            )
+        response_data = {"project_id": project.project_id}
+
+    payload = {
+        "success": False,
+        "error": public_error,
+    }
+    if response_data is not None:
+        payload["data"] = response_data
+    return jsonify(payload), response_status
 
 # ============== 接口2：构建图谱 ==============
 
@@ -454,7 +527,10 @@ def build_graph():
     if not project_id:
         return _build_graph_impl()
     with _project_build_lock(project_id):
-        return _build_graph_impl()
+        project = ProjectManager.get_project(project_id)
+        guard = graph_lifecycle_lock(project.graph_id) if project and project.graph_id else nullcontext()
+        with guard:
+            return _build_graph_impl()
 
 
 def _build_graph_impl():
@@ -484,7 +560,7 @@ def _build_graph_impl():
         
         # 检查配置
         errors = []
-        if not Config.ZEP_API_KEY:
+        if Config.GRAPH_PROVIDER == 'zep' and not Config.ZEP_API_KEY:
             errors.append(t('api.zepApiKeyMissing'))
         if errors:
             logger.error(f"配置错误: {errors}")
@@ -527,6 +603,7 @@ def _build_graph_impl():
             }), 400
         
         resume_existing_batch = False
+        resume_existing_graph = False
         if project.status == ProjectStatus.GRAPH_BUILDING:
             if _project_has_active_build(project):
                 return jsonify({
@@ -540,6 +617,8 @@ def _build_graph_impl():
                     }
                 })
 
+        if project.status in {ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED} and not force:
+            resume_existing_graph = bool(project.graph_id and Config.GRAPH_PROVIDER == 'graphiti')
             if (
                 not force
                 and project.graph_id
@@ -552,14 +631,14 @@ def _build_graph_impl():
                     "queued",
                     "processing",
                     "succeeded",
-                }:
+                } or Config.GRAPH_PROVIDER == 'graphiti':
                     resume_existing_batch = True
 
-            if not resume_existing_batch:
+            if project.graph_id and not resume_existing_batch and not resume_existing_graph:
                 project.status = ProjectStatus.FAILED
                 project.error = (
-                    "Graph build task is no longer present; the persisted Zep "
-                    "batch cannot be resumed automatically"
+                    "The saved graph is preserved. Zep Cloud cannot safely resume "
+                    "this operation automatically; an explicit rebuild is required."
                 )
                 ProjectManager.save_project(project)
                 if not force:
@@ -568,6 +647,7 @@ def _build_graph_impl():
                         "error": project.error,
                         "task_id": project.graph_build_task_id,
                         "recoverable": True,
+                        "resume_supported": False,
                     }), 409
 
         if project.status == ProjectStatus.GRAPH_COMPLETED and not force:
@@ -585,7 +665,7 @@ def _build_graph_impl():
         # 获取配置
         graph_name = data.get('graph_name', project.name or 'MiroFish Graph')
         chunk_size = data.get('chunk_size', project.chunk_size or Config.DEFAULT_CHUNK_SIZE)
-        chunk_overlap = data.get('chunk_overlap', project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP)
+        chunk_overlap = data.get('chunk_overlap', project.chunk_overlap if project.chunk_overlap is not None else Config.DEFAULT_CHUNK_OVERLAP)
         if not isinstance(chunk_size, int) or chunk_size <= 0:
             return jsonify({"success": False, "error": "chunk_size must be a positive integer"}), 400
         if (
@@ -597,10 +677,6 @@ def _build_graph_impl():
                 "success": False,
                 "error": "chunk_overlap must satisfy 0 <= chunk_overlap < chunk_size"
             }), 400
-        
-        # 更新项目配置
-        project.chunk_size = chunk_size
-        project.chunk_overlap = chunk_overlap
         
         # 获取提取的文本
         text = ProjectManager.get_extracted_text(project_id)
@@ -618,10 +694,21 @@ def _build_graph_impl():
                 "error": t('api.ontologyNotFound')
             }), 400
 
+        chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=chunk_overlap)
+        GraphBuilderService.validate_batch_chunks(chunks, batch_size=350)
+        if (resume_existing_batch or resume_existing_graph) and project.zep_batch_operation_id:
+            if GraphBuilderService.build_operation_id(project.graph_id, chunks) != project.zep_batch_operation_id:
+                return jsonify({"success": False, "recoverable": True,
+                                "error": "Persisted batch does not match the current graph input; restore the original chunk settings to resume."}), 409
+        if resume_existing_batch or resume_existing_graph:
+            active = _active_graph_consumers(project.graph_id)
+            if active:
+                raise GraphInUseError(f"Graph {project.graph_id} is in use by active consumer(s): {', '.join(active)}")
+        project.chunk_size = chunk_size
+        project.chunk_overlap = chunk_overlap
+
         # Only mutate Cloud state after the complete rebuild request validates.
-        if project.status == ProjectStatus.FAILED or (
-            force and project.status == ProjectStatus.GRAPH_COMPLETED
-        ):
+        if force and project.status in {ProjectStatus.FAILED, ProjectStatus.GRAPH_BUILDING, ProjectStatus.GRAPH_COMPLETED}:
             graph_id_to_delete = project.graph_id
             graph_guard = (
                 graph_lifecycle_lock(graph_id_to_delete)
@@ -676,19 +763,22 @@ def _build_graph_impl():
                 builder.validate_batch_chunks(chunks, batch_size=350)
                 total_chunks = len(chunks)
                 
-                if resume_existing_batch:
+                if resume_existing_graph and not project.zep_batch_id and project.zep_batch_operation_id:
+                    recovered = builder._find_batch_by_operation_id(
+                        project.graph_id, project.zep_batch_operation_id, max_attempts=1)
+                    if recovered:
+                        project.zep_batch_id = recovered.batch_id
+                        ProjectManager.save_project(project)
+
+                if resume_existing_batch or (resume_existing_graph and project.zep_batch_id):
                     graph_id = project.graph_id
                     operation_id = builder.build_operation_id(graph_id, chunks)
                     if operation_id != project.zep_batch_operation_id:
                         raise RuntimeError(
                             "Persisted Zep batch does not match the current graph input"
                         )
-                    submission = BatchSubmission(
-                        batch_id=project.zep_batch_id,
-                        operation_id=operation_id,
-                        episode_uuids=[],
-                        item_count=total_chunks,
-                    )
+                    submission = builder.resume_text_batch(
+                        graph_id, project.zep_batch_id, operation_id, chunks)
                     task_manager.update_task(
                         task_id,
                         message=t('progress.waitingZepProcess'),
@@ -708,6 +798,7 @@ def _build_graph_impl():
 
                     graph_id = builder.create_graph(
                         name=graph_name,
+                        **({"graph_id": project.graph_id} if resume_existing_graph else {}),
                         graph_id_callback=remember_graph,
                     )
 
@@ -824,7 +915,7 @@ def _build_graph_impl():
             "data": {
                 "project_id": project_id,
                 "task_id": task_id,
-                "resumed": resume_existing_batch,
+                "resumed": resume_existing_batch or resume_existing_graph,
                 "message": t('api.graphBuildStarted', taskId=task_id)
             }
         })
@@ -882,7 +973,7 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if Config.GRAPH_PROVIDER == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')
@@ -910,7 +1001,7 @@ def delete_graph(graph_id: str):
     删除Zep图谱
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if Config.GRAPH_PROVIDER == 'zep' and not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
                 "error": t('api.zepApiKeyMissing')

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
+    "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -18,5 +18,8 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
     "vite": "^7.3.6"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

@@ -161,6 +161,7 @@ try:
     from camel.models import ModelFactory
     from camel.types import ModelPlatformType
     import oasis
+    from app.utils.simulation_env import make_simulation_env
     from oasis import (
         ActionType,
         LLMAction,
@@ -995,6 +996,10 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         config: 模拟配置字典
         use_boost: 是否使用加速 LLM 配置（如果可用）
     """
+    if os.environ.get('LLM_PROVIDER', 'openai').strip().lower() == 'codex':
+        from app.utils.codex_model import CodexModel
+        return CodexModel()
+
     # 检查是否有加速配置
     boost_api_key = os.environ.get("LLM_BOOST_API_KEY", "")
     boost_base_url = os.environ.get("LLM_BOOST_BASE_URL", "")
@@ -1152,7 +1157,7 @@ async def run_twitter_simulation(
     if os.path.exists(db_path):
         os.remove(db_path)
     
-    result.env = oasis.make(
+    result.env = make_simulation_env(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.TWITTER,
         database_path=db_path,
@@ -1189,22 +1194,19 @@ async def run_twitter_simulation(
                     action_args={"content": content}
                 )
                 
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
-                        action_args={"content": content}
-                    )
-                    total_actions += 1
-                    initial_action_count += 1
             except Exception:
                 pass
         
         if initial_actions:
             await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            # Log committed actions once, then advance the cursor before round 1.
+            actual_actions, last_rowid = fetch_new_actions_from_db(db_path, last_rowid, agent_names)
+            for action_data in actual_actions:
+                if action_logger:
+                    action_logger.log_action(round_num=0, **action_data)
+                    total_actions += 1
+                    initial_action_count += 1
+            log_info(f"Published {len(actual_actions)} initial actions")
     
     # 记录 round 0 结束
     if action_logger:
@@ -1214,7 +1216,7 @@ async def run_twitter_simulation(
     time_config = config.get("time_config", {})
     total_hours = time_config.get("total_simulation_hours", 72)
     minutes_per_round = time_config.get("minutes_per_round", 30)
-    total_rounds = (total_hours * 60) // minutes_per_round
+    total_rounds = max(1, int(total_hours * 60 / minutes_per_round))
     
     # 如果指定了最大轮数，则截断
     if max_rounds is not None and max_rounds > 0:
@@ -1343,7 +1345,7 @@ async def run_reddit_simulation(
     if os.path.exists(db_path):
         os.remove(db_path)
     
-    result.env = oasis.make(
+    result.env = make_simulation_env(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
@@ -1388,22 +1390,19 @@ async def run_reddit_simulation(
                         action_args={"content": content}
                     )
                 
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
-                        action_args={"content": content}
-                    )
-                    total_actions += 1
-                    initial_action_count += 1
             except Exception:
                 pass
         
         if initial_actions:
             await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+            # Log committed actions once, then advance the cursor before round 1.
+            actual_actions, last_rowid = fetch_new_actions_from_db(db_path, last_rowid, agent_names)
+            for action_data in actual_actions:
+                if action_logger:
+                    action_logger.log_action(round_num=0, **action_data)
+                    total_actions += 1
+                    initial_action_count += 1
+            log_info(f"Published {len(actual_actions)} initial actions")
     
     # 记录 round 0 结束
     if action_logger:
@@ -1413,7 +1412,7 @@ async def run_reddit_simulation(
     time_config = config.get("time_config", {})
     total_hours = time_config.get("total_simulation_hours", 72)
     minutes_per_round = time_config.get("minutes_per_round", 30)
-    total_rounds = (total_hours * 60) // minutes_per_round
+    total_rounds = max(1, int(total_hours * 60 / minutes_per_round))
     
     # 如果指定了最大轮数，则截断
     if max_rounds is not None and max_rounds > 0:
@@ -1552,7 +1551,7 @@ async def main():
     time_config = config.get("time_config", {})
     total_hours = time_config.get('total_simulation_hours', 72)
     minutes_per_round = time_config.get('minutes_per_round', 30)
-    config_total_rounds = (total_hours * 60) // minutes_per_round
+    config_total_rounds = max(1, int(total_hours * 60 / minutes_per_round))
     
     log_manager.info(f"模拟参数:")
     log_manager.info(f"  - 总模拟时长: {total_hours}小时")

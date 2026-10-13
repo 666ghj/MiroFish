@@ -51,5 +51,24 @@ def test_explicit_platform_overrides_dual_platform_default(tmp_path):
 def test_invalid_platform_is_rejected(tmp_path):
     manager, _ = _manager(tmp_path, twitter=True, reddit=True)
 
-    with pytest.raises(ValueError, match="不支持的平台"):
+    with pytest.raises(ValueError, match="Unsupported platform"):
         manager.get_profiles("sim_test", platform="../state")
+
+
+@pytest.mark.parametrize('platform', ['reddit', 'twitter'])
+def test_prepared_check_only_requires_enabled_platform(monkeypatch, tmp_path, platform):
+    from app.api.simulation import _check_simulation_prepared
+    from app.config import Config
+    monkeypatch.setattr(Config, 'OASIS_SIMULATION_DATA_DIR', str(tmp_path))
+    folder = tmp_path / 'sim_ready'
+    folder.mkdir()
+    (folder / 'state.json').write_text(json.dumps({'status': 'stopped', 'config_generated': True,
+        'enable_reddit': platform == 'reddit', 'enable_twitter': platform == 'twitter'}))
+    (folder / 'simulation_config.json').write_text('{}')
+    if platform == 'reddit':
+        (folder / 'reddit_profiles.json').write_text('[{"user_id": 0}]')
+    else:
+        (folder / 'twitter_profiles.csv').write_text('agent_id,name\n0,Alice\n')
+    prepared, info = _check_simulation_prepared('sim_ready')
+    assert prepared, info
+    assert info['profiles_count'] == 1

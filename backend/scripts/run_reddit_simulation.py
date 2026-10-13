@@ -119,6 +119,7 @@ try:
     from camel.models import ModelFactory
     from camel.types import ModelPlatformType
     import oasis
+    from app.utils.simulation_env import make_simulation_env
     from oasis import (
         ActionType,
         LLMAction,
@@ -440,6 +441,10 @@ class RedditSimulationRunner:
         - LLM_BASE_URL: API基础URL
         - LLM_MODEL_NAME: 模型名称
         """
+        if os.environ.get('LLM_PROVIDER', 'openai').strip().lower() == 'codex':
+            from app.utils.codex_model import CodexModel
+            return CodexModel()
+
         # 优先从 .env 读取配置
         llm_api_key = os.environ.get("LLM_API_KEY", "")
         llm_base_url = os.environ.get("LLM_BASE_URL", "")
@@ -536,7 +541,7 @@ class RedditSimulationRunner:
         time_config = self.config.get("time_config", {})
         total_hours = time_config.get("total_simulation_hours", 72)
         minutes_per_round = time_config.get("minutes_per_round", 30)
-        total_rounds = (total_hours * 60) // minutes_per_round
+        total_rounds = max(1, int(total_hours * 60 / minutes_per_round))
         
         # 如果指定了最大轮数，则截断
         if max_rounds is not None and max_rounds > 0:
@@ -574,7 +579,7 @@ class RedditSimulationRunner:
             print(f"已删除旧数据库: {db_path}")
         
         print("创建OASIS环境...")
-        self.env = oasis.make(
+        self.env = make_simulation_env(
             agent_graph=self.agent_graph,
             platform=oasis.DefaultPlatformType.REDDIT,
             database_path=db_path,

@@ -1,5 +1,6 @@
 <template>
   <div class="workbench-panel">
+    <RecoveryBanner :error="creationError" :retry-key="`simulation-create:${projectData?.project_id}:${projectData?.graph_id}`" :auto-retry="!!projectData?.project_id && !!projectData?.graph_id" :completed="creationCompleted" :busy="creatingSimulation" @retry="handleEnterEnvSetup" />
     <div class="scroll-container">
       <!-- Step 01: Ontology -->
       <div class="step-card" :class="{ 'active': currentPhase === 0, 'completed': currentPhase > 0 }">
@@ -190,7 +191,8 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { createSimulation } from '../api/simulation'
+import RecoveryBanner from './RecoveryBanner.vue'
+import { createSimulation, listSimulations } from '../api/simulation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -209,9 +211,14 @@ defineEmits(['next-step'])
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+const creationError = ref('')
+const creationCompleted = ref(false)
 
 // 进入环境搭建 - 创建 simulation 并跳转
 const handleEnterEnvSetup = async () => {
+  if (creatingSimulation.value) return
+  creationCompleted.value = false
+  creationError.value = ''
   if (!props.projectData?.project_id || !props.projectData?.graph_id) {
     console.error('缺少项目或图谱信息')
     return
@@ -220,6 +227,13 @@ const handleEnterEnvSetup = async () => {
   creatingSimulation.value = true
   
   try {
+    const existing = await listSimulations(props.projectData.project_id)
+    const saved = existing.data?.find(sim => sim.graph_id === props.projectData.graph_id)
+    if (saved) {
+      creationCompleted.value = true
+      router.push({ name: 'Simulation', params: { simulationId: saved.simulation_id } })
+      return
+    }
     const res = await createSimulation({
       project_id: props.projectData.project_id,
       graph_id: props.projectData.graph_id,
@@ -228,6 +242,7 @@ const handleEnterEnvSetup = async () => {
     })
     
     if (res.success && res.data?.simulation_id) {
+      creationCompleted.value = true
       // 跳转到 simulation 页面
       router.push({
         name: 'Simulation',
@@ -235,11 +250,11 @@ const handleEnterEnvSetup = async () => {
       })
     } else {
       console.error('创建模拟失败:', res.error)
-      alert(t('step1.createSimulationFailed', { error: res.error || t('common.unknownError') }))
+      creationError.value = res.error || t('common.unknownError')
     }
   } catch (err) {
     console.error('创建模拟异常:', err)
-    alert(t('step1.createSimulationException', { error: err.message }))
+    creationError.value = err.message
   } finally {
     creatingSimulation.value = false
   }

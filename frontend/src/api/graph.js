@@ -64,3 +64,8 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/** Resume ontology generation from the project's saved source documents. */
+export function resumeOntology(projectId) {
+  return service.post('/api/graph/ontology/resume', { project_id: projectId })
+}

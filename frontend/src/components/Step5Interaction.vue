@@ -1,5 +1,7 @@
 <template>
   <div class="interaction-panel">
+    <RecoveryBanner :error="loadError" :retry-key="`interaction-data:${reportId}:${simulationId}`" :auto-retry="!!reportId" :completed="dataLoaded && !loadError" :busy="loadingData" :label="$t('recovery.reconnect')" @retry="reloadData" />
+    <RecoveryBanner :error="surveyError" :retry-key="`survey:${reportId}:${pendingSurvey?.id}`" :auto-retry="!!simulationId && !!pendingSurvey?.ids.length" :completed="!!pendingSurvey && !pendingSurvey.ids.length && !surveyError" :busy="isSurveying" :label="$t('recovery.retrySurvey')" @retry="retrySurvey" />
     <!-- Main Split Layout -->
     <div class="main-split-layout">
       <!-- LEFT PANEL: Report Style -->
@@ -13,6 +15,7 @@
             </div>
             <h1 class="main-title">{{ reportOutline.title }}</h1>
             <p class="sub-title">{{ reportOutline.summary }}</p>
+            <ReportDownload :report-id="reportId" :disabled="!reportCompleted" />
             <div class="header-divider"></div>
           </div>
 
@@ -271,6 +274,7 @@
                   <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
                 </div>
                 <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                <RecoveryBanner :error="msg.error" :retry-key="`message:${reportId}:${chatTarget}:${selectedAgentIndex}:${msg.id || msg.timestamp}:${idx}`" :auto-retry="!!reportId && (chatTarget === 'report_agent' || (!!simulationId && !!selectedAgent && selectedAgentIndex !== null))" :completed="msg.delivered === true" :busy="isSending" :label="$t('recovery.retryMessage')" @retry="retryMessage(msg)" />
               </div>
             </div>
             <div v-if="isSending" class="chat-message assistant">
@@ -294,14 +298,14 @@
               class="chat-input"
               :placeholder="$t('step5.chatInputPlaceholder')"
               @keydown.enter.exact.prevent="sendMessage"
-              :disabled="isSending || (!selectedAgent && chatTarget === 'agent')"
+              :disabled="isSending || chatHistory.some(msg => msg.error) || (!selectedAgent && chatTarget === 'agent')"
               rows="1"
               ref="chatInputRef"
             ></textarea>
             <button 
               class="send-btn"
               @click="sendMessage"
-              :disabled="!chatInput.trim() || isSending || (!selectedAgent && chatTarget === 'agent')"
+              :disabled="!chatInput.trim() || isSending || chatHistory.some(msg => msg.error) || (!selectedAgent && chatTarget === 'agent')"
             >
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -411,12 +415,15 @@
 </template>
 
 <script setup>
+import ReportDownload from './ReportDownload.vue'
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import RecoveryBanner from './RecoveryBanner.vue'
 import { useI18n } from 'vue-i18n'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 
 const { t } = useI18n()
+const reportCompleted = ref(false)
 
 const props = defineProps({
   reportId: String,
@@ -426,6 +433,11 @@ const props = defineProps({
 const emit = defineEmits(['add-log', 'update-status'])
 
 // State
+const loadError = ref('')
+const loadingData = ref(false)
+const dataLoaded = ref(false)
+const surveyError = ref('')
+const pendingSurvey = ref(null)
 const activeTab = ref('chat')
 const chatTarget = ref('report_agent')
 const showAgentDropdown = ref(false)
@@ -481,6 +493,7 @@ const toggleSectionCollapse = (idx) => {
 }
 
 const selectChatTarget = (target) => {
+  if (isSending.value) return
   chatTarget.value = target
   if (target === 'report_agent') {
     showAgentDropdown.value = false
@@ -496,9 +509,11 @@ const saveChatHistory = () => {
   } else if (selectedAgentIndex.value !== null) {
     chatHistoryCache.value[`agent_${selectedAgentIndex.value}`] = [...chatHistory.value]
   }
+  try { localStorage.setItem(`miro-chat-${props.reportId}`, JSON.stringify(chatHistoryCache.value)) } catch {}
 }
 
 const selectReportAgentChat = () => {
+  if (isSending.value) return
   // 保存当前对话记录
   saveChatHistory()
   
@@ -513,6 +528,7 @@ const selectReportAgentChat = () => {
 }
 
 const selectSurveyTab = () => {
+  if (isSending.value) return
   activeTab.value = 'survey'
   selectedAgent.value = null
   selectedAgentIndex.value = null
@@ -520,6 +536,7 @@ const selectSurveyTab = () => {
 }
 
 const toggleAgentDropdown = () => {
+  if (isSending.value) return
   showAgentDropdown.value = !showAgentDropdown.value
   if (showAgentDropdown.value) {
     activeTab.value = 'chat'
@@ -528,6 +545,7 @@ const toggleAgentDropdown = () => {
 }
 
 const selectAgent = (agent, idx) => {
+  if (isSending.value) return
   // 保存当前对话记录
   saveChatHistory()
   
@@ -643,38 +661,36 @@ const renderMarkdown = (content) => {
 
 // Chat Methods
 const sendMessage = async () => {
-  if (!chatInput.value.trim() || isSending.value) return
-  
-  const message = chatInput.value.trim()
+  if (!chatInput.value.trim() || isSending.value || chatHistory.value.some(msg => msg.error)) return
+  const userMessage = { role: 'user', content: chatInput.value.trim(), timestamp: new Date().toISOString(), id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }
   chatInput.value = ''
-  
-  // Add user message
-  chatHistory.value.push({
-    role: 'user',
-    content: message,
-    timestamp: new Date().toISOString()
-  })
-  
-  scrollToBottom()
+  chatHistory.value.push(userMessage)
+  await deliverMessage(userMessage)
+}
+
+const retryMessage = async (message) => {
+  if (isSending.value || !message.error) return
+  await deliverMessage(message)
+}
+
+const deliverMessage = async (userMessage) => {
   isSending.value = true
-  
+  userMessage.delivered = false
+  userMessage.error = ''
+  userMessage.pending = true
+  saveChatHistory()
+  scrollToBottom()
   try {
-    if (chatTarget.value === 'report_agent') {
-      await sendToReportAgent(message)
-    } else {
-      await sendToAgent(message)
-    }
+    if (chatTarget.value === 'report_agent') await sendToReportAgent(userMessage.content)
+    else await sendToAgent(userMessage.content)
+    userMessage.delivered = true
   } catch (err) {
+    userMessage.error = err.message
     addLog(t('log.sendFailed', { error: err.message }))
-    chatHistory.value.push({
-      role: 'assistant',
-      content: t('step5.errorOccurred', { error: err.message }),
-      timestamp: new Date().toISOString()
-    })
   } finally {
+    userMessage.pending = false
     isSending.value = false
     scrollToBottom()
-    // 自动保存对话记录到缓存
     saveChatHistory()
   }
 }
@@ -722,9 +738,9 @@ const sendToAgent = async (message) => {
     const historyContext = chatHistory.value
       .slice(0, -1)
       .slice(-6)
-      .map(msg => `${msg.role === 'user' ? '提问者' : '你'}：${msg.content}`)
+      .map(msg => `${msg.role === 'user' ? 'Interviewer' : 'You'}: ${msg.content}`)
       .join('\n')
-    prompt = `以下是我们之前的对话：\n${historyContext}\n\n现在我的新问题是：${message}`
+    prompt = `Here is our previous conversation:\n${historyContext}\n\nMy new question is:\n${message}`
   }
   
   const res = await interviewAgents({
@@ -750,11 +766,13 @@ const sendToAgent = async (message) => {
       const redditKey = `reddit_${agentId}`
       const twitterKey = `twitter_${agentId}`
       const agentResult = resultsDict[redditKey] || resultsDict[twitterKey] || Object.values(resultsDict)[0]
+      if (agentResult?.error) throw new Error(agentResult.error)
       if (agentResult) {
         responseContent = agentResult.response || agentResult.answer
       }
     } else if (Array.isArray(resultsDict) && resultsDict.length > 0) {
       // 兼容数组格式
+      if (resultsDict[0].error) throw new Error(resultsDict[0].error)
       responseContent = resultsDict[0].response || resultsDict[0].answer
     }
     
@@ -803,71 +821,51 @@ const clearAgentSelection = () => {
 }
 
 const submitSurvey = async () => {
-  if (selectedAgents.value.size === 0 || !surveyQuestion.value.trim()) return
-  
+  if (isSurveying.value || selectedAgents.value.size === 0 || !surveyQuestion.value.trim()) return
+  if (pendingSurvey.value?.question === surveyQuestion.value.trim() && pendingSurvey.value.ids.length) {
+    await retrySurvey()
+    return
+  }
+  pendingSurvey.value = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, question: surveyQuestion.value.trim(), ids: [...selectedAgents.value] }
+  surveyResults.value = []
+  await retrySurvey()
+}
+
+const retrySurvey = async () => {
+  if (isSurveying.value || !pendingSurvey.value?.ids.length) return
   isSurveying.value = true
-  addLog(t('log.sendSurvey', { count: selectedAgents.value.size }))
-  
+  surveyError.value = ''
+  const pending = pendingSurvey.value
   try {
-    const interviews = Array.from(selectedAgents.value).map(idx => ({
-      agent_id: idx,
-      prompt: surveyQuestion.value.trim()
-    }))
-    
     const res = await interviewAgents({
       simulation_id: props.simulationId,
-      interviews: interviews
+      interviews: pending.ids.map(agent_id => ({ agent_id, prompt: pending.question }))
     })
-    
-    if (res.success && res.data) {
-      // 正确的数据路径: res.data.result.results 是一个对象字典
-      // 格式: {"twitter_0": {...}, "reddit_0": {...}, "twitter_1": {...}, ...}
-      const resultData = res.data.result || res.data
-      const resultsDict = resultData.results || resultData
-      
-      // 将对象字典转换为数组格式
-      const surveyResultsList = []
-      
-      for (const interview of interviews) {
-        const agentIdx = interview.agent_id
-        const agent = profiles.value[agentIdx]
-        
-        // 优先使用 reddit 平台回复，其次 twitter
-        let responseContent = t('step5.noResponse')
-
-        if (typeof resultsDict === 'object' && !Array.isArray(resultsDict)) {
-          const redditKey = `reddit_${agentIdx}`
-          const twitterKey = `twitter_${agentIdx}`
-          const agentResult = resultsDict[redditKey] || resultsDict[twitterKey]
-          if (agentResult) {
-            responseContent = agentResult.response || agentResult.answer || t('step5.noResponse')
-          }
-        } else if (Array.isArray(resultsDict)) {
-          // 兼容数组格式
-          const matchedResult = resultsDict.find(r => r.agent_id === agentIdx)
-          if (matchedResult) {
-            responseContent = matchedResult.response || matchedResult.answer || t('step5.noResponse')
-          }
-        }
-        
-        surveyResultsList.push({
-          agent_id: agentIdx,
-          agent_name: agent?.username || `Agent ${agentIdx}`,
-          profession: agent?.profession,
-          question: surveyQuestion.value.trim(),
-          answer: responseContent
-        })
+    const resultData = res.data?.result || res.data
+    const results = resultData?.results || resultData || {}
+    const unfinished = []
+    const errors = []
+    for (const agentIdx of pending.ids) {
+      const result = Array.isArray(results) ? results.find(r => r.agent_id === agentIdx)
+        : (results[`reddit_${agentIdx}`] || results[`twitter_${agentIdx}`])
+      const answer = result?.response || result?.answer
+      if (!answer || result?.error) {
+        unfinished.push(agentIdx)
+        errors.push(result?.error || t('step5.noResponse'))
+        continue
       }
-      
-      surveyResults.value = surveyResultsList
-      addLog(t('log.receivedReplies', { count: surveyResults.value.length }))
-    } else {
-      throw new Error(res.error || t('step5.requestFailed'))
+      const agent = profiles.value[agentIdx]
+      surveyResults.value.push({ agent_id: agentIdx, agent_name: agent?.username || `Agent ${agentIdx}`,
+        profession: agent?.profession, question: pending.question, answer })
     }
+    pending.ids = unfinished
+    if (unfinished.length) surveyError.value = [...new Set(errors)].join('\n')
   } catch (err) {
+    surveyError.value = err.message
     addLog(t('log.surveySendFailed', { error: err.message }))
   } finally {
     isSurveying.value = false
+    try { localStorage.setItem(`miro-survey-${props.reportId}`, JSON.stringify({ pending: pendingSurvey.value, results: surveyResults.value, error: surveyError.value })) } catch {}
   }
 }
 
@@ -881,10 +879,12 @@ const loadReportData = async () => {
     // Get report info
     const reportRes = await getReport(props.reportId)
     if (reportRes.success && reportRes.data) {
+      reportCompleted.value = reportRes.data.status === 'completed'
       // Load agent logs to get report outline and sections
       await loadAgentLogs()
     }
   } catch (err) {
+    loadError.value = err.message
     addLog(t('log.loadReportFailed', { error: err.message }))
   }
 }
@@ -910,6 +910,7 @@ const loadAgentLogs = async () => {
       addLog(t('log.reportDataLoaded'))
     }
   } catch (err) {
+    loadError.value = err.message
     addLog(t('log.loadReportLogFailed', { error: err.message }))
   }
 }
@@ -924,8 +925,41 @@ const loadProfiles = async () => {
       addLog(t('log.loadedProfiles', { count: profiles.value.length }))
     }
   } catch (err) {
+    loadError.value = err.message
     addLog(t('log.loadProfilesFailed', { error: err.message }))
   }
+}
+
+const reloadData = async () => {
+  if (loadingData.value) return
+  loadingData.value = true
+  dataLoaded.value = false
+  loadError.value = ''
+  try { await Promise.all([loadReportData(), loadProfiles()]) }
+  finally { dataLoaded.value = !loadError.value; loadingData.value = false }
+}
+
+const restoreChats = () => {
+  try {
+    const survey = JSON.parse(localStorage.getItem(`miro-survey-${props.reportId}`) || 'null')
+    if (survey) {
+      pendingSurvey.value = survey.pending
+      if (pendingSurvey.value && !pendingSurvey.value.id) {
+        pendingSurvey.value.id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        localStorage.setItem(`miro-survey-${props.reportId}`, JSON.stringify({ ...survey, pending: pendingSurvey.value }))
+      }
+      surveyResults.value = survey.results || []
+      surveyError.value = survey.error || ''
+      surveyQuestion.value = survey.pending?.question || ''
+    }
+    chatHistoryCache.value = JSON.parse(localStorage.getItem(`miro-chat-${props.reportId}`) || '{}')
+    for (const history of Object.values(chatHistoryCache.value)) {
+      for (const message of history) {
+        if (message.pending) { message.pending = false; message.error = t('recovery.interrupted') }
+      }
+    }
+    chatHistory.value = chatHistoryCache.value.report_agent || []
+  } catch { chatHistoryCache.value = {} }
 }
 
 // Click outside to close dropdown
@@ -939,8 +973,7 @@ const handleClickOutside = (e) => {
 // Lifecycle
 onMounted(() => {
   addLog(t('log.step5Init'))
-  loadReportData()
-  loadProfiles()
+  reloadData()
   document.addEventListener('click', handleClickOutside)
 })
 
@@ -950,7 +983,8 @@ onUnmounted(() => {
 
 watch(() => props.reportId, (newId) => {
   if (newId) {
-    loadReportData()
+    restoreChats()
+    reloadData()
   }
 }, { immediate: true })
 
