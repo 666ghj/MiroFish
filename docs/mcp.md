@@ -4,6 +4,8 @@ The MCP adapter lets another AI agent operate the same local research workflow a
 
 ## Start and connect
 
+For Claude Code, Antigravity, Cursor, Devin CLI, Factory Droid, Gemini CLI, Copilot CLI, Grok Build, Kimi Code, OpenCode, Pi, Qwen Code, Hermes Agent, Muse, and Codex, use the [per-agent configuration generator and setup guide](agent-mcp.md). Choosing the MCP client is independent of [choosing the inference provider](agent-providers.md).
+
 Follow the [README installation](../README.md#install-and-run), including provider setup and login, first. Start Neo4j with `npm run graph:up`, then choose one application command:
 
 | Command | Services |

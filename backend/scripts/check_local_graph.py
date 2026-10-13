@@ -22,7 +22,7 @@ likely agreement, and limitations. This is synthetic test data, not a real forec
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--live', action='store_true', help='Uses Codex allowance and creates a retained demo project')
+    parser.add_argument('--live', action='store_true', help='Uses the configured inference provider and creates a retained demo project')
     parser.add_argument('--state', type=Path, default=ROOT / 'backend/uploads/local-graph-smoke.json')
     args = parser.parse_args()
     client = httpx.Client(base_url='http://127.0.0.1:5001', timeout=900, trust_env=False,

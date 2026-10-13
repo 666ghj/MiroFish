@@ -1,5 +1,7 @@
 # My Own Researcher: setup, storage, and recovery
 
+The installation below describes the default Codex setup. For Claude Code and other agent CLIs, follow [provider selection](../README.md#choose-your-inference-provider) and the [provider guide](agent-providers.md); Graphiti follows your selected CLI. For agent-specific MCP connection settings, use the [MCP setup guide](agent-mcp.md).
+
 My Own Researcher is an independent [MiroFish](https://github.com/666ghj/MiroFish) fork under [AGPL-3.0](../LICENSE). It retains MiroFish's source → graph → simulation → report → interaction workflow and adds a local Graphiti/Neo4j platform, Codex inference, and recovery controls. See the [README](../README.md) for an overview.
 
 The graph database, ingestion journal, embeddings, and reranking run locally. Language inference uses your ChatGPT-authenticated Codex CLI and sends source and simulation text to OpenAI. It consumes your account's available allowance. Local mode needs neither a Zep account nor an LLM API key, but it still requires network access and is not unlimited inference.
@@ -21,7 +23,7 @@ npm run dev
 
 Choose **Sign in with ChatGPT** during Codex login. The CLI and login must be available to the same OS user who runs the app. See the [Codex provider guide](codex-provider.md) for adapter settings.
 
-The configuration helper selects local/Codex mode and generates credentials in the ignored `.env` with owner-only permissions, preserving existing secrets. Keep the generated Neo4j password: changing it in `.env` does not change an initialized database's password.
+The configuration helper selects local graph mode, defaults to Codex while preserving an existing inference provider, and generates credentials in the ignored `.env` with owner-only permissions, preserving existing secrets. Keep the generated Neo4j password: changing it in `.env` does not change an initialized database's password.
 
 Open **http://localhost:4317/?lang=en**. Wait for graph readiness before uploading; the first graph-service start downloads two pinned neural search models. Docker runs Neo4j, while the app, graph service, and Codex run on the host. Use `compose.local-graph.yml` for Neo4j; this setup does not provide a full-application container image.
 
@@ -38,7 +40,7 @@ For later starts, use `npm run graph:up` then `npm run dev`. For agent-only use,
 | Neo4j Community 5.26 | `127.0.0.1:7687` / `127.0.0.1:7474` | Graphiti entities, temporal facts, and provenance |
 | SQLite journal | `backend/uploads/local_graph/` | Graph identity, ontology, jobs, progress, and errors |
 | Projects and runs | `backend/uploads/` | Documents, profiles, simulation state, checkpoints, and reports |
-| Shared Codex transport | `shared/codex-transport/` | Cross-process request serialization and cancellation |
+| Shared agent CLI transport | `shared/codex-transport/` | Cross-process request serialization and cancellation |
 
 Graph API documentation is available at http://127.0.0.1:5002/docs; mutations require the private `X-Research-Token` header. Keep that token private.
 
@@ -46,7 +48,7 @@ Neo4j uses the `my-own-researcher_graph_data` Docker volume under the default Co
 
 Graphiti has its own Python environment because its Neo4j dependency conflicts with the OASIS dependency pin. The backend facade supports the graph, ontology, batch, episode, node, edge, and search calls used by this app. It is not a complete implementation of Zep's commercial API or hosted platform.
 
-Local search uses `all-MiniLM-L6-v2` (384 dimensions) and `cross-encoder/ms-marco-MiniLM-L6-v2`, with pinned revisions. These models target English text. Community generation and Graphiti telemetry are disabled. Embeddings and reranking have no cloud fallback; graph extraction still uses Codex inference.
+Local search uses `all-MiniLM-L6-v2` (384 dimensions) and `cross-encoder/ms-marco-MiniLM-L6-v2`, with pinned revisions. These models target English text. Community generation and Graphiti telemetry are disabled. Embeddings and reranking have no cloud fallback; graph extraction uses the selected agent CLI (Codex by default).
 
 ## Effort, stopping, and reports
 
@@ -78,13 +80,13 @@ Deletion is refused while graph ingestion or an app consumer is active. Finish o
 
 ## Diagnostics
 
-A readiness check makes no Codex inference calls:
+A readiness check makes no inference calls:
 
 ```sh
 uv run --project backend python backend/scripts/check_local_graph.py
 ```
 
-An optional live check creates and retains a small synthetic project, builds its graph, prepares agents, runs one Reddit round, interviews an agent, and generates a report. **It consumes Codex allowance.**
+An optional live check creates and retains a small synthetic project, builds its graph, prepares agents, runs one Reddit round, interviews an agent, and generates a report. **It uses the configured inference provider's account allowance or billing.**
 
 ```sh
 uv run --project backend python backend/scripts/check_local_graph.py --live

@@ -2,6 +2,7 @@
 
 import os
 from dotenv import load_dotenv
+from research_agents import PROVIDERS, ProviderError, is_agent_provider, validate_provider
 
 # 加载项目根目录的 .env 文件
 # 路径: MiroFish/.env (相对于 backend/app/config.py)
@@ -24,7 +25,7 @@ class Config:
     # JSON配置 - 禁用ASCII转义，让中文直接显示
     JSON_AS_ASCII = False
     
-    # LLM配置（OpenAI API or local ChatGPT-authenticated Codex CLI）
+    # LLM配置（OpenAI API or an authenticated local agent CLI）
     LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai').strip().lower()
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
@@ -68,16 +69,16 @@ class Config:
     def validate(cls) -> list[str]:
         """验证必要配置"""
         errors: list[str] = []
-        if cls.LLM_PROVIDER not in {'openai', 'codex'}:
-            errors.append('LLM_PROVIDER must be openai or codex')
-        if cls.LLM_PROVIDER == 'openai' and not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY 未配置")
-        if cls.LLM_PROVIDER == 'codex':
-            import shutil
-            if os.name != 'posix':
-                errors.append('Codex provider requires macOS or Linux')
-            if not shutil.which(os.environ.get('CODEX_BIN', 'codex')):
-                errors.append('Codex CLI not found; install it or set CODEX_BIN')
+        if cls.LLM_PROVIDER == 'openai':
+            if not cls.LLM_API_KEY:
+                errors.append("LLM_API_KEY 未配置")
+        elif is_agent_provider(cls.LLM_PROVIDER):
+            try:
+                validate_provider(cls.LLM_PROVIDER)
+            except ProviderError as error:
+                errors.append(str(error))
+        else:
+            errors.append('LLM_PROVIDER must be openai or one of: ' + ', '.join(PROVIDERS))
         if cls.GRAPH_PROVIDER not in {'zep', 'graphiti'}:
             errors.append('GRAPH_PROVIDER must be zep or graphiti')
         if cls.GRAPH_PROVIDER == 'graphiti' and not cls.LOCAL_GRAPH_TOKEN:

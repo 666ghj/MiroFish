@@ -8,6 +8,7 @@ import logging
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from research_agents import graph_provider
 
 from .runtime import GraphRuntime
 
@@ -55,7 +56,9 @@ def create_app(store, engine, token):
                 status = 'unavailable'
         return {'service': 'My Own Researcher Graph Platform',
                 'status': status, 'provider': 'graphiti',
-                'storage': 'neo4j', 'inference': 'codex', 'search': 'local',
+                'storage': 'neo4j',
+                'inference': getattr(getattr(engine, 'llm', None), 'provider', None) or graph_provider(),
+                'search': 'local',
                 'llm_calls': getattr(getattr(engine, 'llm', None), 'calls', 0)}
 
     @app.post('/v1/rpc')

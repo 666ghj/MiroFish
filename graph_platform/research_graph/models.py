@@ -1,4 +1,4 @@
-"""Explicit Codex inference and local neural search; no API defaults."""
+"""Selected agent inference and local neural search; no API fallback."""
 
 import asyncio
 import json
@@ -15,6 +15,7 @@ from graphiti_core.llm_client.config import LLMConfig, ModelSize
 from graphiti_core.embedder.client import EmbedderClient
 from graphiti_core.cross_encoder.client import CrossEncoderClient
 from research_codex import run_codex
+from research_agents import get_provider, graph_provider, model_name, run_agent
 
 EMBED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
 EMBED_REVISION = '1110a243fdf4706b3f48f1d95db1a4f5529b4d41'
@@ -22,10 +23,14 @@ RANK_MODEL = 'cross-encoder/ms-marco-MiniLM-L6-v2'
 RANK_REVISION = '233902d25c440f23af6f7d6e94d2946bac0bee0a'
 
 
-class CodexGraphClient(LLMClient):
-    def __init__(self):
-        super().__init__(LLMConfig(model=os.environ.get('CODEX_MODEL') or 'codex-default'))
+class AgentGraphClient(LLMClient):
+    def __init__(self, provider=None):
+        self.provider = get_provider(provider if provider is not None else graph_provider()).id
+        super().__init__(LLMConfig(model=model_name(self.provider)))
         self.calls = 0
+
+    def _infer(self, prompt, schema, cancel_event=None):
+        return run_agent(prompt, schema, cancel_event=cancel_event, provider=self.provider)
 
     async def _generate_response(self, messages, response_model=None, max_tokens=16384,
                                  model_size=ModelSize.medium):
@@ -39,7 +44,7 @@ class CodexGraphClient(LLMClient):
         if response_model:
             prompt += '\nRequired inner JSON schema: ' + json.dumps(response_model.model_json_schema())
         canceled = threading.Event()
-        task = asyncio.create_task(asyncio.to_thread(run_codex, prompt, envelope, cancel_event=canceled))
+        task = asyncio.create_task(asyncio.to_thread(self._infer, prompt, envelope, cancel_event=canceled))
         self.calls += 1
         try:
             result, _usage = await asyncio.shield(task)
@@ -56,6 +61,20 @@ class CodexGraphClient(LLMClient):
         if not isinstance(value, dict):
             raise ValueError('Graph extraction must return a JSON object')
         return value
+
+
+class CodexGraphClient(AgentGraphClient):
+    """Keep the public Codex adapter and its transport override point compatible."""
+    def __init__(self):
+        super().__init__('codex')
+
+    def _infer(self, prompt, schema, cancel_event=None):
+        return run_codex(prompt, schema, cancel_event=cancel_event)
+
+
+def create_graph_client(provider=None):
+    selected = get_provider(provider if provider is not None else graph_provider()).id
+    return CodexGraphClient() if selected == 'codex' else AgentGraphClient(selected)
 
 
 class LocalEmbedder(EmbedderClient):

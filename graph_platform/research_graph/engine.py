@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 import os
 
-from .models import CodexGraphClient, LocalEmbedder, LocalReranker, EMBED_MODEL, EMBED_REVISION
+from .models import create_graph_client, LocalEmbedder, LocalReranker, EMBED_MODEL, EMBED_REVISION
 from .checkpoint import CheckpointGraphiti
 from graphiti_core.nodes import EntityNode, EpisodicNode, EpisodeType
 from graphiti_core.edges import EntityEdge
@@ -43,7 +43,7 @@ class GraphEngine:
     def __init__(self, store):
         self.store = store
         self.graphiti = None
-        self.llm = CodexGraphClient()
+        self.llm = create_graph_client()
         self.lock = asyncio.Lock()
 
     async def initialize(self):

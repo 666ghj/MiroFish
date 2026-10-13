@@ -15,7 +15,7 @@ codex login status
 
 Choose **Sign in with ChatGPT**. This adapter requires the status to report `Logged in using ChatGPT`; API-key-only login is rejected. See the [official authentication guide](https://learn.chatgpt.com/docs/auth). Codex manages credentials and refresh; do not copy its authentication tokens into the app's `.env`.
 
-For the normal local setup, run `python3 scripts/configure_local_graph.py` from the repository root. It selects:
+For the normal local setup, run `python3 scripts/configure_local_graph.py --provider codex` from the repository root. It selects:
 
 ```dotenv
 LLM_PROVIDER=codex
@@ -74,7 +74,7 @@ Stopping a simulation does not eliminate all remaining model work: saving record
 
 ## Optional API and Zep modes
 
-To use an OpenAI-compatible API explicitly, set `LLM_PROVIDER=openai`, configure `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_NAME`, and restart. Local graph extraction still uses its Codex transport, so Graphiti mode continues to require Codex login.
+To use an OpenAI-compatible API explicitly, set `LLM_PROVIDER=openai`, configure `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_NAME`, and restart. Local graph extraction defaults to Codex in API mode; set `GRAPH_LLM_PROVIDER` to another supported CLI to change it. When selecting another CLI with `LLM_PROVIDER`, Graphiti follows that selection automatically. See [agent providers](agent-providers.md).
 
 To use Zep Cloud explicitly, set `GRAPH_PROVIDER=zep` and provide `ZEP_API_KEY`. Codex can provide language inference alongside Zep, but Codex authentication does not authorize Zep. Existing projects retain their provider; switching configuration does not migrate graph data.
 
