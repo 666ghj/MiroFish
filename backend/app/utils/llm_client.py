@@ -64,10 +64,15 @@ def _is_response_format_unsupported(error: Exception) -> bool:
     )
 
 
-def _clean_chat_text(content: str) -> str:
+def _clean_chat_text(content: str, *, leading_reasoning_only: bool = False) -> str:
     """Remove common reasoning wrappers and an outer Markdown JSON fence."""
 
-    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+    if leading_reasoning_only:
+        # Reasoning tags inside JSON strings are data, not response wrappers.
+        content = content.strip().lstrip("\ufeff").lstrip()
+        cleaned = re.sub(r'^(?:<think>[\s\S]*?</think>\s*)+', '', content)
+    else:
+        cleaned = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
     cleaned = cleaned.lstrip("\ufeff")
     cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\n?```\s*$', '', cleaned)
@@ -250,7 +255,9 @@ class LLMClient:
                 finish_reason=finish_reason,
             )
 
-        content = _clean_chat_text(extract_chat_completion_text(response))
+        content = _clean_chat_text(
+            extract_chat_completion_text(response), leading_reasoning_only=True
+        )
         if not content:
             raise LLMResponseError(
                 "LLM returned empty JSON content",

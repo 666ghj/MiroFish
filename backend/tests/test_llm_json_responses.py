@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -257,3 +258,30 @@ def test_chat_json_reports_missing_choices_without_retrying_forever():
         )
 
     assert len(sequence.calls) == 2
+
+
+@pytest.mark.parametrize("wrapper", ["plain", "fence", "reasoning", "bom_reasoning_fence"])
+def test_chat_json_preserves_literal_reasoning_tags_in_values(wrapper):
+    expected = {
+        "text": '中文 "quoted" <think>literal</think>',
+        "nested": {"text": "before<think>keep</think>after"},
+        "items": ["<think>first</think>", "<think>second</think>"],
+    }
+    content = json.dumps(expected, ensure_ascii=False)
+    if wrapper in {"fence", "bom_reasoning_fence"}:
+        content = f"```json\n{content}\n```"
+    if wrapper in {"reasoning", "bom_reasoning_fence"}:
+        content = f"<think>provider reasoning</think>\n{content}"
+    if wrapper == "bom_reasoning_fence":
+        content = f"\ufeff{content}"
+    client = _client_for(CompletionSequence(_response(content)))
+
+    assert client.chat_json(messages=[{"role": "user", "content": "Return JSON"}]) == expected
+
+
+def test_chat_keeps_existing_reasoning_cleanup():
+    client = _client_for(
+        CompletionSequence(_response("<think>reasoning</think>Visible<think>hidden</think>"))
+    )
+
+    assert client.chat(messages=[{"role": "user", "content": "Reply"}]) == "Visible"
