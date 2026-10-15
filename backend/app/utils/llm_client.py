@@ -153,8 +153,17 @@ class LLMClient:
             max_tokens=max_tokens,
             response_format=response_format,
         )
-        content = extract_chat_completion_text(response)
-        return _clean_chat_text(content)
+        content = _clean_chat_text(extract_chat_completion_text(response))
+        choices = getattr(response, "choices", None) or []
+        finish_reason = (
+            getattr(choices[0], "finish_reason", None) if choices else None
+        )
+        if finish_reason == "length" and not content:
+            raise LLMResponseError(
+                "LLM text response was truncated before producing content",
+                finish_reason=finish_reason,
+            )
+        return content
     
     def chat_json(
         self,

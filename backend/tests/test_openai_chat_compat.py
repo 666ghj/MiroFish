@@ -123,16 +123,17 @@ def test_extracts_text_from_supported_content_shapes():
     assert extract_chat_completion_text(SimpleNamespace(choices=[])) == ""
 
 
-def test_extracts_reasoning_text_when_content_is_missing():
+def test_does_not_treat_reasoning_content_as_final_response():
     response = SimpleNamespace(
         choices=[
             SimpleNamespace(
+                finish_reason="length",
                 message=SimpleNamespace(
                     content=None,
-                    reasoning_content="usable response text",
-                )
+                    reasoning_content="truncated intermediate reasoning",
+                ),
             )
         ]
     )
 
-    assert extract_chat_completion_text(response) == "usable response text"
+    assert extract_chat_completion_text(response) == ""

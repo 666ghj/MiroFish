@@ -46,6 +46,68 @@ def _client_for(sequence):
     return client
 
 
+def _reasoning_only_truncated_response():
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="length",
+                message=SimpleNamespace(
+                    content=None,
+                    reasoning_content=(
+                        'unfinished intermediate reasoning: {"partial":'
+                    ),
+                ),
+            )
+        ]
+    )
+
+
+def test_chat_rejects_truncated_reasoning_without_final_content():
+    sequence = CompletionSequence(_reasoning_only_truncated_response())
+    client = _client_for(sequence)
+
+    with pytest.raises(
+        LLMResponseError, match="truncated before producing content"
+    ) as captured:
+        client.chat(messages=[{"role": "user", "content": "Write a report section"}])
+
+    assert captured.value.finish_reason == "length"
+    assert len(sequence.calls) == 1
+
+
+def test_chat_preserves_existing_content_when_truncated():
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="length",
+                message=SimpleNamespace(
+                    content="partial final answer",
+                    reasoning_content="intermediate reasoning",
+                ),
+            )
+        ]
+    )
+    client = _client_for(CompletionSequence(response))
+
+    assert client.chat(
+        messages=[{"role": "user", "content": "Write a report section"}]
+    ) == "partial final answer"
+
+
+def test_chat_json_rejects_truncated_reasoning_without_final_content():
+    sequence = CompletionSequence(_reasoning_only_truncated_response())
+    client = _client_for(sequence)
+
+    with pytest.raises(LLMResponseError, match="truncated at the token limit") as captured:
+        client.chat_json(
+            messages=[{"role": "user", "content": "Return JSON"}],
+            max_attempts=1,
+        )
+
+    assert captured.value.finish_reason == "length"
+    assert len(sequence.calls) == 1
+
+
 def test_chat_json_retries_truncated_completion_without_token_cap():
     sequence = CompletionSequence(
         _response('{"items": [', finish_reason="length"),
