@@ -210,6 +210,117 @@ def _delete_project_impl(project_id: str):
     })
 
 
+@graph_bp.route('/project/<project_id>/recover', methods=['POST'])
+def recover_project(project_id: str):
+    """
+    Recover a project stuck in GRAPH_BUILDING or FAILED state by checking
+    the actual Zep Cloud graph state. If the graph exists with data, the
+    project is moved to GRAPH_COMPLETED without re-building.
+    """
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({
+            "success": False,
+            "error": t('api.projectNotFound', id=project_id)
+        }), 404
+
+    if not project.graph_id:
+        return jsonify({
+            "success": False,
+            "error": t('api.recoverNoGraphId')
+        }), 400
+
+    if project.status == ProjectStatus.GRAPH_COMPLETED:
+        return jsonify({
+            "success": True,
+            "data": project.to_dict(),
+            "message": t('api.recoverAlreadyComplete')
+        })
+
+    if project.status not in {ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED}:
+        return jsonify({
+            "success": False,
+            "error": t('api.recoverInvalidStatus', status=project.status.value)
+        }), 400
+
+    if _project_has_active_build(project):
+        return jsonify({
+            "success": False,
+            "error": t('api.graphBuilding')
+        }), 409
+
+    with _project_build_lock(project_id):
+        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        batch_status = None
+        batch_progress = None
+
+        if project.zep_batch_id:
+            try:
+                summary = builder.get_batch_summary(project.zep_batch_id)
+                batch_status = getattr(summary, "status", None)
+                progress = getattr(summary, "progress", None)
+                if progress:
+                    batch_progress = {
+                        "percent_complete": getattr(progress, "percent_complete", 0),
+                        "succeeded_items": getattr(progress, "succeeded_items", 0),
+                        "failed_items": getattr(progress, "failed_items", 0),
+                    }
+            except Exception as e:
+                logger.warning(f"Could not fetch batch summary for {project.zep_batch_id}: {e}")
+
+        try:
+            graph_data = builder.get_graph_data(project.graph_id)
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": t('api.recoverGraphNotAccessible', error=str(e)),
+                "data": {
+                    "project_id": project_id,
+                    "graph_id": project.graph_id,
+                    "batch_status": batch_status,
+                    "batch_progress": batch_progress,
+                }
+            }), 404
+
+        node_count = graph_data.get("node_count", 0)
+        edge_count = graph_data.get("edge_count", 0)
+
+        if node_count == 0 and edge_count == 0:
+            return jsonify({
+                "success": False,
+                "error": t('api.recoverEmptyGraph'),
+                "data": {
+                    "project_id": project_id,
+                    "graph_id": project.graph_id,
+                    "node_count": node_count,
+                    "edge_count": edge_count,
+                    "batch_status": batch_status,
+                    "batch_progress": batch_progress,
+                }
+            }), 400
+
+        project.status = ProjectStatus.GRAPH_COMPLETED
+        project.error = None
+        ProjectManager.save_project(project)
+
+        logger.info(
+            f"Graph recovery succeeded: project_id={project_id}, "
+            f"graph_id={project.graph_id}, nodes={node_count}, edges={edge_count}"
+        )
+
+        return jsonify({
+            "success": True,
+            "message": t('api.recoverSuccess', nodes=node_count, edges=edge_count),
+            "data": {
+                **project.to_dict(),
+                "node_count": node_count,
+                "edge_count": edge_count,
+                "batch_status": batch_status,
+                "batch_progress": batch_progress,
+            }
+        })
+
+
 @graph_bp.route('/project/<project_id>/reset', methods=['POST'])
 def reset_project(project_id: str):
     with _project_build_lock(project_id):
