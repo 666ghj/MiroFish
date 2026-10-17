@@ -64,3 +64,15 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 恢复卡在构建中的项目（检查Zep Cloud真实状态）
+ * @param {String} projectId - 项目ID
+ * @returns {Promise}
+ */
+export function recoverProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}/recover`,
+    method: 'post'
+  })
+}

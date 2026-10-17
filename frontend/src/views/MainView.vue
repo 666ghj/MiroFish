@@ -83,7 +83,7 @@ import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData, recoverProject } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
@@ -249,6 +249,12 @@ const loadProject = async () => {
       } else if (res.data.status === 'graph_completed' && res.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(res.data.graph_id)
+      } else if (
+        (res.data.status === 'graph_building' && !res.data.graph_build_task_id) ||
+        (res.data.status === 'failed' && res.data.graph_id)
+      ) {
+        addLog('Build appears stuck — attempting recovery...')
+        await tryRecoverProject()
       }
     } else {
       error.value = res.error
@@ -300,6 +306,34 @@ const startBuildGraph = async () => {
   } catch (err) {
     error.value = err.message
     addLog(`Exception in startBuildGraph: ${err.message}`)
+  }
+}
+
+const tryRecoverProject = async () => {
+  try {
+    const res = await recoverProject(currentProjectId.value)
+    if (res.success) {
+      addLog(`Graph recovered: ${res.message}`)
+      error.value = ''
+      currentPhase.value = 2
+      buildProgress.value = null
+
+      const projRes = await getProject(currentProjectId.value)
+      if (projRes.success) {
+        projectData.value = projRes.data
+      }
+
+      if (res.data?.graph_id) {
+        await loadGraph(res.data.graph_id)
+        startGraphPolling()
+      }
+    } else {
+      error.value = res.error || 'Recovery failed. Try force rebuild via project reset.'
+      addLog(`Recovery failed: ${error.value}`)
+    }
+  } catch (err) {
+    error.value = err.message
+    addLog(`Recovery exception: ${err.message}`)
   }
 }
 
@@ -359,8 +393,9 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
-        error.value = task.error
         addLog(`Graph build task failed: ${task.error}`)
+        addLog('Attempting automatic graph recovery...')
+        await tryRecoverProject()
       }
     }
   } catch (e) {
