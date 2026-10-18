@@ -176,6 +176,12 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+## ☁️ One-Click Deploy
+
+<a href="https://repocloud.io/details/MiroFish/"><img src="https://d16t0pc4846x52.cloudfront.net/deploylobe.svg" alt="Deploy on RepoCloud" height="36"></a>
+<a href="https://railway.com/deploy/mirofish"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="36"></a>
+<a href="https://zeabur.com/templates/1LSRA6"><img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="36"></a>
+
 ## 📬 Join the Conversation
 
 <div align="center">

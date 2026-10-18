@@ -176,6 +176,12 @@ docker compose up -d
 
 > 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
 
+## ☁️ 一键部署
+
+<a href="https://repocloud.io/details/MiroFish/"><img src="https://d16t0pc4846x52.cloudfront.net/deploylobe.svg" alt="Deploy on RepoCloud" height="36"></a>
+<a href="https://railway.com/deploy/mirofish"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="36"></a>
+<a href="https://zeabur.com/templates/1LSRA6"><img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="36"></a>
+
 ## 📬 更多交流
 
 <div align="center">
