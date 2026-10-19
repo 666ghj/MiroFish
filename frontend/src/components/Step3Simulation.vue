@@ -92,6 +92,26 @@
 
       <div class="action-controls">
         <button 
+          v-if="phase === 1"
+          class="action-btn secondary"
+          :disabled="isStopping"
+          @click="handleStopSimulation"
+        >
+          <span v-if="isStopping" class="loading-spinner-small"></span>
+          {{ isStopping ? ($t('step3.stoppingBtn') || 'Stopping...') : ($t('step3.stopSimulationBtn') || 'Stop Simulation') }}
+        </button>
+
+        <button 
+          v-if="phase === 2"
+          class="action-btn secondary"
+          :disabled="isStarting"
+          @click="handleRestartSimulation"
+        >
+          <span v-if="isStarting" class="loading-spinner-small"></span>
+          {{ isStarting ? ($t('step3.generatingReportBtn') || 'Starting...') : ($t('step3.restartSimulationBtn') || 'Restart Simulation') }}
+        </button>
+
+        <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
           @click="handleNextStep"
@@ -462,6 +482,15 @@ const handleStopSimulation = async () => {
   }
 }
 
+// 重新模拟
+const handleRestartSimulation = async () => {
+  const confirmMsg = t('step3.restartConfirm') || 'Are you sure you want to restart this simulation? All current progress and logs will be reset.'
+  if (!window.confirm(confirmMsg)) {
+    return
+  }
+  await doStartSimulation()
+}
+
 // 轮询状态
 let statusTimer = null
 let detailTimer = null
@@ -688,11 +717,70 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
+const initSimulation = async () => {
   addLog(t('log.step3Init'))
-  if (props.simulationId) {
-    doStartSimulation()
+  if (!props.simulationId) {
+    addLog(t('log.errorMissingSimId'))
+    return
   }
+
+  try {
+    const res = await getRunStatus(props.simulationId)
+    if (res.success && res.data) {
+      const data = res.data
+      const status = data.runner_status
+
+      const activeStatuses = ['starting', 'running', 'paused', 'stopping']
+      const completedStatuses = ['completed', 'stopped']
+
+      if (activeStatuses.includes(status)) {
+        addLog(t('log.engineStarted'))
+        addLog(`  ├─ PID: ${data.process_pid || '-'}`)
+        phase.value = 1
+        runStatus.value = data
+        emit('update-status', 'processing')
+        await fetchRunStatusDetail()
+        startStatusPolling()
+        startDetailPolling()
+        return
+      }
+
+      const isFinished = completedStatuses.includes(status) ||
+        (status === 'failed' && (
+          data.reddit_completed ||
+          data.twitter_completed ||
+          data.progress_percent >= 100 ||
+          (data.current_round && data.total_rounds && data.current_round >= data.total_rounds)
+        ))
+
+      if (isFinished) {
+        addLog(t('log.simCompleted'))
+        phase.value = 2
+        runStatus.value = data
+        emit('update-status', status === 'failed' ? 'error' : 'completed')
+        await fetchRunStatusDetail()
+        return
+      }
+
+      if (status === 'failed') {
+        addLog(t('log.simFailed') + (data.error ? `: ${data.error}` : ''))
+        phase.value = 2
+        runStatus.value = data
+        emit('update-status', 'error')
+        await fetchRunStatusDetail()
+        return
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to check simulation status on mount:', err)
+  }
+
+  // If status is idle or not started yet, start simulation
+  await doStartSimulation()
+}
+
+onMounted(() => {
+  initSimulation()
 })
 
 onUnmounted(() => {
@@ -888,6 +976,12 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
 }
 
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .action-btn.primary {
   background: #000;
   color: #FFF;
@@ -896,6 +990,19 @@ onUnmounted(() => {
 .action-btn.primary:hover:not(:disabled) {
   background: #333;
 }
+
+.action-btn.secondary {
+  background: #F5F5F5;
+  color: #333;
+  border: 1px solid #E0E0E0;
+}
+
+.action-btn.secondary:hover:not(:disabled) {
+  background: #EAEAEA;
+  color: #000;
+}
+
+
 
 .action-btn:disabled {
   opacity: 0.3;

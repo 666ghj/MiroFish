@@ -27,7 +27,18 @@ class Config:
     # LLM配置（统一使用OpenAI格式）
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
-    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gemini-3.5-flash-lite')
+    
+    # 4级 Fallback 容灾模型配置 (Google Gemini & OpenRouter)
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or LLM_API_KEY
+    GEMINI_BASE_URL = os.environ.get('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai/')
+    GEMINI_MODEL_1 = os.environ.get('GEMINI_MODEL_1', 'gemini-3.5-flash-lite')
+    GEMINI_MODEL_2 = os.environ.get('GEMINI_MODEL_2', 'gemini-3.8-flash')
+    
+    OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+    OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+    OPENROUTER_MODEL_1 = os.environ.get('OPENROUTER_MODEL_1', 'google/gemini-2.5-flash')
+    OPENROUTER_MODEL_2 = os.environ.get('OPENROUTER_MODEL_2', 'openai/gpt-4o-mini')
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')

@@ -1652,10 +1652,27 @@ class ReportAgent:
             if progress_callback:
                 progress_callback("planning", 0, t('progress.startPlanningOutline'))
             
-            outline = self.plan_outline(
-                progress_callback=lambda stage, prog, msg: 
-                    progress_callback(stage, prog // 5, msg) if progress_callback else None
-            )
+            outline_path = ReportManager._get_outline_path(report_id)
+            if os.path.exists(outline_path):
+                try:
+                    with open(outline_path, 'r', encoding='utf-8') as of:
+                        odata = json.load(of)
+                    outline = ReportOutline(
+                        title=odata.get('title', ''),
+                        summary=odata.get('summary', ''),
+                        sections=[ReportSection(title=s.get('title', ''), content=s.get('content', '')) for s in odata.get('sections', [])]
+                    )
+                    logger.info(f"复用现有大纲: {outline.title}")
+                except Exception:
+                    outline = self.plan_outline(
+                        progress_callback=lambda stage, prog, msg: 
+                            progress_callback(stage, prog // 5, msg) if progress_callback else None
+                    )
+            else:
+                outline = self.plan_outline(
+                    progress_callback=lambda stage, prog, msg: 
+                        progress_callback(stage, prog // 5, msg) if progress_callback else None
+                )
             report.outline = outline
             
             # 记录规划完成日志
@@ -1681,6 +1698,21 @@ class ReportAgent:
                 section_num = i + 1
                 base_progress = 20 + int((i / total_sections) * 70)
                 
+                # 断点续传检查：如果章节已生成，直接复用
+                section_path = ReportManager._get_section_path(report_id, section_num)
+                if os.path.exists(section_path):
+                    try:
+                        with open(section_path, 'r', encoding='utf-8') as sf:
+                            saved_content = sf.read().strip()
+                        if saved_content:
+                            logger.info(f"章节 {section_num:02d} ({section.title}) 已存在，跳过重新生成并复用")
+                            section.content = saved_content
+                            generated_sections.append(f"## {section.title}\n\n{saved_content}")
+                            completed_section_titles.append(section.title)
+                            continue
+                    except Exception:
+                        pass
+
                 # 更新进度
                 ReportManager.update_progress(
                     report_id, "generating", base_progress,

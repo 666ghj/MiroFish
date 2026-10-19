@@ -152,9 +152,20 @@ def generate_report():
                 "error": t('api.missingSimRequirement')
             }), 400
         
-        # 提前生成 report_id，以便立即返回给前端
-        import uuid
-        report_id = f"report_{uuid.uuid4().hex[:12]}"
+        # 提前生成或复用 report_id，以便立即返回给前端
+        requested_report_id = data.get('report_id')
+        if requested_report_id:
+            report_id = requested_report_id
+        elif not force_regenerate:
+            existing_report = ReportManager.get_report_by_simulation(simulation_id)
+            if existing_report and existing_report.status != ReportStatus.COMPLETED:
+                report_id = existing_report.report_id
+            else:
+                import uuid
+                report_id = f"report_{uuid.uuid4().hex[:12]}"
+        else:
+            import uuid
+            report_id = f"report_{uuid.uuid4().hex[:12]}"
         
         # Register the background report as a graph reader under the same lock
         # used by graph deletion and updater startup. A lock itself cannot be
@@ -553,6 +564,36 @@ def download_report(report_id: str):
         
     except Exception as e:
         logger.error(f"下载报告失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@report_bp.route('/<report_id>/pdf', methods=['GET'])
+def download_report_pdf(report_id: str):
+    """
+    下载报告（PDF格式）
+    """
+    try:
+        report_dir = ReportManager._get_report_folder(report_id)
+        pdf_path = os.path.join(report_dir, f"{report_id}.pdf")
+        
+        if not os.path.exists(pdf_path):
+            return jsonify({
+                "success": False,
+                "error": f"PDF report not found: {report_id}"
+            }), 404
+            
+        return send_file(
+            pdf_path,
+            as_attachment=True,
+            download_name=f"{report_id}.pdf",
+            mimetype="application/pdf"
+        )
+    except Exception as e:
+        logger.error(f"下载PDF报告失败: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),

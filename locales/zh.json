@@ -205,7 +205,11 @@
     "forceStopSuccess": "模拟已强制停止",
     "forceStopFailed": "强制停止失败: {error}",
     "startGenerateReportBtn": "开始生成结果报告",
-    "generatingReportBtn": "启动中..."
+    "generatingReportBtn": "启动中...",
+    "stopSimulationBtn": "停止模拟",
+    "stoppingBtn": "停止中...",
+    "restartSimulationBtn": "重新模拟",
+    "restartConfirm": "确定要重新开始模拟吗？当前的所有进度和日志将被重置。"
   },
   "step4": {
     "generatingSection": "正在生成{title}...",
