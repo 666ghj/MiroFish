@@ -205,7 +205,11 @@
     "forceStopSuccess": "Simulation force stopped",
     "forceStopFailed": "Force stop failed: {error}",
     "startGenerateReportBtn": "Generate Report",
-    "generatingReportBtn": "Starting..."
+    "generatingReportBtn": "Starting...",
+    "stopSimulationBtn": "Stop Simulation",
+    "stoppingBtn": "Stopping...",
+    "restartSimulationBtn": "Restart Simulation",
+    "restartConfirm": "Are you sure you want to restart this simulation? All current progress and logs will be reset."
   },
   "step4": {
     "generatingSection": "Generating {title}...",
