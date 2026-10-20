@@ -463,11 +463,14 @@ class SimulationRunner:
             cls._graph_memory_enabled[simulation_id] = False
         
         # 确定运行哪个脚本（脚本位于 backend/scripts/ 目录）
+        platform_args = []
         if platform == "twitter":
-            script_name = "run_twitter_simulation.py"
+            script_name = "run_parallel_simulation.py"
+            platform_args = ["--twitter-only"]
             state.twitter_running = True
         elif platform == "reddit":
-            script_name = "run_reddit_simulation.py"
+            script_name = "run_parallel_simulation.py"
+            platform_args = ["--reddit-only"]
             state.reddit_running = True
         else:
             script_name = "run_parallel_simulation.py"
@@ -519,6 +522,7 @@ class SimulationRunner:
                 script_path,
                 "--config", config_path,  # 使用完整配置文件路径
             ]
+            cmd.extend(platform_args)
             
             # 如果指定了最大轮数，添加到命令行参数
             if max_rounds is not None and max_rounds > 0:

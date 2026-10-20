@@ -285,7 +285,7 @@ def test_monitor_start_failure_terminates_the_spawned_process(monkeypatch, tmp_p
         }),
         encoding="utf-8",
     )
-    (scripts_dir / "run_twitter_simulation.py").write_text("pass\n", encoding="utf-8")
+    (scripts_dir / "run_parallel_simulation.py").write_text("pass\n", encoding="utf-8")
 
     class Process:
         pid = 123
@@ -332,6 +332,92 @@ def test_monitor_start_failure_terminates_the_spawned_process(monkeypatch, tmp_p
         SimulationRunner._processes.pop(simulation_id, None)
         SimulationRunner._action_queues.pop(simulation_id, None)
         SimulationRunner._stdout_files.pop(simulation_id, None)
+        SimulationRunner._stderr_files.pop(simulation_id, None)
+        SimulationRunner._graph_memory_enabled.pop(simulation_id, None)
+
+
+@pytest.mark.parametrize(
+    ("platform", "platform_arg", "twitter_running", "reddit_running"),
+    [
+        ("twitter", "--twitter-only", True, False),
+        ("reddit", "--reddit-only", False, True),
+        ("parallel", None, True, True),
+    ],
+)
+def test_simulation_runner_uses_action_logging_script_for_each_platform(
+    monkeypatch, tmp_path, platform, platform_arg, twitter_running, reddit_running
+):
+    simulation_id = f"sim-platform-{platform}"
+    sim_dir = tmp_path / "runs" / simulation_id
+    scripts_dir = tmp_path / "scripts"
+    sim_dir.mkdir(parents=True)
+    scripts_dir.mkdir()
+    (sim_dir / "simulation_config.json").write_text(
+        json.dumps({
+            "time_config": {
+                "total_simulation_hours": 1,
+                "minutes_per_round": 60,
+            }
+        }),
+        encoding="utf-8",
+    )
+    parallel_script = scripts_dir / "run_parallel_simulation.py"
+    parallel_script.write_text("pass\n", encoding="utf-8")
+    (scripts_dir / "run_twitter_simulation.py").write_text("pass\n", encoding="utf-8")
+    (scripts_dir / "run_reddit_simulation.py").write_text("pass\n", encoding="utf-8")
+    launched = {}
+
+    class Process:
+        pid = 123
+
+        def poll(self):
+            return None
+
+    class MonitorThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    def popen(command, **_kwargs):
+        launched["command"] = command
+        return Process()
+
+    monkeypatch.setattr(SimulationRunner, "RUN_STATE_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(SimulationRunner, "SCRIPTS_DIR", str(scripts_dir))
+    monkeypatch.setattr(runner_module.subprocess, "Popen", popen)
+    monkeypatch.setattr(runner_module.threading, "Thread", MonitorThread)
+    monkeypatch.setattr(
+        SimulationRunner,
+        "_sync_simulation_status",
+        classmethod(lambda _cls, *_args, **_kwargs: None),
+    )
+
+    try:
+        state = SimulationRunner.start_simulation(
+            simulation_id,
+            platform=platform,
+            enable_graph_memory_update=False,
+        )
+
+        command = launched["command"]
+        assert command[1] == str(parallel_script)
+        if platform_arg:
+            assert platform_arg in command
+        else:
+            assert "--twitter-only" not in command
+            assert "--reddit-only" not in command
+        assert state.twitter_running is twitter_running
+        assert state.reddit_running is reddit_running
+    finally:
+        SimulationRunner._run_states.pop(simulation_id, None)
+        SimulationRunner._processes.pop(simulation_id, None)
+        SimulationRunner._monitor_threads.pop(simulation_id, None)
+        SimulationRunner._action_queues.pop(simulation_id, None)
+        main_log = SimulationRunner._stdout_files.pop(simulation_id, None)
+        if main_log is not None:
+            main_log.close()
         SimulationRunner._stderr_files.pop(simulation_id, None)
         SimulationRunner._graph_memory_enabled.pop(simulation_id, None)
 
