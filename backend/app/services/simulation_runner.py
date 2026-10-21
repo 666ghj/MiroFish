@@ -1430,6 +1430,17 @@ class SimulationRunner:
                     except Exception as e:
                         errors.append(f"删除 {dir_name}/actions.jsonl 失败: {str(e)}")
         
+        # Fresh runs must not consume commands or responses from a previous
+        # process. Configuration and profile files remain outside these queues.
+        for dir_name in ("ipc_commands", "ipc_responses"):
+            dir_path = os.path.join(sim_dir, dir_name)
+            if os.path.exists(dir_path):
+                try:
+                    shutil.rmtree(dir_path)
+                    cleaned_files.append(f"{dir_name}/")
+                except OSError as error:
+                    errors.append(f"删除 {dir_name} 失败: {error}")
+
         # 清理内存中的运行状态
         if simulation_id in cls._run_states:
             del cls._run_states[simulation_id]
