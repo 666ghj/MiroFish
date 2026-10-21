@@ -386,6 +386,31 @@ class ReportConsoleLogger:
         self.close()
 
 
+def _fenced_code_lines(lines: List[str]) -> List[bool]:
+    """Identify top-level backtick/tilde fences without rewriting their contents."""
+    protected = []
+    fence_char = None
+    fence_length = 0
+    for line in lines:
+        if fence_char is None:
+            opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+            if opening and not (
+                opening.group(1)[0] == "`" and "`" in opening.group(2)
+            ):
+                fence_char = opening.group(1)[0]
+                fence_length = len(opening.group(1))
+                protected.append(True)
+            else:
+                protected.append(False)
+        else:
+            protected.append(True)
+            if re.fullmatch(
+                rf" {{0,3}}{re.escape(fence_char)}{{{fence_length},}}[ \t]*\r?", line
+            ):
+                fence_char = None
+    return protected
+
+
 class ReportStatus(str, Enum):
     """报告状态"""
     PENDING = "pending"
@@ -2195,12 +2220,27 @@ class ReportManager:
         if not content:
             return content
         
-        content = content.strip()
+        original_lines = content.split('\n')
+        original_code = _fenced_code_lines(original_lines)
+        first_content_line = next(
+            (i for i, line in enumerate(original_lines) if line.strip()), None
+        )
+        if first_content_line is not None and original_code[first_content_line]:
+            content = content.lstrip('\r\n')
+        else:
+            content = content.lstrip()
+        if not original_code[-1]:
+            content = content.rstrip()
         lines = content.split('\n')
+        code_lines = _fenced_code_lines(lines)
         cleaned_lines = []
         skip_next_empty = False
         
         for i, line in enumerate(lines):
+            if code_lines[i]:
+                cleaned_lines.append(line)
+                skip_next_empty = False
+                continue
             stripped = line.strip()
             
             # 检查是否是Markdown标题行
@@ -2363,7 +2403,9 @@ class ReportManager:
         import re
         
         lines = content.split('\n')
+        code_lines = _fenced_code_lines(lines)
         processed_lines = []
+        protected_output_lines = set()
         prev_was_heading = False
         
         # 收集大纲中的所有章节标题
@@ -2374,6 +2416,12 @@ class ReportManager:
         i = 0
         while i < len(lines):
             line = lines[i]
+            if code_lines[i]:
+                protected_output_lines.add(len(processed_lines))
+                processed_lines.append(line)
+                prev_was_heading = False
+                i += 1
+                continue
             stripped = line.strip()
             
             # 检查是否是标题行
@@ -2386,6 +2434,8 @@ class ReportManager:
                 # 检查是否是重复标题（在连续5行内出现相同内容的标题）
                 is_duplicate = False
                 for j in range(max(0, len(processed_lines) - 5), len(processed_lines)):
+                    if j in protected_output_lines:
+                        continue
                     prev_line = processed_lines[j].strip()
                     prev_match = re.match(r'^(#{1,6})\s+(.+)$', prev_line)
                     if prev_match:
@@ -2459,7 +2509,11 @@ class ReportManager:
         # 清理连续的多个空行（保留最多2个）
         result_lines = []
         empty_count = 0
-        for line in processed_lines:
+        for line, is_code in zip(processed_lines, _fenced_code_lines(processed_lines)):
+            if is_code:
+                result_lines.append(line)
+                empty_count = 0
+                continue
             if line.strip() == '':
                 empty_count += 1
                 if empty_count <= 2:
