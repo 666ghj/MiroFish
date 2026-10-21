@@ -1127,7 +1127,9 @@ def get_simulation_profiles_realtime(simulation_id: str):
                 else:
                     with open(profiles_file, 'r', encoding='utf-8') as f:
                         reader = csv.DictReader(f)
-                        profiles = list(reader)
+                        profiles = [
+                            SimulationManager.normalize_twitter_profile(row) for row in reader
+                        ]
             except (json.JSONDecodeError, Exception) as e:
                 logger.warning(f"读取 profiles 文件失败（可能正在写入中）: {e}")
                 profiles = []
