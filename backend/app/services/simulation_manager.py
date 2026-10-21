@@ -523,11 +523,20 @@ class SimulationManager:
             import csv
 
             with open(profile_path, 'r', encoding='utf-8', newline='') as f:
-                return list(csv.DictReader(f))
+                return [self.normalize_twitter_profile(row) for row in csv.DictReader(f)]
 
         with open(profile_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     
+    @staticmethod
+    def normalize_twitter_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Expose the display fields used by profile cards without losing CSV fields."""
+        if "description" in profile:
+            profile.setdefault("bio", profile["description"])
+        if "user_char" in profile:
+            profile.setdefault("persona", profile["user_char"])
+        return profile
+
     def get_simulation_config(self, simulation_id: str) -> Optional[Dict[str, Any]]:
         """获取模拟配置"""
         sim_dir = self._get_simulation_dir(simulation_id)
