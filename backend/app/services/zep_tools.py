@@ -10,6 +10,7 @@ Zep检索工具服务
 
 import time
 import json
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from zep_cloud import NotFoundError
@@ -136,8 +137,17 @@ class EdgeInfo:
     
     @property
     def is_invalid(self) -> bool:
-        """是否已失效"""
-        return self.invalid_at is not None
+        """Whether the fact's end time has been reached."""
+        if self.invalid_at is None:
+            return False
+        try:
+            invalid_at = datetime.fromisoformat(self.invalid_at.replace("Z", "+00:00"))
+            if invalid_at.tzinfo is None:
+                invalid_at = invalid_at.replace(tzinfo=timezone.utc)
+            return invalid_at <= datetime.now(timezone.utc)
+        except (TypeError, ValueError):
+            # Preserve the conservative treatment of a malformed end marker.
+            return True
 
 
 @dataclass
