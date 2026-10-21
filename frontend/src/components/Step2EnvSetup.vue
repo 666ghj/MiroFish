@@ -666,6 +666,10 @@ const simulationConfig = ref(null)
 const selectedProfile = ref(null)
 const showProfilesDetail = ref(true)
 
+// Invalidate in-flight replies after failure, retry, or leaving the component.
+let preparationGeneration = 0
+let preparationFailed = false
+
 // 日志去重：记录上一次输出的关键信息
 let lastLoggedMessage = ''
 let lastLoggedProfileCount = 0
@@ -677,6 +681,7 @@ const customMaxRounds = ref(40)   // 默认推荐40轮
 
 // Watch stage to update phase
 watch(currentStage, (newStage) => {
+  if (preparationFailed) return
   if (newStage === '生成Agent人设' || newStage === 'generating_profiles') {
     phase.value = 1
   } else if (newStage === '生成模拟配置' || newStage === 'generating_config') {
@@ -741,6 +746,8 @@ const addLog = (msg) => {
 }
 
 const handlePrepareFailure = (message) => {
+  preparationFailed = true
+  preparationGeneration++
   stopPolling()
   stopProfilesPolling()
   stopConfigPolling()
@@ -784,6 +791,13 @@ const startPrepareSimulation = async () => {
     return
   }
   
+  stopPolling()
+  stopProfilesPolling()
+  stopConfigPolling()
+  preparationFailed = false
+  const generation = ++preparationGeneration
+  taskId.value = null
+
   // 标记第一步完成，开始第二步
   phase.value = 1
   addLog(t('log.simInstanceCreated', { id: props.simulationId }))
@@ -797,6 +811,8 @@ const startPrepareSimulation = async () => {
       parallel_profile_count: 5
     })
     
+    if (preparationFailed || generation !== preparationGeneration) return
+
     if (res.success && res.data) {
       if (res.data.already_prepared) {
         addLog(t('log.detectedExistingPrep'))
@@ -823,12 +839,11 @@ const startPrepareSimulation = async () => {
       // 开始实时获取 Profiles
       startProfilesPolling()
     } else {
-      addLog(t('log.prepareFailed', { error: res.error || t('common.unknownError') }))
-      emit('update-status', 'error')
+      handlePrepareFailure(res.error || t('common.unknownError'))
     }
   } catch (err) {
-    addLog(t('log.prepareException', { error: err.message }))
-    emit('update-status', 'error')
+    if (preparationFailed || generation !== preparationGeneration) return
+    handlePrepareFailure(err.message)
   }
 }
 
@@ -855,6 +870,8 @@ const stopProfilesPolling = () => {
 }
 
 const pollPrepareStatus = async () => {
+  if (preparationFailed) return
+  const generation = preparationGeneration
   if (!taskId.value && !props.simulationId) return
   
   try {
@@ -863,6 +880,8 @@ const pollPrepareStatus = async () => {
       simulation_id: props.simulationId
     })
     
+    if (preparationFailed || generation !== preparationGeneration) return
+
     if (res.success && res.data) {
       const data = res.data
       
@@ -915,11 +934,15 @@ const pollPrepareStatus = async () => {
 }
 
 const fetchProfilesRealtime = async () => {
+  if (preparationFailed) return
+  const generation = preparationGeneration
   if (!props.simulationId) return
   
   try {
     const res = await getSimulationProfilesRealtime(props.simulationId)
     
+    if (preparationFailed || generation !== preparationGeneration) return
+
     if (res.success && res.data) {
       const prevCount = profiles.value.length
       profiles.value = res.data.profiles || []
@@ -971,11 +994,15 @@ const stopConfigPolling = () => {
 }
 
 const fetchConfigRealtime = async () => {
+  if (preparationFailed) return
+  const generation = preparationGeneration
   if (!props.simulationId) return
   
   try {
     const res = await getSimulationConfigRealtime(props.simulationId)
     
+    if (preparationFailed || generation !== preparationGeneration) return
+
     if (res.success && res.data) {
       const data = res.data
 
@@ -1032,16 +1059,21 @@ const fetchConfigRealtime = async () => {
 }
 
 const loadPreparedData = async () => {
+  if (preparationFailed) return
+  const generation = preparationGeneration
   phase.value = 2
   addLog(t('log.loadingExistingConfig'))
 
   // 最后获取一次 Profiles
   await fetchProfilesRealtime()
+  if (preparationFailed || generation !== preparationGeneration) return
   addLog(t('log.loadedAgentProfiles', { count: profiles.value.length }))
 
   // 获取配置（使用实时接口）
   try {
     const res = await getSimulationConfigRealtime(props.simulationId)
+    if (preparationFailed || generation !== preparationGeneration) return
+
     if (res.success && res.data) {
       const configState = res.data
 
@@ -1072,6 +1104,7 @@ const loadPreparedData = async () => {
       }
     }
   } catch (err) {
+    if (preparationFailed || generation !== preparationGeneration) return
     handlePrepareFailure(t('log.loadConfigFailed', { error: err.message }))
   }
 }
@@ -1095,6 +1128,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  preparationFailed = true
+  preparationGeneration++
   stopPolling()
   stopProfilesPolling()
   stopConfigPolling()
