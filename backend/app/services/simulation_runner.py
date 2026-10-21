@@ -182,6 +182,16 @@ class SimulationRunState:
     resume_count: int = 0
     resume_exact: Optional[bool] = None
 
+    # Which platforms the run was started with: "parallel" (both), "twitter" or "reddit". Every run, single-platform
+    # ones included, uses run_parallel_simulation.py (with --twitter-only / --reddit-only), so every run writes the
+    # structured action log that completion detection, the status line and Resume depend on.
+    platform: str = "parallel"
+
+    @property
+    def platforms(self) -> tuple:
+        """The platforms this run covers."""
+        return (self.platform,) if self.platform in ("twitter", "reddit") else ("twitter", "reddit")
+
     # --- activity and failures --------------------------------------------------------------
 
     def _recent_rounds(self, platform: str) -> List[List[int]]:
@@ -315,6 +325,7 @@ class SimulationRunState:
             "resumed_from_round": self.resumed_from_round,
             "resume_count": self.resume_count,
             "resume_exact": self.resume_exact,
+            "platform": self.platform,
         }
 
     def to_detail_dict(self) -> Dict[str, Any]:
@@ -464,6 +475,7 @@ class SimulationRunner:
                 resumed_from_round=data.get("resumed_from_round"),
                 resume_count=data.get("resume_count") or 0,
                 resume_exact=data.get("resume_exact"),
+                platform=data.get("platform") or "parallel",
             )
 
             # 加载最近动作
@@ -537,7 +549,7 @@ class SimulationRunner:
 
     # --- resume ---------------------------------------------------------------------------------
 
-    RESUME_PLATFORMS = ("twitter", "reddit")
+    RESUME_PLATFORMS = ("twitter", "reddit")  # a parallel run; single-platform runs use state.platforms
 
     @classmethod
     def _sim_resume(cls):
@@ -582,7 +594,7 @@ class SimulationRunner:
 
         helper = cls._sim_resume()
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
-        plans = {platform: helper.plan_resume(sim_dir, platform) for platform in cls.RESUME_PLATFORMS}
+        plans = {platform: helper.plan_resume(sim_dir, platform) for platform in state.platforms}
         blocked = [plan for plan in plans.values() if not plan.resumable]
         if blocked:
             info["reason"] = "; ".join(f"{plan.platform}: {plan.reason}" for plan in blocked)
@@ -603,7 +615,7 @@ class SimulationRunner:
         """
         helper = cls._sim_resume()
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
-        plans = {platform: helper.plan_resume(sim_dir, platform) for platform in cls.RESUME_PLATFORMS}
+        plans = {platform: helper.plan_resume(sim_dir, platform) for platform in state.platforms}
         for platform, plan in plans.items():
             if not plan.resumable:
                 raise ValueError(f"cannot resume {platform}: {plan.reason}")
@@ -669,6 +681,7 @@ class SimulationRunner:
             if not info["resumable"]:
                 raise ValueError(f"无法继续: {info['reason']}")
             previous = cls.get_run_state(simulation_id)
+            platform = previous.platform  # a resumed run covers the platforms it started with
             # The scheduling replay is only valid with the run's own seed and round limit.
             seed = previous.seed
             if previous.total_rounds and previous.total_rounds > 0:
@@ -707,6 +720,7 @@ class SimulationRunner:
             total_simulation_hours=total_hours,
             started_at=(previous.started_at if previous and previous.started_at else datetime.now().isoformat()),
             seed=seed,
+            platform=platform if platform in ("twitter", "reddit") else "parallel",
         )
         if previous is not None:
             state.resume_count = (previous.resume_count or 0) + 1
@@ -772,16 +786,13 @@ class SimulationRunner:
             cls._graph_memory_enabled[simulation_id] = False
         
         # 确定运行哪个脚本（脚本位于 backend/scripts/ 目录）
-        if platform == "twitter":
-            script_name = "run_twitter_simulation.py"
-            state.twitter_running = True
-        elif platform == "reddit":
-            script_name = "run_reddit_simulation.py"
-            state.reddit_running = True
-        else:
-            script_name = "run_parallel_simulation.py"
-            state.twitter_running = True
-            state.reddit_running = True
+        # Always the parallel script: the standalone run_twitter/run_reddit scripts write no structured
+        # action log (no round events, checkpoints, failure tracking, final poll), so a run started with
+        # them could never be seen to finish. The parallel script runs one platform with --twitter-only
+        # or --reddit-only.
+        script_name = "run_parallel_simulation.py"
+        state.twitter_running = "twitter" in state.platforms
+        state.reddit_running = "reddit" in state.platforms
         
         script_path = os.path.join(cls.SCRIPTS_DIR, script_name)
         
@@ -840,6 +851,11 @@ class SimulationRunner:
             # 不等待命令：脚本跑完就退出（监控线程据此发布 COMPLETED）
             if not wait_for_commands:
                 cmd.append("--no-wait")
+
+            if state.platform == "twitter":
+                cmd.append("--twitter-only")
+            elif state.platform == "reddit":
+                cmd.append("--reddit-only")
 
             if resume:
                 cmd.append("--resume")
@@ -1335,9 +1351,10 @@ class SimulationRunner:
         twitter_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
         reddit_log = os.path.join(sim_dir, "reddit", "actions.jsonl")
         
-        # 检查哪些平台被启用（通过文件是否存在判断）
-        twitter_enabled = os.path.exists(twitter_log)
-        reddit_enabled = os.path.exists(reddit_log)
+        # 检查哪些平台被启用（通过文件是否存在判断）。单平台运行只看它自己的平台：
+        # 上一次双平台运行遗留的另一个平台的日志不能让这次运行永远"未完成"。
+        twitter_enabled = os.path.exists(twitter_log) and "twitter" in state.platforms
+        reddit_enabled = os.path.exists(reddit_log) and "reddit" in state.platforms
         
         # 如果平台被启用但未完成，则返回 False
         if twitter_enabled and not state.twitter_completed:

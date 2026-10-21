@@ -411,3 +411,68 @@ def test_the_simulation_record_is_written_the_same_way(world, monkeypatch):
     monkeypatch.setattr(manager_module, "write_json_atomic", lambda *a, **k: (_ for _ in ()).throw(PermissionError("denied")))
     manager._save_simulation_state(state)                       # falls back to writing in place
     assert json.loads((world.sim_dir / "state.json").read_text("utf-8"))["simulation_id"] == SIM
+
+
+# --- a run of one platform uses the same script and the same structured log -----------------------
+
+@pytest.mark.parametrize("platform,flag,other", [("twitter", "--twitter-only", "reddit"), ("reddit", "--reddit-only", "twitter")])
+def test_a_single_platform_run_uses_the_parallel_script(world, platform, flag, other):
+    state = SimulationRunner.start_simulation(SIM, platform=platform)
+
+    command = world.commands[0]
+    assert command[1].endswith("run_parallel_simulation.py") and flag in command
+    assert not any(part.endswith(("run_twitter_simulation.py", "run_reddit_simulation.py")) for part in command)
+    assert state.platform == platform
+    assert getattr(state, f"{platform}_running") is True and getattr(state, f"{other}_running") is False
+    assert json.loads((world.sim_dir / "run_state.json").read_text("utf-8"))["platform"] == platform   # survives a restart
+
+
+def test_a_parallel_run_has_no_platform_flag(world):
+    state = SimulationRunner.start_simulation(SIM, platform="parallel")
+    assert "--twitter-only" not in world.commands[0] and "--reddit-only" not in world.commands[0]
+    assert state.platform == "parallel" and state.twitter_running and state.reddit_running
+
+
+def test_an_older_run_state_without_a_platform_is_a_parallel_run(world):
+    world.stopped_run()
+    data = json.loads((world.sim_dir / "run_state.json").read_text("utf-8"))
+    data.pop("platform", None)
+    (world.sim_dir / "run_state.json").write_text(json.dumps(data), encoding="utf-8")
+    SimulationRunner._run_states.pop(SIM, None)
+    assert SimulationRunner.get_run_state(SIM).platform == "parallel"
+
+
+def test_a_leftover_log_of_the_other_platform_does_not_keep_a_single_platform_run_open(world):
+    """The run finishes when its own platform has; the other platform's old log is not part of it."""
+    write_log(world.sim_dir / "reddit" / "actions.jsonl", finished_rounds(3))      # left by an earlier parallel run
+    write_log(world.sim_dir / "twitter" / "actions.jsonl", finished_rounds(2))
+    state = SimulationRunState(simulation_id=SIM, runner_status=RunnerStatus.RUNNING, platform="twitter")
+    state.twitter_completed = True
+
+    assert SimulationRunner._check_all_platforms_completed(state) is True
+    assert SimulationRunner._check_all_platforms_completed(
+        SimulationRunState(simulation_id=SIM, runner_status=RunnerStatus.RUNNING, platform="parallel", twitter_completed=True)
+    ) is False                                                                        # a parallel run still waits for Reddit
+
+
+def test_a_single_platform_run_resumes_from_its_own_log_only(world):
+    world.stopped_run()
+    world.platform("twitter", 4, checkpoint_round=4)                                  # no Reddit log at all
+    data = json.loads((world.sim_dir / "run_state.json").read_text("utf-8"))
+    data["platform"] = "twitter"
+    (world.sim_dir / "run_state.json").write_text(json.dumps(data), encoding="utf-8")
+    SimulationRunner._run_states.pop(SIM, None)
+
+    info = SimulationRunner.resume_info(SIM)
+    assert info["resumable"] and info["rounds"] == {"twitter": 4}
+
+    state = SimulationRunner.start_simulation(SIM, platform="parallel", resume=True)      # the argument is ignored on resume
+    assert "--twitter-only" in world.commands[0] and "--resume" in world.commands[0]
+    assert state.platform == "twitter" and state.resumed_from_round == 4
+
+
+def test_a_parallel_run_still_needs_both_logs_to_resume(world):
+    world.stopped_run()
+    world.platform("twitter", 4, checkpoint_round=4)
+    info = SimulationRunner.resume_info(SIM)
+    assert not info["resumable"] and "reddit" in info["reason"]

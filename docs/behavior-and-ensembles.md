@@ -152,7 +152,7 @@ actions the unfinished round had already taken stay in the platform and the roun
 `GET /api/simulation/<id>/resume-info` answers `{resumable, reason, round, rounds, total_rounds, exact}`. A run can be
 resumed when it was stopped, failed, or was left "running" by a backend that died; it has a recorded seed; and both
 platforms finished setup (round 0). It cannot be resumed when it is already complete, still running or finishing, was
-run with the single-platform scripts (they write no structured log), or stopped while still setting up (start it
+stopped while still setting up (start it
 over). In the UI, opening Step 3 of such a run shows "Resume from round *k*+1" and "Start over" instead of starting
 immediately.
 

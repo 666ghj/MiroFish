@@ -377,7 +377,7 @@ def test_start_clears_a_stale_alive_marker_from_a_previous_run(
     (sim_dir / "env_status.json").write_text(
         json.dumps({"status": "alive"}), encoding="utf-8"
     )
-    (scripts_dir / "run_twitter_simulation.py").write_text(
+    (scripts_dir / "run_parallel_simulation.py").write_text(
         "pass\n", encoding="utf-8"
     )
 

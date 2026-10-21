@@ -1,4 +1,6 @@
 """
+【注意】MiroFish 后端不再使用此脚本：它不写结构化动作日志（actions.jsonl）、没有轮次事件、检查点和最终问卷，
+后端无法据此判断运行是否结束。单平台运行请用: python run_parallel_simulation.py --config ... --reddit-only
 OASIS Reddit模拟预设脚本
 此脚本读取配置文件中的参数来执行模拟，实现全程自动化
 

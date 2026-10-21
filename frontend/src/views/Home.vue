@@ -218,6 +218,7 @@ import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
+import { setPendingUpload } from '../store/pendingUpload'
 
 const router = useRouter()
 
@@ -301,14 +302,12 @@ const startSimulation = () => {
   if (!canSubmit.value || loading.value) return
   
   // 存储待上传的数据
-  import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
-    // 立即跳转到Process页面（使用特殊标识表示新建项目）
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
+  setPendingUpload(files.value, formData.value.simulationRequirement)
+
+  // 立即跳转到Process页面（使用特殊标识表示新建项目）
+  router.push({
+    name: 'Process',
+    params: { projectId: 'new' }
   })
 }
 </script>

@@ -881,6 +881,13 @@ REACT_TOOL_LIMIT_MSG = (
     '请立即基于已获取的信息，以 "Final Answer:" 开头输出章节内容。'
 )
 
+REACT_MALFORMED_TOOL_CALL_MSG = (
+    "【格式错误】你的 <tool_call> 无法执行：缺少工具名称（name）。"
+    "必须使用下面的完整格式，参数放在 parameters 里：\n"
+    '<tool_call>\n{{"name": "工具名称", "parameters": {{"query": "检索内容"}}}}\n</tool_call>\n'
+    "可用工具：{valid_tools}。请重新输出一个正确的 <tool_call>，或在信息已足够时输出 Final Answer。"
+)
+
 REACT_UNUSED_TOOLS_HINT = "\n💡 你还没有使用过: {unused_list}，建议尝试不同工具获取多角度信息"
 
 REACT_FORCE_FINAL_MSG = "已达到工具调用限制，请直接输出 Final Answer: 并生成章节内容。"
@@ -1191,9 +1198,13 @@ class ReportAgent:
         for match in re.finditer(xml_pattern, response, re.DOTALL):
             try:
                 call_data = json.loads(match.group(1))
-                tool_calls.append(call_data)
             except json.JSONDecodeError:
-                pass
+                continue
+            # A block without a tool name (a model that wrote only the arguments) is not a call:
+            # everything downstream reads call["name"].
+            call = self._normalize_tool_call(call_data)
+            if call is not None:
+                tool_calls.append(call)
 
         if tool_calls:
             return tool_calls
@@ -1222,6 +1233,26 @@ class ReportAgent:
                 pass
 
         return tool_calls
+
+    @staticmethod
+    def _normalize_tool_call(data: Any) -> Optional[Dict[str, Any]]:
+        """``{"name", "parameters"}`` for a parsed tag-format call, or None when it names no tool.
+
+        Accepts ``tool`` for ``name`` and ``params`` for ``parameters``. A tool name that is not one of ours
+        is kept: executing it answers with the list of valid tools, which is better feedback for the model
+        than silence. Only a call with no usable name at all is dropped.
+        """
+        if not isinstance(data, dict):
+            return None
+        name = data.get("name") or data.get("tool")
+        if not isinstance(name, str) or not name.strip():
+            return None
+        parameters = data.get("parameters", data.get("params"))
+        return {
+            **{k: v for k, v in data.items() if k not in ("tool", "params")},
+            "name": name.strip(),
+            "parameters": parameters if isinstance(parameters, dict) else {},
+        }
 
     def _is_valid_tool_call(self, data: dict) -> bool:
         """校验解析出的 JSON 是否是合法的工具调用"""
@@ -1455,6 +1486,7 @@ class ReportAgent:
         max_iterations = 5  # 最大迭代轮数
         min_tool_calls = 3  # 最少工具调用次数
         conflict_retries = 0  # 工具调用与Final Answer同时出现的连续冲突次数
+        malformed_retries = 0  # <tool_call> 写了但无法执行（如缺少工具名）而要求重写的次数
         used_tools = set()  # 记录已调用过的工具名
         all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
         if self.ensemble_id:
@@ -1541,6 +1573,17 @@ class ReportAgent:
                     has_tool_calls=has_tool_calls,
                     has_final_answer=has_final_answer
                 )
+
+            # ── <tool_call> 块无法执行（如没有工具名）：要求按格式重写，而不是当成正文 ──
+            if not has_tool_calls and not has_final_answer and "<tool_call>" in response and malformed_retries < 2:
+                malformed_retries += 1
+                logger.warning(f"Section '{section.title}': unusable <tool_call> (attempt {malformed_retries}), asking again")
+                messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
+                messages.append({
+                    "role": "user",
+                    "content": REACT_MALFORMED_TOOL_CALL_MSG.format(valid_tools=", ".join(sorted(all_tools))),
+                })
+                continue
 
             # ── 情况1：LLM 输出了 Final Answer ──
             if has_final_answer:

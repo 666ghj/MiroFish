@@ -823,7 +823,7 @@
     "progress": "已完成 {done}/{total} 次运行",
     "aggregating": "正在汇总各次运行的结果...",
     "partialNote": "只有 {ok}/{total} 次运行成功。汇总只基于这 {ok} 次，所以分布的可靠性较低。",
-    "failedNote": "成功的运行少于 2 次，无法汇总。请查看上面的错误信息。",
+    "failedNote": "成功的运行太少（多次运行的集合至少需要 2 次成功），无法汇总。请查看上面的错误信息。",
     "stoppedNote": "集合运行在完成前被停止，因此没有汇总结果。",
     "resultsTitle": "各次运行的结果汇总",
     "generateReport": "生成报告",

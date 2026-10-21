@@ -591,10 +591,12 @@ class EnsembleManager:
                 return
             final = cls._final_status(ensemble)
             if final == "failed":
-                ensemble.update(
-                    status="failed",
-                    error=f"fewer than {MIN_REPLICATES_TO_AGGREGATE} replicates completed; nothing to aggregate",
+                needed = min(MIN_REPLICATES_TO_AGGREGATE, len(ensemble["replicates"]))
+                reason = (
+                    f"fewer than {needed} replicates completed"
+                    if needed > 1 else "the run did not complete"
                 )
+                ensemble.update(status="failed", error=f"{reason}; nothing to aggregate")
                 cls._save(ensemble)
                 return
             ensemble["status"] = "aggregating"

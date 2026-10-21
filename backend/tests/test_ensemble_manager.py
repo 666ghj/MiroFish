@@ -892,3 +892,14 @@ def test_llm_concurrency_can_be_lowered_from_the_environment(monkeypatch, value,
     else:
         monkeypatch.setenv("LLM_MAX_CONCURRENCY", value)
     assert er._base_llm_semaphore() == expected
+
+
+def test_a_failed_single_run_ensemble_says_so_instead_of_asking_for_two(env, monkeypatch):
+    monkeypatch.setattr(er, "build_summary", lambda *a, **k: {"n": 1})
+    ensemble = create(env, n_replicates=1, concurrency=1)
+    EnsembleManager.start(ensemble["ensemble_id"])
+    drive(env, ensemble["ensemble_id"], {1: RunnerStatus.FAILED})
+
+    final = EnsembleManager._load(ensemble["ensemble_id"])
+    assert final["status"] == "failed"
+    assert "fewer than" not in final["error"] and "the run did not complete" in final["error"]

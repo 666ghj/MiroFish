@@ -823,7 +823,7 @@
     "progress": "{done} of {total} runs finished",
     "aggregating": "Summarising the results across runs...",
     "partialNote": "Only {ok} of {total} runs completed. The summary uses those {ok}, so the spread is less reliable.",
-    "failedNote": "Fewer than 2 runs completed, so there is nothing to summarise. See the errors above.",
+    "failedNote": "Too few runs completed (an ensemble of several runs needs at least 2), so there is nothing to summarise. See the errors above.",
     "stoppedNote": "The ensemble was stopped before it finished, so there is no summary.",
     "resultsTitle": "Results across runs",
     "generateReport": "Generate report",
