@@ -329,7 +329,9 @@ const scrollContainer = ref(null)
 // Computed
 // 按时间顺序显示动作（最新的在最后面，即底部）
 const chronologicalActions = computed(() => {
-  return allActions.value
+  // API batches arrive newest-first; sort a copy so poll storage stays unchanged.
+  // Stable sort preserves arrival order for simultaneous actions.
+  return [...allActions.value].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
 })
 
 // 各平台动作计数
