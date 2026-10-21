@@ -790,9 +790,15 @@ class SimulationRunner:
             graph_updater = ZepGraphMemoryManager.get_updater(state.simulation_id)
         
         try:
-            with open(log_path, 'r', encoding='utf-8') as f:
+            # Read complete byte lines only: the writer may still be appending
+            # a JSON record (including a partially written UTF-8 character).
+            with open(log_path, 'rb') as f:
                 f.seek(position)
-                for line in f:
+                while True:
+                    line = f.readline()
+                    if not line or not line.endswith(b'\n'):
+                        break
+                    position = f.tell()
                     line = line.strip()
                     if line:
                         try:
@@ -873,7 +879,7 @@ class SimulationRunner:
                             
                         except json.JSONDecodeError:
                             pass
-                return f.tell()
+                return position
         except Exception as e:
             logger.warning(f"读取动作日志失败: {log_path}, error={e}")
             return position
