@@ -26,5 +26,9 @@
   "de": {
     "label": "Deutsch",
     "llmInstruction": "Bitte antworten Sie auf Deutsch."
+  },
+  "tr": {
+    "label": "Türkçe",
+    "llmInstruction": "Çıktı dili Türkçedir. Önceki talimatların veya örneklerin dili ne olursa olsun kullanıcıya gösterilen tüm doğal dil metinlerini bağlama uygun, anlaşılır Türkçeyle üretin. Açıklamalar, işlem notları, analizler, raporlar, katılımcı profilleri, alt sorular ve araç parametrelerindeki query, report_context, interview_topic, interview_requirement, custom_questions gibi serbest metin değerleri de Türkçe olmalıdır. Çince düşünce veya açıklama eklemeyin. Özel adları, alıntıların özgün anlamını, sayıları, API adreslerini, araç adlarını, JSON anahtarlarını, teknik kimlikleri ve zorunlu şema/enum değerlerini değiştirmeyin. Tool-call, Final Answer: ve benzeri ayrıştırma işaretlerini aynen koruyun."
   }
 }
