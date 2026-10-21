@@ -1609,17 +1609,21 @@ class ZepToolsService:
                 temperature=0.3
             )
             
-            selected_indices = response.get("selected_indices", [])[:max_agents]
+            selected_indices = response.get("selected_indices", [])
+            if not isinstance(selected_indices, list):
+                raise ValueError("selected_indices must be a list")
             reasoning = response.get("reasoning", "基于相关性自动选择")
             
-            # 获取选中的Agent完整信息
-            selected_agents = []
+            # Validate and deduplicate before applying the interview budget.
+            # Repeated model choices must not become repeated evidence rows.
             valid_indices = []
+            seen_indices = set()
             for idx in selected_indices:
-                if 0 <= idx < len(profiles):
-                    selected_agents.append(profiles[idx])
+                if type(idx) is int and 0 <= idx < len(profiles) and idx not in seen_indices:
                     valid_indices.append(idx)
-            
+                    seen_indices.add(idx)
+            valid_indices = valid_indices[:max_agents]
+            selected_agents = [profiles[idx] for idx in valid_indices]
             return selected_agents, valid_indices, reasoning
             
         except Exception as e:
