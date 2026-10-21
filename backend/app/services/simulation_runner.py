@@ -1298,7 +1298,8 @@ class SimulationRunner:
             
             r["active_agents"].add(action.agent_id)
             r["action_types"][action.action_type] = r["action_types"].get(action.action_type, 0) + 1
-            r["last_action_time"] = action.timestamp
+            r["first_action_time"] = min(r["first_action_time"], action.timestamp)
+            r["last_action_time"] = max(r["last_action_time"], action.timestamp)
         
         # 转换为列表
         result = []
@@ -1354,7 +1355,8 @@ class SimulationRunner:
                 stats["reddit_actions"] += 1
             
             stats["action_types"][action.action_type] = stats["action_types"].get(action.action_type, 0) + 1
-            stats["last_action_time"] = action.timestamp
+            stats["first_action_time"] = min(stats["first_action_time"], action.timestamp)
+            stats["last_action_time"] = max(stats["last_action_time"], action.timestamp)
         
         # 按总动作数排序
         result = sorted(agent_stats.values(), key=lambda x: x["total_actions"], reverse=True)
