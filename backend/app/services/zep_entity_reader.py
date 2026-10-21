@@ -247,6 +247,15 @@ class ZepEntityReader:
         
         # 获取所有边（用于后续关联查找）
         all_edges = self.get_all_edges(graph_id) if enrich_with_edges else []
+        # Index both endpoints once instead of scanning the full graph for every
+        # entity. Keep insertion order and include self-edges only once.
+        edges_by_node: Dict[str, List[Dict[str, Any]]] = {}
+        for edge in all_edges:
+            source = edge["source_node_uuid"]
+            target = edge["target_node_uuid"]
+            edges_by_node.setdefault(source, []).append(edge)
+            if target != source:
+                edges_by_node.setdefault(target, []).append(edge)
         
         # 构建节点UUID到节点数据的映射
         node_map = {n["uuid"]: n for n in all_nodes}
@@ -290,7 +299,7 @@ class ZepEntityReader:
                 related_edges = []
                 related_node_uuids = set()
                 
-                for edge in all_edges:
+                for edge in edges_by_node.get(node["uuid"], []):
                     if edge["source_node_uuid"] == node["uuid"]:
                         related_edges.append({
                             "direction": "outgoing",
