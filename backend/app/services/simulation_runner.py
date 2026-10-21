@@ -2023,9 +2023,11 @@ class SimulationRunner:
             )
             results.extend(platform_results)
         
-        # 按时间降序排序
-        results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        
+        # The platform clocks are incomparable: Twitter stores simulation
+        # steps, while Reddit stores simulated datetimes. Preserve each query's
+        # local ordering and the deterministic Twitter-then-Reddit groups.
+        # A combined limit can therefore favor the first platform.
+
         # 如果查询了多个平台，限制总数
         if len(platforms) > 1 and len(results) > limit:
             results = results[:limit]

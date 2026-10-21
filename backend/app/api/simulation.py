@@ -2678,6 +2678,10 @@ def get_interview_history():
 
     从模拟数据库中读取所有Interview记录
 
+    Both-platform results preserve each platform's local order and are grouped
+    Twitter then Reddit. Their simulation clocks do not define a shared global
+    chronology. The combined limit may prioritize the first platform.
+
     请求（JSON）：
         {
             "simulation_id": "sim_xxxx",  // 必填，模拟ID
@@ -2730,7 +2734,8 @@ def get_interview_history():
             "success": True,
             "data": {
                 "count": len(history),
-                "history": history
+                "history": history,
+                "ordering": "platform_local" if platform in ("twitter", "reddit") else "platform_grouped"
             }
         })
 
