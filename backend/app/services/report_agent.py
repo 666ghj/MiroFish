@@ -13,6 +13,7 @@ import os
 import json
 import time
 import re
+import tempfile
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -2124,6 +2125,24 @@ class ReportManager:
         result = cls.get_agent_log(report_id, from_line=0)
         return result["logs"]
     
+    @staticmethod
+    def _write_json(path: str, data: Dict[str, Any]) -> None:
+        """Replace one report JSON file only after the complete write succeeds."""
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w', encoding='utf-8', dir=os.path.dirname(path),
+                prefix='.', suffix='.tmp', delete=False
+            ) as stream:
+                temporary_path = stream.name
+                json.dump(data, stream, ensure_ascii=False, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_path, path)
+        finally:
+            if temporary_path is not None and os.path.exists(temporary_path):
+                os.remove(temporary_path)
+
     @classmethod
     def save_outline(cls, report_id: str, outline: ReportOutline) -> None:
         """
@@ -2133,8 +2152,7 @@ class ReportManager:
         """
         cls._ensure_report_folder(report_id)
         
-        with open(cls._get_outline_path(report_id), 'w', encoding='utf-8') as f:
-            json.dump(outline.to_dict(), f, ensure_ascii=False, indent=2)
+        cls._write_json(cls._get_outline_path(report_id), outline.to_dict())
         
         logger.info(t('report.outlineSaved', reportId=report_id))
     
@@ -2269,8 +2287,7 @@ class ReportManager:
             "updated_at": datetime.now().isoformat()
         }
         
-        with open(cls._get_progress_path(report_id), 'w', encoding='utf-8') as f:
-            json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        cls._write_json(cls._get_progress_path(report_id), progress_data)
     
     @classmethod
     def get_progress(cls, report_id: str) -> Optional[Dict[str, Any]]:
@@ -2476,8 +2493,7 @@ class ReportManager:
         cls._ensure_report_folder(report.report_id)
         
         # 保存元信息JSON
-        with open(cls._get_report_path(report.report_id), 'w', encoding='utf-8') as f:
-            json.dump(report.to_dict(), f, ensure_ascii=False, indent=2)
+        cls._write_json(cls._get_report_path(report.report_id), report.to_dict())
         
         # 保存大纲
         if report.outline:
