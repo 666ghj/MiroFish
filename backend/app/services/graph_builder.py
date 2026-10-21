@@ -321,10 +321,21 @@ class GraphBuilderService:
         # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略
         warnings.filterwarnings('ignore', category=UserWarning, module='pydantic')
         
-        def safe_attr_name(attr_name: str) -> str:
-            """将保留名称转换为安全名称"""
-            if attr_name.lower() in RESERVED_ONTOLOGY_ATTRIBUTE_NAMES:
-                return f"entity_{attr_name}"
+        def safe_attr_name(attr_name: str, model_class, attribute_names: set[str]) -> str:
+            """Alias reserved fields without overwriting original attribute names."""
+            if (
+                attr_name.lower() in RESERVED_ONTOLOGY_ATTRIBUTE_NAMES
+                or attr_name.startswith("_")
+                or hasattr(model_class, attr_name)
+            ):
+                base_name = f"entity_{attr_name.lstrip('_') or 'field'}"
+                candidate = base_name
+                suffix = 2
+                while candidate in attribute_names:
+                    candidate = f"{base_name}_{suffix}"
+                    suffix += 1
+                attribute_names.add(candidate)
+                return candidate
             return attr_name
         
         # 动态创建实体类型
@@ -337,10 +348,12 @@ class GraphBuilderService:
             attrs = {"__doc__": description}
             annotations = {}
             
-            for normalized in normalize_ontology_attributes(
+            attribute_definitions = normalize_ontology_attributes(
                 entity_def.get("attributes", [])
-            ):
-                attr_name = safe_attr_name(normalized["name"])  # 使用安全名称
+            )
+            attribute_names = {attribute["name"] for attribute in attribute_definitions}
+            for normalized in attribute_definitions:
+                attr_name = safe_attr_name(normalized["name"], EntityModel, attribute_names)
                 attr_desc = normalized["description"]
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
@@ -363,10 +376,12 @@ class GraphBuilderService:
             attrs = {"__doc__": description}
             annotations = {}
             
-            for normalized in normalize_ontology_attributes(
+            attribute_definitions = normalize_ontology_attributes(
                 edge_def.get("attributes", [])
-            ):
-                attr_name = safe_attr_name(normalized["name"])  # 使用安全名称
+            )
+            attribute_names = {attribute["name"] for attribute in attribute_definitions}
+            for normalized in attribute_definitions:
+                attr_name = safe_attr_name(normalized["name"], EdgeModel, attribute_names)
                 attr_desc = normalized["description"]
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
