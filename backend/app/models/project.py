@@ -7,6 +7,7 @@ import os
 import json
 import uuid
 import shutil
+import tempfile
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from enum import Enum
@@ -176,8 +177,19 @@ class ProjectManager:
         project.updated_at = datetime.now().isoformat()
         meta_path = cls._get_project_meta_path(project.project_id)
         
-        with open(meta_path, 'w', encoding='utf-8') as f:
-            json.dump(project.to_dict(), f, ensure_ascii=False, indent=2)
+        # Keep the previous snapshot readable until the complete update is written.
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w', encoding='utf-8', dir=os.path.dirname(meta_path),
+                prefix='.project-', suffix='.tmp', delete=False
+            ) as f:
+                temporary_path = f.name
+                json.dump(project.to_dict(), f, ensure_ascii=False, indent=2)
+            os.replace(temporary_path, meta_path)
+        finally:
+            if temporary_path is not None and os.path.exists(temporary_path):
+                os.unlink(temporary_path)
     
     @classmethod
     def get_project(cls, project_id: str) -> Optional[Project]:
