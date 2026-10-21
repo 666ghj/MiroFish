@@ -68,3 +68,58 @@ def test_ontology_api_does_not_expose_provider_error_body(tmp_path, monkeypatch)
     assert "request-safe-id" in response.json["error"]
     assert "SECRET-PROVIDER-BODY" not in response.get_data(as_text=True)
     assert "traceback" not in response.json
+
+
+def test_ontology_api_rejects_blank_files_before_calling_the_llm(tmp_path, monkeypatch):
+    calls = []
+
+    class RecordingGenerator:
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return {"entity_types": [], "edge_types": [], "analysis_summary": "ok"}
+
+    monkeypatch.setattr(ProjectManager, "PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setattr(graph_api, "OntologyGenerator", RecordingGenerator)
+    app = create_app()
+    app.config.update(TESTING=True)
+    response = app.test_client().post(
+        "/api/graph/ontology/generate",
+        data={"simulation_requirement": "Simulate the discussion.",
+              "files": [(io.BytesIO(b""), "empty.txt"),
+                        (io.BytesIO(b" \r\n\t "), "blank.md")]},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert response.json["success"] is False
+    assert calls == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_ontology_api_ignores_blank_text_when_other_documents_have_content(
+    tmp_path, monkeypatch,
+):
+    calls = []
+
+    class RecordingGenerator:
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return {"entity_types": [], "edge_types": [], "analysis_summary": "ok"}
+
+    monkeypatch.setattr(ProjectManager, "PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setattr(graph_api, "OntologyGenerator", RecordingGenerator)
+    app = create_app()
+    app.config.update(TESTING=True)
+    response = app.test_client().post(
+        "/api/graph/ontology/generate",
+        data={"simulation_requirement": "Simulate the discussion.",
+              "files": [(io.BytesIO(b""), "empty.txt"),
+                        (io.BytesIO(b"Actual source text."), "source.md")]},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["document_texts"] == ["Actual source text."]
+    text = ProjectManager.get_extracted_text(response.json["data"]["project_id"])
+    assert "source.md" in text
+    assert "empty.txt" not in text
