@@ -910,6 +910,7 @@ def get_agent_log(report_id: str):
                 ],
                 "total_lines": 25,
                 "from_line": 0,
+                "next_line": 25,
                 "has_more": false
             }
         }

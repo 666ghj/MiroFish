@@ -2065,8 +2065,6 @@ const fetchAgentLog = async () => {
           }
         })
         
-        agentLogLine.value = res.data.from_line + newLogs.length
-        
         nextTick(() => {
           if (rightPanel.value) {
             // 如果任务已完成，滚动到顶部；否则滚动到底部跟随最新日志
@@ -2078,6 +2076,8 @@ const fetchAgentLog = async () => {
           }
         })
       }
+      // JSONL positions count physical lines, including malformed records.
+      agentLogLine.value = res.data.next_line ?? (res.data.from_line + newLogs.length)
     }
   } catch (err) {
     console.warn('Failed to fetch agent log:', err)
