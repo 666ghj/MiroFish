@@ -797,16 +797,25 @@ watch(showEdgeLabels, (newVal) => {
   }
 })
 
+let resizeObserver = null
+
 const handleResize = () => {
   nextTick(renderGraph)
 }
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  // Panel toggles change the container without resizing the browser window.
+  if (typeof ResizeObserver !== 'undefined' && graphContainer.value) {
+    resizeObserver = new ResizeObserver(handleResize)
+    resizeObserver.observe(graphContainer.value)
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   if (currentSimulation) {
     currentSimulation.stop()
   }
