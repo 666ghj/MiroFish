@@ -2854,7 +2854,7 @@ def close_simulation_env():
         # 更新模拟状态
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        if state:
+        if state and result.get("success"):
             state.status = SimulationStatus.COMPLETED
             manager._save_simulation_state(state)
         
@@ -2869,6 +2869,12 @@ def close_simulation_env():
             "error": str(e)
         }), 400
         
+    except TimeoutError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 504
+
     except Exception as e:
         logger.error(f"关闭环境失败: {str(e)}")
         return jsonify({

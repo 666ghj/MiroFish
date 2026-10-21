@@ -1905,22 +1905,17 @@ class SimulationRunner:
         
         logger.info(f"发送关闭环境命令: simulation_id={simulation_id}")
         
-        try:
-            response = ipc_client.send_close_env(timeout=timeout)
-            
-            return {
-                "success": response.status.value == "completed",
-                "message": "环境关闭命令已发送",
-                "result": response.result,
-                "timestamp": response.timestamp
-            }
-        except TimeoutError:
-            # 超时可能是因为环境正在关闭
-            return {
-                "success": True,
-                "message": "环境关闭命令已发送（等待响应超时，环境可能正在关闭）"
-            }
-    
+        # A timeout cannot confirm command delivery: send_command removes the
+        # pending command. Let the API report that uncertainty to the caller.
+        response = ipc_client.send_close_env(timeout=timeout)
+
+        return {
+            "success": response.status.value == "completed",
+            "message": "环境关闭命令已发送",
+            "result": response.result,
+            "timestamp": response.timestamp
+        }
+
     @classmethod
     def _get_interview_history_from_db(
         cls,
