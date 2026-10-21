@@ -783,7 +783,43 @@ const renderGraph = () => {
   })
 }
 
+const refreshSelectedItem = () => {
+  const selection = selectedItem.value
+  if (!selection) return
+
+  const nodes = props.graphData?.nodes || []
+  if (selection.type === 'node') {
+    const node = nodes.find(item => item.uuid === selection.data.uuid)
+    if (node) {
+      const type = node.labels?.find(label => label !== 'Entity') || 'Entity'
+      selectedItem.value = {
+        ...selection,
+        data: node,
+        entityType: type,
+        color: entityTypes.value.find(item => item.name === type)?.color || '#999'
+      }
+      return
+    }
+  } else if (!selection.data.isSelfLoopGroup) {
+    const edge = props.graphData?.edges?.find(item => item.uuid === selection.data.uuid)
+    if (edge && nodes.some(node => node.uuid === edge.source_node_uuid) &&
+        nodes.some(node => node.uuid === edge.target_node_uuid)) {
+      selectedItem.value = {
+        ...selection,
+        data: {
+          ...edge,
+          source_name: nodes.find(node => node.uuid === edge.source_node_uuid)?.name,
+          target_name: nodes.find(node => node.uuid === edge.target_node_uuid)?.name
+        }
+      }
+      return
+    }
+  }
+  closeDetailPanel()
+}
+
 watch(() => props.graphData, () => {
+  refreshSelectedItem()
   nextTick(renderGraph)
 }, { deep: true })
 
