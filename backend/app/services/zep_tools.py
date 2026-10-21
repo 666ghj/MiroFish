@@ -1018,6 +1018,7 @@ class ZepToolsService:
                 all_facts.append(fact)
                 seen_facts.add(fact)
         
+        all_edges.extend(main_search.edges)
         result.semantic_facts = all_facts
         result.total_facts = len(all_facts)
         
