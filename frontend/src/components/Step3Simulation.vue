@@ -448,6 +448,9 @@ const handleStopSimulation = async () => {
     const res = await stopSimulation({ simulation_id: props.simulationId })
     
     if (res.success) {
+      if (['completed', 'stopped', 'failed'].includes(res.data?.runner_status)) {
+        fetchRunStatusDetail()
+      }
       addLog(t('log.simStoppedSuccess'))
       phase.value = 2
       stopPolling()
@@ -514,6 +517,10 @@ const fetchRunStatus = async () => {
       // 检测模拟是否已完成（通过 runner_status 或平台完成状态判断）
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
       const isFailed = data.runner_status === 'failed'
+
+      // Capture the final log tail before periodic detail polling is cleared.
+      // The terminal UI must not wait on a slow or failed detail request.
+      if (isFailed || isCompleted) fetchRunStatusDetail()
       
       // runner_status is authoritative because the backend only publishes a
       // terminal state after the Zep ingestion barrier has completed.
