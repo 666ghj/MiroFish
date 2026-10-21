@@ -341,6 +341,8 @@ def generate_ontology():
                 # 提取文本
                 text = FileParser.extract_text(file_info["path"])
                 text = TextProcessor.preprocess_text(text)
+                if not text:
+                    continue
                 document_texts.append(text)
                 all_text += f"\n\n=== {file_info['original_filename']} ===\n{text}"
         
