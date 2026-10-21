@@ -805,13 +805,15 @@ const clearAgentSelection = () => {
 const submitSurvey = async () => {
   if (selectedAgents.value.size === 0 || !surveyQuestion.value.trim()) return
   
+  // Keep result labels tied to the question actually sent, even if the user edits it.
+  const question = surveyQuestion.value.trim()
   isSurveying.value = true
   addLog(t('log.sendSurvey', { count: selectedAgents.value.size }))
   
   try {
     const interviews = Array.from(selectedAgents.value).map(idx => ({
       agent_id: idx,
-      prompt: surveyQuestion.value.trim()
+      prompt: question
     }))
     
     const res = await interviewAgents({
@@ -854,7 +856,7 @@ const submitSurvey = async () => {
           agent_id: agentIdx,
           agent_name: agent?.username || `Agent ${agentIdx}`,
           profession: agent?.profession,
-          question: surveyQuestion.value.trim(),
+          question: question,
           answer: responseContent
         })
       }
