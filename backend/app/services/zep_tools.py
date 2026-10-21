@@ -1407,10 +1407,14 @@ class ZepToolsService:
                 
                 twitter_response = twitter_result.get("response", "")
                 reddit_response = reddit_result.get("response", "")
+                twitter_response = twitter_response if isinstance(twitter_response, str) else ""
+                reddit_response = reddit_response if isinstance(reddit_response, str) else ""
 
                 # 清理可能的工具调用 JSON 包裹
                 twitter_response = self._clean_tool_call_response(twitter_response)
                 reddit_response = self._clean_tool_call_response(reddit_response)
+                if not twitter_response.strip() and not reddit_response.strip():
+                    continue
 
                 # 始终输出双平台标记
                 twitter_text = twitter_response if twitter_response else "（该平台未获得回复）"
@@ -1470,6 +1474,8 @@ class ZepToolsService:
             return result
         
         # Step 6: 生成采访摘要
+        if not result.interviews:
+            result.summary = "未获得有效的Agent采访回复，请检查模拟环境状态后重试。"
         if result.interviews:
             result.summary = self._generate_interview_summary(
                 interviews=result.interviews,
