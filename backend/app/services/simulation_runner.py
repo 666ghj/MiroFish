@@ -1265,7 +1265,7 @@ class SimulationRunner:
         Returns:
             每轮的汇总信息
         """
-        actions = cls.get_actions(simulation_id, limit=10000)
+        actions = cls.get_all_actions(simulation_id)
         
         # 按轮次分组
         rounds: Dict[int, Dict[str, Any]] = {}
@@ -1326,7 +1326,7 @@ class SimulationRunner:
         Returns:
             Agent统计列表
         """
-        actions = cls.get_actions(simulation_id, limit=10000)
+        actions = cls.get_all_actions(simulation_id)
         
         agent_stats: Dict[int, Dict[str, Any]] = {}
         
