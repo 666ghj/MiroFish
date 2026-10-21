@@ -50,7 +50,8 @@ def test_attribute_list_is_non_empty_and_capped_for_zep():
 def test_generator_normalizes_entity_and_edge_attributes():
     result = OntologyGenerator(llm_client=object())._validate_and_process({
         "entity_types": [{"name": "speaker", "attributes": ["role", None]}],
-        "edge_types": [{"name": "quotes", "attributes": ["source_url", {}]}],
+        "edge_types": [{"name": "quotes", "attributes": ["source_url", {}],
+                        "source_targets": [{"source": "speaker", "target": "speaker"}]}],
     })
 
     assert result["entity_types"][0]["attributes"] == [{
@@ -68,7 +69,8 @@ def test_generator_normalizes_entity_and_edge_attributes():
 def test_generator_adds_a_property_to_empty_custom_types():
     result = OntologyGenerator(llm_client=object())._validate_and_process({
         "entity_types": [{"name": "speaker", "attributes": []}],
-        "edge_types": [{"name": "quotes", "attributes": []}],
+        "edge_types": [{"name": "quotes", "attributes": [],
+                        "source_targets": [{"source": "speaker", "target": "speaker"}]}],
     })
 
     assert result["entity_types"][0]["attributes"][0]["name"] == "details"

@@ -605,6 +605,9 @@ class OntologyGenerator:
             edge["source_targets"] = normalize_ontology_source_targets(
                 normalized_targets
             )
+            if not edge["source_targets"]:
+                logger.warning("Ignoring ontology edge without valid endpoints: %s", normalized_name)
+                continue
             edge["attributes"] = normalize_ontology_attributes(
                 edge.get("attributes", [])
             )
