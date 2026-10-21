@@ -720,10 +720,29 @@ class SimulationConfigGenerator:
     
     def _parse_event_config(self, result: Dict[str, Any]) -> EventConfig:
         """解析事件配置结果"""
+        initial_posts = result.get("initial_posts")
+        valid_posts = []
+        if isinstance(initial_posts, list):
+            for post in initial_posts:
+                if not isinstance(post, dict):
+                    continue
+                content = post.get("content")
+                if not isinstance(content, str) or not content.strip():
+                    continue
+                valid_post = dict(post)
+                if not isinstance(valid_post.get("poster_type"), str):
+                    valid_post["poster_type"] = ""
+                valid_posts.append(valid_post)
+
+        hot_topics = result.get("hot_topics")
+        valid_topics = (
+            [topic for topic in hot_topics if isinstance(topic, str) and topic.strip()]
+            if isinstance(hot_topics, list) else []
+        )
         return EventConfig(
-            initial_posts=result.get("initial_posts", []),
+            initial_posts=valid_posts,
             scheduled_events=[],
-            hot_topics=result.get("hot_topics", []),
+            hot_topics=valid_topics,
             narrative_direction=result.get("narrative_direction", "")
         )
     
