@@ -346,16 +346,16 @@ const pollTaskStatus = async (taskId) => {
       buildProgress.value = { progress: task.progress || 0, message: task.message }
       
       if (task.status === 'completed') {
-        addLog('Graph build task completed.')
-        stopPolling()
-        stopGraphPolling() // Stop polling, do final load
-        currentPhase.value = 2
-        
-        // Final load
+        // Keep the existing task poll alive until final project metadata is usable.
+        // A transient GET failure must not strand a Ready view without a graph ID.
         const projRes = await getProject(currentProjectId.value)
-        if (projRes.success && projRes.data.graph_id) {
-            projectData.value = projRes.data
-            await loadGraph(projRes.data.graph_id)
+        if (projRes.success && projRes.data?.graph_id) {
+          projectData.value = projRes.data
+          addLog('Graph build task completed.')
+          stopPolling()
+          stopGraphPolling()
+          currentPhase.value = 2
+          await loadGraph(projRes.data.graph_id)
         }
       } else if (task.status === 'failed') {
         stopPolling()
