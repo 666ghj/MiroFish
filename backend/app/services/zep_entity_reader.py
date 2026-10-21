@@ -280,7 +280,10 @@ class ZepEntityReader:
             entity = EntityNode(
                 uuid=node["uuid"],
                 name=node["name"],
-                labels=labels,
+                labels=(
+                    [entity_type] + [label for label in labels if label != entity_type]
+                    if defined_entity_types else labels
+                ),
                 summary=node["summary"],
                 attributes=node["attributes"],
             )

@@ -42,3 +42,40 @@ def test_get_node_edges_uses_the_supported_sdk_method():
         "attributes": {"since": "2024"},
     }]
     assert calls == ["node-1"]
+
+
+def test_filtered_type_reaches_the_generated_profile_without_mutating_graph_labels():
+    from app.services.oasis_profile_generator import OasisProfileGenerator
+
+    original_labels = ["Entity", "Person", "Organization"]
+    reader = object.__new__(ZepEntityReader)
+    reader.get_all_nodes = lambda graph_id: [{
+        "uuid": "node-1", "name": "Acme", "labels": original_labels,
+        "summary": "An organization", "attributes": {},
+    }]
+    result = reader.filter_defined_entities(
+        "graph-1", defined_entity_types=["Organization"], enrich_with_edges=False,
+    )
+
+    assert result.entity_types == {"Organization"}
+    entity = result.entities[0]
+    assert entity.get_entity_type() == "Organization"
+    assert set(entity.labels) == set(original_labels)
+    assert original_labels == ["Entity", "Person", "Organization"]
+    generator = object.__new__(OasisProfileGenerator)
+    generator.zep_client = None
+    profile = generator.generate_profile_from_entity(entity, user_id=0, use_llm=False)
+    assert profile.source_entity_type == "Organization"
+
+
+def test_unfiltered_entities_keep_the_original_type_and_label_order():
+    original_labels = ["Entity", "Person", "Organization"]
+    reader = object.__new__(ZepEntityReader)
+    reader.get_all_nodes = lambda graph_id: [{
+        "uuid": "node-1", "name": "Acme", "labels": original_labels,
+        "summary": "An entity", "attributes": {},
+    }]
+    result = reader.filter_defined_entities("graph-1", enrich_with_edges=False)
+
+    assert result.entities[0].get_entity_type() == "Person"
+    assert result.entities[0].labels == original_labels
