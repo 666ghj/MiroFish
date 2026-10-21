@@ -344,7 +344,12 @@ class SimulationIPCServer:
         for filename in os.listdir(self.commands_dir):
             if filename.endswith('.json'):
                 filepath = os.path.join(self.commands_dir, filename)
-                command_files.append((filepath, os.path.getmtime(filepath)))
+                try:
+                    modified_at = os.path.getmtime(filepath)
+                except FileNotFoundError:
+                    # A timed-out client can remove its command after listdir.
+                    continue
+                command_files.append((filepath, modified_at))
         
         command_files.sort(key=lambda x: x[1])
         
