@@ -29,6 +29,13 @@ from ..utils.zep import (
 logger = get_logger('mirofish.zep_tools')
 
 
+def _generated_text_items(value: Any) -> List[str]:
+    """Keep only nonblank strings from a generated JSON array, in order."""
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
 @dataclass
 class SearchResult:
     """搜索结果"""
@@ -1126,9 +1133,10 @@ class ZepToolsService:
                 temperature=0.3
             )
             
-            sub_queries = response.get("sub_queries", [])
-            # 确保是字符串列表
-            return [str(sq) for sq in sub_queries[:max_queries]]
+            sub_queries = _generated_text_items(response.get("sub_queries"))
+            if not sub_queries:
+                raise ValueError("No usable generated search queries")
+            return sub_queries[:max_queries]
             
         except Exception as e:
             logger.warning(t("console.generateSubQueriesFailed", error=str(e)))
@@ -1668,7 +1676,12 @@ class ZepToolsService:
                 temperature=0.5
             )
             
-            return response.get("questions", [f"关于{interview_requirement}，您有什么看法？"])
+            questions = _generated_text_items(response.get(
+                "questions", [f"关于{interview_requirement}，您有什么看法？"]
+            ))
+            if not questions:
+                raise ValueError("No usable generated interview questions")
+            return questions
             
         except Exception as e:
             logger.warning(t("console.generateInterviewQuestionsFailed", error=e))
