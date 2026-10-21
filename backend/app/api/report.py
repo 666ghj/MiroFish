@@ -347,8 +347,8 @@ def get_generate_status():
         task_id = data.get('task_id')
         simulation_id = data.get('simulation_id')
         
-        # 如果提供了simulation_id，先检查是否已有完成的报告
-        if simulation_id:
+        # An explicit task tracks regeneration even when an older report exists.
+        if simulation_id and not task_id:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
             if existing_report and existing_report.status == ReportStatus.COMPLETED:
                 return jsonify({
