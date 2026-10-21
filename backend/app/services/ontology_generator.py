@@ -518,34 +518,25 @@ class OntologyGenerator:
             "examples": ["small business", "community group"]
         }
         
-        # 检查是否已有兜底类型
-        entity_names = {e["name"] for e in result["entity_types"]}
-        has_person = "Person" in entity_names
-        has_organization = "Organization" in entity_names
-        
-        # 需要添加的兜底类型
-        fallbacks_to_add = []
-        if not has_person:
-            fallbacks_to_add.append(person_fallback)
-        if not has_organization:
-            fallbacks_to_add.append(organization_fallback)
-        
-        if fallbacks_to_add:
-            current_count = len(result["entity_types"])
-            needed_slots = len(fallbacks_to_add)
-            
-            # 如果添加后会超过 10 个，需要移除一些现有类型
-            if current_count + needed_slots > MAX_ONTOLOGY_TYPES:
-                # 计算需要移除多少个
-                to_remove = current_count + needed_slots - MAX_ONTOLOGY_TYPES
-                # 从末尾移除（保留前面更重要的具体类型）
-                result["entity_types"] = result["entity_types"][:-to_remove]
-            
-            # 添加兜底类型
-            result["entity_types"].extend(fallbacks_to_add)
-        
-        # 最终确保不超过限制（防御性编程）
-        result["entity_types"] = result["entity_types"][:MAX_ONTOLOGY_TYPES]
+        # Reserve space for both fallback types before capping specific types.
+        # An existing fallback may appear at the end of the LLM response; a
+        # positional truncation would remove it after deciding it already exists.
+        fallbacks = [person_fallback, organization_fallback]
+        fallback_names = {entity["name"] for entity in fallbacks}
+        specific_names = [
+            entity["name"] for entity in result["entity_types"]
+            if entity["name"] not in fallback_names
+        ][:MAX_ONTOLOGY_TYPES - len(fallbacks)]
+        retained_names = fallback_names | set(specific_names)
+        result["entity_types"] = [
+            entity for entity in result["entity_types"]
+            if entity["name"] in retained_names
+        ]
+        entity_names = {entity["name"] for entity in result["entity_types"]}
+        result["entity_types"].extend(
+            fallback for fallback in fallbacks
+            if fallback["name"] not in entity_names
+        )
 
         # Resolve edge endpoints only after entity fallback/capping, so an edge
         # cannot refer to a type that was removed to satisfy Zep's limits.

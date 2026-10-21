@@ -77,3 +77,78 @@ def test_ontology_generation_does_not_cap_structured_output_tokens():
     assert result["analysis_summary"] == "ok"
     assert llm.calls[0]["max_tokens"] is None
     assert llm.calls[0]["max_attempts"] == 2
+
+
+def test_entity_cap_preserves_an_existing_person_fallback_and_its_edges():
+    generator = _generator_for_test()
+    person = {"name": "Person", "description": "Original person description"}
+    result = generator._validate_and_process({
+        "entity_types": [{"name": f"Type{i}"} for i in range(9)] + [person],
+        "edge_types": [{
+            "name": "WORKS_FOR",
+            "source_targets": [{"source": "Person", "target": "Organization"}],
+        }],
+    })
+
+    entities = {entity["name"]: entity for entity in result["entity_types"]}
+    assert len(entities) == 10
+    assert {"Person", "Organization"} <= entities.keys()
+    assert entities["Person"]["description"] == person["description"]
+    assert result["edge_types"][0]["source_targets"] == [
+        {"source": "Person", "target": "Organization"}
+    ]
+    assert "Type7" in entities
+    assert "Type8" not in entities
+
+
+def test_entity_cap_preserves_both_existing_fallbacks_beyond_the_cap():
+    generator = _generator_for_test()
+    result = generator._validate_and_process({
+        "entity_types": [{"name": f"Type{i}"} for i in range(10)] + [
+            {"name": "Person"}, {"name": "Organization"},
+        ],
+        "edge_types": [],
+    })
+
+    assert [entity["name"] for entity in result["entity_types"]] == [
+        *[f"Type{i}" for i in range(8)], "Person", "Organization",
+    ]
+
+
+def test_entity_cap_preserves_an_existing_organization_fallback():
+    generator = _generator_for_test()
+    result = generator._validate_and_process({
+        "entity_types": [{"name": f"Type{i}"} for i in range(9)] + [
+            {"name": "Organization"},
+        ],
+        "edge_types": [],
+    })
+
+    names = [entity["name"] for entity in result["entity_types"]]
+    assert len(names) == 10
+    assert names[-2:] == ["Organization", "Person"]
+
+
+def test_entity_cap_adds_missing_fallbacks_without_changing_specific_type_order():
+    generator = _generator_for_test()
+    result = generator._validate_and_process({
+        "entity_types": [{"name": f"Type{i}"} for i in range(11)],
+        "edge_types": [],
+    })
+
+    assert [entity["name"] for entity in result["entity_types"]] == [
+        *[f"Type{i}" for i in range(8)], "Person", "Organization",
+    ]
+
+
+def test_entity_cap_keeps_existing_types_unchanged_when_they_fit():
+    generator = _generator_for_test()
+    result = generator._validate_and_process({
+        "entity_types": [{"name": "Person"}, {"name": "Company"},
+                         {"name": "Organization"}],
+        "edge_types": [],
+    })
+
+    assert [entity["name"] for entity in result["entity_types"]] == [
+        "Person", "Company", "Organization",
+    ]
