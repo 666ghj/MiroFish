@@ -34,6 +34,7 @@ class PlatformActionLogger:
         self.base_dir = base_dir
         self.log_dir = os.path.join(base_dir, platform)
         self.log_path = os.path.join(self.log_dir, "actions.jsonl")
+        self.minutes_per_round = 30
         self._ensure_dir()
     
     def _ensure_dir(self):
@@ -84,6 +85,7 @@ class PlatformActionLogger:
             "timestamp": datetime.now().isoformat(),
             "event_type": "round_end",
             "actions_count": actions_count,
+            "simulated_hours": round_num * self.minutes_per_round / 60,
         }
         
         with open(self.log_path, 'a', encoding='utf-8') as f:
@@ -91,11 +93,13 @@ class PlatformActionLogger:
     
     def log_simulation_start(self, config: Dict[str, Any]):
         """记录模拟开始"""
+        time_config = config.get("time_config", {})
+        self.minutes_per_round = time_config.get("minutes_per_round", 30)
         entry = {
             "timestamp": datetime.now().isoformat(),
             "event_type": "simulation_start",
             "platform": self.platform,
-            "total_rounds": config.get("time_config", {}).get("total_simulation_hours", 72) * 2,
+            "total_rounds": (time_config.get("total_simulation_hours", 72) * 60) // self.minutes_per_round,
             "agents_count": len(config.get("agent_configs", [])),
         }
         
