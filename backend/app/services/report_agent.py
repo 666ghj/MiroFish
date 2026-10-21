@@ -2076,6 +2076,7 @@ class ReportManager:
                 "logs": [日志条目列表],
                 "total_lines": 总行数,
                 "from_line": 起始行号,
+                "next_line": 下次读取的物理行号（不消耗未写完的行）,
                 "has_more": 是否还有更多日志
             }
         """
@@ -2086,16 +2087,22 @@ class ReportManager:
                 "logs": [],
                 "total_lines": 0,
                 "from_line": 0,
+                "next_line": 0,
                 "has_more": False
             }
         
         logs = []
         total_lines = 0
+        next_line = from_line
         
         with open(log_path, 'r', encoding='utf-8') as f:
             for i, line in enumerate(f):
                 total_lines = i + 1
                 if i >= from_line:
+                    # A writer may not have finished the final JSONL record yet.
+                    if not line.endswith("\n"):
+                        break
+                    next_line = i + 1
                     try:
                         log_entry = json.loads(line.strip())
                         logs.append(log_entry)
@@ -2107,6 +2114,7 @@ class ReportManager:
             "logs": logs,
             "total_lines": total_lines,
             "from_line": from_line,
+            "next_line": next_line,
             "has_more": False  # 已读取到末尾
         }
     
