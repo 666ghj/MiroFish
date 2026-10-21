@@ -499,3 +499,53 @@ def test_installed_sdk_serializes_the_batch_325_contract():
         "source_description": "MiroFish source document chunk",
         "type": "graph_episode",
     }
+
+
+def test_insight_forge_keeps_entity_context_found_only_by_the_original_query(monkeypatch):
+    service = object.__new__(ZepToolsService)
+    monkeypatch.setattr(service, "_generate_sub_queries", lambda **kwargs: ["subquery"])
+    node_lookups = []
+
+    class NodeApi:
+        def get(self, *, uuid_):
+            node_lookups.append(uuid_)
+            return SimpleNamespace(
+                uuid_=uuid_, name={"alice": "Alice", "acme": "Acme"}[uuid_],
+                labels=["Entity", "Person"], summary="Source entity", attributes={},
+            )
+
+    class GraphApi:
+        node = NodeApi()
+
+        def search(self, *, query, **kwargs):
+            edges = []
+            if query == "original question":
+                edges = [SimpleNamespace(
+                    uuid_="edge-1", name="WORKS_FOR", fact="Alice works for Acme",
+                    source_node_uuid="alice", target_node_uuid="acme",
+                )]
+            return SimpleNamespace(edges=edges, nodes=[])
+
+    service.client = SimpleNamespace(graph=GraphApi())
+    result = service.insight_forge("graph-1", "original question", "A discussion")
+
+    assert result.semantic_facts == ["Alice works for Acme"]
+    assert set(node_lookups) == {"alice", "acme"}
+    assert {entity["name"] for entity in result.entity_insights} == {"Alice", "Acme"}
+    assert result.relationship_chains == ["Alice --[WORKS_FOR]--> Acme"]
+    assert result.total_entities == 2
+    assert result.total_relationships == 1
+
+
+def test_insight_forge_keeps_valid_empty_original_query_results(monkeypatch):
+    service = object.__new__(ZepToolsService)
+    monkeypatch.setattr(service, "_generate_sub_queries", lambda **kwargs: [])
+    service.client = SimpleNamespace(graph=SimpleNamespace(
+        search=lambda **kwargs: SimpleNamespace(edges=[], nodes=[]),
+    ))
+
+    result = service.insight_forge("graph-1", "original question", "A discussion")
+
+    assert result.semantic_facts == []
+    assert result.entity_insights == []
+    assert result.relationship_chains == []
