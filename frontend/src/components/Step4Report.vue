@@ -2024,8 +2024,13 @@ let consoleLogTimer = null
 const fetchAgentLog = async () => {
   if (!props.reportId) return
   
+  const reportId = props.reportId
+  const fromLine = agentLogLine.value
+
   try {
-    const res = await getAgentLog(props.reportId, agentLogLine.value)
+    const res = await getAgentLog(reportId, fromLine)
+    // Ignore another report or a cursor already consumed by a faster poll.
+    if (props.reportId !== reportId || agentLogLine.value !== fromLine) return
     
     if (res.success && res.data) {
       const newLogs = res.data.logs || []
@@ -2132,8 +2137,13 @@ const extractFinalContent = (response) => {
 const fetchConsoleLog = async () => {
   if (!props.reportId) return
   
+  const reportId = props.reportId
+  const fromLine = consoleLogLine.value
+
   try {
-    const res = await getConsoleLog(props.reportId, consoleLogLine.value)
+    const res = await getConsoleLog(reportId, fromLine)
+    // Ignore another report or a cursor already consumed by a faster poll.
+    if (props.reportId !== reportId || consoleLogLine.value !== fromLine) return
     
     if (res.success && res.data) {
       const newLogs = res.data.logs || []
