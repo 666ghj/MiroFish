@@ -17,6 +17,13 @@ def is_gpt5_family(model: Optional[str]) -> bool:
     return model.strip().lower().startswith("gpt-5")
 
 
+def is_gptoss_model(model: Optional[str]) -> bool:
+    """Return True for Groq gpt-oss reasoning models (e.g. openai/gpt-oss-120b)."""
+    if not model:
+        return False
+    return "gpt-oss" in model.strip().lower()
+
+
 def create_chat_completion(
     client: Any,
     *,
@@ -25,6 +32,7 @@ def create_chat_completion(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     response_format: Optional[Dict[str, Any]] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> Any:
     """
     Create a chat completion with model-specific request parameters.
@@ -53,6 +61,11 @@ def create_chat_completion(
             kwargs["max_completion_tokens"] = max_tokens
         else:
             kwargs["max_tokens"] = max_tokens
+
+    # gpt-oss reasoning models allocate output budget to hidden reasoning
+    # first; cap it so max_tokens leaves room for the actual answer.
+    if reasoning_effort and is_gptoss_model(model):
+        kwargs["reasoning_effort"] = reasoning_effort
 
     return client.chat.completions.create(**kwargs)
 

@@ -256,11 +256,20 @@ class ZepGraphMemoryUpdater:
         self.graph_id = graph_id
         self.simulation_id = simulation_id or "unknown"
         self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY未配置")
-        
-        self.client = get_zep_client(self.api_key)
+
+        self.store = None
+        if Config.GRAPH_BACKEND == "local":
+            from .local_graph import get_local_graph_store
+            self.store = get_local_graph_store()
+            self.client = None
+            logger.info(
+                f"ZepGraphMemoryUpdater 本地模式初始化完成: graph_id={graph_id} (GRAPH_BACKEND=local)"
+            )
+        else:
+            if not self.api_key:
+                raise ValueError("ZEP_API_KEY未配置")
+
+            self.client = get_zep_client(self.api_key)
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -407,7 +416,7 @@ class ZepGraphMemoryUpdater:
         
         self.add_activity(activity)
     
-    def _worker_loop(self, locale: str = 'zh'):
+    def _worker_loop(self, locale: str = 'en'):
         """后台工作循环 - 按平台批量发送活动到Zep"""
         set_locale(locale)
         while self._running or not self._activity_queue.empty():
@@ -491,43 +500,64 @@ class ZepGraphMemoryUpdater:
             if deadline is not None and time.time() >= deadline:
                 raise _DrainDeadlineExceeded(processed_count)
             try:
-                episode = self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text,
-                    created_at=self._to_rfc3339(payload_activities[-1].timestamp),
-                    source_description="MiroFish simulation activity batch",
-                    metadata={
-                        "source": "mirofish_simulation",
-                        "simulation_id": self.simulation_id,
-                        "platform": platform,
-                        "activity_count": len(payload_activities),
-                        "first_round": min(a.round_num for a in payload_activities),
-                        "last_round": max(a.round_num for a in payload_activities),
-                        "agent_ids": ",".join(
-                            str(value)
-                            for value in sorted({a.agent_id for a in payload_activities})
+                if self.store is not None:
+                    # Local backend: persist the activity batch as a processed
+                    # episode directly in the SQLite store.
+                    episode_uuids = self.store.add_episodes(
+                        self.graph_id,
+                        [combined_text],
+                        source_description=(
+                            f"MiroFish simulation activity batch "
+                            f"(simulation={self.simulation_id}, platform={platform}, "
+                            f"activities={len(payload_activities)})"
                         ),
-                        "action_types": ",".join(
-                            value
-                            for value in sorted({a.action_type for a in payload_activities})
-                            if value
-                        ) or "unknown",
-                    },
-                )
+                    )
+                    self._pending_episode_uuids.extend(episode_uuids)
+                    self._total_sent += 1
+                    self._total_items_sent += len(payload_activities)
+                    display_name = self._get_platform_display_name(platform)
+                    logger.info(
+                        f"成功保存 {len(payload_activities)} 条{display_name}活动到本地图谱 {self.graph_id}"
+                    )
+                    logger.debug(f"批量内容预览: {combined_text[:200]}...")
+                else:
+                    episode = self.client.graph.add(
+                        graph_id=self.graph_id,
+                        type="text",
+                        data=combined_text,
+                        created_at=self._to_rfc3339(payload_activities[-1].timestamp),
+                        source_description="MiroFish simulation activity batch",
+                        metadata={
+                            "source": "mirofish_simulation",
+                            "simulation_id": self.simulation_id,
+                            "platform": platform,
+                            "activity_count": len(payload_activities),
+                            "first_round": min(a.round_num for a in payload_activities),
+                            "last_round": max(a.round_num for a in payload_activities),
+                            "agent_ids": ",".join(
+                                str(value)
+                                for value in sorted({a.agent_id for a in payload_activities})
+                            ),
+                            "action_types": ",".join(
+                                value
+                                for value in sorted({a.action_type for a in payload_activities})
+                                if value
+                            ) or "unknown",
+                        },
+                    )
 
-                episode_uuid = (
-                    getattr(episode, "uuid_", None)
-                    or getattr(episode, "uuid", None)
-                )
-                if not episode_uuid:
-                    raise RuntimeError("Zep graph.add returned no episode UUID")
-                self._pending_episode_uuids.append(str(episode_uuid))
-                self._total_sent += 1
-                self._total_items_sent += len(payload_activities)
-                display_name = self._get_platform_display_name(platform)
-                logger.info(f"成功批量发送 {len(payload_activities)} 条{display_name}活动到图谱 {self.graph_id}")
-                logger.debug(f"批量内容预览: {combined_text[:200]}...")
+                    episode_uuid = (
+                        getattr(episode, "uuid_", None)
+                        or getattr(episode, "uuid", None)
+                    )
+                    if not episode_uuid:
+                        raise RuntimeError("Zep graph.add returned no episode UUID")
+                    self._pending_episode_uuids.append(str(episode_uuid))
+                    self._total_sent += 1
+                    self._total_items_sent += len(payload_activities)
+                    display_name = self._get_platform_display_name(platform)
+                    logger.info(f"成功批量发送 {len(payload_activities)} 条{display_name}活动到图谱 {self.graph_id}")
+                    logger.debug(f"批量内容预览: {combined_text[:200]}...")
 
             except Exception as e:
                 # graph.add has no idempotency key. Replaying an ambiguous
@@ -597,6 +627,12 @@ class ZepGraphMemoryUpdater:
                     del self._platform_buffers[platform][:processed_count]
 
     def _wait_for_pending_episodes(self, *, deadline: float | None = None) -> None:
+        # Local backend: episodes are written directly to SQLite and are
+        # immediately durable — no cloud ingestion wait required.
+        if self.store is not None:
+            self._pending_episode_uuids = []
+            return
+
         pending = set(self._pending_episode_uuids)
         if not pending:
             return

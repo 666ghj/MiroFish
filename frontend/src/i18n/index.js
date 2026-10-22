@@ -1,7 +1,7 @@
 import { createI18n } from 'vue-i18n'
-import languages from '../../../locales/languages.json'
+import languages from '../../locales/languages.json'
 
-const localeFiles = import.meta.glob('../../../locales/!(languages).json', { eager: true })
+const localeFiles = import.meta.glob('../../locales/!(languages).json', { eager: true })
 
 const messages = {}
 const availableLocales = []
@@ -14,12 +14,12 @@ for (const path in localeFiles) {
   }
 }
 
-const savedLocale = localStorage.getItem('locale') || 'zh'
+const savedLocale = localStorage.getItem('locale') || 'en'
 
 const i18n = createI18n({
   legacy: false,
-  locale: savedLocale,
-  fallbackLocale: 'zh',
+  locale: availableLocales.some(l => l.key === savedLocale) ? savedLocale : 'en',
+  fallbackLocale: 'en',
   messages
 })
 

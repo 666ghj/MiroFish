@@ -6,6 +6,7 @@ LLM客户端封装
 import json
 import logging
 import re
+import time
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
@@ -88,6 +89,28 @@ def _contains_additional_json_container(content: str) -> bool:
     return False
 
 
+def _extract_rate_limit_code(error: Exception) -> bool:
+    """Return True when the error is a provider token-rate limit (ITPM/OTPM/TPM),
+    not a genuinely unusable request. Rate-limited requests usually succeed after
+    the per-minute window resets, so callers can retry with backoff.
+
+    Groq surfaces these as either 413 or 429 with code=rate_limit_exceeded
+    (type=tokens). Both mean 'wait for the next per-minute window'."""
+    status = getattr(error, "status_code", None)
+    if status not in (413, 429):
+        return False
+    body = getattr(error, "body", None)
+    if not isinstance(body, dict):
+        # 429 rate-limit responses without a structured body are still retryable
+        return status == 429
+    details = body.get("error", body)
+    if not isinstance(details, dict):
+        return status == 429
+    code = str(details.get("code") or "").strip().lower()
+    type_ = str(details.get("type") or "").strip().lower()
+    return code == "rate_limit_exceeded" or type_ == "tokens"
+
+
 class LLMClient:
     """LLM客户端"""
     
@@ -109,6 +132,11 @@ class LLMClient:
             base_url=self.base_url
         )
 
+    # When a provider rejects a request with a token-rate limit (for example
+    # Groq ITPM ceilings), wait out most of the per-minute window and retry.
+    RATE_LIMIT_BACKOFF_SECONDS = 60
+    RATE_LIMIT_MAX_ATTEMPTS = 4
+
     def _create_completion(
         self,
         *,
@@ -119,14 +147,33 @@ class LLMClient:
     ) -> Any:
         """Send one raw Chat Completions request through the compatibility layer."""
 
-        return create_chat_completion(
-            self.client,
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format=response_format,
-        )
+        for attempt in range(1, self.RATE_LIMIT_MAX_ATTEMPTS + 1):
+            try:
+                return create_chat_completion(
+                    self.client,
+                    model=self.model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format=response_format,
+                    # gpt-oss reasoning models: cap hidden reasoning so the
+                    # caller's max_tokens budget reaches the actual answer.
+                    reasoning_effort=(
+                        "low" if "gpt-oss" in self.model.lower() else None
+                    ),
+                )
+            except Exception as error:
+                if not _extract_rate_limit_code(error) or attempt >= self.RATE_LIMIT_MAX_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "LLM provider token rate limit hit (attempt %d/%d); "
+                    "retrying in %ds",
+                    attempt,
+                    self.RATE_LIMIT_MAX_ATTEMPTS,
+                    self.RATE_LIMIT_BACKOFF_SECONDS,
+                )
+                time.sleep(self.RATE_LIMIT_BACKOFF_SECONDS)
+        raise RuntimeError("unreachable")
     
     def chat(
         self,

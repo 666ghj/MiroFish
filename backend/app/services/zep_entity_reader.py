@@ -79,9 +79,16 @@ class ZepEntityReader:
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
+
+        if Config.GRAPH_BACKEND == "local":
+            from .local_graph import get_local_graph_store
+            self.store = get_local_graph_store()
+            self.client = None
+            return
+
         if not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
-        
+
         self.client = get_zep_client(self.api_key)
     
     def _call_with_retry(
@@ -122,6 +129,11 @@ class ZepEntityReader:
         """
         logger.info(f"获取图谱 {graph_id} 的所有节点...")
 
+        if Config.GRAPH_BACKEND == "local":
+            nodes_data = self.store.get_nodes(graph_id)
+            logger.info(f"共获取 {len(nodes_data)} 个节点（本地存储）")
+            return nodes_data
+
         nodes = fetch_all_nodes(self.client, graph_id)
 
         nodes_data = []
@@ -148,6 +160,11 @@ class ZepEntityReader:
             边列表
         """
         logger.info(f"获取图谱 {graph_id} 的所有边...")
+
+        if Config.GRAPH_BACKEND == "local":
+            edges_data = self.store.get_edges(graph_id)
+            logger.info(f"共获取 {len(edges_data)} 条边（本地存储）")
+            return edges_data
 
         edges = fetch_all_edges(self.client, graph_id)
 
@@ -193,6 +210,12 @@ class ZepEntityReader:
                     if edge["source_node_uuid"] == node_uuid
                     or edge["target_node_uuid"] == node_uuid
                 ]
+
+            # Local backend: fallback to store edge scan (caller should pass graph_id).
+            if Config.GRAPH_BACKEND == "local":
+                # We cannot filter by node across graphs without graph_id; the caller
+                # always supplies graph_id in local flows.
+                raise ValueError("get_node_edges in local mode requires graph_id")
 
             # 使用重试机制调用Zep API
             edges = self._call_with_retry(
@@ -352,6 +375,62 @@ class ZepEntityReader:
             EntityNode或None
         """
         try:
+            if Config.GRAPH_BACKEND == "local":
+                node_dict = self.store.get_node(entity_uuid)
+                if not node_dict:
+                    return None
+
+                # 获取节点的边（本地：通过全图扫描筛选双向边）
+                edges = [
+                    edge
+                    for edge in self.store.get_edges(graph_id)
+                    if edge["source_node_uuid"] == entity_uuid
+                    or edge["target_node_uuid"] == entity_uuid
+                ]
+
+                related_edges = []
+                related_node_uuids = set()
+                node_map = {n["uuid"]: n for n in self.store.get_nodes(graph_id)}
+
+                for edge in edges:
+                    if edge["source_node_uuid"] == entity_uuid:
+                        related_edges.append({
+                            "direction": "outgoing",
+                            "edge_name": edge["name"],
+                            "fact": edge["fact"],
+                            "target_node_uuid": edge["target_node_uuid"],
+                        })
+                        related_node_uuids.add(edge["target_node_uuid"])
+                    else:
+                        related_edges.append({
+                            "direction": "incoming",
+                            "edge_name": edge["name"],
+                            "fact": edge["fact"],
+                            "source_node_uuid": edge["source_node_uuid"],
+                        })
+                        related_node_uuids.add(edge["source_node_uuid"])
+
+                related_nodes = []
+                for related_uuid in related_node_uuids:
+                    if related_uuid in node_map:
+                        related_node = node_map[related_uuid]
+                        related_nodes.append({
+                            "uuid": related_node["uuid"],
+                            "name": related_node["name"],
+                            "labels": related_node["labels"],
+                            "summary": related_node.get("summary", ""),
+                        })
+
+                return EntityNode(
+                    uuid=node_dict["uuid"],
+                    name=node_dict["name"],
+                    labels=node_dict["labels"],
+                    summary=node_dict["summary"],
+                    attributes=node_dict["attributes"],
+                    related_edges=related_edges,
+                    related_nodes=related_nodes,
+                )
+
             # 使用重试机制获取节点
             node = self._call_with_retry(
                 func=lambda: self.client.graph.node.get(uuid_=entity_uuid),

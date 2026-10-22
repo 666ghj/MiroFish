@@ -264,12 +264,19 @@ class OasisProfileGenerator:
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
         self.zep_client = None
         self.graph_id = graph_id
-        
-        if self.zep_api_key:
-            try:
-                self.zep_client = get_zep_client(self.zep_api_key)
-            except Exception as e:
-                logger.warning(f"Zep客户端初始化失败: {e}")
+
+        if Config.GRAPH_BACKEND == "local":
+            # 本地模式：不初始化Zep云客户端，检索改走本地图存储
+            from .local_graph import get_local_graph_store
+            self.store = get_local_graph_store()
+            logger.info("OasisProfileGenerator 使用本地图谱检索 (GRAPH_BACKEND=local)")
+        else:
+            self.store = None
+            if self.zep_api_key:
+                try:
+                    self.zep_client = get_zep_client(self.zep_api_key)
+                except Exception as e:
+                    logger.warning(f"Zep客户端初始化失败: {e}")
     
     def generate_profile_from_entity(
         self, 
@@ -345,6 +352,62 @@ class OasisProfileGenerator:
         suffix = random.randint(100, 999)
         return f"{username}_{suffix}"
     
+    def _search_local_for_entity(self, entity: EntityNode) -> Dict[str, Any]:
+        """
+        本地图存储检索（GRAPH_BACKEND=local 时替代Zep混合搜索）
+
+        Returns:
+            包含facts, node_summaries, context的字典
+        """
+        results = {"facts": [], "node_summaries": [], "context": ""}
+        if not self.graph_id or not self.store:
+            return results
+
+        entity_name = (entity.name or "").strip()
+        if not entity_name:
+            return results
+
+        try:
+            name_lower = entity_name.lower()
+
+            for edge in self.store.get_edges(self.graph_id):
+                source_name = ""
+                target_name = ""
+                fact = edge.get("fact", "")
+                combined = f"{fact}".lower()
+                if (
+                    name_lower in (str(edge.get("source_node_uuid")), str(edge.get("target_node_uuid")))
+                    or name_lower in combined
+                ):
+                    source_node = self.store.get_node(edge.get("source_node_uuid", ""))
+                    target_node = self.store.get_node(edge.get("target_node_uuid", ""))
+                    if source_node:
+                        source_name = source_node.get("name", "")
+                    if target_node:
+                        target_name = target_node.get("name", "")
+                    results["facts"].append(
+                        f"{edge.get('name', '')}: {fact} ({source_name} -> {target_name})"
+                    )
+
+            for node in self.store.get_nodes(self.graph_id):
+                node_uuid = node.get("uuid", "")
+                node_name = node.get("name", "")
+                if node_uuid == entity.uuid or name_lower == node_name.lower():
+                    results["node_summaries"].append(f"{node_name}: {node.get('summary', '')}")
+                elif name_lower in (node.get("summary") or "").lower():
+                    results["facts"].append(
+                        f"[{node_name}]: {node.get('summary', '')}"
+                    )
+
+            results["facts"] = results["facts"][:20]
+            results["node_summaries"] = results["node_summaries"][:5]
+            results["context"] = "\n".join(results["node_summaries"]) or "\n".join(results["facts"][:5])
+        except Exception as e:
+            logger.warning(f"本地图谱检索失败（跳过，使用空上下文）: {e}")
+            results = {"facts": [], "node_summaries": [], "context": ""}
+
+        return results
+
     def _search_zep_for_entity(self, entity: EntityNode) -> Dict[str, Any]:
         """
         使用Zep图谱混合搜索功能获取实体相关的丰富信息
@@ -361,6 +424,8 @@ class OasisProfileGenerator:
         import concurrent.futures
         
         if not self.zep_client:
+            if getattr(self, "store", None) is not None and self.graph_id:
+                return self._search_local_for_entity(entity)
             return {"facts": [], "node_summaries": [], "context": ""}
         
         entity_name = entity.name
