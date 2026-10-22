@@ -127,6 +127,8 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+**Optional:** `MIROFISH_DATA_DIR` sets where projects, simulations and reports are stored (default `backend/uploads`). Point it at a persistent directory when running from a Docker volume or a packaged executable.
+
 #### 2. Install Dependencies
 
 ```bash
