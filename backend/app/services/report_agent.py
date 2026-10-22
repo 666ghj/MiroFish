@@ -1305,8 +1305,8 @@ class ReportAgent:
         if previous_sections:
             previous_parts = []
             for sec in previous_sections:
-                # ITPM 控制：单章节 1200 字 + 总预算 4000 字
-                truncated = sec[:1200] + "..." if len(sec) > 1200 else sec
+                # ITPM 控制：单章节 800 字 + 总预算 4000 字
+                truncated = sec[:800] + "..." if len(sec) > 800 else sec
                 previous_parts.append(truncated)
             previous_content = "\n\n---\n\n".join(previous_parts)[:4000]
         else:

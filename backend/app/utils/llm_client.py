@@ -90,18 +90,22 @@ def _contains_additional_json_container(content: str) -> bool:
 
 
 def _extract_rate_limit_code(error: Exception) -> bool:
-    """Return True when the error is a provider token-rate limit (ITPM), not a
-    genuinely oversized request. Rate-limited requests usually succeed after
-    the per-minute window resets, so callers can retry with backoff."""
+    """Return True when the error is a provider token-rate limit (ITPM/OTPM/TPM),
+    not a genuinely unusable request. Rate-limited requests usually succeed after
+    the per-minute window resets, so callers can retry with backoff.
 
-    if getattr(error, "status_code", None) != 413:
+    Groq surfaces these as either 413 or 429 with code=rate_limit_exceeded
+    (type=tokens). Both mean 'wait for the next per-minute window'."""
+    status = getattr(error, "status_code", None)
+    if status not in (413, 429):
         return False
     body = getattr(error, "body", None)
     if not isinstance(body, dict):
-        return False
+        # 429 rate-limit responses without a structured body are still retryable
+        return status == 429
     details = body.get("error", body)
     if not isinstance(details, dict):
-        return False
+        return status == 429
     code = str(details.get("code") or "").strip().lower()
     type_ = str(details.get("type") or "").strip().lower()
     return code == "rate_limit_exceeded" or type_ == "tokens"
