@@ -248,11 +248,14 @@ class OntologyGenerator:
         
         return result
     
-    # 传给 LLM 的文本最大长度（5万字）
-    MAX_TEXT_LENGTH_FOR_LLM = 50000
-    LONG_TEXT_CHUNK_SIZE = 8000
-    LONG_TEXT_CHUNK_OVERLAP = 200
-    MAX_LONG_TEXT_CHUNKS = 60
+    # 传给 LLM 的文本最大长度
+    # Provider ITPM ceilings (e.g. Groq on-demand: 7,000 input tokens/minute)
+    # reject requests whose context alone exceeds the per-minute budget
+    # together with the system prompt and the simulation requirement.
+    MAX_TEXT_LENGTH_FOR_LLM = 14000
+    LONG_TEXT_CHUNK_SIZE = 2000
+    LONG_TEXT_CHUNK_OVERLAP = 100
+    MAX_LONG_TEXT_CHUNKS = 10
     MIN_LONG_TEXT_EXCERPT = 400
 
     # 首次结构化输出的 completion token 上限（4 千）

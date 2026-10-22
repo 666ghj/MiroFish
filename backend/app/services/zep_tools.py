@@ -429,6 +429,15 @@ class ZepToolsService:
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
+
+        if Config.GRAPH_BACKEND == "local":
+            from .local_graph import get_local_graph_store
+            self.store = get_local_graph_store()
+            self.client = None
+            self._llm_client = llm_client
+            logger.info(t("console.zepToolsInitialized"))
+            return
+
         if not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
         
@@ -480,6 +489,10 @@ class ZepToolsService:
         
         zep_query = normalize_zep_search_query(query)
         zep_limit = normalize_zep_search_limit(limit)
+
+        # Local backend: keyword retrieval over the SQLite store.
+        if Config.GRAPH_BACKEND == "local":
+            return self._local_search(graph_id, query, limit=zep_limit, scope=scope)
 
         try:
             search_results = self._call_with_retry(
@@ -630,6 +643,20 @@ class ZepToolsService:
                     if node.summary:
                         facts.append(f"[{node.name}]: {node.summary}")
             
+            # Local backend additionally: keyword search over raw document
+            # episodes so the report can cite source excerpts.
+            store = getattr(self, "store", None)
+            if store is not None:
+                try:
+                    episode_hits = store.search_episodes(graph_id, query, limit=5)
+                    for hit in episode_hits:
+                        fact_text = (
+                            f"[SOURCE EXCERPT (chunk {hit['chunk_index']})]: {hit['snippet']}"
+                        )
+                        facts.append(fact_text)
+                except Exception as episode_error:
+                    logger.warning(f"Episode search failed: {episode_error}")
+
             logger.info(t("console.localSearchComplete", count=len(facts)))
             
         except Exception as e:
@@ -654,6 +681,18 @@ class ZepToolsService:
             节点列表
         """
         logger.info(t("console.fetchingAllNodes", graphId=graph_id))
+
+        if Config.GRAPH_BACKEND == "local":
+            return [
+                NodeInfo(
+                    uuid=node["uuid"],
+                    name=node["name"],
+                    labels=list(node.get("labels", [])),
+                    summary=node.get("summary", ""),
+                    attributes=node.get("attributes", {}),
+                )
+                for node in self.store.get_nodes(graph_id)
+            ]
 
         nodes = fetch_all_nodes(self.client, graph_id)
 
@@ -683,6 +722,22 @@ class ZepToolsService:
             边列表（包含created_at, valid_at, invalid_at, expired_at）
         """
         logger.info(t("console.fetchingAllEdges", graphId=graph_id))
+
+        if Config.GRAPH_BACKEND == "local":
+            result = [
+                EdgeInfo(
+                    uuid=edge["uuid"],
+                    name=edge.get("name", ""),
+                    fact=edge.get("fact", ""),
+                    source_node_uuid=edge.get("source_node_uuid", ""),
+                    target_node_uuid=edge.get("target_node_uuid", ""),
+                )
+                for edge in self.store.get_edges(graph_id)
+            ]
+            if include_temporal:
+                for edge_info, edge in zip(result, self.store.get_edges(graph_id)):
+                    edge_info.created_at = edge.get("created_at")
+            return result
 
         edges = fetch_all_edges(self.client, graph_id)
 
@@ -722,6 +777,18 @@ class ZepToolsService:
         logger.info(t("console.fetchingNodeDetail", uuid=node_uuid[:8]))
         
         try:
+            if Config.GRAPH_BACKEND == "local":
+                node_dict = self.store.get_node(node_uuid)
+                if not node_dict:
+                    return None
+                return NodeInfo(
+                    uuid=node_dict["uuid"],
+                    name=node_dict["name"],
+                    labels=list(node_dict.get("labels", [])),
+                    summary=node_dict.get("summary", ""),
+                    attributes=node_dict.get("attributes", {}),
+                )
+
             node = self._call_with_retry(
                 func=lambda: self.client.graph.node.get(uuid_=node_uuid),
                 operation_name=t("console.fetchNodeDetailOp", uuid=node_uuid[:8])

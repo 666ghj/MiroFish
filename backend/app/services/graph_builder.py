@@ -62,13 +62,27 @@ class GraphBuilderService:
     """
     图谱构建服务
     负责调用Zep API构建知识图谱
+
+    Backend dispatcher: instances are either the Zep Cloud implementation
+    (default) or the local SQLite implementation when Config.GRAPH_BACKEND
+    is set to "local". Local mode needs no Zep credentials.
     """
-    
+
+    def __new__(cls, api_key: Optional[str] = None, *args, **kwargs):
+        if Config.GRAPH_BACKEND == "local":
+            from .local_graph import LocalGraphBuilder
+            return LocalGraphBuilder()
+        return super().__new__(cls)
+
     def __init__(self, api_key: Optional[str] = None):
+        # __new__ returns a LocalGraphBuilder when backend is local; its own
+        # __init__ already ran, so skip re-initialization.
+        if type(self) is not GraphBuilderService:
+            return
         self.api_key = api_key or Config.ZEP_API_KEY
         if not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
-        
+
         self.client = get_zep_client(self.api_key)
         self.task_manager = TaskManager()
     
