@@ -991,10 +991,14 @@ class ZepToolsService:
         for node in all_nodes:
             custom_labels = [l for l in node.labels if l not in ["Entity", "Node"]]
             if custom_labels:
+                # 报告上下文截断：完整节点 summary 可达数 KB，超 Groq 免费档单请求 ITPM 上限（413）
+                trunc = (node.summary or "")[:400]
+                if len(node.summary or "") > 400:
+                    trunc += "…"
                 entities.append({
                     "name": node.name,
                     "type": custom_labels[0],
-                    "summary": node.summary
+                    "summary": trunc
                 })
         
         return {
