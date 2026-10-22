@@ -1345,7 +1345,8 @@ class ReportAgent:
             response = self.llm.chat(
                 messages=messages,
                 temperature=0.5,
-                max_tokens=4096
+                # ITPM/OTPM 控制：Groq 免费档 OTPM=1000，max_tokens 超过会直接 429
+                max_tokens=900
             )
 
             # 检查 LLM 返回是否为 None（API 异常或内容为空）
@@ -1553,7 +1554,8 @@ class ReportAgent:
         response = self.llm.chat(
             messages=messages,
             temperature=0.5,
-            max_tokens=4096
+            # ITPM/OTPM 控制：同上
+            max_tokens=900
         )
 
         # 检查强制收尾时 LLM 返回是否为 None
