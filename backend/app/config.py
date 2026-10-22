@@ -34,7 +34,13 @@ class Config:
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
+    # 数据目录：项目、模拟与报告均存放于此。默认 backend/uploads；
+    # 设置 MIROFISH_DATA_DIR 可指向持久化目录（Docker 卷、打包后的可执行文件等，
+    # 后者的源码目录是每次启动都会重建的临时目录）。
+    UPLOAD_FOLDER = os.path.abspath(
+        os.environ.get('MIROFISH_DATA_DIR')
+        or os.path.join(os.path.dirname(__file__), '../uploads')
+    )
     ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
     
     # 文本处理配置
@@ -43,7 +49,7 @@ class Config:
     
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
-    OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+    OASIS_SIMULATION_DATA_DIR = os.path.join(UPLOAD_FOLDER, 'simulations')
     
     # OASIS平台可用动作配置
     OASIS_TWITTER_ACTIONS = [

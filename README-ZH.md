@@ -127,6 +127,8 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+**可选：** `MIROFISH_DATA_DIR` 设置项目、模拟与报告的存放目录（默认 `backend/uploads`）。使用 Docker 卷或打包后的可执行文件运行时，请指向一个持久化目录。
+
 #### 2. 安装依赖
 
 ```bash
