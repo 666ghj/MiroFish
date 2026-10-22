@@ -658,6 +658,8 @@ const phase = ref(0) // 0: 初始化, 1: 生成人设, 2: 生成配置, 3: 完�
 const taskId = ref(null)
 const prepareProgress = ref(0)
 const currentStage = ref('')
+// English stage id (from progress_detail.current_stage)
+const currentStageId = ref('')
 const progressMessage = ref('')
 const profiles = ref([])
 const entityTypes = ref([])
@@ -676,17 +678,20 @@ const useCustomRounds = ref(false) // 默认使用自动配置轮数
 const customMaxRounds = ref(40)   // 默认推荐40轮
 
 // Watch stage to update phase
-watch(currentStage, (newStage) => {
-  if (newStage === '生成Agent人设' || newStage === 'generating_profiles') {
+// Compares English stage ids only. The backend emits English ids in
+// progress_detail.current_stage; localized display names (from the legacy
+// message-only fallback) are mapped back to ids in the polling code below.
+watch(currentStageId, (stageId) => {
+  if (stageId === 'generating_profiles') {
     phase.value = 1
-  } else if (newStage === '生成模拟配置' || newStage === 'generating_config') {
+  } else if (stageId === 'generating_config') {
     phase.value = 2
     // 进入配置生成阶段，开始轮询配置
     if (!configTimer) {
       addLog(t('log.startGeneratingConfig'))
       startConfigPolling()
     }
-  } else if (newStage === '准备模拟脚本' || newStage === 'copying_scripts') {
+  } else if (stageId === 'copying_scripts') {
     phase.value = 2 // 仍属于配置阶段
   }
 })
@@ -873,6 +878,7 @@ const pollPrepareStatus = async () => {
       // 解析阶段信息并输出详细日志
       if (data.progress_detail) {
         currentStage.value = data.progress_detail.current_stage_name || ''
+        currentStageId.value = data.progress_detail.current_stage || ''
         
         // 输出详细进度日志（避免重复）
         const detail = data.progress_detail
@@ -890,7 +896,16 @@ const pollPrepareStatus = async () => {
         // 从消息中提取阶段
         const match = data.message.match(/\[(\d+)\/(\d+)\]\s*([^:]+)/)
         if (match) {
-          currentStage.value = match[3].trim()
+          const stageName = match[3].trim()
+          currentStage.value = stageName
+          // Map the localized display name back to the English stage id
+          const nameToId = {
+            [t('progress.readingGraphEntities')]: 'reading',
+            [t('progress.generatingProfiles')]: 'generating_profiles',
+            [t('progress.generatingSimConfig')]: 'generating_config',
+            [t('progress.preparingScripts')]: 'copying_scripts',
+          }
+          currentStageId.value = nameToId[stageName] || ''
         }
         // 输出消息日志（避免重复）
         if (data.message !== lastLoggedMessage) {
@@ -910,7 +925,7 @@ const pollPrepareStatus = async () => {
       }
     }
   } catch (err) {
-    console.warn('轮询状态失败:', err)
+    console.warn('Failed to poll prepare status:', err)
   }
 }
 
@@ -954,7 +969,7 @@ const fetchProfilesRealtime = async () => {
       }
     }
   } catch (err) {
-    console.warn('获取 Profiles 失败:', err)
+    console.warn('Failed to fetch profiles:', err)
   }
 }
 
@@ -1027,7 +1042,7 @@ const fetchConfigRealtime = async () => {
       }
     }
   } catch (err) {
-    console.warn('获取 Config 失败:', err)
+    console.warn('Failed to fetch config:', err)
   }
 }
 
