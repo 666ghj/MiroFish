@@ -156,6 +156,11 @@ class LLMClient:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     response_format=response_format,
+                    # gpt-oss reasoning models: cap hidden reasoning so the
+                    # caller's max_tokens budget reaches the actual answer.
+                    reasoning_effort=(
+                        "low" if "gpt-oss" in self.model.lower() else None
+                    ),
                 )
             except Exception as error:
                 if not _extract_rate_limit_code(error) or attempt >= self.RATE_LIMIT_MAX_ATTEMPTS:
