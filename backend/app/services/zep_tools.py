@@ -526,15 +526,18 @@ class ZepToolsService:
             # 解析节点搜索结果
             if hasattr(search_results, 'nodes') and search_results.nodes:
                 for node in search_results.nodes:
+                    # 报告上下文截断：完整 summary 可达数 KB，避免 Groq 免费档 413（ITPM 上限 7000）
+                    _s = getattr(node, 'summary', '') or ''
+                    _st = _s[:400] + ("…" if len(_s) > 400 else "")
                     nodes.append({
                         "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
                         "name": getattr(node, 'name', ''),
                         "labels": getattr(node, 'labels', []),
-                        "summary": getattr(node, 'summary', ''),
+                        "summary": _st,
                     })
                     # 节点摘要也算作事实
-                    if hasattr(node, 'summary') and node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
+                    if _st:
+                        facts.append(f"[{node.name}]: {_st}")
             
             logger.info(t("console.searchComplete", count=len(facts)))
             
@@ -634,14 +637,16 @@ class ZepToolsService:
                 scored_nodes.sort(key=lambda x: x[0], reverse=True)
                 
                 for score, node in scored_nodes[:limit]:
+                    _s = node.summary or ''
+                    _st = _s[:400] + ("…" if len(_s) > 400 else "")
                     nodes_result.append({
                         "uuid": node.uuid,
                         "name": node.name,
                         "labels": node.labels,
-                        "summary": node.summary,
+                        "summary": _st,
                     })
-                    if node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
+                    if _st:
+                        facts.append(f"[{node.name}]: {_st}")
             
             # Local backend additionally: keyword search over raw document
             # episodes so the report can cite source excerpts.
@@ -1123,12 +1128,16 @@ class ZepToolsService:
                         if node.name.lower() in f.lower()
                     ]
                     
+                    # 补充截断：related_facts 单条压缩，防 413（事实源本身也可能带长摘要）
+                    _rf = related_facts[:6] if len(related_facts) > 6 else related_facts
+                    _rf = [(f[:250] + ("…" if len(f) > 250 else "")) for f in _rf]
+
                     entity_insights.append({
                         "uuid": node.uuid,
                         "name": node.name,
                         "type": entity_type,
-                        "summary": node.summary,
-                        "related_facts": related_facts  # 完整输出，不截断
+                        "summary": (node.summary or "")[:400],
+                        "related_facts": _rf  # 截断后输出（6条×250字符），控制在 ITPM 限制内
                     })
             except Exception as e:
                 logger.debug(f"获取节点 {uuid} 失败: {e}")
@@ -1373,7 +1382,7 @@ class ZepToolsService:
         Returns:
             InterviewResult: 采访结果
         """
-        from .simulation_runner import SimulationRunner
+        from .simulation_runner import SimulationRunner, RunnerStatus
         
         logger.info(t("console.interviewAgentsStart", requirement=interview_requirement[:50]))
         
@@ -1381,6 +1390,17 @@ class ZepToolsService:
             interview_topic=interview_requirement,
             interview_questions=custom_questions or []
         )
+        
+        # 快速失败：模拟运行器已停止时，IPC 采访必然 180s 超时；提前返回短错误摘要
+        try:
+            _run_state = SimulationRunner.get_run_state(simulation_id)
+            if _run_state is None or _run_state.runner_status not in (
+                RunnerStatus.RUNNING, RunnerStatus.STARTING, RunnerStatus.PAUSED
+            ):
+                result.summary = "OASIS 模拟环境未运行（已停止/完成），无法进行Agent采访。请改用其它工具获取信息。"
+                return result
+        except Exception:
+            pass  # 状态探测失败则走原流程
         
         # Step 1: 读取人设文件
         profiles = self._load_agent_profiles(simulation_id)
@@ -1516,11 +1536,14 @@ class ZepToolsService:
                     paired += re.findall(r'\u300c([^\u300c\u300d]{15,100})\u300d', clean_text)
                     key_quotes = [q for q in paired if not re.match(r'^[，,；;：:、]', q)][:3]
                 
+                # ITPM 控制：截断采访输出，防止 ReACT 观察超 Groq 免费档单请求上限
+                response_text = response_text[:2500]
+
                 interview = AgentInterview(
                     agent_name=agent_name,
                     agent_role=agent_role,
-                    agent_bio=agent_bio[:1000],  # 扩大bio长度限制
-                    question=combined_prompt,
+                    agent_bio=agent_bio[:400],  # ITPM 控制
+                    question=combined_prompt[:800],  # ITPM 控制
                     response=response_text,
                     key_quotes=key_quotes[:5]
                 )

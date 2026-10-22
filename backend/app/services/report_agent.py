@@ -1329,8 +1329,8 @@ class ReportAgent:
         used_tools = set()  # 记录已调用过的工具名
         all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
 
-        # 报告上下文，用于InsightForge的子问题生成
-        report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement}"
+        # 报告上下文，用于InsightForge的子问题生成（需求截断以控 ITPM/413）
+        report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement[:1200]}"
         
         for iteration in range(max_iterations):
             if progress_callback:
