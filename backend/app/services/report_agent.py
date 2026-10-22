@@ -1294,7 +1294,8 @@ class ReportAgent:
         system_prompt = SECTION_SYSTEM_PROMPT_TEMPLATE.format(
             report_title=outline.title,
             report_summary=outline.summary,
-            simulation_requirement=self.simulation_requirement,
+            # ITPM 控制：完整需求 6k+ 字符会被嵌入每次 ReACT 调用（防 Groq 免费档 413）
+            simulation_requirement=self.simulation_requirement[:2000],
             section_title=section.title,
             tools_description=self._get_tools_description(),
         )
@@ -1304,10 +1305,10 @@ class ReportAgent:
         if previous_sections:
             previous_parts = []
             for sec in previous_sections:
-                # 每个章节最多4000字
-                truncated = sec[:4000] + "..." if len(sec) > 4000 else sec
+                # ITPM 控制：单章节 1200 字 + 总预算 4000 字
+                truncated = sec[:1200] + "..." if len(sec) > 1200 else sec
                 previous_parts.append(truncated)
-            previous_content = "\n\n---\n\n".join(previous_parts)
+            previous_content = "\n\n---\n\n".join(previous_parts)[:4000]
         else:
             previous_content = "（这是第一个章节）"
         
@@ -1501,7 +1502,9 @@ class ReportAgent:
                     "role": "user",
                     "content": REACT_OBSERVATION_TEMPLATE.format(
                         tool_name=call["name"],
-                        result=result,
+                        # ITPM 控制：工具结果完整可达 15k+ 字符（insight_forge 实体+事实包），
+                        # 且会随 ReACT 迭代在消息列表中累积 —— 必须在注入点截断
+                        result=result[:2500],
                         tool_calls_count=tool_calls_count,
                         max_tool_calls=self.MAX_TOOL_CALLS_PER_SECTION,
                         used_tools_str=", ".join(used_tools),
