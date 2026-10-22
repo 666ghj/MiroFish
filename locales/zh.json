@@ -388,7 +388,9 @@
     "envRunning": "环境正在运行，可以接收Interview命令",
     "envNotRunningShort": "环境未运行或已关闭",
     "requireGraphIdAndQuery": "请提供 graph_id 和 query",
-    "initReportAgent": "初始化Report Agent..."
+    "initReportAgent": "初始化Report Agent...",
+    "requestTimeout": "请求超时：分析耗时超出预期，请稍后重试。",
+    "networkError": "网络错误，请检查网络连接后重试。"
   },
   "progress": {
     "initGraphService": "初始化图谱构建服务...",

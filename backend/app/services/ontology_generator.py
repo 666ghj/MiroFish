@@ -235,10 +235,11 @@ class OntologyGenerator:
         result = self.llm_client.chat_json(
             messages=messages,
             temperature=0.3,
-            # Structured ontology responses can exceed 4096 completion tokens,
-            # especially when a compatible provider counts hidden reasoning in
-            # the same budget. Let the provider use its model-specific limit.
-            max_tokens=None,
+            # Cap the primary attempt to bound wall-clock time on slow
+            # third-party gateways (e.g. Dahl Global). Keep max_attempts=2 so
+            # the library's bounded retry can omit the cap and recover if the
+            # response is truncated (finish_reason="length").
+            max_tokens=self.MAX_OUTPUT_TOKENS_FOR_LLM,
             max_attempts=2,
         )
         
@@ -253,6 +254,15 @@ class OntologyGenerator:
     LONG_TEXT_CHUNK_OVERLAP = 200
     MAX_LONG_TEXT_CHUNKS = 60
     MIN_LONG_TEXT_EXCERPT = 400
+
+    # 首次结构化输出的 completion token 上限（4 千）
+    # Cap on the primary attempt only: it bounds wall-clock time on slow
+    # third-party gateways. The ontology JSON (10 entity types with
+    # attributes/examples plus 6-10 edge types) can exceed this, so
+    # max_attempts stays 2 and LLMClient.chat_json retries once without any
+    # cap when the response is truncated. Raise this constant only if
+    # truncation retries themselves become frequent on a given provider.
+    MAX_OUTPUT_TOKENS_FOR_LLM = 4096
     
     def _build_user_message(
         self,

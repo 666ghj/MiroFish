@@ -388,7 +388,9 @@
     "envRunning": "Environment is running and ready for Interview commands",
     "envNotRunningShort": "Environment not running or closed",
     "requireGraphIdAndQuery": "Please provide graph_id and query",
-    "initReportAgent": "Initializing Report Agent..."
+    "initReportAgent": "Initializing Report Agent...",
+    "requestTimeout": "Request timed out. The analysis may take longer than expected — please try again later.",
+    "networkError": "Network error. Please check your connection and retry."
   },
   "progress": {
     "initGraphService": "Initializing graph build service...",

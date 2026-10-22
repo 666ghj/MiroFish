@@ -65,7 +65,7 @@ def test_very_long_ontology_context_selects_representative_chunks():
     assert context.count("--- 文档 1 / 分块") == generator.MAX_LONG_TEXT_CHUNKS
 
 
-def test_ontology_generation_does_not_cap_structured_output_tokens():
+def test_ontology_generation_caps_first_attempt_but_keeps_truncation_retry():
     llm = RecordingLLMClient()
     generator = OntologyGenerator(llm_client=llm)
 
@@ -75,5 +75,8 @@ def test_ontology_generation_does_not_cap_structured_output_tokens():
     )
 
     assert result["analysis_summary"] == "ok"
-    assert llm.calls[0]["max_tokens"] is None
+    # Primary attempt is capped to bound gateway wall-clock time, but
+    # max_attempts stays 2 so the library can retry once without the cap
+    # if the response is truncated (finish_reason="length").
+    assert llm.calls[0]["max_tokens"] == OntologyGenerator.MAX_OUTPUT_TOKENS_FOR_LLM
     assert llm.calls[0]["max_attempts"] == 2
