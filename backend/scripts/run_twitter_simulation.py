@@ -457,6 +457,8 @@ class TwitterSimulationRunner:
         return ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
             model_type=llm_model,
+            # 推理模型护栏：不设 max_tokens 时思考可无限生成导致整轮卡死；给思考+正文预留空间并强制有界生成
+            model_config_dict={"temperature": 0.2, "max_tokens": 1536},
         )
     
     def _get_active_agents_for_round(
