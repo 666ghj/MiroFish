@@ -466,3 +466,134 @@ def test_write_final_poll_writes_a_list_atomically(tmp_path):
     assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
     sim_runtime.write_final_poll(str(tmp_path), [])  # overwrites
     assert json.loads((tmp_path / "final_poll.json").read_text(encoding="utf-8")) == []
+
+
+# --- explaining a failed model call or interview step -----------------------------------------------
+
+class _Msg:
+    def __init__(self, content=None, tool_calls=None):
+        self.content, self.tool_calls = content, tool_calls
+
+
+class _Choice:
+    def __init__(self, content="", finish="stop", tool_calls=None):
+        self.message, self.finish_reason = _Msg(content, tool_calls), finish
+
+
+class _Usage:
+    total_tokens = 321
+
+
+class _Completion:
+    def __init__(self, choices):
+        self.choices, self.usage = choices, _Usage()
+
+
+class _Model:
+    def __init__(self, result):
+        self.result, self.calls = result, 0
+
+    def run(self, *args, **kwargs):
+        self.calls += 1
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+    async def arun(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
+
+
+def test_a_normal_reply_is_recorded_with_its_shape():
+    log = sim_runtime.ModelCallLog()
+    model = sim_runtime.install_call_recording(_Model(_Completion([_Choice("hello")])), "main", log)
+    assert run(model.arun([])).choices[0].message.content == "hello"      # unchanged result
+    entry = log.recent()[0]
+    assert (entry["label"], entry["ok"], entry["choices"], entry["finish"], entry["content_chars"], entry["tokens"], entry["empty"]) == (
+        "main", True, 1, "stop", 5, 321, False)
+    assert "NO USABLE ANSWER" not in log.format_recent()[0]
+
+
+@pytest.mark.parametrize("choices,why", [
+    ([], "no choices at all"),
+    ([_Choice("", finish="length")], "empty text and no tool call (what a reasoning model out of tokens returns)"),
+])
+def test_a_reply_with_nothing_usable_is_flagged(choices, why):
+    log = sim_runtime.ModelCallLog()
+    model = sim_runtime.install_call_recording(_Model(_Completion(choices)), "fallback", log)
+    model.run([])
+    assert log.recent()[0]["empty"] is True, why
+    assert "NO USABLE ANSWER" in log.format_recent()[0]
+
+
+def test_a_tool_call_without_text_is_a_usable_reply():
+    log = sim_runtime.ModelCallLog()
+    model = sim_runtime.install_call_recording(_Model(_Completion([_Choice("", "tool_calls", tool_calls=[object()])])), "main", log)
+    model.run([])
+    assert log.recent()[0]["empty"] is False and log.recent()[0]["tool_calls"] == 1
+
+
+def test_a_failing_call_is_recorded_and_still_raises_the_same_error():
+    class Boom(Exception):
+        status_code = 429
+
+    log = sim_runtime.ModelCallLog()
+    model = sim_runtime.install_call_recording(_Model(Boom("Error code: 429 - quota")), "boost", log)
+    with pytest.raises(Boom):
+        run(model.arun([]))
+    entry = log.recent()[0]
+    assert entry["ok"] is False and entry["error"].startswith("http_429") and "FAILED" in log.format_recent()[0]
+
+
+def test_the_log_keeps_only_the_latest_calls():
+    log = sim_runtime.ModelCallLog(size=3)
+    model = sim_runtime.install_call_recording(_Model(_Completion([_Choice("x")])), "main", log)
+    for _ in range(10):
+        model.run([])
+    assert len(log.recent(50)) == 3
+
+
+def test_a_broken_log_cannot_break_a_model_call():
+    class BrokenLog:
+        def add(self, entry):
+            raise RuntimeError("disk full")
+
+    model = sim_runtime.install_call_recording(_Model(_Completion([_Choice("fine")])), "main", BrokenLog())
+    assert model.run([]).choices[0].message.content == "fine"
+
+
+def test_the_primary_and_the_fallback_both_appear_in_order(monkeypatch):
+    log = sim_runtime.ModelCallLog()
+    monkeypatch.setattr(sim_runtime, "CALL_LOG", log)
+
+    class Slow(Exception):
+        status_code = 429
+
+    primary = sim_runtime.install_call_recording(_Model(Slow("quota")), "main")
+    backup = sim_runtime.install_call_recording(_Model(_Completion([_Choice("", "length")])), "fallback")
+    sim_runtime.install_model_fallback(primary, backup)
+
+    primary.run([])
+    assert [(e["label"], e["ok"]) for e in log.recent()] == [("main", False), ("fallback", True)]
+    assert log.recent()[1]["empty"] is True                     # the cause of a later "list index out of range"
+
+
+def test_a_failed_interview_step_prints_the_traceback_and_the_recent_model_calls(tmp_path, monkeypatch):
+    log = sim_runtime.ModelCallLog()
+    monkeypatch.setattr(sim_runtime, "CALL_LOG", log)
+    sim_runtime.install_call_recording(_Model(_Completion([])), "main", log).run([])     # the model answered with no choice
+
+    class IndexingEnv(FakeEnv):
+        async def step(self, actions):
+            return [][0]                                         # what OASIS does with output_messages[0]
+
+    db = str(tmp_path / "p.db")
+    make_db(db)
+    env = IndexingEnv([0], db)
+    lines = []
+    results = run(sim_runtime.batch_interview(env, env.agent_graph, db, {0: "q"}, log=lines.append))
+
+    text = "\n".join(lines)
+    assert "IndexError: list index out of range" in text                      # the type, not just the message
+    assert "Traceback" in text or "test_sim_runtime.py" in text                # where it happened
+    assert "最近的模型调用" in text and "main:" in text and "NO USABLE ANSWER" in text
+    assert results[0]["response"] is None and "list index out of range" in results[0]["error"]

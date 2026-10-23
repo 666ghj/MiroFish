@@ -20,6 +20,7 @@ def script(monkeypatch):
 
     monkeypatch.setattr(module, "_make_model", fake_make)
     monkeypatch.setattr(module.sim_runtime, "install_model_fallback", lambda primary, other, note, **kwargs: (primary, other))
+    monkeypatch.setattr(module.sim_runtime, "install_call_recording", lambda model, label, *a, **k: model)   # the fakes are plain strings
     return module
 
 

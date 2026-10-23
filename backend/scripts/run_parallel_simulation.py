@@ -985,7 +985,9 @@ def create_model(
     once on the backup: the dedicated LLM_FALLBACK_* model when it is set (needs KEY and MODEL), else,
     when a boost model is configured, the other of main/boost. LLM_FALLBACK=false turns this off.
     """
-    primary = _make_model(config, use_boost, run_settings, seed)
+    primary = sim_runtime.install_call_recording(
+        _make_model(config, use_boost, run_settings, seed), "boost" if use_boost else "main"
+    )
     enabled = os.environ.get("LLM_FALLBACK", "true").strip().lower() not in ("false", "0", "no", "off")
     has_dedicated = bool(os.environ.get("LLM_FALLBACK_API_KEY") and os.environ.get("LLM_FALLBACK_MODEL_NAME"))
     has_boost = bool(os.environ.get("LLM_BOOST_API_KEY"))
@@ -993,10 +995,14 @@ def create_model(
         return primary
 
     if has_dedicated:
-        other = _make_model(config, use_boost, run_settings, seed, use_fallback=True)
+        other = sim_runtime.install_call_recording(
+            _make_model(config, use_boost, run_settings, seed, use_fallback=True), "fallback"
+        )
         backup_label = "专用备用"
     else:
-        other = _make_model(config, not use_boost, run_settings, seed)
+        other = sim_runtime.install_call_recording(
+            _make_model(config, not use_boost, run_settings, seed), "main" if use_boost else "boost"
+        )
         backup_label = "通用" if use_boost else "加速"
 
     def note(error: BaseException) -> None:

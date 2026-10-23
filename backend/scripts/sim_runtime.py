@@ -21,6 +21,8 @@ import re
 import sqlite3
 import threading
 import time
+import traceback
+from collections import deque
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 #: Seconds to wait before each retry of the agents that gave no reply to the final poll. A provider
@@ -245,6 +247,103 @@ def apply_model_client_options(model: Any, options: Mapping[str, Any]) -> Any:
     return model
 
 
+class ModelCallLog:
+    """The last few model calls (which model, how long, what came back), for explaining a failure.
+
+    OASIS reads ``response.output_messages[0]`` and fails with a bare ``list index out of range`` when a model
+    answered with nothing usable; the exception says nothing about the reply. Every model the run builds is
+    wrapped by ``install_call_recording`` and writes one line here per call, so a failed step can print what
+    each of its calls really did. Cheap: a ring buffer of short text lines.
+    """
+
+    def __init__(self, size: int = 40) -> None:
+        self._calls: "deque[Dict[str, Any]]" = deque(maxlen=size)
+
+    def add(self, entry: Dict[str, Any]) -> None:
+        self._calls.append(entry)
+
+    def recent(self, count: int = 8) -> List[Dict[str, Any]]:
+        return list(self._calls)[-count:]
+
+    def format_recent(self, count: int = 8) -> List[str]:
+        return [format_call(entry) for entry in self.recent(count)]
+
+
+CALL_LOG = ModelCallLog()
+
+
+def format_call(entry: Mapping[str, Any]) -> str:
+    stamp = time.strftime("%H:%M:%S", time.localtime(entry["at"]))
+    if not entry["ok"]:
+        return f"{stamp} {entry['label']}: {entry['seconds']:.1f}s FAILED {entry['error']}"
+    flag = "  <-- NO USABLE ANSWER (the agent step will fail)" if entry["empty"] else ""
+    return (
+        f"{stamp} {entry['label']}: {entry['seconds']:.1f}s choices={entry['choices']} "
+        f"finish={entry['finish']} content_chars={entry['content_chars']} tool_calls={entry['tool_calls']} "
+        f"tokens={entry['tokens']}{flag}"
+    )
+
+
+def summarize_response(response: Any) -> Dict[str, Any]:
+    """What a chat completion contains, in a few numbers (never the text itself)."""
+    choices = list(getattr(response, "choices", None) or [])
+    first = choices[0] if choices else None
+    message = getattr(first, "message", None)
+    content = getattr(message, "content", None) or ""
+    tool_calls = len(getattr(message, "tool_calls", None) or [])
+    usage = getattr(response, "usage", None)
+    return {
+        "choices": len(choices),
+        "finish": getattr(first, "finish_reason", None),
+        "content_chars": len(content) if isinstance(content, str) else -1,
+        "tool_calls": tool_calls,
+        "tokens": getattr(usage, "total_tokens", None),
+        # no choice, or a choice with neither text nor a tool call: camel drops it and OASIS then fails
+        "empty": not choices or (not content and not tool_calls),
+    }
+
+
+def install_call_recording(model: Any, label: str, call_log: Optional[ModelCallLog] = None) -> Any:
+    """Make ``model`` note every call (sync and async) in ``call_log``. Behaviour is otherwise unchanged."""
+    log = CALL_LOG if call_log is None else call_log
+    original_run, original_arun = model.run, model.arun
+
+    def note(started: float, response: Any = None, error: Optional[BaseException] = None) -> None:
+        try:
+            entry: Dict[str, Any] = {"at": time.time(), "label": label, "seconds": time.time() - started}
+            if error is not None:
+                kind, message = classify_error(error)
+                entry.update(ok=False, error=f"{kind}: {message[:140]}")
+            else:
+                entry.update(ok=True, **summarize_response(response))
+            log.add(entry)
+        except Exception:
+            pass  # recording must never change what a call does
+
+    def run(*args, **kwargs):
+        started = time.time()
+        try:
+            response = original_run(*args, **kwargs)
+        except BaseException as error:
+            note(started, error=error)
+            raise
+        note(started, response)
+        return response
+
+    async def arun(*args, **kwargs):
+        started = time.time()
+        try:
+            response = await original_arun(*args, **kwargs)
+        except BaseException as error:
+            note(started, error=error)
+            raise
+        note(started, response)
+        return response
+
+    model.run, model.arun = run, arun
+    return model
+
+
 class Pacer:
     """Spaces calls at least ``interval`` seconds apart, however many callers wait.
 
@@ -453,7 +552,16 @@ async def batch_interview(
             await env.step(actions)
         except Exception as error:
             step_error = str(error)
-            log(f"  Interview步骤失败: {error}")
+            log(f"  Interview步骤失败: {type(error).__name__}: {error}")
+            # The bare message (e.g. "list index out of range") hides where it came from and what the model
+            # returned; print both so the cause can be read from the log.
+            for line in traceback.format_exc().rstrip().splitlines()[-8:]:
+                log(f"    {line}")
+            recent = CALL_LOG.format_recent(8)
+            if recent:
+                log("  最近的模型调用 (recent model calls):")
+                for line in recent:
+                    log(f"    {line}")
 
         for agent_id in chunk:
             if agent_id in results:
