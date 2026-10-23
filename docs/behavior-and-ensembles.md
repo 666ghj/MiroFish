@@ -185,7 +185,11 @@ would pollute it.
 
 1. In **Step 2**, set *Runs* (1 to 50). `1` is the normal single run and changes nothing. With 2 or more, the
    note under the field tells you how many rounds each run will use. An ensemble always has an explicit round cap
-   (the custom rounds if you set them, otherwise the automatic rounds).
+   (the custom rounds if you set them, otherwise the automatic rounds). With 2 or more runs a second field, *Run
+   at the same time* (1 to 4, default 1), decides how many of them go together. Two at once finish the ensemble
+   about twice as fast, but the model-call limit of each platform (`LLM_MAX_CONCURRENCY`, or the per-platform
+   `LLM_TWITTER_MAX_CONCURRENCY` / `LLM_REDDIT_MAX_CONCURRENCY`) is split between the runs, so each one goes slower,
+   and your provider must allow the extra calls. The value is sent as the ensemble's `concurrency`.
 2. **Step 3** does not start anything yet. It creates the ensemble and shows a review screen:
    - the **estimated cost** (a conservative upper bound on model calls),
    - the **end-of-run questions** (1 to 3, editable now and locked once the runs start; if you did not supply any,
@@ -217,9 +221,14 @@ A `choice` question can carry a `stance_map` (option → supportive / opposing /
 excluded from the statistics but counted in the *parse rate*. The poll is tagged `poll` and is never counted as agent
 behavior.
 
+How many agents are asked at once: `LLM_POLL_PARALLELISM` if set, otherwise the Twitter/Reddit model concurrency cap
+of the platform that is polled (its semaphore bounds the real number of simultaneous requests anyway). Before this
+setting existed the poll always asked 5 at a time.
+
 Agents that give no answer at all (the request failed, or the model sent an empty text) are asked again after pauses of
-5, 15 and 30 seconds, a few at a time and then one at a time, because the usual cause is a provider that throttles
-(HTTP 402 "retry after in-flight requests settle", or 429). What stays silent after that shows up as a lower parse rate.
+5, 15 and 30 seconds, in smaller groups each time but never fewer than 3 at once (or the group size, if that is
+smaller), because the usual cause is a provider that throttles (HTTP 402 "retry after in-flight requests settle", or
+429). What stays silent after that shows up as a lower parse rate.
 
 ### What you get
 

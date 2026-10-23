@@ -208,6 +208,10 @@
       "desc": "用不同的随机种子把同一场景重复运行多次，查看结果的分布，而不是只看单次运行。1 表示单次运行（默认）。",
       "unit": "次",
       "single": "单次运行，与之前一致。",
+      "parallelLabel": "同时运行",
+      "parallelUnit": "次（1-4）",
+      "parallelOne": "一个接一个：对限额紧的服务商最稳妥。",
+      "parallelNote": "同时运行 {parallel} 次，整个集合约可快 {parallel} 倍。每个平台的模型并发上限（LLM_MAX_CONCURRENCY）会在它们之间平分，且你的服务商必须允许这些额外调用。",
       "ensembleNote": "独立运行 {runs} 次，每次最多 {rounds} 轮。成本大约是单次的 {runs} 倍；开始前会先显示估算。"
     }
   },
@@ -621,7 +625,8 @@
     "customSimRounds": "自定义模拟轮数: {rounds} 轮",
     "scheduledEventsSaved": "已保存 {count} 个定时事件",
     "scheduledEventsSaveFailed": "保存定时事件失败: {error}",
-    "startSimEnsemble": "启动集合运行：{runs} 次运行，每次最多 {rounds} 轮"
+    "startSimEnsemble": "启动集合运行：{runs} 次运行，每次最多 {rounds} 轮",
+    "startSimEnsembleParallel": "将同时运行 {parallel} 次"
   },
   "report": {
     "taskStarted": "报告生成任务开始",
@@ -780,6 +785,7 @@
     "loading": "正在加载集合运行...",
     "reviewTitle": "开始前请确认",
     "reviewDesc": "基于同一份已准备好的场景，用不同的随机种子独立运行 {runs} 次，每次最多 {rounds} 轮。",
+    "parallelNote": "同时运行 {parallel} 次。每个平台的模型并发上限会在它们之间平分，所以单次运行更慢，但整个集合更快完成。",
     "seedNote": "种子只保证“调度”可复现（谁在何时活跃、响应延迟、关注关系、定时事件），并不能让大模型的措辞完全相同，所以每次运行仍会有差异。",
     "costTitle": "预估成本",
     "costValue": "最多约 {calls} 次模型调用",

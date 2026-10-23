@@ -56,6 +56,7 @@
           :simulationId="currentSimulationId"
           :maxRounds="maxRounds"
           :runs="runs"
+          :parallel="parallel"
           :ensembleId="ensembleId"
           :minutesPerRound="minutesPerRound"
           :projectData="projectData"
@@ -100,6 +101,8 @@ const currentSimulationId = ref(route.params.simulationId)
 const maxRounds = ref(route.query.maxRounds ? parseInt(route.query.maxRounds) : null)
 // 运行次数大于 1 时进入集合运行模式；ensemble 是地址栏里的集合运行ID（刷新后继续同一个）
 const runs = ref(route.query.runs ? (parseInt(route.query.runs) || 1) : 1)
+// 同时运行的次数（集合运行；1 = 一个接一个）
+const parallel = ref(route.query.parallel ? (parseInt(route.query.parallel) || 1) : 1)
 const ensembleId = ref(route.query.ensemble || null)
 const minutesPerRound = ref(30) // 默认每轮30分钟
 const projectData = ref(null)

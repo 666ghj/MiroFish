@@ -307,6 +307,7 @@
       v-else
       :simulationId="simulationId"
       :runs="runs"
+      :parallel="parallel"
       :maxRounds="maxRounds"
       :ensembleId="ensembleId"
       @add-log="addLog"
@@ -361,6 +362,10 @@ const props = defineProps({
   runs: {
     type: Number,
     default: 1 // 从Step2传入的运行次数；大于1时进入集合运行模式
+  },
+  parallel: {
+    type: Number,
+    default: 1 // 集合运行中同时运行的次数
   },
   ensembleId: String // 地址栏中的集合运行ID（刷新页面后继续同一个集合运行）
 })

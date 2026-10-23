@@ -706,3 +706,43 @@ def test_an_agent_that_cannot_be_dumped_is_left_out_not_fatal():
             raise RuntimeError("no memory")
 
     assert set(sim_runtime.collect_agent_memories(_Graph({0: good, 1: Broken()}))) == {0}
+
+
+# --- how many agents the end-of-run questions are asked at once ---------------------------------------
+
+@pytest.mark.parametrize("platform,settings,env,expected", [
+    ("twitter", None, {}, 30),                                                       # nothing set: the default cap
+    ("twitter", None, {"LLM_MAX_CONCURRENCY": "8"}, 8),                              # follows the model concurrency cap
+    ("reddit", None, {"LLM_MAX_CONCURRENCY": "1", "LLM_REDDIT_MAX_CONCURRENCY": "6"}, 6),   # ... of that platform
+    ("twitter", None, {"LLM_MAX_CONCURRENCY": "8", "LLM_POLL_PARALLELISM": "15"}, 15),      # an explicit setting wins
+    ("twitter", None, {"LLM_MAX_CONCURRENCY": "8", "LLM_POLL_PARALLELISM": "0"}, 8),        # ... unless it is nonsense
+    ("twitter", None, {"LLM_MAX_CONCURRENCY": "8", "LLM_POLL_PARALLELISM": "many"}, 8),
+    ("twitter", {"llm_concurrency_share": 2}, {"LLM_MAX_CONCURRENCY": "8"}, 4),     # a replicate shares the provider
+])
+def test_the_poll_group_size_follows_the_platforms_concurrency_unless_set(platform, settings, env, expected):
+    assert sim_runtime.poll_parallelism(platform, settings, env) == expected
+
+
+def test_a_retry_never_asks_fewer_agents_than_the_floor():
+    """Asking one agent at a time makes a retry of many agents crawl."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as folder:
+        db = str(Path(folder) / "p.db")
+        make_db(db)
+        env = FakeEnv(range(4), db, answers=json_answers(range(4)), fail_on_step=set(range(100)))
+        final_poll(env, db, 4, chunk_size=4, retry_min_chunk=2, retry_delays=(0, 0))
+    assert [len(step) for step in env.steps] == [4, 2, 2, 2, 2]               # the default floor of 1 gives [4,2,2,1,1,1,1]
+
+
+def test_the_floor_cannot_make_a_retry_larger_than_the_first_pass():
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as folder:
+        db = str(Path(folder) / "p.db")
+        make_db(db)
+        env = FakeEnv(range(4), db, answers=json_answers(range(4)), fail_on_step=set(range(100)))
+        final_poll(env, db, 4, chunk_size=2, retry_min_chunk=9, retry_delays=(0,))
+    assert [len(step) for step in env.steps] == [2, 2, 2, 2]

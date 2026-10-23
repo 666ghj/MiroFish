@@ -208,7 +208,11 @@
       "desc": "Run the same scenario several times with different random seeds and look at the spread of outcomes instead of a single run. 1 means a single run (the default).",
       "unit": "runs",
       "single": "One run, as before.",
-      "ensembleNote": "{runs} independent runs of up to {rounds} rounds each. Cost grows roughly {runs}x; an estimate is shown before anything starts."
+      "ensembleNote": "{runs} independent runs of up to {rounds} rounds each. Cost grows roughly {runs}x; an estimate is shown before anything starts.",
+      "parallelLabel": "Run",
+      "parallelUnit": "at the same time (1-4)",
+      "parallelOne": "One after another: the safest on a provider with tight limits.",
+      "parallelNote": "{parallel} runs at once finish the ensemble about {parallel}x sooner. Each platform's model-call limit (LLM_MAX_CONCURRENCY) is shared between them, and your provider must allow the extra calls."
     }
   },
   "step3": {
@@ -621,7 +625,8 @@
     "customSimRounds": "Custom simulation rounds: {rounds} rounds",
     "scheduledEventsSaved": "Saved {count} scheduled event(s)",
     "scheduledEventsSaveFailed": "Saving scheduled events failed: {error}",
-    "startSimEnsemble": "Starting an ensemble: {runs} runs of up to {rounds} rounds each"
+    "startSimEnsemble": "Starting an ensemble: {runs} runs of up to {rounds} rounds each",
+    "startSimEnsembleParallel": "{parallel} runs will go at the same time"
   },
   "report": {
     "taskStarted": "Report generation task started",
@@ -780,6 +785,7 @@
     "loading": "Loading the ensemble...",
     "reviewTitle": "Review before starting",
     "reviewDesc": "{runs} independent runs of up to {rounds} rounds each, started from the same prepared scenario with different random seeds.",
+    "parallelNote": "{parallel} runs go at the same time. Each platform's model-call limit is shared between them, so a single run is slower while the ensemble finishes sooner.",
     "seedNote": "A seed makes the schedule reproducible (who is active when, reaction delays, who follows whom, scheduled events). It does not make the language model's wording identical, so every run still differs.",
     "costTitle": "Estimated cost",
     "costValue": "up to {calls} model calls",

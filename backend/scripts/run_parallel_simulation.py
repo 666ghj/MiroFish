@@ -1788,12 +1788,16 @@ async def main():
         if poll_target and poll_target.env:
             poll_platform = "twitter" if poll_target is twitter_result else "reddit"
             log_manager.info(f"开始最终问卷: {len(poll_questions)} 个问题, 平台={poll_platform}")
+            poll_chunk = sim_runtime.poll_parallelism(poll_platform, run_settings, os.environ)
+            log_manager.info(f"最终问卷并行度: 每步同时询问 {poll_chunk} 个Agent")
             poll_rows = await sim_runtime.run_final_poll(
                 poll_target.env,
                 poll_target.agent_graph,
                 os.path.join(simulation_dir, f"{poll_platform}_simulation.db"),
                 config,
                 poll_questions,
+                chunk_size=poll_chunk,
+                retry_min_chunk=min(3, poll_chunk),
                 log=log_manager.info,
                 status=(twitter_logger if poll_platform == "twitter" else reddit_logger).log_poll_status,
             )

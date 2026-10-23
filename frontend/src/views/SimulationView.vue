@@ -175,6 +175,9 @@ const handleNextStep = (params = {}) => {
   }
   if (params.runs > 1) {
     query.runs = params.runs
+    if (params.concurrency > 1) {
+      query.parallel = params.concurrency
+    }
   }
   if (Object.keys(query).length) {
     routeParams.query = query

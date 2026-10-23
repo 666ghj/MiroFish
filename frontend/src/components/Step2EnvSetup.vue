@@ -544,6 +544,24 @@
                 {{ normalizedRuns > 1 ? $t('step2.runs.ensembleNote', { runs: normalizedRuns, rounds: effectiveRounds }) : $t('step2.runs.single') }}
               </span>
             </div>
+            <!-- How many of those runs go at the same time -->
+            <div v-if="normalizedRuns > 1" class="runs-body runs-parallel">
+              <label class="runs-parallel-label" for="runs-parallel">{{ $t('step2.runs.parallelLabel') }}</label>
+              <input
+                id="runs-parallel"
+                type="number"
+                class="runs-input"
+                min="1"
+                :max="maxParallel"
+                step="1"
+                v-model.number="parallel"
+                @blur="parallel = normalizedParallel"
+              />
+              <span class="runs-unit">{{ $t('step2.runs.parallelUnit') }}</span>
+              <span class="runs-note" :class="{ muted: normalizedParallel === 1 }">
+                {{ normalizedParallel > 1 ? $t('step2.runs.parallelNote', { parallel: normalizedParallel }) : $t('step2.runs.parallelOne') }}
+              </span>
+            </div>
           </div>
 
           <div class="action-group dual">
@@ -721,6 +739,16 @@ const normalizedRuns = computed(() => {
   return Number.isFinite(value) ? Math.min(MAX_RUNS, Math.max(1, value)) : 1
 })
 
+// How many of the runs go at the same time (the backend allows 4). Each platform's model-call limit is
+// shared between them, so a run goes slower while the whole ensemble finishes sooner.
+const MAX_PARALLEL = 4
+const parallel = ref(1)
+const maxParallel = computed(() => Math.min(MAX_PARALLEL, normalizedRuns.value))
+const normalizedParallel = computed(() => {
+  const value = Math.floor(Number(parallel.value))
+  return Number.isFinite(value) ? Math.min(maxParallel.value, Math.max(1, value)) : 1
+})
+
 // Watch stage to update phase
 watch(currentStage, (newStage) => {
   if (newStage === '生成Agent人设' || newStage === 'generating_profiles') {
@@ -817,8 +845,12 @@ const handleStartSimulation = () => {
   if (normalizedRuns.value > 1) {
     // 集合运行必须有明确的轮数上限（成本保护），所以自动轮数也要显式传下去
     params.runs = normalizedRuns.value
+    params.concurrency = normalizedParallel.value
     params.maxRounds = effectiveRounds.value
     addLog(t('log.startSimEnsemble', { runs: params.runs, rounds: params.maxRounds }))
+    if (params.concurrency > 1) {
+      addLog(t('log.startSimEnsembleParallel', { parallel: params.concurrency }))
+    }
   }
 
   emit('next-step', params)
@@ -2429,6 +2461,15 @@ onUnmounted(() => {
   outline: none;
   border-color: var(--c-ff5722);
   background: var(--c-ffffff);
+}
+
+.runs-parallel {
+  margin-top: 10px;
+}
+
+.runs-parallel-label {
+  font-size: 0.85rem;
+  color: var(--c-4b5563);
 }
 
 .runs-unit {

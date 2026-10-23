@@ -18,6 +18,7 @@
         <h2 class="block-title">{{ $t('ensemble.reviewTitle') }}</h2>
         <p class="lead">{{ $t('ensemble.reviewDesc', { runs: ensemble.n_replicates, rounds: ensemble.max_rounds }) }}</p>
         <p class="hint">{{ $t('ensemble.seedNote') }}</p>
+        <p v-if="ensemble.concurrency > 1" class="hint">{{ $t('ensemble.parallelNote', { parallel: ensemble.concurrency }) }}</p>
       </section>
 
       <section v-if="cost" class="block cost-block">
@@ -206,6 +207,8 @@ const props = defineProps({
   simulationId: String,
   // How many runs the user asked for in step 2
   runs: { type: Number, default: 5 },
+  // How many of them go at the same time (step 2)
+  parallel: { type: Number, default: 1 },
   // The per-run round cap from step 2 (the cost guard); read from the config when missing
   maxRounds: Number,
   // An ensemble to continue (from the page address), instead of creating one
@@ -374,6 +377,7 @@ const create = async () => {
   const res = await createEnsemble({
     simulation_id: props.simulationId,
     n_replicates: props.runs,
+    concurrency: Math.max(1, Math.min(props.parallel || 1, props.runs)),
     max_rounds: rounds
   })
   adopt(res.data)

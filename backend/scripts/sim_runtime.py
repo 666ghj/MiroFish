@@ -203,6 +203,22 @@ def platform_llm_concurrency(
     return general or DEFAULT_LLM_CONCURRENCY
 
 
+def poll_parallelism(platform: str, run_settings: Optional[Mapping[str, Any]], environ: Mapping[str, str]) -> int:
+    """How many agents the end-of-run questions are asked at once.
+
+    ``LLM_POLL_PARALLELISM`` when set; otherwise the platform's own model concurrency cap (the platform's
+    semaphore bounds the real number of simultaneous requests anyway, so a larger group just queues). The
+    poll used to ask 5 agents at a time whatever the provider allowed.
+    """
+    try:
+        configured = int(environ.get("LLM_POLL_PARALLELISM") or 0)
+    except ValueError:
+        configured = 0
+    if configured > 0:
+        return configured
+    return max(1, platform_llm_concurrency(platform, run_settings, environ))
+
+
 def model_client_options(environ: Mapping[str, str]) -> Dict[str, Any]:
     """``timeout`` / ``max_retries`` for the model client, from LLM_MODEL_TIMEOUT / LLM_MODEL_MAX_RETRIES.
 
@@ -741,6 +757,7 @@ async def run_final_poll(
     questions: Sequence[Mapping[str, Any]],
     *,
     chunk_size: int = 5,
+    retry_min_chunk: int = 1,
     retry_delays: Sequence[float] = FINAL_POLL_RETRY_DELAYS,
     log: Callable[[str], None] = print,
     status: Optional[Callable[[Dict[str, Any]], None]] = None,
@@ -808,7 +825,9 @@ async def run_final_poll(
             agent_graph,
             db_path,
             {agent_id: prompt for agent_id in silent},
-            chunk_size=max(1, chunk_size // (2 ** attempt)),
+            # fewer agents per step with every retry (a failing agent costs fewer others its step), but never
+            # fewer than ``retry_min_chunk``: asking one agent at a time makes a retry of many agents crawl
+            chunk_size=min(chunk_size, max(1, retry_min_chunk, chunk_size // (2 ** attempt))),
             log=log,
         )
         for agent_id, result in retried.items():
