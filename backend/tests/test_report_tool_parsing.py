@@ -68,6 +68,32 @@ def test_tool_and_params_are_accepted_as_aliases():
     assert calls == [{"name": "panorama_search", "parameters": {"query": "q"}}]
 
 
+def test_arguments_written_next_to_the_name_are_the_parameters():
+    # what the model really sent: no "parameters" key, so the query used to be thrown away
+    reply = '<tool_call>{"name": "insight_forge", "query": "QIP reactions", "report_context": "five sessions"}</tool_call>'
+    assert agent_for(QueueLLM([]))._parse_tool_calls(reply) == [
+        {"name": "insight_forge", "parameters": {"query": "QIP reactions", "report_context": "five sessions"}}
+    ]
+
+
+def test_arguments_alias_and_bare_json_are_read_the_same_way():
+    agent = agent_for(QueueLLM([]))
+    assert agent._parse_tool_calls('<tool_call>{"name": "quick_search", "arguments": {"query": "q"}}</tool_call>') == [
+        {"name": "quick_search", "parameters": {"query": "q"}}
+    ]
+    assert agent._parse_tool_calls('{"name": "quick_search", "query": "q"}') == [
+        {"name": "quick_search", "parameters": {"query": "q"}}
+    ]
+    assert agent._parse_tool_calls('Thinking first. {"name": "quick_search", "query": "q"}') == [
+        {"name": "quick_search", "parameters": {"query": "q"}}
+    ]
+
+
+def test_a_parameters_object_wins_over_a_loose_key_of_the_same_name():
+    reply = '<tool_call>{"name": "quick_search", "query": "loose", "parameters": {"query": "real"}}</tool_call>'
+    assert agent_for(QueueLLM([]))._parse_tool_calls(reply) == [{"name": "quick_search", "parameters": {"query": "real"}}]
+
+
 def test_a_non_object_parameters_value_becomes_an_empty_dict():
     calls = agent_for(QueueLLM([]))._parse_tool_calls('<tool_call>{"name": "quick_search", "parameters": "oops"}</tool_call>')
     assert calls == [{"name": "quick_search", "parameters": {}}]

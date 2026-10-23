@@ -458,6 +458,48 @@ class Pacer:
             await asyncio.sleep(delay)
 
 
+def strict_role_order(messages: Any) -> Any:
+    """``messages`` with the role order that strict chat templates accept (the input is not modified).
+
+    Some models (Mistral on Cloudflare, among others) answer HTTP 400 "Unexpected role 'user' after role
+    'tool'" to a history that OpenAI-style APIs take. OASIS agents produce exactly that: a tool result
+    followed by the next round's user message. Two repairs, neither of which changes what the agent sees:
+    two plain messages of the same role in a row are joined into one, and a user message right after a tool
+    result gets a short assistant turn in between.
+    """
+    if not isinstance(messages, (list, tuple)):
+        return messages
+
+    def plain(message: Any) -> bool:
+        return (
+            isinstance(message, dict)
+            and isinstance(message.get("content"), str)
+            and not message.get("tool_calls")
+            and message.get("role") in ("user", "assistant")
+        )
+
+    fixed: List[Any] = []
+    for message in messages:
+        previous = fixed[-1] if fixed else None
+        if isinstance(message, dict) and message.get("role") == "user" and isinstance(previous, dict) and previous.get("role") == "tool":
+            fixed.append({"role": "assistant", "content": "Understood."})
+            previous = fixed[-1]
+        if plain(message) and plain(previous) and previous["role"] == message["role"]:
+            fixed[-1] = {**previous, "content": previous["content"] + "\n\n" + message["content"]}
+        else:
+            fixed.append(message)
+    return fixed
+
+
+def _with_strict_roles(args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    """The arguments of a model ``run``/``arun`` call with its messages passed through ``strict_role_order``."""
+    if args:
+        return (strict_role_order(args[0]),) + tuple(args[1:]), kwargs
+    if "messages" in kwargs:
+        return args, {**kwargs, "messages": strict_role_order(kwargs["messages"])}
+    return args, kwargs
+
+
 def install_model_fallback(
     primary: Any,
     fallback: Any,
@@ -467,7 +509,8 @@ def install_model_fallback(
     """Make ``primary`` hand a failed call to ``fallback`` (camel model backends, sync and async).
 
     Only calls that failed in a way another model could fix (see ``should_fall_back``) are retried, once,
-    on ``fallback``; any other error, and a failure of the fallback itself, propagates unchanged.
+    on ``fallback``; any other error, and a failure of the fallback itself, propagates unchanged. The fallback
+    gets the messages in a role order every chat template accepts (see ``strict_role_order``).
     """
     original_run, original_arun = primary.run, primary.arun
 
@@ -480,7 +523,8 @@ def install_model_fallback(
             _notify(on_fallback, error)
             if pacer is not None:
                 pacer.wait()
-            return fallback.run(*args, **kwargs)
+            fallback_args, fallback_kwargs = _with_strict_roles(args, kwargs)
+            return fallback.run(*fallback_args, **fallback_kwargs)
 
     async def arun(*args, **kwargs):
         try:
@@ -491,7 +535,8 @@ def install_model_fallback(
             _notify(on_fallback, error)
             if pacer is not None:
                 await pacer.await_turn()
-            return await fallback.arun(*args, **kwargs)
+            fallback_args, fallback_kwargs = _with_strict_roles(args, kwargs)
+            return await fallback.arun(*fallback_args, **fallback_kwargs)
 
     primary.run, primary.arun = run, arun
     return primary

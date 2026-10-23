@@ -561,6 +561,69 @@ def test_a_broken_log_cannot_break_a_model_call():
     assert model.run([]).choices[0].message.content == "fine"
 
 
+def _bad_history():
+    return [
+        {"role": "system", "content": "You are agent 3."},
+        {"role": "user", "content": "round 1 feed"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "do_nothing", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "{'success': True}"},
+        {"role": "user", "content": "round 2 feed"},                  # what Mistral rejects: user right after tool
+        {"role": "user", "content": "please answer"},                 # and two user messages in a row
+    ]
+
+
+def test_strict_role_order_repairs_user_after_tool_and_repeated_roles():
+    history = _bad_history()
+    fixed = sim_runtime.strict_role_order(history)
+
+    assert [m["role"] for m in fixed] == ["system", "user", "assistant", "tool", "assistant", "user"]
+    assert fixed[-1]["content"] == "round 2 feed\n\nplease answer"            # nothing the agent saw is lost
+    assert fixed[2]["tool_calls"] and fixed[3]["tool_call_id"] == "c1"       # the tool exchange is untouched
+    assert history == _bad_history()                                          # the caller's list is not modified
+
+
+def test_strict_role_order_leaves_a_clean_history_alone():
+    clean = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "u"},
+        {"role": "assistant", "content": "a"},
+        {"role": "user", "content": [{"type": "text", "text": "multi"}]},
+    ]
+    assert sim_runtime.strict_role_order(clean) == clean
+    assert sim_runtime.strict_role_order([]) == []
+    assert sim_runtime.strict_role_order("not a list") == "not a list"
+
+
+def test_only_the_fallback_gets_the_repaired_messages_sync_and_async():
+    class Slow(Exception):
+        status_code = 429
+
+    seen = {}
+
+    class Recorder(_Model):
+        def run(self, *args, **kwargs):
+            seen["args"], seen["kwargs"] = args, kwargs
+            return super().run(*args, **kwargs)
+
+    for call in ("positional", "keyword", "async"):
+        primary = _Model(Slow("quota"))
+        backup = Recorder(_Completion([_Choice("fine")]))
+        sim_runtime.install_model_fallback(primary, backup)
+        history = _bad_history()
+        if call == "positional":
+            primary.run(history, tools=["t"])
+            sent = seen["args"][0]
+        elif call == "keyword":
+            primary.run(messages=history)
+            sent = seen["kwargs"]["messages"]
+        else:
+            run(primary.arun(history))
+            sent = seen["args"][0]
+        assert [m["role"] for m in sent] == ["system", "user", "assistant", "tool", "assistant", "user"], call
+        assert history == _bad_history(), call
+    assert seen["kwargs"] == {} or "messages" in seen["kwargs"]
+
+
 def test_the_primary_and_the_fallback_both_appear_in_order(monkeypatch):
     log = sim_runtime.ModelCallLog()
     monkeypatch.setattr(sim_runtime, "CALL_LOG", log)

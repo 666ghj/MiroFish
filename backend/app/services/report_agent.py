@@ -1216,7 +1216,7 @@ class ReportAgent:
             try:
                 call_data = json.loads(stripped)
                 if self._is_valid_tool_call(call_data):
-                    tool_calls.append(call_data)
+                    tool_calls.append(self._normalize_tool_call(call_data))
                     return tool_calls
             except json.JSONDecodeError:
                 pass
@@ -1228,7 +1228,7 @@ class ReportAgent:
             try:
                 call_data = json.loads(match.group(1))
                 if self._is_valid_tool_call(call_data):
-                    tool_calls.append(call_data)
+                    tool_calls.append(self._normalize_tool_call(call_data))
             except json.JSONDecodeError:
                 pass
 
@@ -1238,7 +1238,9 @@ class ReportAgent:
     def _normalize_tool_call(data: Any) -> Optional[Dict[str, Any]]:
         """``{"name", "parameters"}`` for a parsed tag-format call, or None when it names no tool.
 
-        Accepts ``tool`` for ``name`` and ``params`` for ``parameters``. A tool name that is not one of ours
+        Accepts ``tool`` for ``name`` and ``params`` / ``arguments`` for ``parameters``. Models also write the
+        arguments next to the name (``{"name": "insight_forge", "query": "..."}``); those keys are the
+        parameters, otherwise the tool runs with no query ("Zep search query must not be empty"). A tool name that is not one of ours
         is kept: executing it answers with the list of valid tools, which is better feedback for the model
         than silence. Only a call with no usable name at all is dropped.
         """
@@ -1247,12 +1249,9 @@ class ReportAgent:
         name = data.get("name") or data.get("tool")
         if not isinstance(name, str) or not name.strip():
             return None
-        parameters = data.get("parameters", data.get("params"))
-        return {
-            **{k: v for k, v in data.items() if k not in ("tool", "params")},
-            "name": name.strip(),
-            "parameters": parameters if isinstance(parameters, dict) else {},
-        }
+        named = next((data[key] for key in ("parameters", "params", "arguments") if isinstance(data.get(key), dict)), {})
+        loose = {k: v for k, v in data.items() if k not in ("name", "tool", "parameters", "params", "arguments")}
+        return {"name": name.strip(), "parameters": {**loose, **named}}
 
     def _is_valid_tool_call(self, data: dict) -> bool:
         """校验解析出的 JSON 是否是合法的工具调用"""
