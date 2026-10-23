@@ -153,7 +153,7 @@
               : $t('resume.ensembleRunRestart', { index: runIndex(item.simulation_id) }) }}
           </li>
         </ul>
-        <p class="hint">{{ $t('resume.memoryNote') }}</p>
+        <p class="hint">{{ resumeMemoryRestored ? $t('resume.memoryRestoredNote') : $t('resume.memoryNote') }}</p>
         <p v-if="resumeInexact" class="hint">{{ $t('resume.inexactNote') }}</p>
         <button type="button" class="btn primary" :disabled="busy !== ''" @click="resume">
           {{ busy === 'resume' ? $t('resume.resuming') : $t('resume.ensembleButton') }}
@@ -252,6 +252,11 @@ const isActive = computed(() => ACTIVE_STATUSES.includes(ensemble.value?.status)
 // What resuming would do to each cut-off run (only fetched for a stopped, failed or partial ensemble)
 const resumeInfo = ref(null)
 const resumingCount = computed(() => (resumeInfo.value?.replicates || []).filter(r => r.action !== 'skip').length)
+// true only when every run that would continue has its agents' chat memory saved in its checkpoint
+const resumeMemoryRestored = computed(() => {
+  const resuming = (resumeInfo.value?.replicates || []).filter(r => r.action === 'resume')
+  return resuming.length > 0 && resuming.every(r => r.memory === true)
+})
 const resumeInexact = computed(() => (resumeInfo.value?.replicates || []).some(r => r.action === 'resume' && r.exact === false))
 const runIndex = (simulationId) => {
   const run = (ensemble.value?.replicates || []).find(item => item.simulation_id === simulationId)

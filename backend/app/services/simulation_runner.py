@@ -181,6 +181,8 @@ class SimulationRunState:
     resumed_from_round: Optional[int] = None
     resume_count: int = 0
     resume_exact: Optional[bool] = None
+    # ... and whether the agents' chat memory was restored from that checkpoint (False: they continued with an empty one)
+    resume_memory: Optional[bool] = None
 
     # Which platforms the run was started with: "parallel" (both), "twitter" or "reddit". Every run, single-platform
     # ones included, uses run_parallel_simulation.py (with --twitter-only / --reddit-only), so every run writes the
@@ -325,6 +327,7 @@ class SimulationRunState:
             "resumed_from_round": self.resumed_from_round,
             "resume_count": self.resume_count,
             "resume_exact": self.resume_exact,
+            "resume_memory": self.resume_memory,
             "platform": self.platform,
         }
 
@@ -475,6 +478,7 @@ class SimulationRunner:
                 resumed_from_round=data.get("resumed_from_round"),
                 resume_count=data.get("resume_count") or 0,
                 resume_exact=data.get("resume_exact"),
+                resume_memory=data.get("resume_memory"),
                 platform=data.get("platform") or "parallel",
             )
 
@@ -573,6 +577,7 @@ class SimulationRunner:
         """
         info: Dict[str, Any] = {
             "resumable": False, "reason": None, "round": None, "rounds": {}, "total_rounds": None, "exact": None,
+            "memory": None,
         }
         state = cls.get_run_state(simulation_id)
         if state is None or state.runner_status == RunnerStatus.IDLE:
@@ -603,6 +608,7 @@ class SimulationRunner:
         info["rounds"] = {platform: plan.round for platform, plan in plans.items()}
         info["round"] = min(plan.round for plan in plans.values())
         info["exact"] = all(plan.exact for plan in plans.values())
+        info["memory"] = all(plan.memory for plan in plans.values())   # agents continue with their real chat history
         info["resumable"] = True
         return info
 
@@ -636,6 +642,7 @@ class SimulationRunner:
 
         state.resumed_from_round = min(plan.round for plan in plans.values())
         state.resume_exact = all(plan.exact for plan in plans.values())
+        state.resume_memory = all(plan.memory for plan in plans.values())
         logger.info(
             f"继续模拟: {simulation_id}, 各平台继续位置 { {p: plan.round for p, plan in plans.items()} }, "
             f"exact={state.resume_exact}"

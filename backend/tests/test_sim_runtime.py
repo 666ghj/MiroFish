@@ -597,3 +597,112 @@ def test_a_failed_interview_step_prints_the_traceback_and_the_recent_model_calls
     assert "Traceback" in text or "test_sim_runtime.py" in text                # where it happened
     assert "最近的模型调用" in text and "main:" in text and "NO USABLE ANSWER" in text
     assert results[0]["response"] is None and "list index out of range" in results[0]["error"]
+
+
+# --- saving and restoring the agents' chat memory -----------------------------------------------------
+
+def _chat_agent(name="Priya"):
+    from camel.agents import ChatAgent
+    from camel.messages import BaseMessage
+    from camel.models import ModelFactory
+    from camel.types import ModelPlatformType
+
+    model = ModelFactory.create(model_platform=ModelPlatformType.OPENAI, model_type="gpt-4o-mini", api_key="k",
+                                url="http://127.0.0.1:1/v1")
+    return ChatAgent(system_message=BaseMessage.make_assistant_message(role_name=name, content=f"You are {name}."),
+                     model=model)
+
+
+def _live_through_three_rounds(agent):
+    """What an OASIS agent's memory holds after it acted: observation, reply, a tool call and its result."""
+    from camel.messages import BaseMessage, FunctionCallingMessage
+    from camel.types import OpenAIBackendRole
+
+    for round_num in range(3):
+        agent.update_memory(BaseMessage.make_user_message("User", f"Round {round_num}: a post about the QIP, 4% dilution"),
+                            OpenAIBackendRole.USER)
+        agent.update_memory(
+            FunctionCallingMessage(role_name="Priya", role_type=agent.system_message.role_type, meta_dict=None, content="",
+                                   func_name="like_post", args={"post_id": round_num}, tool_call_id=f"call_{round_num}"),
+            OpenAIBackendRole.ASSISTANT,
+        )
+        agent.update_memory(
+            FunctionCallingMessage(role_name="Priya", role_type=agent.system_message.role_type, meta_dict=None, content="",
+                                   func_name="like_post", result={"success": True}, tool_call_id=f"call_{round_num}"),
+            OpenAIBackendRole.FUNCTION,
+        )
+
+
+def test_an_agents_memory_survives_dump_clear_and_load():
+    agent = _chat_agent()
+    _live_through_three_rounds(agent)
+    before, _ = agent.memory.get_context()
+
+    blob = sim_runtime.dump_agent_memory(agent)
+    json.loads(blob)                                           # plain JSON: it can live in a database column
+    agent.memory.clear()
+    assert sim_runtime.load_agent_memory(agent, blob) == len(before)
+
+    after, _ = agent.memory.get_context()
+    assert after == before and before[0]["role"] == "system" and len(before) >= 10
+
+
+def test_the_memory_loads_into_a_fresh_agent_of_a_new_process():
+    old, new = _chat_agent(), _chat_agent()
+    _live_through_three_rounds(old)
+    blob = sim_runtime.dump_agent_memory(old)
+
+    assert len(new.memory.get_context()[0]) == 1                # only its system prompt, as after a resume
+    sim_runtime.load_agent_memory(new, blob)
+    assert new.memory.get_context()[0] == old.memory.get_context()[0]
+
+
+def test_an_unreadable_memory_leaves_the_agent_as_it_was():
+    agent = _chat_agent()
+    _live_through_three_rounds(agent)
+    before, _ = agent.memory.get_context()
+
+    with pytest.raises(ValueError):
+        sim_runtime.load_agent_memory(agent, "{not json")
+    assert sim_runtime.load_agent_memory(agent, "[]") == 0     # nothing usable: no half-restore
+    assert sim_runtime.load_agent_memory(agent, '[{"garbage": 1}]') == 0
+    assert agent.memory.get_context()[0] == before
+
+
+class _Graph:
+    def __init__(self, agents):
+        self.agents = agents
+
+    def get_agents(self):
+        return list(self.agents.items())
+
+    def get_agent(self, agent_id):
+        return self.agents[agent_id]
+
+
+def test_a_whole_graph_is_collected_and_restored_and_failures_are_reported():
+    agents = {i: _chat_agent(f"A{i}") for i in range(3)}
+    for agent in agents.values():
+        _live_through_three_rounds(agent)
+    reference = {i: a.memory.get_context()[0] for i, a in agents.items()}
+
+    memories = sim_runtime.collect_agent_memories(_Graph(agents))
+    assert set(memories) == {0, 1, 2}
+    for agent in agents.values():
+        agent.memory.clear()
+
+    restored, failed = sim_runtime.restore_agent_memories(_Graph(agents), {**memories, 9: memories[0], 1: "{broken"})
+    assert (restored, sorted(failed)) == (2, [1, 9])           # agent 1: unreadable blob, agent 9: not in the graph
+    assert agents[0].memory.get_context()[0] == reference[0] and agents[2].memory.get_context()[0] == reference[2]
+
+
+def test_an_agent_that_cannot_be_dumped_is_left_out_not_fatal():
+    good = _chat_agent()
+    _live_through_three_rounds(good)
+
+    class Broken:
+        @property
+        def memory(self):
+            raise RuntimeError("no memory")
+
+    assert set(sim_runtime.collect_agent_memories(_Graph({0: good, 1: Broken()}))) == {0}

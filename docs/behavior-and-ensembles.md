@@ -12,8 +12,8 @@ important, what its numbers do and do not mean. The design rationale and the acc
    a few questions at the end of each run, and look at the **spread** of the answers instead of a single run.
 4. A report can be written from an ensemble, and it quotes ranges instead of single numbers.
 5. A stopped or interrupted run can be **resumed** from its last finished round instead of started over
-   (see "Resuming a stopped run" below). The agents' chat memory is lost, so a resumed run is not identical to an
-   uninterrupted one.
+   (see "Resuming a stopped run" below). The agents' chat memory is saved with every checkpoint and loaded back,
+   so they continue with their real history; a resumed run is still not bit-identical to an uninterrupted one.
 
 > **Read this before you trust a number.** An ensemble gives you distributions of *what simulated participants
 > said* across N stochastic runs. It is **not** a calibrated probability that the real-world event happens.
@@ -128,18 +128,28 @@ normal "start over" path (`/start` with `force`) is unchanged and still deletes 
 5. Runs rounds *k* + 1 to the end, then the final poll, as usual. A resumed run keeps its original start time;
    `run_state.json` records `resumed_from_round`, `resume_count` and `resume_exact`.
 
-**What it cannot do - read this**
+**The agents' chat memory**
 
-> **Agents' chat memory cannot be restored.** It lives in the run process and is not saved. After a resume every
-> agent starts with a fresh conversation: it still knows its persona and sees the platform as it is (posts, follows,
-> the recommendation feed), but it does not remember its own earlier reasoning. A resumed run is therefore **not
-> identical** to one that was never interrupted, even with the same seed. The *schedule* is the same (the replay
-> guarantees that); what the agents write is not. The UI says so next to the Resume button.
+An agent's chat memory (its system prompt, what it read each round, its replies and tool calls) lives in the run
+process. Every checkpoint therefore also stores it: each agent's memory is written, as camel's own JSON, into a
+table of the checkpoint file, so the database, the round number and the memory are saved in one step and cannot
+disagree. A resume loads it back into the agents before the first redone round, and the end-of-run questions are
+asked with each agent's full history. The UI says which case applies next to the Resume button
+(`resume_memory` in `run_state.json`, `memory` in the resume info).
+
+A run whose checkpoint has **no** memory (it was started before memory was saved, or it has no checkpoint at all)
+still resumes, but its agents continue with an empty conversation: they know their persona and see the platform as it
+is, not what they experienced. Their end-of-run answers then mostly restate their starting views, so such a run's
+poll should not be trusted; start it over instead.
+
+Either way a resumed run is **not identical** to one that was never interrupted, even with the same seed: the
+*schedule* is the same (the replay guarantees that), but the model's output is not deterministic.
 
 **Exact or not**
 
 After every finished round the run script saves a checkpoint of each platform database (`<db>.ckpt`, written with
-SQLite's backup API; it carries its round number inside, so the copy and its round can never disagree). A resume
+SQLite's backup API; it carries its round number and the agents' chat memory inside, so the copy, its round and the
+memory can never disagree). Memory costs a few KB per agent per round of activity. A resume
 restores it, which also undoes anything the unfinished round had already written (some agents may have acted before
 the stop). That is an **exact** resume (`resume_exact: true`).
 

@@ -8,8 +8,11 @@ What a resume can and cannot do
   run seed and the configuration, never on what the model said. It is *replayed* for the finished rounds
   without any model call, so its random generators are exactly where they were, and the replay is checked
   against the ``active_agent_ids`` that were logged for every finished round.
-* Agent chat memory lives in the process and is lost. A resumed run is therefore not identical to an
-  uninterrupted one: agents remember what they read in the platform, not their earlier reasoning.
+* Agent chat memory lives in the process. It is saved into the checkpoint together with the database (see
+  below) and loaded back on resume, so agents continue with their real history. A run whose checkpoint has
+  no memory (it was started before memory was saved, or there is no checkpoint) resumes with empty chat
+  memory: agents then know their persona and the platform as it is, not what they experienced. Either way a
+  resumed run is not bit-identical to an uninterrupted one: the model is not deterministic.
 
 Exactness of the unfinished round
 ---------------------------------
@@ -36,6 +39,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 CHECKPOINT_SUFFIX = ".ckpt"
 CHECKPOINT_TABLE = "mirofish_checkpoint"
+MEMORY_TABLE = "mirofish_agent_memory"
 #: Log records with these phases are not agent behaviour and are not counted as actions.
 NON_ACTION_PHASES = {"setup", "poll"}
 
@@ -111,8 +115,18 @@ def checkpoint_path(db_path: str) -> str:
     return db_path + CHECKPOINT_SUFFIX
 
 
-def write_checkpoint(db_path: str, round_num: int, clock: Optional[Mapping[str, Any]] = None) -> str:
-    """Copy the database (consistently) next to itself, tagged with ``round_num``."""
+def write_checkpoint(
+    db_path: str,
+    round_num: int,
+    clock: Optional[Mapping[str, Any]] = None,
+    memories: Optional[Mapping[int, str]] = None,
+) -> str:
+    """Copy the database (consistently) next to itself, tagged with ``round_num``.
+
+    ``memories`` maps an agent id to that agent's chat memory as a JSON string. It is stored in a table of
+    the copy itself, so the database, the round number and the memory are saved in one step and can never
+    disagree.
+    """
     target = checkpoint_path(db_path)
     temp = target + ".tmp"
     if os.path.exists(temp):
@@ -127,6 +141,16 @@ def write_checkpoint(db_path: str, round_num: int, clock: Optional[Mapping[str, 
             f"INSERT INTO {CHECKPOINT_TABLE} (round, clock, written_at) VALUES (?, ?, ?)",
             (int(round_num), json.dumps(dict(clock or {})), datetime.now().isoformat()),
         )
+        # a database restored from an older checkpoint still carries that checkpoint's memory: replace it
+        destination.execute(f"DROP TABLE IF EXISTS {MEMORY_TABLE}")
+        if memories:
+            destination.execute(
+                f"CREATE TABLE {MEMORY_TABLE} (agent_id INTEGER PRIMARY KEY, records TEXT NOT NULL, round INTEGER NOT NULL)"
+            )
+            destination.executemany(
+                f"INSERT INTO {MEMORY_TABLE} (agent_id, records, round) VALUES (?, ?, ?)",
+                [(int(agent_id), blob, int(round_num)) for agent_id, blob in memories.items()],
+            )
         destination.commit()
     finally:
         destination.close()
@@ -165,6 +189,36 @@ def _read_marker(path: str) -> Optional[Dict[str, Any]]:
     return {"round": int(row[0]), "clock": clock if isinstance(clock, dict) else {}}
 
 
+def read_memories(db_path: str, *, expect_round: Optional[int] = None) -> Dict[int, str]:
+    """``{agent_id: memory JSON}`` stored in a database or checkpoint file ({} when it holds none).
+
+    Every stored memory is tagged with the round of the checkpoint that wrote it. With ``expect_round`` only
+    memory of exactly that round is returned, so a database that still carries the memory of an older
+    checkpoint (its newer checkpoint failed to write) can never hand agents a history from the wrong round.
+    This only reads: the live database is open in the platform's own connection, which may hold a lock, so a
+    resume must not try to modify it.
+    """
+    if not os.path.isfile(db_path):
+        return {}
+    try:
+        connection = sqlite3.connect(db_path, timeout=5)
+        try:
+            rows = connection.execute(f"SELECT agent_id, records, round FROM {MEMORY_TABLE}").fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return {}
+    return {
+        int(agent_id): records
+        for agent_id, records, stored_round in rows
+        if expect_round is None or stored_round == expect_round
+    }
+
+
+def checkpoint_has_memory(db_path: str, expect_round: Optional[int] = None) -> bool:
+    return bool(read_memories(checkpoint_path(db_path), expect_round=expect_round))
+
+
 def restore_checkpoint(db_path: str) -> None:
     """Make the checkpoint the live database (any half-written journal of the old one is dropped)."""
     source = checkpoint_path(db_path)
@@ -189,6 +243,8 @@ class ResumePlan:
     offset: int = 0
     #: the database is restored from a checkpoint of exactly this round
     exact: bool = False
+    #: that checkpoint also carries the agents' chat memory
+    memory: bool = False
     total_actions: int = 0
     #: ``round_start`` ids of the unfinished round that will be redone, if it was logged
     unfinished_ids: Optional[List[int]] = None
@@ -196,7 +252,7 @@ class ResumePlan:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "platform": self.platform, "resumable": self.resumable, "reason": self.reason,
-            "round": self.round, "exact": self.exact,
+            "round": self.round, "exact": self.exact, "memory": self.memory,
         }
 
 
@@ -228,6 +284,7 @@ def plan_resume(sim_dir: str, platform: str) -> ResumePlan:
         round=resume_round,
         offset=scan.round_offsets[resume_round],
         exact=exact,
+        memory=exact and checkpoint_has_memory(db_path, expect_round=resume_round),
         total_actions=scan.round_totals.get(resume_round, 0),
         unfinished_ids=scan.started.get(resume_round + 1),
     )

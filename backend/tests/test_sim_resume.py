@@ -358,3 +358,85 @@ def test_an_unreadable_clock_is_left_alone(tmp_path):
     platform = SimpleNamespace(sandbox_clock=SimpleNamespace(time_step=0))
     assert sim_resume.restore_clock("twitter", platform, str(tmp_path / "missing.db"), None) is None
     assert platform.sandbox_clock.time_step == 0
+
+
+# --- the agents' chat memory travels with the checkpoint ----------------------------------------------
+
+def test_a_checkpoint_carries_the_memory_and_a_restored_database_has_it_too(tmp_path):
+    db = tmp_path / "twitter_simulation.db"
+    make_db(db, ["a"])
+    memories = {0: '[{"agent": 0}]', 3: '[{"agent": 3}]'}
+
+    sim_resume.write_checkpoint(str(db), 2, {}, memories=memories)
+
+    assert sim_resume.read_memories(sim_resume.checkpoint_path(str(db))) == memories
+    assert sim_resume.checkpoint_has_memory(str(db))
+    sim_resume.restore_checkpoint(str(db))                                   # the live database now has it too
+    assert sim_resume.read_memories(str(db), expect_round=2) == memories
+    assert posts(db) == ["a"]                                                # the table is not part of the platform's data
+
+
+def test_memory_of_another_round_is_never_returned(tmp_path):
+    """A database that kept the memory of an older checkpoint must not give it to a resume of a later round."""
+    db = tmp_path / "x.db"
+    make_db(db, ["a"])
+    sim_resume.write_checkpoint(str(db), 2, memories={0: "round two"})
+    sim_resume.restore_checkpoint(str(db))
+
+    assert sim_resume.read_memories(str(db), expect_round=2) == {0: "round two"}
+    assert sim_resume.read_memories(str(db), expect_round=5) == {}
+    assert sim_resume.checkpoint_has_memory(str(db), expect_round=5) is False
+
+
+def test_memory_can_be_read_while_another_connection_holds_a_write_lock(tmp_path):
+    """The platform's own connection keeps a transaction open after a failed sign-up; reading must not need the lock."""
+    db = tmp_path / "x.db"
+    make_db(db, ["a"])
+    sim_resume.write_checkpoint(str(db), 1, memories={0: "m"})
+    sim_resume.restore_checkpoint(str(db))
+
+    holder = sqlite3.connect(str(db))
+    try:
+        holder.execute("INSERT INTO post (content) VALUES ('uncommitted')")       # opens a write transaction, never committed
+        assert sim_resume.read_memories(str(db), expect_round=1) == {0: "m"}
+    finally:
+        holder.rollback()
+        holder.close()
+
+
+def test_a_checkpoint_without_memory_replaces_the_memory_of_the_database_it_was_copied_from(tmp_path):
+    db = tmp_path / "x.db"
+    make_db(db, ["a"])
+    sim_resume.write_checkpoint(str(db), 1, memories={0: "old"})
+    sim_resume.restore_checkpoint(str(db))
+    sim_resume.write_checkpoint(str(db), 2)                                  # e.g. the memory could not be dumped this round
+
+    assert sim_resume.read_memories(sim_resume.checkpoint_path(str(db))) == {}
+    assert not sim_resume.checkpoint_has_memory(str(db))
+
+
+def test_newer_memory_replaces_older_memory(tmp_path):
+    db = tmp_path / "x.db"
+    make_db(db, ["a"])
+    sim_resume.write_checkpoint(str(db), 1, memories={0: "round one", 1: "also one"})
+    sim_resume.write_checkpoint(str(db), 2, memories={0: "round two"})
+    assert sim_resume.read_memories(sim_resume.checkpoint_path(str(db))) == {0: "round two"}
+
+
+def test_reading_memory_from_a_missing_or_broken_file_is_empty(tmp_path):
+    assert sim_resume.read_memories(str(tmp_path / "nope.db")) == {}
+    (tmp_path / "broken.db").write_bytes(b"not a database")
+    assert sim_resume.read_memories(str(tmp_path / "broken.db")) == {}
+
+
+def test_the_plan_says_whether_the_memory_will_come_back(tmp_path):
+    with_memory = prepare_platform(tmp_path, "twitter", 3)
+    sim_resume.write_checkpoint(str(with_memory), 3, memories={0: "[]"})
+    assert sim_resume.plan_resume(str(tmp_path), "twitter").memory is True
+
+    prepare_platform(tmp_path, "reddit", 3, checkpoint_round=3)               # a checkpoint of the older kind
+    plan = sim_resume.plan_resume(str(tmp_path), "reddit")
+    assert plan.exact and plan.memory is False
+
+    prepare_platform(tmp_path / "other", "twitter", 3)                          # no checkpoint at all
+    assert sim_resume.plan_resume(str(tmp_path / "other"), "twitter").memory is False

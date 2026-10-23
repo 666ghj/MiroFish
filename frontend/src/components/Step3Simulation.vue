@@ -114,7 +114,7 @@
       <div class="resume-text">
         <strong>{{ $t('resume.title') }}</strong>
         <p>{{ $t('resume.offer', { round: resumeInfo.round, total: resumeInfo.total_rounds || maxRounds || '?', next: resumeInfo.round + 1 }) }}</p>
-        <p class="resume-note">{{ $t('resume.memoryNote') }}</p>
+        <p class="resume-note">{{ resumeInfo.memory ? $t('resume.memoryRestoredNote') : $t('resume.memoryNote') }}</p>
         <p v-if="resumeInfo.exact === false" class="resume-note resume-warn">{{ $t('resume.inexactNote') }}</p>
         <p v-if="resumeError" class="resume-note resume-error">{{ $t('resume.failed', { error: resumeError }) }}</p>
       </div>
@@ -127,7 +127,7 @@
     </div>
     <div v-if="!ensembleMode && runStatus.resumed_from_round != null" class="resume-chip">
       {{ $t('resume.resumedChip', { round: runStatus.resumed_from_round }) }}
-      <span class="resume-chip-note">{{ $t('resume.memoryNote') }}</span>
+      <span class="resume-chip-note">{{ runStatus.resume_memory ? $t('resume.memoryRestoredNote') : $t('resume.memoryNote') }}</span>
     </div>
 
     <!-- Why nothing seems to happen: what the round is doing now, and any model failure -->

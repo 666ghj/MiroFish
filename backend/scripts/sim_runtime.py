@@ -247,6 +247,70 @@ def apply_model_client_options(model: Any, options: Mapping[str, Any]) -> Any:
     return model
 
 
+# --- agents' chat memory ------------------------------------------------------------------------
+
+def dump_agent_memory(agent: Any) -> str:
+    """The agent's chat memory (system prompt, observations, replies, tool calls) as camel's own JSON."""
+    from camel.storages.key_value_storages.json import CamelJSONEncoder
+
+    records = [context.memory_record.to_dict() for context in agent.memory.retrieve()]
+    return json.dumps(records, ensure_ascii=False, cls=CamelJSONEncoder)
+
+
+def load_agent_memory(agent: Any, blob: str) -> int:
+    """Replace the agent's chat memory with what ``dump_agent_memory`` produced; returns the records loaded.
+
+    The agent is left untouched when the blob cannot be read at all (a half-restored memory would be worse
+    than a fresh one). A single unreadable record is skipped.
+    """
+    from camel.memories import MemoryRecord
+    from camel.storages.key_value_storages.json import CamelJSONEncoder, JsonStorage
+
+    def hook(data):
+        if "__enum__" in data:
+            name, member = data["__enum__"].split(".")
+            return getattr(CamelJSONEncoder.CAMEL_ENUMS[name], member)
+        return data
+
+    records = []
+    for record_dict in json.loads(blob, object_hook=hook):
+        try:
+            records.append(MemoryRecord.from_dict(record_dict))
+        except Exception:
+            continue
+    if not records:
+        return 0
+    agent.memory.clear()
+    agent.memory.write_records(records)
+    return len(records)
+
+
+def collect_agent_memories(agent_graph: Any) -> Dict[int, str]:
+    """``{agent_id: memory JSON}`` for every agent of the graph (an agent that cannot be dumped is left out)."""
+    memories: Dict[int, str] = {}
+    for agent_id, agent in agent_graph.get_agents():
+        try:
+            memories[int(agent_id)] = dump_agent_memory(agent)
+        except Exception:
+            continue
+    return memories
+
+
+def restore_agent_memories(agent_graph: Any, memories: Mapping[int, str]) -> Tuple[int, List[int]]:
+    """Give each agent back its saved chat memory. Returns ``(agents restored, agent ids that failed)``."""
+    restored, failed = 0, []
+    for agent_id, blob in memories.items():
+        try:
+            agent = agent_graph.get_agent(agent_id)
+            if load_agent_memory(agent, blob):
+                restored += 1
+            else:
+                failed.append(agent_id)
+        except Exception:
+            failed.append(agent_id)
+    return restored, failed
+
+
 class ModelCallLog:
     """The last few model calls (which model, how long, what came back), for explaining a failure.
 

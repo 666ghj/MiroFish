@@ -140,7 +140,7 @@ def test_the_resume_info_describes_each_run(env, infos):
     info = EnsembleManager.resume_info(ensemble_id)
 
     assert info["resumable"] and info["replicates"] == [
-        {"simulation_id": rid(ensemble, 1), "action": "resume", "round": 6, "exact": False, "reason": None}
+        {"simulation_id": rid(ensemble, 1), "action": "resume", "round": 6, "exact": False, "memory": None, "reason": None}
     ]
 
 

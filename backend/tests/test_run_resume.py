@@ -476,3 +476,43 @@ def test_a_parallel_run_still_needs_both_logs_to_resume(world):
     world.platform("twitter", 4, checkpoint_round=4)
     info = SimulationRunner.resume_info(SIM)
     assert not info["resumable"] and "reddit" in info["reason"]
+
+
+# --- the chat memory of the agents ---------------------------------------------------------------------
+
+def _with_memory(world, name, rounds):
+    db = world.platform(name, rounds, checkpoint_round=rounds)
+    sim_resume.write_checkpoint(str(db), rounds, memories={0: "[]", 1: "[]"})
+    make_db(db, ["kept", "written by the unfinished round"])
+    return db
+
+
+def test_resume_info_says_when_the_agents_chat_memory_will_come_back(world):
+    world.stopped_run()
+    _with_memory(world, "twitter", 4)
+    _with_memory(world, "reddit", 4)
+    assert SimulationRunner.resume_info(SIM)["memory"] is True
+
+
+def test_one_platform_without_saved_memory_means_the_run_is_not_fully_restored(world):
+    world.stopped_run()
+    _with_memory(world, "twitter", 4)
+    world.platform("reddit", 4, checkpoint_round=4)                           # a checkpoint of the older kind
+    info = SimulationRunner.resume_info(SIM)
+    assert info["resumable"] and info["exact"] is True and info["memory"] is False
+
+
+def test_the_started_run_records_whether_memory_is_restored(world):
+    world.stopped_run()
+    _with_memory(world, "twitter", 3)
+    _with_memory(world, "reddit", 3)
+    state = SimulationRunner.start_simulation(SIM, platform="parallel", resume=True)
+    assert state.resume_memory is True
+    assert json.loads((world.sim_dir / "run_state.json").read_text("utf-8"))["resume_memory"] is True
+
+
+def test_a_run_resumed_from_an_older_checkpoint_says_its_memory_was_not_restored(world):
+    world.stopped_run()
+    world.platform("twitter", 3, checkpoint_round=3)
+    world.platform("reddit", 3, checkpoint_round=3)
+    assert SimulationRunner.start_simulation(SIM, platform="parallel", resume=True).resume_memory is False

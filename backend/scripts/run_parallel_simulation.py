@@ -1121,7 +1121,14 @@ def _agent_exists(env, agent_id) -> bool:
 def _write_checkpoint(env, platform: str, db_path: str, round_num: int, log_info) -> None:
     """Save a copy of the platform database as of the end of ``round_num`` (see sim_resume.py)."""
     try:
-        sim_resume.write_checkpoint(db_path, round_num, sim_resume.clock_snapshot(platform, env.platform))
+        memories = sim_runtime.collect_agent_memories(env.agent_graph)
+    except Exception as error:
+        memories = {}
+        log_info(f"警告: 无法保存第 {round_num} 轮的Agent对话记忆（该检查点只含数据库）: {error}")
+    try:
+        sim_resume.write_checkpoint(
+            db_path, round_num, sim_resume.clock_snapshot(platform, env.platform), memories=memories
+        )
     except Exception as error:
         # Never break the run for this: without it a resume falls back to the previous checkpoint.
         log_info(f"警告: 写入第 {round_num} 轮检查点失败: {error}")
@@ -1272,6 +1279,14 @@ async def _run_platform_simulation(
         total_actions = int(resume.get("total_actions", 0))
         last_rowid = sim_runtime.max_trace_rowid(db_path)
         clock_note = sim_resume.restore_clock(platform, result.env.platform, db_path, resume.get("clock"))
+        # The checkpoint's chat memory, as restored into the live database along with it. Only memory written at
+        # exactly this round counts; the database is only read (the platform's own connection may hold a lock).
+        saved_memories = sim_resume.read_memories(db_path, expect_round=start_round) if resume.get("exact") else {}
+        memory_restored = 0
+        if saved_memories:
+            memory_restored, memory_failed = sim_runtime.restore_agent_memories(result.env.agent_graph, saved_memories)
+            if memory_failed:
+                log_info(f"警告: {len(memory_failed)} 个Agent的对话记忆无法恢复: {memory_failed[:10]}")
         initial_posted = any(
             _agent_exists(result.env, post.get("poster_agent_id", 0)) for post in initial_posts
         )
@@ -1291,8 +1306,12 @@ async def _run_platform_simulation(
             f"({'数据库已恢复到该轮结束时的检查点' if resume.get('exact') else '没有检查点：未完成那一轮已写入的内容无法撤销'}"
             f"; 时钟 {clock_note or '未知'}; 调度已重放 {start_round} 轮)"
         )
+        if memory_restored:
+            log_info(f"已恢复 {memory_restored} 个Agent的对话记忆")
+        else:
+            log_info("没有保存的Agent对话记忆（旧检查点或没有检查点）：Agent 以全新的对话继续")
         if action_logger:
-            action_logger.log_resume(start_round, bool(resume.get("exact")))
+            action_logger.log_resume(start_round, bool(resume.get("exact")), memory=bool(memory_restored))
     else:
         if action_logger:
             action_logger.log_simulation_start(config)

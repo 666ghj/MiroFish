@@ -144,7 +144,7 @@ class PlatformActionLogger:
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
     
-    def log_resume(self, from_round: int, exact: bool):
+    def log_resume(self, from_round: int, exact: bool, memory: bool = False):
         """记录从上次完成的一轮之后继续（只是一个标记，监控据此忽略；日志已被截断到该轮结尾）"""
         entry = {
             "timestamp": datetime.now().isoformat(),
@@ -152,6 +152,7 @@ class PlatformActionLogger:
             "platform": self.platform,
             "from_round": from_round,
             "exact": exact,
+            "memory": memory,
         }
 
         with open(self.log_path, 'a', encoding='utf-8') as f:

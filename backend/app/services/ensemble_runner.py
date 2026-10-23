@@ -633,7 +633,7 @@ class EnsembleManager:
             info = SimulationRunner.resume_info(simulation_id)
             if info["resumable"]:
                 plan.append({"simulation_id": simulation_id, "action": "resume", "round": info["round"],
-                             "exact": info["exact"], "reason": None})
+                             "exact": info["exact"], "memory": info.get("memory"), "reason": None})
             elif any(text in (info["reason"] or "") for text in _NOTHING_TO_KEEP):
                 plan.append({"simulation_id": simulation_id, "action": "restart", "round": 0,
                              "exact": None, "reason": info["reason"]})
