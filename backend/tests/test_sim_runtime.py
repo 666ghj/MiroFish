@@ -582,6 +582,22 @@ def test_strict_role_order_repairs_user_after_tool_and_repeated_roles():
     assert history == _bad_history()                                          # the caller's list is not modified
 
 
+def test_strict_role_order_drops_an_assistant_turn_with_no_text_and_no_tool_call():
+    history = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "round 1"},
+        {"role": "assistant", "content": ""},                       # an earlier model answered with nothing
+        {"role": "user", "content": "round 2"},
+        {"role": "assistant", "content": None},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "do_nothing", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+    ]
+    fixed = sim_runtime.strict_role_order(history)
+    assert [m["role"] for m in fixed] == ["system", "user", "assistant", "tool"]
+    assert fixed[1]["content"] == "round 1" + chr(10) * 2 + "round 2"       # the two user turns are now adjacent, so joined
+    assert fixed[2]["tool_calls"]                                             # a tool call with no text is a real turn
+
+
 def test_strict_role_order_leaves_a_clean_history_alone():
     clean = [
         {"role": "system", "content": "s"},

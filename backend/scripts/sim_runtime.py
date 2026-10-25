@@ -463,12 +463,24 @@ def strict_role_order(messages: Any) -> Any:
 
     Some models (Mistral on Cloudflare, among others) answer HTTP 400 "Unexpected role 'user' after role
     'tool'" to a history that OpenAI-style APIs take. OASIS agents produce exactly that: a tool result
-    followed by the next round's user message. Two repairs, neither of which changes what the agent sees:
-    two plain messages of the same role in a row are joined into one, and a user message right after a tool
-    result gets a short assistant turn in between.
+    followed by the next round's user message. They also refuse an assistant turn with no text and no tool call
+    (the reply of an earlier model that came back empty) as "Invalid assistant message". Three repairs, none
+    of which changes what the agent saw: that empty turn is dropped, two plain messages of the same role in a
+    row are joined into one, and a user message right after a tool result gets a short assistant turn in
+    between.
     """
     if not isinstance(messages, (list, tuple)):
         return messages
+
+    def empty_assistant(message: Any) -> bool:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            return False
+        if message.get("tool_calls") or message.get("function_call"):
+            return False
+        content = message.get("content")
+        return content is None or (isinstance(content, str) and not content.strip())
+
+    messages = [m for m in messages if not empty_assistant(m)]
 
     def plain(message: Any) -> bool:
         return (
