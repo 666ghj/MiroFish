@@ -334,6 +334,40 @@ tool needs a live simulation environment, which ensemble runs do not keep.
 
 ---
 
+### Hosting the Twitter feed ranker (optional)
+
+OASIS ranks the Twitter feed with Twitter's `twhin-bert-base`: every round it embeds all posts and every agent
+profile on the local CPU, and it loads the 0.5 GB model on the first ranking call. On a small machine that is the
+heaviest part of a run (about 1 GB of RAM and most of both cores). `LLM_EMBEDDING_BASE_URL` sends just that step to a
+hosted endpoint; the ranking itself (similarity, recency, follower weighting) stays OASIS's. Reddit's ranker is
+cheap and is not affected.
+
+- **Same model, same procedure.** `backend/deploy/modal_embeddings.py` hosts the same `twhin-bert-base` on Modal and
+  returns the model's `pooler_output`, which is what OASIS computes locally. One caveat applies to local and hosted
+  alike: the checkpoint has no pooler layer, so a random one is created at every start ("pooler.dense.* newly
+  initialized" in the log), and OASIS's vectors are a different random projection in every process. The hosted
+  server seeds that layer, so it is reproducible and cannot change if its container restarts mid-run. It ranks like
+  OASIS's own twhin-bert, but not identically to any one earlier run. Any other OpenAI-style embeddings endpoint also
+  works (Cloudflare's `@cf/baai/bge-base-en-v1.5`, for example) and ranks differently again: do not compare such a run
+  with one that used twhin-bert.
+- **Texts are sent once.** Vectors are cached by text, so a round only sends new posts and changed profiles.
+- **A network problem does not stop the run.** After 3 retries the round is ranked with a local word-hash vector (for
+  every text of that call, never a mix) and the run log says so; the next round tries the endpoint again. A refused
+  request (wrong token) is not retried.
+- **Cost on Modal.** One CPU container (4 cores, 8 GiB, about $0.25 per active hour), never more than one, scaling to
+  zero two minutes after the last request: roughly $0.15-0.30 per run, nothing while idle.
+
+Deploy once:
+
+```
+modal secret create mirofish-embeddings EMBEDDING_API_TOKEN=<a long random string>
+modal deploy backend/deploy/modal_embeddings.py
+```
+
+then put the printed URL (`/v1` is added when the URL has no path), the same token and `LLM_EMBEDDING_MODEL_NAME=twhin-bert-base` in `.env`
+(see `.env.example`) and restart the backend. The run log then says `Twitter 推荐系统的嵌入改用远程接口`. Stop the
+endpoint with `modal app stop mirofish-embeddings`; unset `LLM_EMBEDDING_BASE_URL` to go back to the local model.
+
 ## 5. Where things live
 
 | Piece | Location |

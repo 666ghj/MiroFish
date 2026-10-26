@@ -159,6 +159,7 @@ def init_logging_for_simulation(simulation_dir: str):
 
 from action_logger import SimulationLogManager, PlatformActionLogger
 import sim_behavior
+import sim_embeddings
 import sim_resume
 import sim_runtime
 
@@ -1253,6 +1254,9 @@ async def _run_platform_simulation(
 
     concurrency = sim_runtime.platform_llm_concurrency(platform, run_settings, os.environ)
     log_info(f"模型并发上限: {concurrency}")
+    if platform == "twitter":
+        # LLM_EMBEDDING_BASE_URL set: the feed ranker's embeddings come from a hosted endpoint, not local twhin-bert
+        sim_embeddings.install_remote_embeddings(os.environ, log_info)
     result.env = oasis.make(
         agent_graph=result.agent_graph,
         platform=spec["platform_type"],
