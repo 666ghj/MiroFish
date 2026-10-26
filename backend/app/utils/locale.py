@@ -27,9 +27,9 @@ def set_locale(locale: str):
 
 def get_locale() -> str:
     if has_request_context():
-        raw = request.headers.get('Accept-Language', 'zh')
-        return raw if raw in _translations else 'zh'
-    return getattr(_thread_local, 'locale', 'zh')
+        raw = request.headers.get('Accept-Language', 'en')
+        return raw if raw in _translations else 'en'
+    return getattr(_thread_local, 'locale', 'en')
 
 
 def t(key: str, **kwargs) -> str:

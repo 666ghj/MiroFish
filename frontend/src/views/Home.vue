@@ -5,6 +5,7 @@
       <div class="nav-brand">MIROFISH</div>
       <div class="nav-links">
         <LanguageSwitcher />
+        <ThemeSwitcher />
         <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
           {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
         </a>
@@ -216,6 +217,8 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import ThemeSwitcher from '../components/ThemeSwitcher.vue'
+import { setPendingUpload } from '../store/pendingUpload'
 
 const router = useRouter()
 
@@ -299,14 +302,12 @@ const startSimulation = () => {
   if (!canSubmit.value || loading.value) return
   
   // 存储待上传的数据
-  import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
-    // 立即跳转到Process页面（使用特殊标识表示新建项目）
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
+  setPendingUpload(files.value, formData.value.simulationRequirement)
+
+  // 立即跳转到Process页面（使用特殊标识表示新建项目）
+  router.push({
+    name: 'Process',
+    params: { projectId: 'new' }
   })
 }
 </script>
@@ -314,12 +315,12 @@ const startSimulation = () => {
 <style scoped>
 /* 全局变量与重置 */
 :root {
-  --black: #000000;
-  --white: #FFFFFF;
-  --orange: #FF4500;
-  --gray-light: #F5F5F5;
-  --gray-text: #666666;
-  --border: #E5E5E5;
+  --black: var(--c-000000);
+  --white: var(--c-ffffff);
+  --orange: var(--c-ff4500);
+  --gray-light: var(--c-f5f5f5);
+  --gray-text: var(--c-666666);
+  --border: var(--c-e5e5e5);
   /* 
     使用 Space Grotesk 作为主要标题字体，JetBrains Mono 作为代码/标签字体
     确保已在 index.html 引入这些 Google Fonts 
@@ -419,7 +420,7 @@ const startSimulation = () => {
 }
 
 .version-text {
-  color: #999;
+  color: var(--c-999999);
   font-weight: 500;
   letter-spacing: 0.5px;
 }
@@ -434,7 +435,7 @@ const startSimulation = () => {
 }
 
 .gradient-text {
-  background: linear-gradient(90deg, #000000 0%, #444444 100%);
+  background: linear-gradient(90deg, var(--c-000000) 0%, var(--c-444444) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
@@ -466,7 +467,7 @@ const startSimulation = () => {
 }
 
 .highlight-code {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--c-000000-a50);
   padding: 2px 6px;
   border-radius: 2px;
   font-family: var(--font-mono);
@@ -522,6 +523,12 @@ const startSimulation = () => {
   width: 100%;
 }
 
+/* The logo is a JPEG on a white background: invert it for the dark theme and let its black background blend into the page */
+:root[data-theme="dark"] .hero-logo {
+  filter: invert(1) hue-rotate(180deg);
+  mix-blend-mode: lighten;
+}
+
 .scroll-down-btn {
   width: 40px;
   height: 40px;
@@ -563,7 +570,7 @@ const startSimulation = () => {
 .panel-header {
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: #999;
+  color: var(--c-999999);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -608,7 +615,7 @@ const startSimulation = () => {
 
 .metric-label {
   font-size: 0.85rem;
-  color: #999;
+  color: var(--c-999999);
 }
 
 /* 项目模拟步骤介绍 */
@@ -621,7 +628,7 @@ const startSimulation = () => {
 .steps-header {
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: #999;
+  color: var(--c-999999);
   margin-bottom: 25px;
   display: flex;
   align-items: center;
@@ -673,7 +680,7 @@ const startSimulation = () => {
 }
 
 .console-box {
-  border: 1px solid #CCC; /* 外部实线 */
+  border: 1px solid var(--c-cccccc); /* 外部实线 */
   padding: 8px; /* 内边距形成双重边框感 */
 }
 
@@ -691,11 +698,11 @@ const startSimulation = () => {
   margin-bottom: 15px;
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #666;
+  color: var(--c-666666);
 }
 
 .upload-zone {
-  border: 1px dashed #CCC;
+  border: 1px dashed var(--c-cccccc);
   height: 200px;
   overflow-y: auto;
   display: flex;
@@ -703,7 +710,7 @@ const startSimulation = () => {
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s;
-  background: #FAFAFA;
+  background: var(--c-fafafa);
 }
 
 .upload-zone.has-files {
@@ -711,8 +718,8 @@ const startSimulation = () => {
 }
 
 .upload-zone:hover {
-  background: #F0F0F0;
-  border-color: #999;
+  background: var(--c-f0f0f0);
+  border-color: var(--c-999999);
 }
 
 .upload-placeholder {
@@ -722,12 +729,12 @@ const startSimulation = () => {
 .upload-icon {
   width: 40px;
   height: 40px;
-  border: 1px solid #DDD;
+  border: 1px solid var(--c-dddddd);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 15px;
-  color: #999;
+  color: var(--c-999999);
 }
 
 .upload-title {
@@ -739,7 +746,7 @@ const startSimulation = () => {
 .upload-hint {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #999;
+  color: var(--c-999999);
 }
 
 .file-list {
@@ -755,7 +762,7 @@ const startSimulation = () => {
   align-items: center;
   background: var(--white);
   padding: 8px 12px;
-  border: 1px solid #EEE;
+  border: 1px solid var(--c-eeeeee);
   font-family: var(--font-mono);
   font-size: 0.85rem;
 }
@@ -770,7 +777,7 @@ const startSimulation = () => {
   border: none;
   cursor: pointer;
   font-size: 1.2rem;
-  color: #999;
+  color: var(--c-999999);
 }
 
 .console-divider {
@@ -784,21 +791,21 @@ const startSimulation = () => {
   content: '';
   flex: 1;
   height: 1px;
-  background: #EEE;
+  background: var(--c-eeeeee);
 }
 
 .console-divider span {
   padding: 0 15px;
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: #BBB;
+  color: var(--c-bbbbbb);
   letter-spacing: 1px;
 }
 
 .input-wrapper {
   position: relative;
-  border: 1px solid #DDD;
-  background: #FAFAFA;
+  border: 1px solid var(--c-dddddd);
+  background: var(--c-fafafa);
 }
 
 .code-input {
@@ -820,7 +827,7 @@ const startSimulation = () => {
   right: 15px;
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: #AAA;
+  color: var(--c-aaaaaa);
 }
 
 .start-engine-btn {
@@ -860,11 +867,11 @@ const startSimulation = () => {
 }
 
 .start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
+  background: var(--c-e5e5e5);
+  color: var(--c-999999);
   cursor: not-allowed;
   transform: none;
-  border: 1px solid #E5E5E5;
+  border: 1px solid var(--c-e5e5e5);
 }
 
 /* 引导动画：微妙的边框脉冲 */

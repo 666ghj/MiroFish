@@ -70,8 +70,10 @@ import json
 import logging
 import multiprocessing
 import random
+import secrets
 import signal
 import sqlite3
+import time
 import warnings
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
@@ -156,6 +158,10 @@ def init_logging_for_simulation(simulation_dir: str):
 
 
 from action_logger import SimulationLogManager, PlatformActionLogger
+import sim_behavior
+import sim_embeddings
+import sim_resume
+import sim_runtime
 
 try:
     from camel.models import ModelFactory
@@ -168,10 +174,15 @@ try:
         generate_twitter_agent_graph,
         generate_reddit_agent_graph
     )
+    from oasis.social_agent.agent import SocialAgent
 except ImportError as e:
     print(f"错误: 缺少依赖 {e}")
     print("请先安装: pip install oasis-ai camel-ai")
     sys.exit(1)
+
+# OASIS swallows a failed model call (it logs it and returns the exception), so the round loop would only
+# see an agent that did nothing. Track those failures so the UI can tell the user why nothing happens.
+sim_runtime.install_failure_tracking(SocialAgent)
 
 
 # Twitter可用动作（不包含INTERVIEW，INTERVIEW只能通过ManualAction手动触发）
@@ -203,6 +214,8 @@ REDDIT_ACTIONS = [
 
 
 # IPC相关常量
+MAX_CONSECUTIVE_STEP_FAILURES = 5  # env.step errors in a row before a platform gives up
+
 IPC_COMMANDS_DIR = "ipc_commands"
 IPC_RESPONSES_DIR = "ipc_responses"
 ENV_STATUS_FILE = "env_status.json"
@@ -245,13 +258,24 @@ class ParallelIPCHandler:
     
     def update_status(self, status: str):
         """更新环境状态"""
-        with open(self.status_file, 'w', encoding='utf-8') as f:
-            json.dump({
-                "status": status,
-                "twitter_available": self.twitter_env is not None,
-                "reddit_available": self.reddit_env is not None,
-                "timestamp": datetime.now().isoformat()
-            }, f, ensure_ascii=False, indent=2)
+        payload = {
+            "status": status,
+            "twitter_available": self.twitter_env is not None,
+            "reddit_available": self.reddit_env is not None,
+            "timestamp": datetime.now().isoformat()
+        }
+        # write-then-rename so the backend never reads a half-written file
+        temp_file = self.status_file + ".tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        for attempt in range(5):
+            try:
+                os.replace(temp_file, self.status_file)
+                break
+            except PermissionError:  # Windows: the reader has the file open for a moment
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     
     def poll_command(self) -> Optional[Dict[str, Any]]:
         """轮询获取待处理命令"""
@@ -452,57 +476,49 @@ class ParallelIPCHandler:
         # 处理Twitter平台的采访
         if twitter_interviews and self.twitter_env:
             try:
-                twitter_actions = {}
-                for interview in twitter_interviews:
-                    agent_id = interview.get("agent_id")
-                    prompt = interview.get("prompt", "")
-                    try:
-                        agent = self.twitter_agent_graph.get_agent(agent_id)
-                        twitter_actions[agent] = ManualAction(
-                            action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
-                        )
-                    except Exception as e:
-                        print(f"  警告: 无法获取Twitter Agent {agent_id}: {e}")
-                
-                if twitter_actions:
-                    await self.twitter_env.step(twitter_actions)
-                    
+                prompts = {
+                    interview.get("agent_id"): interview.get("prompt", "")
+                    for interview in twitter_interviews
+                }
+                batch = await sim_runtime.batch_interview(
+                    self.twitter_env,
+                    self.twitter_agent_graph,
+                    os.path.join(self.simulation_dir, "twitter_simulation.db"),
+                    prompts,
+                )
+                # 没有任何有效 Agent 时不产出结果（与之前的行为一致）
+                if any(not item.get("unknown_agent") for item in batch.values()):
                     for interview in twitter_interviews:
                         agent_id = interview.get("agent_id")
-                        result = self._get_interview_result(agent_id, "twitter")
+                        result = dict(batch[agent_id])
                         result["platform"] = "twitter"
                         results[f"twitter_{agent_id}"] = result
             except Exception as e:
                 print(f"  Twitter批量Interview失败: {e}")
-        
+
         # 处理Reddit平台的采访
         if reddit_interviews and self.reddit_env:
             try:
-                reddit_actions = {}
-                for interview in reddit_interviews:
-                    agent_id = interview.get("agent_id")
-                    prompt = interview.get("prompt", "")
-                    try:
-                        agent = self.reddit_agent_graph.get_agent(agent_id)
-                        reddit_actions[agent] = ManualAction(
-                            action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
-                        )
-                    except Exception as e:
-                        print(f"  警告: 无法获取Reddit Agent {agent_id}: {e}")
-                
-                if reddit_actions:
-                    await self.reddit_env.step(reddit_actions)
-                    
+                prompts = {
+                    interview.get("agent_id"): interview.get("prompt", "")
+                    for interview in reddit_interviews
+                }
+                batch = await sim_runtime.batch_interview(
+                    self.reddit_env,
+                    self.reddit_agent_graph,
+                    os.path.join(self.simulation_dir, "reddit_simulation.db"),
+                    prompts,
+                )
+                # 没有任何有效 Agent 时不产出结果（与之前的行为一致）
+                if any(not item.get("unknown_agent") for item in batch.values()):
                     for interview in reddit_interviews:
                         agent_id = interview.get("agent_id")
-                        result = self._get_interview_result(agent_id, "reddit")
+                        result = dict(batch[agent_id])
                         result["platform"] = "reddit"
                         results[f"reddit_{agent_id}"] = result
             except Exception as e:
                 print(f"  Reddit批量Interview失败: {e}")
-        
+
         if results:
             self.send_response(command_id, "completed", result={
                 "interviews_count": len(results),
@@ -517,46 +533,8 @@ class ParallelIPCHandler:
     def _get_interview_result(self, agent_id: int, platform: str) -> Dict[str, Any]:
         """从数据库获取最新的Interview结果"""
         db_path = os.path.join(self.simulation_dir, f"{platform}_simulation.db")
-        
-        result = {
-            "agent_id": agent_id,
-            "response": None,
-            "timestamp": None
-        }
-        
-        if not os.path.exists(db_path):
-            return result
-        
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            # 查询最新的Interview记录
-            cursor.execute("""
-                SELECT user_id, info, created_at
-                FROM trace
-                WHERE action = ? AND user_id = ?
-                ORDER BY created_at DESC
-                LIMIT 1
-            """, (ActionType.INTERVIEW.value, agent_id))
-            
-            row = cursor.fetchone()
-            if row:
-                user_id, info_json, created_at = row
-                try:
-                    info = json.loads(info_json) if info_json else {}
-                    result["response"] = info.get("response", info)
-                    result["timestamp"] = created_at
-                except json.JSONDecodeError:
-                    result["response"] = info_json
-            
-            conn.close()
-            
-        except Exception as e:
-            print(f"  读取Interview结果失败: {e}")
-        
-        return result
-    
+        return sim_runtime.read_interview_result(db_path, agent_id)
+
     async def process_commands(self) -> bool:
         """
         处理所有待处理命令
@@ -981,28 +959,102 @@ def _get_comment_info(
     return None
 
 
-def create_model(config: Dict[str, Any], use_boost: bool = False):
+_fallback_notices = {"count": 0}
+_fallback_pacers: Dict[float, "sim_runtime.Pacer"] = {}
+
+
+def _fallback_pacer() -> Optional["sim_runtime.Pacer"]:
+    """One pacer for the backup model of both platforms (LLM_FALLBACK_MIN_INTERVAL seconds, default off)."""
+    try:
+        interval = float(os.environ.get("LLM_FALLBACK_MIN_INTERVAL") or 0)
+    except ValueError:
+        interval = 0.0
+    if interval <= 0:
+        return None
+    return _fallback_pacers.setdefault(interval, sim_runtime.Pacer(interval))
+
+
+def create_model(
+    config: Dict[str, Any],
+    use_boost: bool = False,
+    run_settings: Optional[Dict[str, Any]] = None,
+    seed: Optional[int] = None,
+):
+    """The platform's model, backed up by a second one.
+
+    A call the platform's model cannot serve (quota, request too large, outage, rejected key) is retried
+    once on the backup: the dedicated LLM_FALLBACK_* model when it is set (needs KEY and MODEL), else,
+    when a boost model is configured, the other of main/boost. LLM_FALLBACK=false turns this off.
+    """
+    primary = sim_runtime.install_call_recording(
+        _make_model(config, use_boost, run_settings, seed), "boost" if use_boost else "main"
+    )
+    enabled = os.environ.get("LLM_FALLBACK", "true").strip().lower() not in ("false", "0", "no", "off")
+    has_dedicated = bool(os.environ.get("LLM_FALLBACK_API_KEY") and os.environ.get("LLM_FALLBACK_MODEL_NAME"))
+    has_boost = bool(os.environ.get("LLM_BOOST_API_KEY"))
+    if not enabled or not (has_dedicated or has_boost):
+        return primary
+
+    if has_dedicated:
+        other = sim_runtime.install_call_recording(
+            _make_model(config, use_boost, run_settings, seed, use_fallback=True), "fallback"
+        )
+        backup_label = "专用备用"
+    else:
+        other = sim_runtime.install_call_recording(
+            _make_model(config, not use_boost, run_settings, seed), "main" if use_boost else "boost"
+        )
+        backup_label = "通用" if use_boost else "加速"
+
+    def note(error: BaseException) -> None:
+        _fallback_notices["count"] += 1
+        if _fallback_notices["count"] in (1, 10) or _fallback_notices["count"] % 50 == 0:
+            kind, message = sim_runtime.classify_error(error)
+            print(
+                f"[备用模型] 第 {_fallback_notices['count']} 次改用{backup_label}LLM重试 "
+                f"({kind}: {message[:100]})"
+            )
+
+    return sim_runtime.install_model_fallback(primary, other, note, pacer=_fallback_pacer())
+
+
+def _make_model(
+    config: Dict[str, Any],
+    use_boost: bool = False,
+    run_settings: Optional[Dict[str, Any]] = None,
+    seed: Optional[int] = None,
+    use_fallback: bool = False,
+):
     """
     创建LLM模型
-    
+
     支持双 LLM 配置，用于并行模拟时提速：
     - 通用配置：LLM_API_KEY, LLM_BASE_URL, LLM_MODEL_NAME
     - 加速配置（可选）：LLM_BOOST_API_KEY, LLM_BOOST_BASE_URL, LLM_BOOST_MODEL_NAME
-    
+
     如果配置了加速 LLM，并行模拟时可以让不同平台使用不同的 API 服务商，提高并发能力。
-    
+
     Args:
         config: 模拟配置字典
         use_boost: 是否使用加速 LLM 配置（如果可用）
+        run_settings: 运行设置（config["run"] 与命令行合并后的结果），
+            其中的 llm_temperature 会作为采样温度传给模型
+        seed: 运行种子（仅在 run.llm_pass_seed 为真时才会尝试传给模型）
     """
     # 检查是否有加速配置
     boost_api_key = os.environ.get("LLM_BOOST_API_KEY", "")
     boost_base_url = os.environ.get("LLM_BOOST_BASE_URL", "")
     boost_model = os.environ.get("LLM_BOOST_MODEL_NAME", "")
     has_boost_config = bool(boost_api_key)
-    
+
     # 根据参数和配置情况选择使用哪个 LLM
-    if use_boost and has_boost_config:
+    if use_fallback:
+        # 专用备用模型 (LLM_FALLBACK_*)；base url 缺省时沿用通用配置
+        llm_api_key = os.environ.get("LLM_FALLBACK_API_KEY", "")
+        llm_base_url = os.environ.get("LLM_FALLBACK_BASE_URL") or os.environ.get("LLM_BASE_URL", "")
+        llm_model = os.environ.get("LLM_FALLBACK_MODEL_NAME", "")
+        config_label = "[备用LLM]"
+    elif use_boost and has_boost_config:
         # 使用加速配置
         llm_api_key = boost_api_key
         llm_base_url = boost_base_url
@@ -1014,79 +1066,90 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         llm_base_url = os.environ.get("LLM_BASE_URL", "")
         llm_model = os.environ.get("LLM_MODEL_NAME", "")
         config_label = "[通用LLM]"
-    
+
     # 如果 .env 中没有模型名，则使用 config 作为备用
     if not llm_model:
         llm_model = config.get("llm_model", "gpt-4o-mini")
-    
+
     # 设置 camel-ai 所需的环境变量
     if llm_api_key:
         os.environ["OPENAI_API_KEY"] = llm_api_key
-    
+
     if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
-    
+
     if llm_base_url:
         os.environ["OPENAI_API_BASE_URL"] = llm_base_url
-    
+
     print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
-    
-    return ModelFactory.create(
-        model_platform=ModelPlatformType.OPENAI,
-        model_type=llm_model,
-    )
+
+    client_options = sim_runtime.model_client_options(os.environ)
+    if client_options:
+        print(f"{config_label} 请求超时/重试: {client_options}")
+
+    model_config = sim_behavior.llm_model_config(run_settings, seed)
+    if "temperature" in model_config:
+        print(f"{config_label} temperature={model_config['temperature']}")
+    try:
+        return sim_runtime.apply_model_client_options(ModelFactory.create(
+            model_platform=ModelPlatformType.OPENAI,
+            model_type=llm_model,
+            model_config_dict=dict(model_config) if model_config else None,
+            **client_options,
+        ), client_options)
+    except Exception as error:
+        if "seed" not in model_config:
+            raise
+        # camel-ai's OpenAI config has no `seed` field (0.2.78); retry without it.
+        print(f"{config_label} 模型配置不接受 seed 参数，已忽略: {error}")
+        model_config = {k: v for k, v in model_config.items() if k != "seed"}
+        return sim_runtime.apply_model_client_options(ModelFactory.create(
+            model_platform=ModelPlatformType.OPENAI,
+            model_type=llm_model,
+            model_config_dict=model_config or None,
+            **client_options,
+        ), client_options)
+
+
+def _agent_exists(env, agent_id) -> bool:
+    try:
+        env.agent_graph.get_agent(agent_id)
+        return True
+    except Exception:
+        return False
+
+
+def _write_checkpoint(env, platform: str, db_path: str, round_num: int, log_info) -> None:
+    """Save a copy of the platform database as of the end of ``round_num`` (see sim_resume.py)."""
+    try:
+        memories = sim_runtime.collect_agent_memories(env.agent_graph)
+    except Exception as error:
+        memories = {}
+        log_info(f"警告: 无法保存第 {round_num} 轮的Agent对话记忆（该检查点只含数据库）: {error}")
+    try:
+        sim_resume.write_checkpoint(
+            db_path, round_num, sim_resume.clock_snapshot(platform, env.platform), memories=memories
+        )
+    except Exception as error:
+        # Never break the run for this: without it a resume falls back to the previous checkpoint.
+        log_info(f"警告: 写入第 {round_num} 轮检查点失败: {error}")
 
 
 def get_active_agents_for_round(
     env,
-    config: Dict[str, Any],
+    behavior: "sim_behavior.PlatformBehavior",
     current_hour: int,
     round_num: int
 ) -> List:
-    """根据时间和配置决定本轮激活哪些Agent"""
-    time_config = config.get("time_config", {})
-    agent_configs = config.get("agent_configs", [])
-    
-    base_min = time_config.get("agents_per_hour_min", 5)
-    base_max = time_config.get("agents_per_hour_max", 20)
-    
-    peak_hours = time_config.get("peak_hours", [9, 10, 11, 14, 15, 20, 21, 22])
-    off_peak_hours = time_config.get("off_peak_hours", [0, 1, 2, 3, 4, 5])
-    
-    if current_hour in peak_hours:
-        multiplier = time_config.get("peak_activity_multiplier", 1.5)
-    elif current_hour in off_peak_hours:
-        multiplier = time_config.get("off_peak_activity_multiplier", 0.3)
-    else:
-        multiplier = 1.0
-    
-    target_count = int(random.uniform(base_min, base_max) * multiplier)
-    
-    candidates = []
-    for cfg in agent_configs:
-        agent_id = cfg.get("agent_id", 0)
-        active_hours = cfg.get("active_hours", list(range(8, 23)))
-        activity_level = cfg.get("activity_level", 0.5)
-        
-        if current_hour not in active_hours:
-            continue
-        
-        if random.random() < activity_level:
-            candidates.append(agent_id)
-    
-    selected_ids = random.sample(
-        candidates, 
-        min(target_count, len(candidates))
-    ) if candidates else []
-    
+    """Resolve the agents the shared behaviour module wakes this round."""
     active_agents = []
-    for agent_id in selected_ids:
+    for agent_id in behavior.select_active(round_num, current_hour):
         try:
             agent = env.agent_graph.get_agent(agent_id)
             active_agents.append((agent_id, agent))
         except Exception:
             pass
-    
+
     return active_agents
 
 
@@ -1098,167 +1161,365 @@ class PlatformSimulation:
         self.total_actions = 0
 
 
-async def run_twitter_simulation(
-    config: Dict[str, Any], 
+# 两个平台之间的差异都集中在这张表里；其余逻辑完全共用
+PLATFORM_SPECS = {
+    "twitter": {
+        "label": "Twitter",
+        "use_boost": False,  # Twitter 使用通用 LLM 配置
+        "profile_file": "twitter_profiles.csv",  # OASIS Twitter 使用 CSV 格式
+        "effective_profile_file": "twitter_profiles.effective.csv",
+        "db_file": "twitter_simulation.db",
+        "actions": TWITTER_ACTIONS,
+        "generate_graph": generate_twitter_agent_graph,
+        "platform_type": oasis.DefaultPlatformType.TWITTER,
+    },
+    "reddit": {
+        "label": "Reddit",
+        "use_boost": True,  # Reddit 使用加速 LLM 配置（如果有的话，否则回退到通用配置）
+        "profile_file": "reddit_profiles.json",
+        "effective_profile_file": "reddit_profiles.effective.json",
+        "db_file": "reddit_simulation.db",
+        "actions": REDDIT_ACTIONS,
+        "generate_graph": generate_reddit_agent_graph,
+        "platform_type": oasis.DefaultPlatformType.REDDIT,
+    },
+}
+
+
+async def _run_platform_simulation(
+    platform: str,
+    config: Dict[str, Any],
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    seed: Optional[int] = None,
+    run_settings: Optional[Dict[str, Any]] = None,
 ) -> PlatformSimulation:
-    """运行Twitter模拟
-    
-    Args:
-        config: 模拟配置
-        simulation_dir: 模拟目录
-        action_logger: 动作日志记录器
-        main_logger: 主日志管理器
-        max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
-        
-    Returns:
-        PlatformSimulation: 包含env和agent_graph的结果对象
+    """运行单个平台的模拟（Twitter / Reddit 共用）
+
+    行为版本 v1（旧版）与之前完全一致，只是随机数改为由 seed 派生的、每个平台
+    独立的 RNG。v2 额外启用：附加了行为指令的 profile、播种的关注图、定时事件、
+    响应延迟（见 sim_behavior.py）。
     """
+    spec = PLATFORM_SPECS[platform]
+    label = spec["label"]
     result = PlatformSimulation()
-    
+
     def log_info(msg):
         if main_logger:
-            main_logger.info(f"[Twitter] {msg}")
-        print(f"[Twitter] {msg}")
-    
+            main_logger.info(f"[{label}] {msg}")
+        print(f"[{label}] {msg}")
+
     log_info("初始化...")
-    
-    # Twitter 使用通用 LLM 配置
-    model = create_model(config, use_boost=False)
-    
-    # OASIS Twitter使用CSV格式
-    profile_path = os.path.join(simulation_dir, "twitter_profiles.csv")
+
+    if seed is None:
+        seed = secrets.randbelow(2 ** 31)
+    behavior = sim_behavior.PlatformBehavior(config, platform, seed)
+
+    model = create_model(
+        config, use_boost=spec["use_boost"], run_settings=run_settings, seed=seed
+    )
+
+    profile_path = os.path.join(simulation_dir, spec["profile_file"])
+    if behavior.v2:
+        # v2 reads the per-run copy with the behaviour directive appended; the
+        # original profile file (shown in the UI) is never modified.
+        effective_path = os.path.join(simulation_dir, spec["effective_profile_file"])
+        if os.path.exists(effective_path):
+            profile_path = effective_path
+        else:
+            log_info("警告: 未找到附加了行为指令的 profile 副本，改用原始 profile")
     if not os.path.exists(profile_path):
         log_info(f"错误: Profile文件不存在: {profile_path}")
         return result
-    
-    result.agent_graph = await generate_twitter_agent_graph(
+
+    result.agent_graph = await spec["generate_graph"](
         profile_path=profile_path,
         model=model,
-        available_actions=TWITTER_ACTIONS,
+        available_actions=spec["actions"],
     )
-    
+
     # 从配置文件获取 Agent 真实名称映射（使用 entity_name 而非默认的 Agent_X）
     agent_names = get_agent_names_from_config(config)
     # 如果配置中没有某个 agent，则使用 OASIS 的默认名称
     for agent_id, agent in result.agent_graph.get_agents():
         if agent_id not in agent_names:
             agent_names[agent_id] = getattr(agent, 'name', f'Agent_{agent_id}')
-    
-    db_path = os.path.join(simulation_dir, "twitter_simulation.db")
-    if os.path.exists(db_path):
+
+    db_path = os.path.join(simulation_dir, spec["db_file"])
+    resume = ((run_settings or {}).get("resume") or {}).get(platform)
+    if os.path.exists(db_path) and not resume:
         os.remove(db_path)
-    
+
+    concurrency = sim_runtime.platform_llm_concurrency(platform, run_settings, os.environ)
+    log_info(f"模型并发上限: {concurrency}")
+    if platform == "twitter":
+        # LLM_EMBEDDING_BASE_URL set: the feed ranker's embeddings come from a hosted endpoint, not local twhin-bert
+        sim_embeddings.install_remote_embeddings(os.environ, log_info)
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
+        platform=spec["platform_type"],
         database_path=db_path,
-        semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
+        # 限制最大并发 LLM 请求数，防止 API 过载（并发运行多个副本时每个副本分到的额度更小）
+        semaphore=concurrency,
     )
-    
+
     await result.env.reset()
     log_info("环境已启动")
-    
-    if action_logger:
-        action_logger.log_simulation_start(config)
-    
+
     total_actions = 0
     last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
-    
+
     # 执行初始事件
     event_config = config.get("event_config", {})
     initial_posts = event_config.get("initial_posts", [])
-    
-    # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
-        action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
-    
-    initial_action_count = 0
-    if initial_posts:
-        initial_actions = {}
-        for post in initial_posts:
-            agent_id = post.get("poster_agent_id", 0)
-            content = post.get("content", "")
-            try:
-                agent = result.env.agent_graph.get_agent(agent_id)
-                initial_actions[agent] = ManualAction(
-                    action_type=ActionType.CREATE_POST,
-                    action_args={"content": content}
-                )
-                
+
+    start_round = 0
+    if resume:
+        # Continue a stopped run: the database and the log were put back at the end of round
+        # ``resume["round"]`` before this process started. Nothing of the setup is redone.
+        start_round = int(resume["round"])
+        total_actions = int(resume.get("total_actions", 0))
+        last_rowid = sim_runtime.max_trace_rowid(db_path)
+        clock_note = sim_resume.restore_clock(platform, result.env.platform, db_path, resume.get("clock"))
+        # The checkpoint's chat memory, as restored into the live database along with it. Only memory written at
+        # exactly this round counts; the database is only read (the platform's own connection may hold a lock).
+        saved_memories = sim_resume.read_memories(db_path, expect_round=start_round) if resume.get("exact") else {}
+        memory_restored = 0
+        if saved_memories:
+            memory_restored, memory_failed = sim_runtime.restore_agent_memories(result.env.agent_graph, saved_memories)
+            if memory_failed:
+                log_info(f"警告: {len(memory_failed)} 个Agent的对话记忆无法恢复: {memory_failed[:10]}")
+        initial_posted = any(
+            _agent_exists(result.env, post.get("poster_agent_id", 0)) for post in initial_posts
+        )
+        try:
+            sim_resume.replay_schedule(
+                behavior,
+                start_round,
+                agent_exists=lambda agent_id: _agent_exists(result.env, agent_id),
+                initial_posted=initial_posted,
+                logged_ids=resume.get("logged_ids") or {},
+            )
+        except sim_resume.ScheduleMismatch as error:
+            log_info(f"无法继续: {error}")
+            raise
+        log_info(
+            f"从第 {start_round} 轮之后继续 "
+            f"({'数据库已恢复到该轮结束时的检查点' if resume.get('exact') else '没有检查点：未完成那一轮已写入的内容无法撤销'}"
+            f"; 时钟 {clock_note or '未知'}; 调度已重放 {start_round} 轮)"
+        )
+        if memory_restored:
+            log_info(f"已恢复 {memory_restored} 个Agent的对话记忆")
+        else:
+            log_info("没有保存的Agent对话记忆（旧检查点或没有检查点）：Agent 以全新的对话继续")
+        if action_logger:
+            action_logger.log_resume(start_round, bool(resume.get("exact")), memory=bool(memory_restored))
+    else:
+        if action_logger:
+            action_logger.log_simulation_start(config)
+
+        # 记录 round 0 开始（初始事件阶段）
+        if action_logger:
+            action_logger.log_round_start(0, 0, active_agent_ids=[])  # round 0, simulated_hour 0
+
+        # v2: seed the follow graph before anything is posted. These are setup, not
+        # agent behaviour: logged as phase "setup" and skipped by the round-1 DB
+        # fetch so they never count as actions.
+        if behavior.v2:
+            seeded_follows = await sim_runtime.apply_seed_follows(
+                result.env, behavior.planned_follows()
+            )
+            if seeded_follows:
+                last_rowid = sim_runtime.max_trace_rowid(db_path)
                 if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
+                    for follower_id, followee_id in seeded_follows:
+                        action_logger.log_action(
+                            round_num=0,
+                            agent_id=follower_id,
+                            agent_name=agent_names.get(follower_id, f"Agent_{follower_id}"),
+                            action_type="FOLLOW",
+                            action_args={
+                                "followee_id": followee_id,
+                                "target_user_name": agent_names.get(followee_id, f"Agent_{followee_id}"),
+                            },
+                            phase="setup",
+                        )
+                log_info(f"已播种 {len(seeded_follows)} 条初始关注关系")
+
+        initial_action_count = 0
+        if initial_posts:
+            initial_actions = {}
+            # Reddit always allowed several initial posts per agent. Twitter used to
+            # keep only the last one (while logging all of them); v2 fixes that.
+            several_posts_per_agent = platform == "reddit" or behavior.v2
+            for post in initial_posts:
+                agent_id = post.get("poster_agent_id", 0)
+                content = post.get("content", "")
+                try:
+                    agent = result.env.agent_graph.get_agent(agent_id)
+                    post_action = ManualAction(
+                        action_type=ActionType.CREATE_POST,
                         action_args={"content": content}
                     )
-                    total_actions += 1
-                    initial_action_count += 1
-            except Exception:
-                pass
-        
-        if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
-    
-    # 记录 round 0 结束
-    if action_logger:
-        action_logger.log_round_end(0, initial_action_count)
-    
+                    if several_posts_per_agent and agent in initial_actions:
+                        if not isinstance(initial_actions[agent], list):
+                            initial_actions[agent] = [initial_actions[agent]]
+                        initial_actions[agent].append(post_action)
+                    else:
+                        initial_actions[agent] = post_action
+
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=0,
+                            agent_id=agent_id,
+                            agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
+                            action_type="CREATE_POST",
+                            action_args={"content": content}
+                        )
+                        total_actions += 1
+                        initial_action_count += 1
+                except Exception:
+                    pass
+
+            if initial_actions:
+                await result.env.step(initial_actions)
+                log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+                if behavior.v2:
+                    # They were logged explicitly above; don't log their DB rows
+                    # again as round-1 actions, and start reaction delays.
+                    last_rowid = sim_runtime.max_trace_rowid(db_path)
+                    behavior.initial_posts_published()
+
+        # 记录 round 0 结束
+        if action_logger:
+            action_logger.log_round_end(0, initial_action_count)
+        _write_checkpoint(result.env, platform, db_path, 0, log_info)
+
     # 主模拟循环
     time_config = config.get("time_config", {})
     total_hours = time_config.get("total_simulation_hours", 72)
     minutes_per_round = time_config.get("minutes_per_round", 30)
     total_rounds = (total_hours * 60) // minutes_per_round
-    
+
     # 如果指定了最大轮数，则截断
     if max_rounds is not None and max_rounds > 0:
         original_rounds = total_rounds
         total_rounds = min(total_rounds, max_rounds)
         if total_rounds < original_rounds:
             log_info(f"轮数已截断: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
-    
+
     start_time = datetime.now()
-    
-    for round_num in range(total_rounds):
+    failure_tracker = sim_runtime.FailureTracker()
+    consecutive_step_failures = 0
+
+    interrupted = False
+    for round_num in range(start_round, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
+            interrupted = True
             break
-        
+
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
         simulated_day = simulated_minutes // (60 * 24) + 1
-        
+
+        # v2: scheduled events fire at the start of their round (before agents
+        # are chosen, so their reaction delays apply to this very round).
+        due_events = behavior.events_due(round_num) if behavior.v2 else []
+
         active_agents = get_active_agents_for_round(
-            result.env, config, simulated_hour, round_num
+            result.env, behavior, simulated_hour, round_num
         )
-        
-        # 无论是否有活跃agent，都记录round开始
+        active_agent_ids = [agent_id for agent_id, _ in active_agents]
+        if resume and round_num == start_round and resume.get("unfinished_ids") not in (None, active_agent_ids):
+            log_info(
+                f"提示: 第 {round_num + 1} 轮重做时唤醒的Agent与中断前记录的不同 "
+                f"(原: {resume['unfinished_ids']}, 现: {active_agent_ids})"
+            )
+
+        # 无论是否有活跃agent，都记录round开始（包含本轮激活的Agent ID列表，保证调度复现性可直接比对）
         if action_logger:
-            action_logger.log_round_start(round_num + 1, simulated_hour)
-        
+            action_logger.log_round_start(
+                round_num + 1, simulated_hour, active_agent_ids=active_agent_ids
+            )
+
+        injected_count = 0
+        if due_events:
+            posted_events = await sim_runtime.inject_scheduled_events(
+                result.env,
+                due_events,
+                log_round=round_num + 1,
+                agent_names=agent_names,
+                action_logger=action_logger,
+                log=log_info,
+            )
+            last_rowid = sim_runtime.max_trace_rowid(db_path)
+            injected_count = len(posted_events)
+            total_actions += injected_count
+            log_info(f"第 {round_num + 1} 轮注入 {injected_count} 个定时事件")
+
         if not active_agents:
-            # 没有活跃agent时也记录round结束（actions_count=0）
+            # 没有活跃agent时也记录round结束（actions_count 仅含注入的事件）
             if action_logger:
-                action_logger.log_round_end(round_num + 1, 0)
+                action_logger.log_round_end(round_num + 1, injected_count, failed_count=0)
+            _write_checkpoint(result.env, platform, db_path, round_num + 1, log_info)
             continue
-        
+
         actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
-        
+        failure_tracker.begin_round(
+            active_agents,
+            on_failure=(
+                lambda failure, _round=round_num + 1: action_logger.log_agent_error(
+                    _round, failure["agent_id"], failure["kind"], failure["message"]
+                )
+            ) if action_logger else None,
+        )
+        step_error: Optional[Exception] = None
+        try:
+            await result.env.step(actions)
+            consecutive_step_failures = 0
+        except Exception as error:
+            # One bad round (e.g. a locked database) must not end the run and
+            # throw away the rounds already played. Give up only when the
+            # environment keeps failing.
+            step_error = error
+            consecutive_step_failures += 1
+            log_info(f"第 {round_num + 1} 轮 env.step 失败 ({consecutive_step_failures}/{MAX_CONSECUTIVE_STEP_FAILURES}): {error}")
+            if consecutive_step_failures >= MAX_CONSECUTIVE_STEP_FAILURES:
+                try:
+                    await result.env.close()  # the platform is giving up; release its database
+                except Exception:
+                    pass
+                raise
+        finally:
+            round_failures = failure_tracker.end_round()
+        if step_error is not None:
+            # The whole step failed, so every woken agent that did not already
+            # report its own failure counts once (never more than were woken).
+            kind, message = sim_runtime.classify_error(step_error)
+            already_failed = {failure["agent_id"] for failure in round_failures}
+            for agent_id in active_agent_ids:
+                if agent_id in already_failed:
+                    continue
+                if action_logger:
+                    action_logger.log_agent_error(round_num + 1, agent_id, kind, message)
+                round_failures.append({"agent_id": agent_id, "kind": kind, "message": message})
+        if round_failures:
+            log_info(
+                f"第 {round_num + 1} 轮: {len(round_failures)}/{len(active_agents)} 个Agent的模型调用失败 "
+                f"({round_failures[0]['kind']}: {round_failures[0]['message'][:120]})"
+            )
+
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
-        
-        round_action_count = 0
+
+        round_action_count = injected_count
         for action_data in actual_actions:
             if action_logger:
                 action_logger.log_action(
@@ -1270,223 +1531,85 @@ async def run_twitter_simulation(
                 )
                 total_actions += 1
                 round_action_count += 1
-        
+
         if action_logger:
-            action_logger.log_round_end(round_num + 1, round_action_count)
-        
+            action_logger.log_round_end(round_num + 1, round_action_count, failed_count=len(round_failures))
+        _write_checkpoint(result.env, platform, db_path, round_num + 1, log_info)
+
         if (round_num + 1) % 20 == 0:
             progress = (round_num + 1) / total_rounds * 100
             log_info(f"Day {simulated_day}, {simulated_hour:02d}:00 - Round {round_num + 1}/{total_rounds} ({progress:.1f}%)")
-    
+
     # 注意：不关闭环境，保留给Interview使用
-    
-    if action_logger:
+
+    # A loop cut short by a stop signal is not a finished simulation: no simulation_end, so the run
+    # is neither reported as completed nor impossible to resume.
+    if action_logger and not interrupted:
         action_logger.log_simulation_end(total_rounds, total_actions)
-    
+
     result.total_actions = total_actions
     elapsed = (datetime.now() - start_time).total_seconds()
     log_info(f"模拟循环完成! 耗时: {elapsed:.1f}秒, 总动作: {total_actions}")
-    
+
     return result
+
+
+async def run_twitter_simulation(
+    config: Dict[str, Any],
+    simulation_dir: str,
+    action_logger: Optional[PlatformActionLogger] = None,
+    main_logger: Optional[SimulationLogManager] = None,
+    max_rounds: Optional[int] = None,
+    seed: Optional[int] = None,
+    run_settings: Optional[Dict[str, Any]] = None,
+) -> PlatformSimulation:
+    """运行Twitter模拟
+
+    Args:
+        config: 模拟配置
+        simulation_dir: 模拟目录
+        action_logger: 动作日志记录器
+        main_logger: 主日志管理器
+        max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
+        seed: 运行种子（用于派生本平台独立的随机数发生器）
+        run_settings: 运行设置（config["run"] 与命令行合并后的结果）
+
+    Returns:
+        PlatformSimulation: 包含env和agent_graph的结果对象
+    """
+    return await _run_platform_simulation(
+        "twitter", config, simulation_dir, action_logger, main_logger,
+        max_rounds, seed, run_settings,
+    )
 
 
 async def run_reddit_simulation(
-    config: Dict[str, Any], 
+    config: Dict[str, Any],
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    seed: Optional[int] = None,
+    run_settings: Optional[Dict[str, Any]] = None,
 ) -> PlatformSimulation:
     """运行Reddit模拟
-    
+
     Args:
         config: 模拟配置
         simulation_dir: 模拟目录
         action_logger: 动作日志记录器
         main_logger: 主日志管理器
         max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
-        
+        seed: 运行种子（用于派生本平台独立的随机数发生器）
+        run_settings: 运行设置（config["run"] 与命令行合并后的结果）
+
     Returns:
         PlatformSimulation: 包含env和agent_graph的结果对象
     """
-    result = PlatformSimulation()
-    
-    def log_info(msg):
-        if main_logger:
-            main_logger.info(f"[Reddit] {msg}")
-        print(f"[Reddit] {msg}")
-    
-    log_info("初始化...")
-    
-    # Reddit 使用加速 LLM 配置（如果有的话，否则回退到通用配置）
-    model = create_model(config, use_boost=True)
-    
-    profile_path = os.path.join(simulation_dir, "reddit_profiles.json")
-    if not os.path.exists(profile_path):
-        log_info(f"错误: Profile文件不存在: {profile_path}")
-        return result
-    
-    result.agent_graph = await generate_reddit_agent_graph(
-        profile_path=profile_path,
-        model=model,
-        available_actions=REDDIT_ACTIONS,
+    return await _run_platform_simulation(
+        "reddit", config, simulation_dir, action_logger, main_logger,
+        max_rounds, seed, run_settings,
     )
-    
-    # 从配置文件获取 Agent 真实名称映射（使用 entity_name 而非默认的 Agent_X）
-    agent_names = get_agent_names_from_config(config)
-    # 如果配置中没有某个 agent，则使用 OASIS 的默认名称
-    for agent_id, agent in result.agent_graph.get_agents():
-        if agent_id not in agent_names:
-            agent_names[agent_id] = getattr(agent, 'name', f'Agent_{agent_id}')
-    
-    db_path = os.path.join(simulation_dir, "reddit_simulation.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    
-    result.env = oasis.make(
-        agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.REDDIT,
-        database_path=db_path,
-        semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
-    )
-    
-    await result.env.reset()
-    log_info("环境已启动")
-    
-    if action_logger:
-        action_logger.log_simulation_start(config)
-    
-    total_actions = 0
-    last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
-    
-    # 执行初始事件
-    event_config = config.get("event_config", {})
-    initial_posts = event_config.get("initial_posts", [])
-    
-    # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
-        action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
-    
-    initial_action_count = 0
-    if initial_posts:
-        initial_actions = {}
-        for post in initial_posts:
-            agent_id = post.get("poster_agent_id", 0)
-            content = post.get("content", "")
-            try:
-                agent = result.env.agent_graph.get_agent(agent_id)
-                if agent in initial_actions:
-                    if not isinstance(initial_actions[agent], list):
-                        initial_actions[agent] = [initial_actions[agent]]
-                    initial_actions[agent].append(ManualAction(
-                        action_type=ActionType.CREATE_POST,
-                        action_args={"content": content}
-                    ))
-                else:
-                    initial_actions[agent] = ManualAction(
-                        action_type=ActionType.CREATE_POST,
-                        action_args={"content": content}
-                    )
-                
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
-                        action_args={"content": content}
-                    )
-                    total_actions += 1
-                    initial_action_count += 1
-            except Exception:
-                pass
-        
-        if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
-    
-    # 记录 round 0 结束
-    if action_logger:
-        action_logger.log_round_end(0, initial_action_count)
-    
-    # 主模拟循环
-    time_config = config.get("time_config", {})
-    total_hours = time_config.get("total_simulation_hours", 72)
-    minutes_per_round = time_config.get("minutes_per_round", 30)
-    total_rounds = (total_hours * 60) // minutes_per_round
-    
-    # 如果指定了最大轮数，则截断
-    if max_rounds is not None and max_rounds > 0:
-        original_rounds = total_rounds
-        total_rounds = min(total_rounds, max_rounds)
-        if total_rounds < original_rounds:
-            log_info(f"轮数已截断: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
-    
-    start_time = datetime.now()
-    
-    for round_num in range(total_rounds):
-        # 检查是否收到退出信号
-        if _shutdown_event and _shutdown_event.is_set():
-            if main_logger:
-                main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
-            break
-        
-        simulated_minutes = round_num * minutes_per_round
-        simulated_hour = (simulated_minutes // 60) % 24
-        simulated_day = simulated_minutes // (60 * 24) + 1
-        
-        active_agents = get_active_agents_for_round(
-            result.env, config, simulated_hour, round_num
-        )
-        
-        # 无论是否有活跃agent，都记录round开始
-        if action_logger:
-            action_logger.log_round_start(round_num + 1, simulated_hour)
-        
-        if not active_agents:
-            # 没有活跃agent时也记录round结束（actions_count=0）
-            if action_logger:
-                action_logger.log_round_end(round_num + 1, 0)
-            continue
-        
-        actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
-        
-        # 从数据库获取实际执行的动作并记录
-        actual_actions, last_rowid = fetch_new_actions_from_db(
-            db_path, last_rowid, agent_names
-        )
-        
-        round_action_count = 0
-        for action_data in actual_actions:
-            if action_logger:
-                action_logger.log_action(
-                    round_num=round_num + 1,
-                    agent_id=action_data['agent_id'],
-                    agent_name=action_data['agent_name'],
-                    action_type=action_data['action_type'],
-                    action_args=action_data['action_args']
-                )
-                total_actions += 1
-                round_action_count += 1
-        
-        if action_logger:
-            action_logger.log_round_end(round_num + 1, round_action_count)
-        
-        if (round_num + 1) % 20 == 0:
-            progress = (round_num + 1) / total_rounds * 100
-            log_info(f"Day {simulated_day}, {simulated_hour:02d}:00 - Round {round_num + 1}/{total_rounds} ({progress:.1f}%)")
-    
-    # 注意：不关闭环境，保留给Interview使用
-    
-    if action_logger:
-        action_logger.log_simulation_end(total_rounds, total_actions)
-    
-    result.total_actions = total_actions
-    elapsed = (datetime.now() - start_time).total_seconds()
-    log_info(f"模拟循环完成! 耗时: {elapsed:.1f}秒, 总动作: {total_actions}")
-    
-    return result
 
 
 async def main():
@@ -1519,20 +1642,62 @@ async def main():
         default=False,
         help='模拟完成后立即关闭环境，不进入等待命令模式'
     )
-    
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=None,
+        help='运行种子（覆盖配置文件 run.seed）。只保证调度可复现，不保证LLM输出一致'
+    )
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        default=False,
+        help='从上次完成的一轮之后继续（数据库与日志已由后端恢复到那一轮的结尾）'
+    )
+
     args = parser.parse_args()
-    
+
     # 在 main 函数开始时创建 shutdown 事件，确保整个程序都能响应退出信号
     global _shutdown_event
     _shutdown_event = asyncio.Event()
-    
+
     if not os.path.exists(args.config):
         print(f"错误: 配置文件不存在: {args.config}")
         sys.exit(1)
-    
+
     config = load_config(args.config)
     simulation_dir = os.path.dirname(args.config) or "."
     wait_for_commands = not args.no_wait
+
+    # Run settings: config["run"] merged with the command line (CLI wins).
+    run_settings = sim_behavior.resolve_run_settings(config, args.seed, args.max_rounds)
+    seed = run_settings["seed"]
+    if seed is None:
+        seed = secrets.randbelow(2 ** 31)
+    max_rounds = run_settings["max_rounds"]
+    if args.resume:
+        run_settings["resume"] = {}
+        for resumed_platform in ("twitter", "reddit"):
+            if (args.twitter_only and resumed_platform != "twitter") or (args.reddit_only and resumed_platform != "reddit"):
+                continue
+            plan = sim_resume.plan_resume(simulation_dir, resumed_platform)
+            if not plan.resumable:
+                print(f"错误: 无法继续 {resumed_platform}: {plan.reason}")
+                sys.exit(1)
+            scan = sim_resume.scan_log(os.path.join(simulation_dir, resumed_platform, "actions.jsonl"))
+            marker = sim_resume.read_checkpoint_info(os.path.join(simulation_dir, f"{resumed_platform}_simulation.db"))
+            run_settings["resume"][resumed_platform] = {
+                "round": plan.round,
+                "exact": plan.exact,
+                "total_actions": plan.total_actions,
+                "unfinished_ids": plan.unfinished_ids,
+                "logged_ids": {n: ids for n, ids in scan.started.items() if n <= plan.round},
+                "clock": (marker or {}).get("clock") if marker and marker["round"] == plan.round else {},
+            }
+    # Best effort for randomness inside OASIS itself. MiroFish's own decisions
+    # use per-platform RNGs derived from the seed and never touch this one.
+    random.seed(seed)
+    behavior_v2 = sim_behavior.is_behavior_v2(config)
     
     # 初始化日志配置（禁用 OASIS 日志，清理旧文件）
     init_logging_for_simulation(simulation_dir)
@@ -1547,7 +1712,15 @@ async def main():
     log_manager.info(f"配置文件: {args.config}")
     log_manager.info(f"模拟ID: {config.get('simulation_id', 'unknown')}")
     log_manager.info(f"等待命令模式: {'启用' if wait_for_commands else '禁用'}")
+    log_manager.info(f"随机种子: {seed}（只保证调度可复现，不保证LLM输出一致）")
+    log_manager.info(f"行为版本: {'v2' if behavior_v2 else 'v1（旧版）'}")
     log_manager.info("=" * 60)
+
+    if behavior_v2:
+        # Per-run copies of the profiles with each agent's starting disposition
+        # appended. The originals stay untouched.
+        written = sim_behavior.write_effective_profiles(simulation_dir, config)
+        log_manager.info(f"已生成附加行为指令的 profile 副本: {sorted(written)}")
     
     time_config = config.get("time_config", {})
     total_hours = time_config.get('total_simulation_hours', 72)
@@ -1558,10 +1731,10 @@ async def main():
     log_manager.info(f"  - 总模拟时长: {total_hours}小时")
     log_manager.info(f"  - 每轮时间: {minutes_per_round}分钟")
     log_manager.info(f"  - 配置总轮数: {config_total_rounds}")
-    if args.max_rounds:
-        log_manager.info(f"  - 最大轮数限制: {args.max_rounds}")
-        if args.max_rounds < config_total_rounds:
-            log_manager.info(f"  - 实际执行轮数: {args.max_rounds} (已截断)")
+    if max_rounds:
+        log_manager.info(f"  - 最大轮数限制: {max_rounds}")
+        if max_rounds < config_total_rounds:
+            log_manager.info(f"  - 实际执行轮数: {max_rounds} (已截断)")
     log_manager.info(f"  - Agent数量: {len(config.get('agent_configs', []))}")
     
     log_manager.info("日志结构:")
@@ -1577,21 +1750,67 @@ async def main():
     reddit_result: Optional[PlatformSimulation] = None
     
     if args.twitter_only:
-        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds)
+        twitter_result = await run_twitter_simulation(
+            config, simulation_dir, twitter_logger, log_manager, max_rounds, seed, run_settings)
     elif args.reddit_only:
-        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds)
+        reddit_result = await run_reddit_simulation(
+            config, simulation_dir, reddit_logger, log_manager, max_rounds, seed, run_settings)
     else:
-        # 并行运行（每个平台使用独立的日志记录器）
+        # 并行运行（每个平台使用独立的日志记录器和独立的、由种子派生的随机数发生器）
+        # return_exceptions: when one platform dies, the other still finishes
+        # its own loop, and both environments are closed before the error is
+        # raised (so no database stays locked and no task is left behind).
         results = await asyncio.gather(
-            run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds),
-            run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds),
+            run_twitter_simulation(
+                config, simulation_dir, twitter_logger, log_manager, max_rounds, seed, run_settings),
+            run_reddit_simulation(
+                config, simulation_dir, reddit_logger, log_manager, max_rounds, seed, run_settings),
+            return_exceptions=True,
         )
+        platform_errors = [r for r in results if isinstance(r, BaseException)]
+        if platform_errors:
+            for finished in results:
+                env = getattr(finished, "env", None)
+                if env is not None and not isinstance(finished, BaseException):
+                    try:
+                        await env.close()
+                    except Exception:
+                        pass
+            raise platform_errors[0]
         twitter_result, reddit_result = results
     
     total_elapsed = (datetime.now() - start_time).total_seconds()
     log_manager.info("=" * 60)
     log_manager.info(f"模拟循环完成! 总耗时: {total_elapsed:.1f}秒")
-    
+
+    # End-of-run outcome poll (ensemble replicates): every agent answers the
+    # outcome questions once. It runs before the environment is parked for
+    # interviews, so the run is only published as finished after the poll.
+    poll_questions = run_settings["outcome_questions"]
+    if poll_questions and not _shutdown_event.is_set():
+        poll_target = twitter_result if (twitter_result and twitter_result.env) else reddit_result
+        if poll_target and poll_target.env:
+            poll_platform = "twitter" if poll_target is twitter_result else "reddit"
+            log_manager.info(f"开始最终问卷: {len(poll_questions)} 个问题, 平台={poll_platform}")
+            poll_chunk = sim_runtime.poll_parallelism(poll_platform, run_settings, os.environ)
+            log_manager.info(f"最终问卷并行度: 每步同时询问 {poll_chunk} 个Agent")
+            poll_rows = await sim_runtime.run_final_poll(
+                poll_target.env,
+                poll_target.agent_graph,
+                os.path.join(simulation_dir, f"{poll_platform}_simulation.db"),
+                config,
+                poll_questions,
+                chunk_size=poll_chunk,
+                retry_min_chunk=min(3, poll_chunk),
+                log=log_manager.info,
+                status=(twitter_logger if poll_platform == "twitter" else reddit_logger).log_poll_status,
+            )
+            sim_runtime.write_final_poll(simulation_dir, poll_rows)
+            parsed = sum(1 for row in poll_rows if row["parse_ok"])
+            log_manager.info(f"最终问卷完成: {parsed}/{len(poll_rows)} 个Agent的回答可解析")
+        else:
+            log_manager.info("跳过最终问卷: 没有可用的平台环境")
+
     # 是否进入等待命令模式
     if wait_for_commands:
         log_manager.info("")

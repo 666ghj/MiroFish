@@ -28,7 +28,27 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
-    
+    # 配置生成阶段单次LLM请求的最长等待时间（秒）；超时后重试，而不是无限等待
+    LLM_REQUEST_TIMEOUT = float(os.environ.get('LLM_REQUEST_TIMEOUT', '300'))
+
+    # Optional stronger/faster model used only while PREPARING a simulation
+    # (agent personas and the simulation config). Needs LLM_PREP_API_KEY and
+    # LLM_PREP_MODEL_NAME; LLM_PREP_BASE_URL falls back to LLM_BASE_URL.
+    LLM_PREP_API_KEY = os.environ.get('LLM_PREP_API_KEY')
+    LLM_PREP_BASE_URL = os.environ.get('LLM_PREP_BASE_URL')
+    LLM_PREP_MODEL_NAME = os.environ.get('LLM_PREP_MODEL_NAME')
+
+    @classmethod
+    def prep_llm(cls) -> dict:
+        """(api_key, base_url, model_name) for preparation calls: the PREP model if set, else the main one."""
+        if cls.LLM_PREP_API_KEY and cls.LLM_PREP_MODEL_NAME:
+            return {
+                "api_key": cls.LLM_PREP_API_KEY,
+                "base_url": cls.LLM_PREP_BASE_URL or cls.LLM_BASE_URL,
+                "model_name": cls.LLM_PREP_MODEL_NAME,
+            }
+        return {"api_key": cls.LLM_API_KEY, "base_url": cls.LLM_BASE_URL, "model_name": cls.LLM_MODEL_NAME}
+
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
     

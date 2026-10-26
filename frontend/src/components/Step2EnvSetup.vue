@@ -267,27 +267,28 @@
             <!-- 平台配置 -->
             <div class="config-block">
               <div class="config-block-header">
-                <span class="config-block-title">{{ $t('step2.recommendAlgoConfig') }}</span>
+                <span class="config-block-title">{{ isBehaviorV2 ? $t('step2.networkConfig') : $t('step2.recommendAlgoConfig') }}</span>
               </div>
+              <p v-if="isBehaviorV2" class="block-note">{{ $t('step2.networkConfigNote') }}</p>
               <div class="platforms-grid">
                 <div v-if="simulationConfig.twitter_config" class="platform-card">
                   <div class="platform-card-header">
                     <span class="platform-name">{{ $t('step2.platform1Name') }}</span>
                   </div>
                   <div class="platform-params">
-                    <div class="param-row">
+                    <div v-if="simulationConfig.twitter_config.recency_weight !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.recencyWeight') }}</span>
                       <span class="param-value">{{ simulationConfig.twitter_config.recency_weight }}</span>
                     </div>
-                    <div class="param-row">
+                    <div v-if="simulationConfig.twitter_config.popularity_weight !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.popularityWeight') }}</span>
                       <span class="param-value">{{ simulationConfig.twitter_config.popularity_weight }}</span>
                     </div>
-                    <div class="param-row">
+                    <div v-if="simulationConfig.twitter_config.relevance_weight !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.relevanceWeight') }}</span>
                       <span class="param-value">{{ simulationConfig.twitter_config.relevance_weight }}</span>
                     </div>
-                    <div class="param-row">
+                    <div v-if="simulationConfig.twitter_config.viral_threshold !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.viralThreshold') }}</span>
                       <span class="param-value">{{ simulationConfig.twitter_config.viral_threshold }}</span>
                     </div>
@@ -302,19 +303,19 @@
                     <span class="platform-name">{{ $t('step2.platform2Name') }}</span>
                   </div>
                   <div class="platform-params">
-                    <div class="param-row">
+                    <div v-if="simulationConfig.reddit_config.recency_weight !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.recencyWeight') }}</span>
                       <span class="param-value">{{ simulationConfig.reddit_config.recency_weight }}</span>
                     </div>
-                    <div class="param-row">
+                    <div v-if="simulationConfig.reddit_config.popularity_weight !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.popularityWeight') }}</span>
                       <span class="param-value">{{ simulationConfig.reddit_config.popularity_weight }}</span>
                     </div>
-                    <div class="param-row">
+                    <div v-if="simulationConfig.reddit_config.relevance_weight !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.relevanceWeight') }}</span>
                       <span class="param-value">{{ simulationConfig.reddit_config.relevance_weight }}</span>
                     </div>
-                    <div class="param-row">
+                    <div v-if="simulationConfig.reddit_config.viral_threshold !== undefined" class="param-row">
                       <span class="param-label">{{ $t('step2.viralThreshold') }}</span>
                       <span class="param-value">{{ simulationConfig.reddit_config.viral_threshold }}</span>
                     </div>
@@ -385,6 +386,12 @@
               <p class="narrative-text">{{ simulationConfig.event_config.narrative_direction }}</p>
             </div>
 
+            <!-- 议题（会写进每个 Agent 的人设） -->
+            <div v-if="simulationConfig.event_config.topic" class="topics-section">
+              <span class="box-label">{{ $t('step2.topicGivenToAgents') }}</span>
+              <p class="topic-text">{{ simulationConfig.event_config.topic }}</p>
+            </div>
+
             <!-- 热点话题 -->
             <div class="topics-section">
               <span class="box-label">{{ $t('step2.initialHotTopics') }}</span>
@@ -414,6 +421,13 @@
                 </div>
               </div>
             </div>
+
+            <!-- 定时事件（用户编写，"上帝视角"） -->
+            <ScheduledEventsEditor
+              :simulation-id="simulationId"
+              :config="simulationConfig"
+              @add-log="addLog"
+            />
           </div>
         </div>
       </div>
@@ -509,8 +523,49 @@
             </Transition>
           </div>
 
+          <!-- 运行次数：大于 1 时进入集合运行（N 次带不同随机种子的独立模拟，看结果的分布） -->
+          <div v-if="simulationConfig && autoGeneratedRounds" class="runs-config-section">
+            <div class="runs-header">
+              <span class="section-title">{{ $t('step2.runs.title') }}</span>
+              <span class="section-desc">{{ $t('step2.runs.desc') }}</span>
+            </div>
+            <div class="runs-body">
+              <input
+                type="number"
+                class="runs-input"
+                min="1"
+                :max="MAX_RUNS"
+                step="1"
+                v-model.number="runs"
+                @blur="runs = normalizedRuns"
+              />
+              <span class="runs-unit">{{ $t('step2.runs.unit') }}</span>
+              <span class="runs-note" :class="{ muted: normalizedRuns === 1 }">
+                {{ normalizedRuns > 1 ? $t('step2.runs.ensembleNote', { runs: normalizedRuns, rounds: effectiveRounds }) : $t('step2.runs.single') }}
+              </span>
+            </div>
+            <!-- How many of those runs go at the same time -->
+            <div v-if="normalizedRuns > 1" class="runs-body runs-parallel">
+              <label class="runs-parallel-label" for="runs-parallel">{{ $t('step2.runs.parallelLabel') }}</label>
+              <input
+                id="runs-parallel"
+                type="number"
+                class="runs-input"
+                min="1"
+                :max="maxParallel"
+                step="1"
+                v-model.number="parallel"
+                @blur="parallel = normalizedParallel"
+              />
+              <span class="runs-unit">{{ $t('step2.runs.parallelUnit') }}</span>
+              <span class="runs-note" :class="{ muted: normalizedParallel === 1 }">
+                {{ normalizedParallel > 1 ? $t('step2.runs.parallelNote', { parallel: normalizedParallel }) : $t('step2.runs.parallelOne') }}
+              </span>
+            </div>
+          </div>
+
           <div class="action-group dual">
-            <button 
+            <button
               class="action-btn secondary"
               @click="$emit('go-back')"
             >
@@ -634,6 +689,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ScheduledEventsEditor from './ScheduledEventsEditor.vue'
 import {
   prepareSimulation,
   getPrepareStatus,
@@ -675,6 +731,24 @@ let lastLoggedConfigStage = ''
 const useCustomRounds = ref(false) // 默认使用自动配置轮数
 const customMaxRounds = ref(40)   // 默认推荐40轮
 
+// 运行次数（1 = 单次运行；大于 1 = 集合运行，最多 50 次）
+const MAX_RUNS = 50
+const runs = ref(1)
+const normalizedRuns = computed(() => {
+  const value = Math.floor(Number(runs.value))
+  return Number.isFinite(value) ? Math.min(MAX_RUNS, Math.max(1, value)) : 1
+})
+
+// How many of the runs go at the same time (the backend allows 4). Each platform's model-call limit is
+// shared between them, so a run goes slower while the whole ensemble finishes sooner.
+const MAX_PARALLEL = 4
+const parallel = ref(1)
+const maxParallel = computed(() => Math.min(MAX_PARALLEL, normalizedRuns.value))
+const normalizedParallel = computed(() => {
+  const value = Math.floor(Number(parallel.value))
+  return Number.isFinite(value) ? Math.min(maxParallel.value, Math.max(1, value)) : 1
+})
+
 // Watch stage to update phase
 watch(currentStage, (newStage) => {
   if (newStage === '生成Agent人设' || newStage === 'generating_profiles') {
@@ -705,6 +779,12 @@ const autoGeneratedRounds = computed(() => {
   // 确保最大轮数不小于40（推荐值），避免滑动条范围异常
   return Math.max(calculatedRounds, 40)
 })
+
+// 实际使用的轮数上限：自定义轮数，否则是配置自动算出的轮数
+const effectiveRounds = computed(() => (useCustomRounds.value ? customMaxRounds.value : autoGeneratedRounds.value))
+
+// 行为版本 >= 2 的配置里，所有展示出来的参数都会真正影响模拟
+const isBehaviorV2 = computed(() => (simulationConfig.value?.behavior_version || 1) >= 2)
 
 // Polling timer
 let pollTimer = null
@@ -761,7 +841,18 @@ const handleStartSimulation = () => {
     // 用户选择保持自动生成的轮数，不传递 max_rounds 参数
     addLog(t('log.startSimAutoRounds', { rounds: autoGeneratedRounds.value }))
   }
-  
+
+  if (normalizedRuns.value > 1) {
+    // 集合运行必须有明确的轮数上限（成本保护），所以自动轮数也要显式传下去
+    params.runs = normalizedRuns.value
+    params.concurrency = normalizedParallel.value
+    params.maxRounds = effectiveRounds.value
+    addLog(t('log.startSimEnsemble', { runs: params.runs, rounds: params.maxRounds }))
+    if (params.concurrency > 1) {
+      addLog(t('log.startSimEnsembleParallel', { parallel: params.concurrency }))
+    }
+  }
+
   emit('next-step', params)
 }
 
@@ -1106,7 +1197,7 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #FAFAFA;
+  background: var(--c-fafafa);
   font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
 }
 
@@ -1121,18 +1212,18 @@ onUnmounted(() => {
 
 /* Step Card */
 .step-card {
-  background: #FFF;
+  background: var(--c-ffffff);
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
+  border: 1px solid var(--c-eaeaea);
   transition: all 0.3s ease;
   position: relative;
 }
 
 .step-card.active {
-  border-color: #FF5722;
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
+  border-color: var(--c-ff5722);
+  box-shadow: 0 4px 12px var(--c-ff5722-a80);
 }
 
 .card-header {
@@ -1152,12 +1243,12 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-size: 20px;
   font-weight: 700;
-  color: #E0E0E0;
+  color: var(--c-e0e0e0);
 }
 
 .step-card.active .step-num,
 .step-card.completed .step-num {
-  color: #000;
+  color: var(--c-000000);
 }
 
 .step-title {
@@ -1174,10 +1265,10 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 
-.badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
-.badge.pending { background: #F5F5F5; color: #999; }
-.badge.accent { background: #E3F2FD; color: #1565C0; }
+.badge.success { background: var(--c-e8f5e9); color: var(--c-2e7d32); }
+.badge.processing { background: var(--c-ff5722); color: var(--c-ffffff); }
+.badge.pending { background: var(--c-f5f5f5); color: var(--c-999999); }
+.badge.accent { background: var(--c-e3f2fd); color: var(--c-1565c0); }
 
 .card-content {
   /* No extra padding - uses step-card's padding */
@@ -1186,13 +1277,13 @@ onUnmounted(() => {
 .api-note {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: #999;
+  color: var(--c-999999);
   margin-bottom: 8px;
 }
 
 .description {
   font-size: 12px;
-  color: #666;
+  color: var(--c-666666);
   line-height: 1.5;
   margin-bottom: 16px;
 }
@@ -1216,8 +1307,8 @@ onUnmounted(() => {
 }
 
 .action-btn.primary {
-  background: #000;
-  color: #FFF;
+  background: var(--c-000000);
+  color: var(--c-ffffff);
 }
 
 .action-btn.primary:hover:not(:disabled) {
@@ -1225,12 +1316,12 @@ onUnmounted(() => {
 }
 
 .action-btn.secondary {
-  background: #F5F5F5;
-  color: #333;
+  background: var(--c-f5f5f5);
+  color: var(--c-333333);
 }
 
 .action-btn.secondary:hover:not(:disabled) {
-  background: #E5E5E5;
+  background: var(--c-e5e5e5);
 }
 
 .action-btn:disabled {
@@ -1255,7 +1346,7 @@ onUnmounted(() => {
 
 /* Info Card */
 .info-card {
-  background: #F5F5F5;
+  background: var(--c-f5f5f5);
   border-radius: 6px;
   padding: 16px;
   margin-top: 16px;
@@ -1266,7 +1357,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 0;
-  border-bottom: 1px dashed #E0E0E0;
+  border-bottom: 1px dashed var(--c-e0e0e0);
 }
 
 .info-row:last-child {
@@ -1275,7 +1366,7 @@ onUnmounted(() => {
 
 .info-label {
   font-size: 12px;
-  color: #666;
+  color: var(--c-666666);
 }
 
 .info-value {
@@ -1293,7 +1384,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   padding: 16px;
   border-radius: 6px;
 }
@@ -1306,13 +1397,13 @@ onUnmounted(() => {
   display: block;
   font-size: 20px;
   font-weight: 700;
-  color: #000;
+  color: var(--c-000000);
   font-family: 'JetBrains Mono', monospace;
 }
 
 .stat-label {
   font-size: 9px;
-  color: #999;
+  color: var(--c-999999);
   text-transform: uppercase;
   margin-top: 4px;
   display: block;
@@ -1321,7 +1412,7 @@ onUnmounted(() => {
 /* Profiles Preview */
 .profiles-preview {
   margin-top: 20px;
-  border-top: 1px solid #E5E5E5;
+  border-top: 1px solid var(--c-e5e5e5);
   padding-top: 16px;
 }
 
@@ -1335,7 +1426,7 @@ onUnmounted(() => {
 .preview-title {
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--c-666666);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1354,17 +1445,17 @@ onUnmounted(() => {
 }
 
 .profiles-list::-webkit-scrollbar-thumb {
-  background: #DDD;
+  background: var(--c-dddddd);
   border-radius: 2px;
 }
 
 .profiles-list::-webkit-scrollbar-thumb:hover {
-  background: #CCC;
+  background: var(--c-cccccc);
 }
 
 .profile-card {
-  background: #FAFAFA;
-  border: 1px solid #E5E5E5;
+  background: var(--c-fafafa);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 6px;
   padding: 14px;
   cursor: pointer;
@@ -1372,8 +1463,8 @@ onUnmounted(() => {
 }
 
 .profile-card:hover {
-  border-color: #999;
-  background: #FFF;
+  border-color: var(--c-999999);
+  background: var(--c-ffffff);
 }
 
 .profile-header {
@@ -1386,13 +1477,13 @@ onUnmounted(() => {
 .profile-realname {
   font-size: 14px;
   font-weight: 700;
-  color: #000;
+  color: var(--c-000000);
 }
 
 .profile-username {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #999;
+  color: var(--c-999999);
 }
 
 .profile-meta {
@@ -1401,15 +1492,15 @@ onUnmounted(() => {
 
 .profile-profession {
   font-size: 11px;
-  color: #666;
-  background: #F0F0F0;
+  color: var(--c-666666);
+  background: var(--c-f0f0f0);
   padding: 2px 8px;
   border-radius: 3px;
 }
 
 .profile-bio {
   font-size: 12px;
-  color: #444;
+  color: var(--c-444444);
   line-height: 1.6;
   margin: 0 0 10px 0;
   display: -webkit-box;
@@ -1426,15 +1517,15 @@ onUnmounted(() => {
 
 .topic-tag {
   font-size: 10px;
-  color: #1565C0;
-  background: #E3F2FD;
+  color: var(--c-1565c0);
+  background: var(--c-e3f2fd);
   padding: 2px 8px;
   border-radius: 10px;
 }
 
 .topic-more {
   font-size: 10px;
-  color: #999;
+  color: var(--c-999999);
   padding: 2px 6px;
 }
 
@@ -1446,7 +1537,7 @@ onUnmounted(() => {
 
 .config-block {
   margin-top: 16px;
-  border-top: 1px solid #E5E5E5;
+  border-top: 1px solid var(--c-e5e5e5);
   padding-top: 12px;
 }
 
@@ -1466,7 +1557,7 @@ onUnmounted(() => {
 .config-block-title {
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--c-666666);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1474,8 +1565,8 @@ onUnmounted(() => {
 .config-block-badge {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  background: #F1F5F9;
-  color: #475569;
+  background: var(--c-f1f5f9);
+  color: var(--c-475569);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -1488,7 +1579,7 @@ onUnmounted(() => {
 }
 
 .config-item {
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   padding: 12px 14px;
   border-radius: 6px;
   display: flex;
@@ -1498,14 +1589,14 @@ onUnmounted(() => {
 
 .config-item-label {
   font-size: 11px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
 }
 
 .config-item-value {
   font-family: 'JetBrains Mono', monospace;
   font-size: 16px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--c-1e293b);
 }
 
 /* Time Periods */
@@ -1521,21 +1612,21 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   border-radius: 6px;
 }
 
 .period-label {
   font-size: 12px;
   font-weight: 500;
-  color: #64748B;
+  color: var(--c-64748b);
   min-width: 70px;
 }
 
 .period-hours {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #475569;
+  color: var(--c-475569);
   flex: 1;
 }
 
@@ -1543,8 +1634,8 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 600;
-  color: #6366F1;
-  background: #EEF2FF;
+  color: var(--c-6366f1);
+  background: var(--c-eef2ff);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -1564,25 +1655,25 @@ onUnmounted(() => {
 }
 
 .agents-cards::-webkit-scrollbar-thumb {
-  background: #DDD;
+  background: var(--c-dddddd);
   border-radius: 2px;
 }
 
 .agents-cards::-webkit-scrollbar-thumb:hover {
-  background: #CCC;
+  background: var(--c-cccccc);
 }
 
 .agent-card {
-  background: #F9F9F9;
-  border: 1px solid #E5E5E5;
+  background: var(--c-f9f9f9);
+  border: 1px solid var(--c-e5e5e5);
   border-radius: 6px;
   padding: 14px;
   transition: all 0.2s ease;
 }
 
 .agent-card:hover {
-  border-color: #999;
-  background: #FFF;
+  border-color: var(--c-999999);
+  background: var(--c-ffffff);
 }
 
 /* Agent Card Header */
@@ -1592,7 +1683,7 @@ onUnmounted(() => {
   align-items: flex-start;
   margin-bottom: 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #F1F5F9;
+  border-bottom: 1px solid var(--c-f1f5f9);
 }
 
 .agent-identity {
@@ -1604,13 +1695,13 @@ onUnmounted(() => {
 .agent-id {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
 }
 
 .agent-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--c-1e293b);
 }
 
 .agent-tags {
@@ -1620,8 +1711,8 @@ onUnmounted(() => {
 
 .agent-type {
   font-size: 10px;
-  color: #64748B;
-  background: #F1F5F9;
+  color: var(--c-64748b);
+  background: var(--c-f1f5f9);
   padding: 2px 8px;
   border-radius: 4px;
 }
@@ -1635,23 +1726,23 @@ onUnmounted(() => {
 }
 
 .stance-neutral {
-  background: #F1F5F9;
-  color: #64748B;
+  background: var(--c-f1f5f9);
+  color: var(--c-64748b);
 }
 
 .stance-supportive {
-  background: #DCFCE7;
-  color: #16A34A;
+  background: var(--c-dcfce7);
+  color: var(--c-16a34a);
 }
 
 .stance-opposing {
-  background: #FEE2E2;
-  color: #DC2626;
+  background: var(--c-fee2e2);
+  color: var(--c-dc2626);
 }
 
 .stance-observer {
-  background: #FEF3C7;
-  color: #D97706;
+  background: var(--c-fef3c7);
+  color: var(--c-d97706);
 }
 
 /* Agent Timeline */
@@ -1662,7 +1753,7 @@ onUnmounted(() => {
 .timeline-label {
   display: block;
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1672,20 +1763,20 @@ onUnmounted(() => {
   display: flex;
   gap: 2px;
   height: 16px;
-  background: #F8FAFC;
+  background: var(--c-f8fafc);
   border-radius: 4px;
   padding: 3px;
 }
 
 .timeline-hour {
   flex: 1;
-  background: #E2E8F0;
+  background: var(--c-e2e8f0);
   border-radius: 2px;
   transition: all 0.2s;
 }
 
 .timeline-hour.active {
-  background: linear-gradient(180deg, #6366F1, #818CF8);
+  background: linear-gradient(180deg, var(--c-6366f1), var(--c-818cf8));
 }
 
 .timeline-marks {
@@ -1694,7 +1785,7 @@ onUnmounted(() => {
   margin-top: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
 }
 
 /* Agent Params */
@@ -1718,14 +1809,14 @@ onUnmounted(() => {
 
 .param-item .param-label {
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
 }
 
 .param-item .param-value {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--c-475569);
 }
 
 .param-value.with-bar {
@@ -1736,26 +1827,26 @@ onUnmounted(() => {
 
 .mini-bar {
   height: 4px;
-  background: linear-gradient(90deg, #6366F1, #A855F7);
+  background: linear-gradient(90deg, var(--c-6366f1), var(--c-a855f7));
   border-radius: 2px;
   min-width: 4px;
   max-width: 40px;
 }
 
 .param-value.positive {
-  color: #16A34A;
+  color: var(--c-16a34a);
 }
 
 .param-value.negative {
-  color: #DC2626;
+  color: var(--c-dc2626);
 }
 
 .param-value.neutral {
-  color: #64748B;
+  color: var(--c-64748b);
 }
 
 .param-value.highlight {
-  color: #6366F1;
+  color: var(--c-6366f1);
 }
 
 /* Platforms Grid */
@@ -1766,7 +1857,7 @@ onUnmounted(() => {
 }
 
 .platform-card {
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   padding: 14px;
   border-radius: 6px;
 }
@@ -1774,13 +1865,13 @@ onUnmounted(() => {
 .platform-card-header {
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #E5E5E5;
+  border-bottom: 1px solid var(--c-e5e5e5);
 }
 
 .platform-name {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--c-333333);
 }
 
 .platform-params {
@@ -1797,14 +1888,14 @@ onUnmounted(() => {
 
 .param-label {
   font-size: 12px;
-  color: #64748B;
+  color: var(--c-64748b);
 }
 
 .param-value {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--c-1e293b);
 }
 
 /* Reasoning Content */
@@ -1816,13 +1907,13 @@ onUnmounted(() => {
 
 .reasoning-item {
   padding: 12px 14px;
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   border-radius: 6px;
 }
 
 .reasoning-text {
   font-size: 13px;
-  color: #555;
+  color: var(--c-555555);
   line-height: 1.7;
   margin: 0;
 }
@@ -1843,7 +1934,7 @@ onUnmounted(() => {
 }
 
 .profile-modal {
-  background: #FFF;
+  background: var(--c-ffffff);
   border-radius: 16px;
   width: 90%;
   max-width: 600px;
@@ -1859,8 +1950,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   padding: 24px;
-  background: #FFF;
-  border-bottom: 1px solid #F0F0F0;
+  background: var(--c-ffffff);
+  border-bottom: 1px solid var(--c-f0f0f0);
 }
 
 .modal-header-info {
@@ -1877,19 +1968,19 @@ onUnmounted(() => {
 .modal-realname {
   font-size: 20px;
   font-weight: 700;
-  color: #000;
+  color: var(--c-000000);
 }
 
 .modal-username {
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  color: #999;
+  color: var(--c-999999);
 }
 
 .modal-profession {
   font-size: 12px;
-  color: #666;
-  background: #F5F5F5;
+  color: var(--c-666666);
+  background: var(--c-f5f5f5);
   padding: 4px 10px;
   border-radius: 4px;
   display: inline-block;
@@ -1901,7 +1992,7 @@ onUnmounted(() => {
   height: 32px;
   border: none;
   background: none;
-  color: #999;
+  color: var(--c-999999);
   border-radius: 50%;
   font-size: 24px;
   cursor: pointer;
@@ -1914,7 +2005,7 @@ onUnmounted(() => {
 }
 
 .close-btn:hover {
-  color: #333;
+  color: var(--c-333333);
 }
 
 .modal-body {
@@ -1942,7 +2033,7 @@ onUnmounted(() => {
 
 .info-label {
   font-size: 11px;
-  color: #999;
+  color: var(--c-999999);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
@@ -1951,12 +2042,12 @@ onUnmounted(() => {
 .info-value {
   font-size: 15px;
   font-weight: 600;
-  color: #333;
+  color: var(--c-333333);
 }
 
 .info-value.mbti {
   font-family: 'JetBrains Mono', monospace;
-  color: #FF5722;
+  color: var(--c-ff5722);
 }
 
 /* 模块区域 */
@@ -1968,7 +2059,7 @@ onUnmounted(() => {
   display: block;
   font-size: 11px;
   font-weight: 600;
-  color: #999;
+  color: var(--c-999999);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
@@ -1976,13 +2067,13 @@ onUnmounted(() => {
 
 .section-bio {
   font-size: 14px;
-  color: #333;
+  color: var(--c-333333);
   line-height: 1.6;
   margin: 0;
   padding: 16px;
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   border-radius: 6px;
-  border-left: 3px solid #E0E0E0;
+  border-left: 3px solid var(--c-e0e0e0);
 }
 
 /* 话题标签 */
@@ -1994,8 +2085,8 @@ onUnmounted(() => {
 
 .topic-item {
   font-size: 11px;
-  color: #1565C0;
-  background: #E3F2FD;
+  color: var(--c-1565c0);
+  background: var(--c-e3f2fd);
   padding: 4px 10px;
   border-radius: 12px;
   transition: all 0.2s;
@@ -2003,8 +2094,8 @@ onUnmounted(() => {
 }
 
 .topic-item:hover {
-  background: #BBDEFB;
-  color: #0D47A1;
+  background: var(--c-bbdefb);
+  color: var(--c-0d47a1);
 }
 
 /* 详细人设 */
@@ -2016,30 +2107,30 @@ onUnmounted(() => {
 }
 
 .dimension-card {
-  background: #F8F9FA;
+  background: var(--c-f8f9fa);
   padding: 12px;
   border-radius: 6px;
-  border-left: 3px solid #DDD;
+  border-left: 3px solid var(--c-dddddd);
   transition: all 0.2s;
 }
 
 .dimension-card:hover {
-  background: #F0F0F0;
-  border-left-color: #999;
+  background: var(--c-f0f0f0);
+  border-left-color: var(--c-999999);
 }
 
 .dim-title {
   display: block;
   font-size: 12px;
   font-weight: 700;
-  color: #333;
+  color: var(--c-333333);
   margin-bottom: 4px;
 }
 
 .dim-desc {
   display: block;
   font-size: 10px;
-  color: #888;
+  color: var(--c-888888);
   line-height: 1.4;
 }
 
@@ -2057,13 +2148,13 @@ onUnmounted(() => {
 }
 
 .persona-content::-webkit-scrollbar-thumb {
-  background: #DDD;
+  background: var(--c-dddddd);
   border-radius: 2px;
 }
 
 .section-persona {
   font-size: 13px;
-  color: #555;
+  color: var(--c-555555);
   line-height: 1.8;
   margin: 0;
   text-align: justify;
@@ -2071,22 +2162,22 @@ onUnmounted(() => {
 
 /* System Logs */
 .system-logs {
-  background: #000;
-  color: #DDD;
+  background: var(--c-000000);
+  color: var(--c-dddddd);
   padding: 16px;
   font-family: 'JetBrains Mono', monospace;
-  border-top: 1px solid #222;
+  border-top: 1px solid var(--c-222222);
   flex-shrink: 0;
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--c-333333);
   padding-bottom: 8px;
   margin-bottom: 8px;
   font-size: 10px;
-  color: #888;
+  color: var(--c-888888);
 }
 
 .log-content {
@@ -2103,7 +2194,7 @@ onUnmounted(() => {
 }
 
 .log-content::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--c-333333);
   border-radius: 2px;
 }
 
@@ -2115,12 +2206,12 @@ onUnmounted(() => {
 }
 
 .log-time {
-  color: #666;
+  color: var(--c-666666);
   min-width: 75px;
 }
 
 .log-msg {
-  color: #CCC;
+  color: var(--c-cccccc);
   word-break: break-all;
 }
 
@@ -2128,8 +2219,8 @@ onUnmounted(() => {
 .spinner-sm {
   width: 16px;
   height: 16px;
-  border: 2px solid #E5E5E5;
-  border-top-color: #FF5722;
+  border: 2px solid var(--c-e5e5e5);
+  border-top-color: var(--c-ff5722);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -2149,17 +2240,17 @@ onUnmounted(() => {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--c-666666);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
 }
 
 .narrative-box {
-  background: #FFFFFF;
+  background: var(--c-ffffff);
   padding: 20px 24px;
   border-radius: 12px;
-  border: 1px solid #EEF2F6;
+  border: 1px solid var(--c-eef2f6);
   box-shadow: 0 4px 24px rgba(0,0,0,0.03);
   transition: all 0.3s ease;
 }
@@ -2168,7 +2259,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #666;
+  color: var(--c-666666);
   font-size: 13px;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
@@ -2176,7 +2267,7 @@ onUnmounted(() => {
 }
 
 .special-icon {
-  filter: drop-shadow(0 2px 4px rgba(255, 87, 34, 0.2));
+  filter: drop-shadow(0 2px 4px var(--c-ff5722-a200));
   transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -2187,7 +2278,7 @@ onUnmounted(() => {
 .narrative-text {
   font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
   font-size: 14px;
-  color: #334155;
+  color: var(--c-334155);
   line-height: 1.8;
   margin: 0;
   text-align: justify;
@@ -2195,7 +2286,7 @@ onUnmounted(() => {
 }
 
 .topics-section {
-  background: #FFF;
+  background: var(--c-ffffff);
 }
 
 .hot-topics-grid {
@@ -2206,8 +2297,8 @@ onUnmounted(() => {
 
 .hot-topic-tag {
   font-size: 12px;
-  color:rgba(255, 86, 34, 0.88);
-  background: #FFF3E0;
+  color:var(--c-ff5622-a880);
+  background: var(--c-fff3e0);
   padding: 4px 10px;
   border-radius: 12px;
   font-weight: 500;
@@ -2215,12 +2306,12 @@ onUnmounted(() => {
 
 .hot-topic-more {
   font-size: 11px;
-  color: #999;
+  color: var(--c-999999);
   padding: 4px 6px;
 }
 
 .initial-posts-section {
-  border-top: 1px solid #EAEAEA;
+  border-top: 1px solid var(--c-eaeaea);
   padding-top: 16px;
 }
 
@@ -2229,7 +2320,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
   padding-left: 8px;
-  border-left: 2px solid #F0F0F0;
+  border-left: 2px solid var(--c-f0f0f0);
   margin-top: 12px;
 }
 
@@ -2244,14 +2335,14 @@ onUnmounted(() => {
   top: 14px;
   width: 12px;
   height: 2px;
-  background: #DDD;
+  background: var(--c-dddddd);
 }
 
 .timeline-content {
-  background: #F9F9F9;
+  background: var(--c-f9f9f9);
   padding: 12px;
   border-radius: 6px;
-  border: 1px solid #EEE;
+  border: 1px solid var(--c-eeeeee);
 }
 
 .post-header {
@@ -2263,7 +2354,7 @@ onUnmounted(() => {
 .post-role {
   font-size: 11px;
   font-weight: 700;
-  color: #333;
+  color: var(--c-333333);
   text-transform: uppercase;
 }
 
@@ -2277,7 +2368,7 @@ onUnmounted(() => {
 .post-username {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: #666;
+  color: var(--c-666666);
   line-height: 1;
   vertical-align: baseline;
 }
@@ -2288,7 +2379,7 @@ onUnmounted(() => {
 
 .post-text {
   font-size: 12px;
-  color: #555;
+  color: var(--c-555555);
   line-height: 1.5;
   margin: 0;
 }
@@ -2297,7 +2388,7 @@ onUnmounted(() => {
 .rounds-config-section {
   margin: 24px 0;
   padding-top: 24px;
-  border-top: 1px solid #EAEAEA;
+  border-top: 1px solid var(--c-eaeaea);
 }
 
 .rounds-header {
@@ -2316,22 +2407,83 @@ onUnmounted(() => {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--c-1e293b);
 }
 
 .section-desc {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
 }
 
 .desc-highlight {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 600;
-  color: #1E293B;
-  background: #F1F5F9;
+  color: var(--c-1e293b);
+  background: var(--c-f1f5f9);
   padding: 1px 6px;
   border-radius: 4px;
   margin: 0 2px;
+}
+
+/* 运行次数（集合运行） */
+.runs-config-section {
+  margin: 0 0 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--c-eaeaea);
+}
+
+.runs-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.runs-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.runs-input {
+  width: 72px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--c-dddddd);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  background: var(--c-fafafa);
+}
+
+.runs-input:focus {
+  outline: none;
+  border-color: var(--c-ff5722);
+  background: var(--c-ffffff);
+}
+
+.runs-parallel {
+  margin-top: 10px;
+}
+
+.runs-parallel-label {
+  font-size: 0.85rem;
+  color: var(--c-4b5563);
+}
+
+.runs-unit {
+  font-size: 13px;
+  color: var(--c-475569);
+}
+
+.runs-note {
+  font-size: 12px;
+  color: var(--c-475569);
+}
+
+.runs-note.muted {
+  color: var(--c-94a3b8);
 }
 
 /* Switch Control */
@@ -2346,7 +2498,7 @@ onUnmounted(() => {
 }
 
 .switch-control:hover {
-  background: #F8FAFC;
+  background: var(--c-f8fafc);
 }
 
 .switch-control input {
@@ -2356,7 +2508,7 @@ onUnmounted(() => {
 .switch-track {
   width: 36px;
   height: 20px;
-  background: #E2E8F0;
+  background: var(--c-e2e8f0);
   border-radius: 10px;
   position: relative;
   transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
@@ -2369,14 +2521,14 @@ onUnmounted(() => {
   top: 2px;
   width: 16px;
   height: 16px;
-  background: #FFF;
+  background: var(--c-ffffff);
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
 .switch-control input:checked + .switch-track {
-  background: #000;
+  background: var(--c-000000);
 }
 
 .switch-control input:checked + .switch-track::after {
@@ -2386,11 +2538,11 @@ onUnmounted(() => {
 .switch-label {
   font-size: 12px;
   font-weight: 500;
-  color: #64748B;
+  color: var(--c-64748b);
 }
 
 .switch-control input:checked ~ .switch-label {
-  color: #1E293B;
+  color: var(--c-1e293b);
 }
 
 /* Slider Content */
@@ -2415,20 +2567,20 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-size: 24px;
   font-weight: 700;
-  color: #000;
+  color: var(--c-000000);
 }
 
 .val-unit {
   font-size: 12px;
-  color: #666;
+  color: var(--c-666666);
   font-weight: 500;
 }
 
 .slider-meta-info {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #64748B;
-  background: #F1F5F9;
+  color: var(--c-64748b);
+  background: var(--c-f1f5f9);
   padding: 4px 8px;
   border-radius: 4px;
 }
@@ -2442,10 +2594,10 @@ onUnmounted(() => {
   -webkit-appearance: none;
   width: 100%;
   height: 4px;
-  background: #E2E8F0;
+  background: var(--c-e2e8f0);
   border-radius: 2px;
   outline: none;
-  background-image: linear-gradient(#000, #000);
+  background-image: linear-gradient(var(--c-000000), var(--c-000000));
   background-size: var(--percent, 0%) 100%;
   background-repeat: no-repeat;
   cursor: pointer;
@@ -2456,8 +2608,8 @@ onUnmounted(() => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #FFF;
-  border: 2px solid #000;
+  background: var(--c-ffffff);
+  border: 2px solid var(--c-000000);
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   transition: transform 0.1s;
@@ -2479,7 +2631,7 @@ onUnmounted(() => {
   margin-top: 8px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--c-94a3b8);
   position: relative;
 }
 
@@ -2490,11 +2642,11 @@ onUnmounted(() => {
 }
 
 .mark-recommend:hover {
-  color: #000;
+  color: var(--c-000000);
 }
 
 .mark-recommend.active {
-  color: #000;
+  color: var(--c-000000);
   font-weight: 600;
 }
 
@@ -2506,7 +2658,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: 1px;
   height: 4px;
-  background: #CBD5E1;
+  background: var(--c-cbd5e1);
 }
 
 /* Auto Info */
@@ -2514,7 +2666,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 24px;
-  background: #F8FAFC;
+  background: var(--c-f8fafc);
   padding: 16px 20px;
   border-radius: 8px;
 }
@@ -2525,7 +2677,7 @@ onUnmounted(() => {
   align-items: baseline;
   gap: 4px;
   padding-right: 24px;
-  border-right: 1px solid #E2E8F0;
+  border-right: 1px solid var(--c-e2e8f0);
 }
 
 .auto-content {
@@ -2548,9 +2700,9 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 500;
-  color: #64748B;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  color: var(--c-64748b);
+  background: var(--c-ffffff);
+  border: 1px solid var(--c-e2e8f0);
   padding: 3px 8px;
   border-radius: 6px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.02);
@@ -2565,14 +2717,14 @@ onUnmounted(() => {
 .auto-desc p {
   margin: 0;
   font-size: 13px;
-  color: #64748B;
+  color: var(--c-64748b);
   line-height: 1.5;
 }
 
 .highlight-tip {
   margin-top: 4px !important;
   font-size: 12px !important;
-  color: #000 !important;
+  color: var(--c-000000) !important;
   font-weight: 500;
   cursor: pointer;
 }
@@ -2619,5 +2771,19 @@ onUnmounted(() => {
 .modal-leave-to .profile-modal {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
+}
+
+.block-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--c-888888);
+}
+
+.topic-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-333333);
 }
 </style>

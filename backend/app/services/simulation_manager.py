@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import Enum
 
 from ..config import Config
+from ..utils.atomic_write import write_json_atomic
 from ..utils.logger import get_logger
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
@@ -76,6 +77,15 @@ class SimulationState:
     
     # 错误信息
     error: Optional[str] = None
+
+    # 集合运行：副本模拟属于哪个集合、是第几个副本（普通模拟两者都为 None）
+    ensemble_id: Optional[str] = None
+    replicate_index: Optional[int] = None
+
+    @property
+    def is_replicate(self) -> bool:
+        """是否是某个集合运行克隆出来的副本模拟"""
+        return self.ensemble_id is not None
     
     def to_dict(self) -> Dict[str, Any]:
         """完整状态字典（内部使用）"""
@@ -98,6 +108,8 @@ class SimulationState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "ensemble_id": self.ensemble_id,
+            "replicate_index": self.replicate_index,
         }
     
     def get_default_platform(self) -> str:
@@ -162,8 +174,13 @@ class SimulationManager:
         
         state.updated_at = datetime.now().isoformat()
         
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+        try:
+            write_json_atomic(state_file, state.to_dict())  # readers never see a half-written file
+        except OSError as error:
+            # the rename can be refused on Windows while a reader has the file open; write in place instead
+            logger.warning(f"原子写入 state.json 失败，改为直接写入: {error}")
+            with open(state_file, 'w', encoding='utf-8') as f:
+                json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
         
         self._simulations[state.simulation_id] = state
     
@@ -200,6 +217,8 @@ class SimulationManager:
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             error=data.get("error"),
+            ensemble_id=data.get("ensemble_id"),
+            replicate_index=data.get("replicate_index"),
         )
         
         self._simulations[simulation_id] = state
@@ -420,6 +439,17 @@ class SimulationManager:
                     total=3
                 )
             
+            def config_progress(step: int, total_steps: int, message: str):
+                # 生成器的每一步（时间、事件、每批Agent、平台）映射到本阶段 30%-70% 的进度区间，
+                # 这样一次耗时很久的模型调用也能在界面上看到当前做到哪一步
+                if progress_callback:
+                    stage_progress = 30 + int(40 * max(step - 1, 0) / max(total_steps, 1))
+                    progress_callback(
+                        "generating_config", stage_progress, message,
+                        current=step,
+                        total=total_steps
+                    )
+
             sim_params = config_generator.generate_config(
                 simulation_id=simulation_id,
                 project_id=state.project_id,
@@ -428,7 +458,8 @@ class SimulationManager:
                 document_text=document_text,
                 entities=filtered.entities,
                 enable_twitter=state.enable_twitter,
-                enable_reddit=state.enable_reddit
+                enable_reddit=state.enable_reddit,
+                progress_callback=config_progress
             )
             
             if progress_callback:
@@ -480,8 +511,16 @@ class SimulationManager:
         """获取模拟状态"""
         return self._load_simulation_state(simulation_id)
     
-    def list_simulations(self, project_id: Optional[str] = None) -> List[SimulationState]:
-        """列出所有模拟"""
+    def list_simulations(
+        self,
+        project_id: Optional[str] = None,
+        include_replicates: bool = False,
+    ) -> List[SimulationState]:
+        """列出所有模拟
+
+        集合运行克隆出的副本模拟默认不列出（它们只是集合的内部产物，会淹没列表）；
+        include_replicates=True 时一并返回。
+        """
         simulations = []
         
         if os.path.exists(self.SIMULATION_DATA_DIR):
@@ -491,8 +530,16 @@ class SimulationManager:
                 if sim_id.startswith('.') or not os.path.isdir(sim_path):
                     continue
                 
-                state = self._load_simulation_state(sim_id)
+                try:
+                    state = self._load_simulation_state(sim_id)
+                except (ValueError, OSError) as error:
+                    # One unreadable state.json (e.g. zero-filled by a crash) must
+                    # not take the whole simulation list down with it.
+                    logger.warning(f"跳过无法读取的模拟目录 {sim_id}: {error}")
+                    continue
                 if state:
+                    if state.is_replicate and not include_replicates:
+                        continue
                     if project_id is None or state.project_id == project_id:
                         simulations.append(state)
         
@@ -550,15 +597,15 @@ class SimulationManager:
             "scripts_dir": scripts_dir,
             "config_file": config_path,
             "commands": {
-                "twitter": f"python {scripts_dir}/run_twitter_simulation.py --config {config_path}",
-                "reddit": f"python {scripts_dir}/run_reddit_simulation.py --config {config_path}",
+                "twitter": f"python {scripts_dir}/run_parallel_simulation.py --config {config_path} --twitter-only",
+                "reddit": f"python {scripts_dir}/run_parallel_simulation.py --config {config_path} --reddit-only",
                 "parallel": f"python {scripts_dir}/run_parallel_simulation.py --config {config_path}",
             },
             "instructions": (
                 f"1. 激活conda环境: conda activate MiroFish\n"
                 f"2. 运行模拟 (脚本位于 {scripts_dir}):\n"
-                f"   - 单独运行Twitter: python {scripts_dir}/run_twitter_simulation.py --config {config_path}\n"
-                f"   - 单独运行Reddit: python {scripts_dir}/run_reddit_simulation.py --config {config_path}\n"
+                f"   - 单独运行Twitter: python {scripts_dir}/run_parallel_simulation.py --config {config_path} --twitter-only\n"
+                f"   - 单独运行Reddit: python {scripts_dir}/run_parallel_simulation.py --config {config_path} --reddit-only\n"
                 f"   - 并行运行双平台: python {scripts_dir}/run_parallel_simulation.py --config {config_path}"
             )
         }

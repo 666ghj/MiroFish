@@ -257,3 +257,21 @@ def test_chat_json_reports_missing_choices_without_retrying_forever():
         )
 
     assert len(sequence.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        '<thought>Goal: JSON. maybe {"x": 0}</thought>```json\n{"x": 1}\n```',
+        '<think>reasoning</think>{"x": 1}',
+        '<Thinking>reasoning\nmore</Thinking>\n{"x": 1}',
+    ],
+)
+def test_inline_reasoning_blocks_are_removed_before_parsing(reply):
+    from types import SimpleNamespace
+    from app.utils.llm_client import LLMClient
+
+    response = SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason="stop", message=SimpleNamespace(content=reply),
+    )])
+    assert LLMClient._parse_json_response(response) == {"x": 1}

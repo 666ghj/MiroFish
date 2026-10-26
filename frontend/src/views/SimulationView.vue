@@ -22,6 +22,7 @@
 
       <div class="header-right">
         <LanguageSwitcher />
+        <ThemeSwitcher />
         <div class="step-divider"></div>
         <div class="workflow-step">
           <span class="step-num">Step 2/5</span>
@@ -73,6 +74,7 @@ import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from '../api/simulation'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -166,9 +168,19 @@ const handleNextStep = (params = {}) => {
     params: { simulationId: currentSimulationId.value }
   }
   
-  // 如果有自定义轮数，通过 query 参数传递
+  // 如果有自定义轮数，通过 query 参数传递；运行次数大于 1 时同样通过 query 传给 Step 3
+  const query = {}
   if (params.maxRounds) {
-    routeParams.query = { maxRounds: params.maxRounds }
+    query.maxRounds = params.maxRounds
+  }
+  if (params.runs > 1) {
+    query.runs = params.runs
+    if (params.concurrency > 1) {
+      query.parallel = params.concurrency
+    }
+  }
+  if (Object.keys(query).length) {
+    routeParams.query = query
   }
   
   // 跳转到 Step 3 页面
@@ -307,7 +319,7 @@ onMounted(async () => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFF;
+  background: var(--c-ffffff);
   overflow: hidden;
   font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
 }
@@ -315,12 +327,12 @@ onMounted(async () => {
 /* Header */
 .app-header {
   height: 60px;
-  border-bottom: 1px solid #EAEAEA;
+  border-bottom: 1px solid var(--c-eaeaea);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #FFF;
+  background: var(--c-ffffff);
   z-index: 100;
   position: relative;
 }
@@ -341,7 +353,7 @@ onMounted(async () => {
 
 .view-switcher {
   display: flex;
-  background: #F5F5F5;
+  background: var(--c-f5f5f5);
   padding: 4px;
   border-radius: 6px;
   gap: 4px;
@@ -353,15 +365,15 @@ onMounted(async () => {
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
+  color: var(--c-666666);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .switch-btn.active {
-  background: #FFF;
-  color: #000;
+  background: var(--c-ffffff);
+  color: var(--c-000000);
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
@@ -381,18 +393,18 @@ onMounted(async () => {
 .step-num {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
-  color: #999;
+  color: var(--c-999999);
 }
 
 .step-name {
   font-weight: 700;
-  color: #000;
+  color: var(--c-000000);
 }
 
 .step-divider {
   width: 1px;
   height: 14px;
-  background-color: #E0E0E0;
+  background-color: var(--c-e0e0e0);
 }
 
 .status-indicator {
@@ -400,7 +412,7 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #666;
+  color: var(--c-666666);
   font-weight: 500;
 }
 
@@ -408,12 +420,12 @@ onMounted(async () => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #CCC;
+  background: var(--c-cccccc);
 }
 
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
-.status-indicator.completed .dot { background: #4CAF50; }
-.status-indicator.error .dot { background: #F44336; }
+.status-indicator.processing .dot { background: var(--c-ff5722); animation: pulse 1s infinite; }
+.status-indicator.completed .dot { background: var(--c-4caf50); }
+.status-indicator.error .dot { background: var(--c-f44336); }
 
 @keyframes pulse { 50% { opacity: 0.5; } }
 
@@ -433,7 +445,7 @@ onMounted(async () => {
 }
 
 .panel-wrapper.left {
-  border-right: 1px solid #EAEAEA;
+  border-right: 1px solid var(--c-eaeaea);
 }
 </style>
 

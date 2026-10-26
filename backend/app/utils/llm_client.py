@@ -64,14 +64,24 @@ def _is_response_format_unsupported(error: Exception) -> bool:
     )
 
 
+# Models write their reasoning inline in different tags (DeepSeek/Qwen use
+# <think>, Gemma uses <thought>); the answer follows the closing tag.
+_REASONING_BLOCK = re.compile(
+    r'<(think|thinking|thought)>[\s\S]*?</\1>', re.IGNORECASE
+)
+
+
 def _clean_chat_text(content: str) -> str:
     """Remove common reasoning wrappers and an outer Markdown JSON fence."""
 
-    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+    cleaned = _REASONING_BLOCK.sub('', content).strip()
     cleaned = cleaned.lstrip("\ufeff")
     cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\n?```\s*$', '', cleaned)
     return cleaned.strip()
+
+
+clean_chat_text = _clean_chat_text  # public name for the other JSON-reading services
 
 
 def _contains_additional_json_container(content: str) -> bool:
@@ -108,6 +118,16 @@ class LLMClient:
             api_key=self.api_key,
             base_url=self.base_url
         )
+
+    @classmethod
+    def for_preparation(cls) -> "LLMClient":
+        """The client for the stronger model that prepares a simulation and writes its report.
+
+        It is ``LLM_PREP_*`` when that is configured (key and model name), else the main ``LLM_*`` model, so
+        installations without a separate model are unaffected.
+        """
+        prep = Config.prep_llm()
+        return cls(api_key=prep["api_key"], base_url=prep["base_url"], model=prep["model_name"])
 
     def _create_completion(
         self,

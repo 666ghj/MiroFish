@@ -19,12 +19,19 @@ from ..services.simulation_runner import (
     SimulationStopPending,
 )
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
+from ..services.scheduled_events import MAX_SCHEDULED_EVENTS, validate_scheduled_events
+from ..utils.atomic_write import write_json_atomic
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..utils.zep_lifecycle import get_graph_readers, graph_lifecycle_lock
 from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
+
+
+def _truthy_arg(value) -> bool:
+    """查询参数是否为真值（true / 1 / yes）"""
+    return str(value or '').strip().lower() in ('1', 'true', 'yes')
 
 
 def _get_default_platform(simulation_id: str) -> str:
@@ -386,6 +393,30 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         return False, {"reason": f"读取状态文件失败: {str(e)}"}
 
 
+# A prepare task that has not reported progress for this long is treated as dead, so it cannot block preparing forever
+PREPARE_TASK_STALE_SECONDS = 30 * 60
+
+
+def _running_prepare_task(simulation_id):
+    """The unfinished prepare task of this simulation (as a dict), or None."""
+    from datetime import datetime
+    from ..models.task import TaskManager
+
+    now = datetime.now()
+    for task in TaskManager().list_tasks(task_type="simulation_prepare"):
+        if task["status"] not in ("pending", "processing"):
+            continue
+        if (task.get("metadata") or {}).get("simulation_id") != simulation_id:
+            continue
+        try:
+            idle = (now - datetime.fromisoformat(task["updated_at"])).total_seconds()
+        except (KeyError, TypeError, ValueError):
+            idle = 0
+        if idle <= PREPARE_TASK_STALE_SECONDS:
+            return task
+    return None
+
+
 @simulation_bp.route('/prepare', methods=['POST'])
 def prepare_simulation():
     """
@@ -454,7 +485,26 @@ def prepare_simulation():
         # 检查是否强制重新生成
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"开始处理 /prepare 请求: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
-        
+
+        # A second request while the first is still running (a page reload, a double click) must not start a
+        # duplicate: it would reset the "prepared" flags under the running task and overwrite its files.
+        running = _running_prepare_task(simulation_id)
+        if running:
+            logger.info(f"模拟 {simulation_id} 已有准备任务在运行 ({running['task_id']})，不再重复启动")
+            return jsonify({
+                "success": True,
+                "data": {
+                    "simulation_id": simulation_id,
+                    "task_id": running["task_id"],
+                    "status": "preparing",
+                    "message": t('api.prepareAlreadyRunning'),
+                    "already_prepared": False,
+                    "already_running": True,
+                    "expected_entities_count": state.entities_count,
+                    "entity_types": state.entity_types
+                }
+            })
+
         # 检查是否已经准备完成（避免重复生成）
         if not force_regenerate:
             logger.debug(f"检查模拟 {simulation_id} 是否已准备完成...")
@@ -827,12 +877,16 @@ def list_simulations():
     
     Query参数：
         project_id: 按项目ID过滤（可选）
+        include_replicates: 为 true 时包含集合运行克隆出的副本模拟（默认不包含）
     """
     try:
         project_id = request.args.get('project_id')
-        
+        include_replicates = _truthy_arg(request.args.get('include_replicates'))
+
         manager = SimulationManager()
-        simulations = manager.list_simulations(project_id=project_id)
+        simulations = manager.list_simulations(
+            project_id=project_id, include_replicates=include_replicates
+        )
         
         return jsonify({
             "success": True,
@@ -908,6 +962,61 @@ def _get_report_id_for_simulation(simulation_id: str) -> str:
         return None
 
 
+def _last_activity(simulation) -> str:
+    """ISO time of the simulation's last change: its record's updated_at or its run state's file time."""
+    from datetime import datetime
+    latest = simulation.updated_at or simulation.created_at or ""
+    run_state_file = os.path.join(
+        SimulationManager.SIMULATION_DATA_DIR, simulation.simulation_id, "run_state.json"
+    )
+    try:
+        touched = datetime.fromtimestamp(os.path.getmtime(run_state_file)).isoformat()
+        if touched > latest:
+            latest = touched
+    except OSError:
+        pass
+    return latest
+
+
+@simulation_bp.route('/<simulation_id>', methods=['DELETE'])
+def delete_simulation_and_project(simulation_id: str):
+    """
+    Delete a simulation and everything built on it: replicates, ensembles, reports,
+    and (unless ?with_project=false) the whole project -- uploaded files, ontology,
+    Zep graph and the project's other simulations.
+
+    409 while anything involved is running or being prepared.
+    """
+    from contextlib import ExitStack
+    from .graph import GraphInUseError, _delete_cloud_graph_if_present, _project_build_lock
+    from ..services import run_deletion
+
+    with_project = request.args.get('with_project', 'true').lower() != 'false'
+    try:
+        plan = run_deletion.plan_deletion(simulation_id, with_project=with_project)
+        with ExitStack() as stack:
+            if plan.project_id:
+                stack.enter_context(_project_build_lock(plan.project_id))
+            if plan.graph_id:
+                stack.enter_context(graph_lifecycle_lock(plan.graph_id))
+            plan = run_deletion.delete_run(
+                simulation_id,
+                with_project=with_project,
+                delete_graph=_delete_cloud_graph_if_present,
+                is_preparing=lambda sim_id: _running_prepare_task(sim_id) is not None,
+            )
+        return jsonify({"success": True, "data": plan.to_dict()})
+    except run_deletion.RunNotFound:
+        return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+    except run_deletion.RunBusy as error:
+        return jsonify({"success": False, "error": t('api.deleteRunBusy', reasons=str(error))}), 409
+    except GraphInUseError as error:
+        return jsonify({"success": False, "error": str(error)}), 409
+    except Exception as error:
+        logger.error(f"删除模拟失败: {simulation_id}, error={error}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "error": str(error)}), 500
+
+
 @simulation_bp.route('/history', methods=['GET'])
 def get_simulation_history():
     """
@@ -917,7 +1026,8 @@ def get_simulation_history():
     
     Query参数：
         limit: 返回数量限制（默认20）
-    
+        include_replicates: 为 true 时包含集合运行克隆出的副本模拟（默认不包含）
+
     返回：
         {
             "success": true,
@@ -945,14 +1055,21 @@ def get_simulation_history():
     """
     try:
         limit = request.args.get('limit', 20, type=int)
-        
+        include_replicates = _truthy_arg(request.args.get('include_replicates'))
+
         manager = SimulationManager()
-        simulations = manager.list_simulations()[:limit]
+        simulations = manager.list_simulations(include_replicates=include_replicates)
+        # Most recently touched first: the later of the record's own update time and
+        # the run's last activity (a run only updates run_state.json while it works).
+        activity = {s.simulation_id: _last_activity(s) for s in simulations}
+        simulations.sort(key=lambda s: activity[s.simulation_id], reverse=True)
+        simulations = simulations[:limit]
         
         # 增强模拟数据，只从 Simulation 文件读取
         enriched_simulations = []
         for sim in simulations:
             sim_dict = sim.to_dict()
+            sim_dict["last_activity"] = activity[sim.simulation_id]
             
             # 获取模拟配置信息（从 simulation_config.json 读取 simulation_requirement）
             config = manager.get_simulation_config(sim.simulation_id)
@@ -1370,6 +1487,98 @@ def download_simulation_config(simulation_id: str):
         }), 500
 
 
+@simulation_bp.route('/<simulation_id>/scheduled-events', methods=['PUT'])
+def put_scheduled_events(simulation_id: str):
+    """
+    替换模拟的定时事件列表（"上帝视角"）
+
+    定时事件是用户编写的：在指定的模拟小时，由指定的 Agent 发布一条帖子。
+    LLM 不会自动编造未来事件（那会把虚构的事实注入预测）。
+
+    只允许在模拟就绪（已准备、尚未启动）时编辑。整个列表被替换。
+
+    请求（JSON）：
+        {
+            "scheduled_events": [
+                {
+                    "id": "evt_1",               // 可选，缺省时自动生成
+                    "at_sim_hour": 26,           // 必填，0 <= 小时 < 模拟总时长
+                    "poster_agent_id": 4,        // 与 poster_type 二选一
+                    "poster_type": "MediaOutlet",
+                    "content": "...",            // 必填，非空
+                    "source": "user",            // user | llm_suggested
+                    "enabled": true
+                }
+            ]
+        }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        events = data.get('scheduled_events')
+        if not isinstance(events, list):
+            return jsonify({
+                "success": False,
+                "error": t('api.scheduledEventsMustBeList')
+            }), 400
+
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+
+        if state.status != SimulationStatus.READY:
+            return jsonify({
+                "success": False,
+                "error": t('api.scheduledEventsOnlyWhenReady', status=state.status.value)
+            }), 409
+
+        config = manager.get_simulation_config(simulation_id)
+        if config is None:
+            return jsonify({
+                "success": False,
+                "error": t('api.configNotFound')
+            }), 404
+
+        if len(events) > MAX_SCHEDULED_EVENTS:
+            return jsonify({
+                "success": False,
+                "error": t('api.scheduledEventsTooMany', max=MAX_SCHEDULED_EVENTS)
+            }), 400
+
+        normalized, errors = validate_scheduled_events(events, config)
+        if errors:
+            return jsonify({
+                "success": False,
+                "error": t('api.scheduledEventsInvalid', details="; ".join(errors)),
+                "errors": errors
+            }), 400
+
+        config.setdefault('event_config', {})['scheduled_events'] = normalized
+        config_path = os.path.join(
+            manager._get_simulation_dir(simulation_id), "simulation_config.json"
+        )
+        write_json_atomic(config_path, config)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "simulation_id": simulation_id,
+                "scheduled_events": normalized
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"保存定时事件失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
 @simulation_bp.route('/script/<script_name>/download', methods=['GET'])
 def download_simulation_script(script_name: str):
     """
@@ -1509,8 +1718,14 @@ def start_simulation():
             "platform": "parallel",                // 可选: twitter / reddit / parallel (默认)
             "max_rounds": 100,                     // 可选: 最大模拟轮数，用于截断过长的模拟
             "enable_graph_memory_update": false,   // 可选: 是否将Agent活动动态更新到Zep图谱记忆
-            "force": false                         // 可选: 强制重新开始（会停止运行中的模拟并清理日志）
+            "force": false,                        // 可选: 强制重新开始（会停止运行中的模拟并清理日志）
+            "seed": 12345                          // 可选: 随机种子（非负整数）；缺省时随机生成
         }
+
+    关于 seed 参数：
+        - 种子让"调度"可复现：谁在何时被激活、响应延迟、初始关注图、定时事件。
+        - 不保证LLM输出逐字一致，请勿当作"可重放的运行"。
+        - 实际使用的种子会写入 run_state.json、配置文件的 run 块，并在响应的 seed 字段返回。
 
     关于 force 参数：
         - 启用后，如果模拟正在运行或已完成，会先停止并清理运行日志
@@ -1563,6 +1778,16 @@ def start_simulation():
                 "success": False,
                 "error": "force must be a JSON boolean",
             }), 400
+        seed = data.get('seed')
+        if seed is not None and (
+            isinstance(seed, bool)
+            or not isinstance(seed, int)
+            or not 0 <= seed < 2 ** 63
+        ):
+            return jsonify({
+                "success": False,
+                "error": t('api.seedInvalid'),
+            }), 400
 
         # 验证 max_rounds 参数
         if max_rounds is not None:
@@ -1605,7 +1830,14 @@ def start_simulation():
             if is_prepared:
                 run_state = SimulationRunner.get_run_state(simulation_id)
                 updater = ZepGraphMemoryManager.get_updater(simulation_id)
-                needs_finalization = bool(
+                # A COMPLETED run keeps its environment alive for interviews;
+                # restarting has to close that environment first.
+                idle_env_alive = bool(
+                    run_state
+                    and run_state.runner_status == RunnerStatus.COMPLETED
+                    and SimulationRunner.has_live_process(simulation_id)
+                )
+                needs_finalization = idle_env_alive or bool(
                     run_state
                     and run_state.runner_status in {
                         RunnerStatus.RUNNING,
@@ -1646,7 +1878,12 @@ def start_simulation():
                                 f"finalizes safely: {error}"
                             ),
                         }), 409
-                    if stopped.runner_status != RunnerStatus.STOPPED:
+                    expected_statuses = {RunnerStatus.STOPPED}
+                    if idle_env_alive:
+                        # Closing an idle environment leaves the finished
+                        # run COMPLETED.
+                        expected_statuses.add(RunnerStatus.COMPLETED)
+                    if stopped.runner_status not in expected_statuses:
                         return jsonify({
                             "success": False,
                             "error": "Previous simulation did not reach STOPPED",
@@ -1754,7 +1991,8 @@ def start_simulation():
                 platform=platform,
                 max_rounds=max_rounds,
                 enable_graph_memory_update=enable_graph_memory_update,
-                graph_id=graph_id
+                graph_id=graph_id,
+                seed=seed,
             )
         
         response_data = run_state.to_dict()
@@ -1778,6 +2016,94 @@ def start_simulation():
         
     except Exception as e:
         logger.error(f"启动模拟失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/<simulation_id>/resume-info', methods=['GET'])
+def get_resume_info(simulation_id: str):
+    """
+    Can this stopped or interrupted run continue after its last finished round?
+
+    Returns {"resumable", "reason", "round", "rounds": {platform: n}, "total_rounds", "exact"}.
+    "exact" means the platform databases can be put back exactly as they were when that round ended.
+    Agent chat memory is never restored, so a resumed run is not identical to an uninterrupted one.
+    """
+    try:
+        if not SimulationManager().get_simulation(simulation_id):
+            return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+        return jsonify({"success": True, "data": SimulationRunner.resume_info(simulation_id)})
+    except Exception as e:
+        logger.error(f"获取继续运行信息失败: {simulation_id}, error={e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/resume', methods=['POST'])
+def resume_simulation():
+    """
+    Continue a stopped or interrupted run from the end of its last finished round.
+
+    The platform databases and action logs are kept (the log is cut back to the end of that round, so a
+    round that had started but not finished is redone). The scheduling of the finished rounds is replayed
+    without model calls. Use /start with force=true to start over instead.
+
+    Request (JSON):
+        {
+            "simulation_id": "sim_xxxx",              // required
+            "enable_graph_memory_update": false       // optional: write the new activity to the Zep graph
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        simulation_id = data.get('simulation_id')
+        if not simulation_id:
+            return jsonify({"success": False, "error": t('api.requireSimulationId')}), 400
+        enable_graph_memory_update = data.get('enable_graph_memory_update', False)
+        if not isinstance(enable_graph_memory_update, bool):
+            return jsonify({"success": False, "error": "enable_graph_memory_update must be a JSON boolean"}), 400
+
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({"success": False, "error": t('api.simulationNotFound', id=simulation_id)}), 404
+
+        info = SimulationRunner.resume_info(simulation_id)
+        if not info["resumable"]:
+            return jsonify({
+                "success": False,
+                "error": t('api.resumeNotPossible', reason=info["reason"]),
+                "data": info,
+            }), 409
+
+        graph_id = None
+        if enable_graph_memory_update:
+            project = ProjectManager.get_project(state.project_id)
+            graph_id = project.graph_id if project else None
+            if not graph_id:
+                return jsonify({"success": False, "error": t('api.graphIdRequiredForMemory')}), 400
+
+        graph_guard = graph_lifecycle_lock(graph_id) if graph_id else nullcontext()
+        with graph_guard:
+            run_state = SimulationRunner.start_simulation(
+                simulation_id=simulation_id,
+                platform="parallel",
+                enable_graph_memory_update=enable_graph_memory_update,
+                graph_id=graph_id,
+                resume=True,
+            )
+
+        response_data = run_state.to_dict()
+        response_data['graph_memory_update_enabled'] = enable_graph_memory_update
+        response_data['resume'] = info
+        return jsonify({"success": True, "data": response_data})
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 409
+    except Exception as e:
+        logger.error(f"继续模拟失败: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -1816,12 +2142,18 @@ def stop_simulation():
             }), 400
         
         run_state = SimulationRunner.stop_simulation(simulation_id)
-        
+
         # 更新模拟状态
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         if state:
-            state.status = SimulationStatus.STOPPED
+            # Closing a finished run's interview environment must not
+            # downgrade its result to "stopped".
+            state.status = (
+                SimulationStatus.COMPLETED
+                if run_state.runner_status == RunnerStatus.COMPLETED
+                else SimulationStatus.STOPPED
+            )
             state.error = None
             manager._save_simulation_state(state)
         

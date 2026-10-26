@@ -19,6 +19,7 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ..utils.llm_client import clean_chat_text
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
 from ..utils.zep import (
     call_zep_read_with_retry,
@@ -248,9 +249,10 @@ class OasisProfileGenerator:
         zep_api_key: Optional[str] = None,
         graph_id: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
+        prep = Config.prep_llm()
+        self.api_key = api_key or prep["api_key"]
+        self.base_url = base_url or prep["base_url"]
+        self.model_name = model_name or prep["model_name"]
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -582,7 +584,8 @@ class OasisProfileGenerator:
                     # 不设置max_tokens，让LLM自由发挥
                 )
                 
-                content = extract_chat_completion_text(response)
+                # reasoning models (Gemma <thought>, DeepSeek <think>) answer after their notes
+                content = clean_chat_text(extract_chat_completion_text(response))
                 
                 # 检查是否被截断（finish_reason不是'stop'）
                 finish_reason = response.choices[0].finish_reason

@@ -2,6 +2,14 @@
 <html lang="zh">
   <head>
     <script>document.documentElement.lang = localStorage.getItem('locale') || 'zh'</script>
+    <script>
+      // Apply the saved (or the operating system's) color theme before the first paint, so a reload does not flash light.
+      try {
+        var savedTheme = localStorage.getItem('theme')
+        var dark = savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100..800&family=Noto+Sans+SC:wght@300;400;500;700;800;900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">

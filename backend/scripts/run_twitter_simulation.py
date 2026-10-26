@@ -1,4 +1,6 @@
 """
+【注意】MiroFish 后端不再使用此脚本：它不写结构化动作日志（actions.jsonl）、没有轮次事件、检查点和最终问卷，
+后端无法据此判断运行是否结束。单平台运行请用: python run_parallel_simulation.py --config ... --twitter-only
 OASIS Twitter模拟预设脚本
 此脚本读取配置文件中的参数来执行模拟，实现全程自动化
 
@@ -19,6 +21,7 @@ import json
 import logging
 import os
 import random
+import secrets
 import signal
 import sys
 import sqlite3
@@ -129,6 +132,9 @@ except ImportError as e:
     print(f"错误: 缺少依赖 {e}")
     print("请先安装: pip install oasis-ai camel-ai")
     sys.exit(1)
+
+import sim_behavior
+import sim_runtime
 
 
 # IPC相关常量
@@ -395,18 +401,29 @@ class TwitterSimulationRunner:
         ActionType.QUOTE_POST,
     ]
     
-    def __init__(self, config_path: str, wait_for_commands: bool = True):
+    def __init__(
+        self,
+        config_path: str,
+        wait_for_commands: bool = True,
+        seed: Optional[int] = None,
+    ):
         """
         初始化模拟运行器
-        
+
         Args:
             config_path: 配置文件路径 (simulation_config.json)
             wait_for_commands: 模拟完成后是否等待命令（默认True）
+            seed: 运行种子（覆盖配置文件 run.seed；都没有时随机生成）
         """
         self.config_path = config_path
         self.config = self._load_config()
         self.simulation_dir = os.path.dirname(config_path)
         self.wait_for_commands = wait_for_commands
+        self.run_settings = sim_behavior.resolve_run_settings(self.config, seed, None)
+        self.seed = self.run_settings["seed"]
+        if self.seed is None:
+            self.seed = secrets.randbelow(2 ** 31)
+        self.behavior = sim_behavior.PlatformBehavior(self.config, "twitter", self.seed)
         self.env = None
         self.agent_graph = None
         self.ipc_handler = None
@@ -453,81 +470,53 @@ class TwitterSimulationRunner:
             os.environ["OPENAI_API_BASE_URL"] = llm_base_url
         
         print(f"LLM配置: model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
-        
-        return ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
-            model_type=llm_model,
-        )
+
+        model_config = sim_behavior.llm_model_config(self.run_settings, self.seed)
+        try:
+            return ModelFactory.create(
+                model_platform=ModelPlatformType.OPENAI,
+                model_type=llm_model,
+                model_config_dict=dict(model_config) if model_config else None,
+            )
+        except Exception as error:
+            if "seed" not in model_config:
+                raise
+            # camel-ai's OpenAI config has no `seed` field (0.2.78); retry without it.
+            print(f"模型配置不接受 seed 参数，已忽略: {error}")
+            model_config = {k: v for k, v in model_config.items() if k != "seed"}
+            return ModelFactory.create(
+                model_platform=ModelPlatformType.OPENAI,
+                model_type=llm_model,
+                model_config_dict=model_config or None,
+            )
     
     def _get_active_agents_for_round(
-        self, 
-        env, 
+        self,
+        env,
         current_hour: int,
         round_num: int
     ) -> List:
         """
-        根据时间和配置决定本轮激活哪些Agent
-        
+        根据时间和配置决定本轮激活哪些Agent（逻辑在 sim_behavior 中，三个脚本共用）
+
         Args:
             env: OASIS环境
             current_hour: 当前模拟小时（0-23）
             round_num: 当前轮数
-            
+
         Returns:
             激活的Agent列表
         """
-        time_config = self.config.get("time_config", {})
-        agent_configs = self.config.get("agent_configs", [])
-        
-        # 基础激活数量
-        base_min = time_config.get("agents_per_hour_min", 5)
-        base_max = time_config.get("agents_per_hour_max", 20)
-        
-        # 根据时段调整
-        peak_hours = time_config.get("peak_hours", [9, 10, 11, 14, 15, 20, 21, 22])
-        off_peak_hours = time_config.get("off_peak_hours", [0, 1, 2, 3, 4, 5])
-        
-        if current_hour in peak_hours:
-            multiplier = time_config.get("peak_activity_multiplier", 1.5)
-        elif current_hour in off_peak_hours:
-            multiplier = time_config.get("off_peak_activity_multiplier", 0.3)
-        else:
-            multiplier = 1.0
-        
-        target_count = int(random.uniform(base_min, base_max) * multiplier)
-        
-        # 根据每个Agent的配置计算激活概率
-        candidates = []
-        for cfg in agent_configs:
-            agent_id = cfg.get("agent_id", 0)
-            active_hours = cfg.get("active_hours", list(range(8, 23)))
-            activity_level = cfg.get("activity_level", 0.5)
-            
-            # 检查是否在活跃时间
-            if current_hour not in active_hours:
-                continue
-            
-            # 根据活跃度计算概率
-            if random.random() < activity_level:
-                candidates.append(agent_id)
-        
-        # 随机选择
-        selected_ids = random.sample(
-            candidates, 
-            min(target_count, len(candidates))
-        ) if candidates else []
-        
-        # 转换为Agent对象
         active_agents = []
-        for agent_id in selected_ids:
+        for agent_id in self.behavior.select_active(round_num, current_hour):
             try:
                 agent = env.agent_graph.get_agent(agent_id)
                 active_agents.append((agent_id, agent))
             except Exception:
                 pass
-        
+
         return active_agents
-    
+
     async def run(self, max_rounds: int = None):
         """运行Twitter模拟
         
@@ -539,7 +528,14 @@ class TwitterSimulationRunner:
         print(f"配置文件: {self.config_path}")
         print(f"模拟ID: {self.config.get('simulation_id', 'unknown')}")
         print(f"等待命令模式: {'启用' if self.wait_for_commands else '禁用'}")
+        print(f"随机种子: {self.seed}（只保证调度可复现，不保证LLM输出一致）")
+        print(f"行为版本: {'v2' if self.behavior.v2 else 'v1（旧版）'}")
         print("=" * 60)
+
+        # 命令行/配置的 max_rounds；同时给 OASIS 内部的随机性设置种子（尽力而为）
+        if max_rounds is None:
+            max_rounds = self.run_settings["max_rounds"]
+        random.seed(self.seed)
         
         # 加载时间配置
         time_config = self.config.get("time_config", {})
@@ -571,6 +567,10 @@ class TwitterSimulationRunner:
         # 加载Agent图
         print("加载Agent Profile...")
         profile_path = self._get_profile_path()
+        if self.behavior.v2:
+            # per-run copy with the behaviour directive appended; originals untouched
+            written = sim_behavior.write_effective_profiles(self.simulation_dir, self.config)
+            profile_path = written.get("twitter", profile_path)
         if not os.path.exists(profile_path):
             print(f"错误: Profile文件不存在: {profile_path}")
             return
@@ -603,6 +603,14 @@ class TwitterSimulationRunner:
         self.ipc_handler = IPCHandler(self.simulation_dir, self.env, self.agent_graph)
         self.ipc_handler.update_status("running")
         
+        # v2: seed the follow graph before anything is posted
+        if self.behavior.v2:
+            seeded_follows = await sim_runtime.apply_seed_follows(
+                self.env, self.behavior.planned_follows()
+            )
+            if seeded_follows:
+                print(f"已播种 {len(seeded_follows)} 条初始关注关系")
+
         # 执行初始事件
         event_config = self.config.get("event_config", {})
         initial_posts = event_config.get("initial_posts", [])
@@ -615,16 +623,25 @@ class TwitterSimulationRunner:
                 content = post.get("content", "")
                 try:
                     agent = self.env.agent_graph.get_agent(agent_id)
-                    initial_actions[agent] = ManualAction(
+                    post_action = ManualAction(
                         action_type=ActionType.CREATE_POST,
                         action_args={"content": content}
                     )
+                    # v1 kept only the last post per agent; v2 posts all of them
+                    if self.behavior.v2 and agent in initial_actions:
+                        if not isinstance(initial_actions[agent], list):
+                            initial_actions[agent] = [initial_actions[agent]]
+                        initial_actions[agent].append(post_action)
+                    else:
+                        initial_actions[agent] = post_action
                 except Exception as e:
                     print(f"  警告: 无法为Agent {agent_id}创建初始帖子: {e}")
             
             if initial_actions:
                 await self.env.step(initial_actions)
                 print(f"  已发布 {len(initial_actions)} 条初始帖子")
+                if self.behavior.v2:
+                    self.behavior.initial_posts_published()
         
         # 主模拟循环
         print("\n开始模拟循环...")
@@ -636,6 +653,14 @@ class TwitterSimulationRunner:
             simulated_hour = (simulated_minutes // 60) % 24
             simulated_day = simulated_minutes // (60 * 24) + 1
             
+            # v2: scheduled events fire at the start of their round
+            if self.behavior.v2:
+                due_events = self.behavior.events_due(round_num)
+                if due_events:
+                    await sim_runtime.inject_scheduled_events(
+                        self.env, due_events, log_round=round_num + 1, agent_names={}
+                    )
+
             # 获取本轮激活的Agent
             active_agents = self._get_active_agents_for_round(
                 self.env, simulated_hour, round_num
@@ -724,6 +749,12 @@ async def main():
         default=False,
         help='模拟完成后立即关闭环境，不进入等待命令模式'
     )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=None,
+        help='运行种子（覆盖配置文件 run.seed）。只保证调度可复现，不保证LLM输出一致'
+    )
     
     args = parser.parse_args()
     
@@ -741,7 +772,8 @@ async def main():
     
     runner = TwitterSimulationRunner(
         config_path=args.config,
-        wait_for_commands=not args.no_wait
+        wait_for_commands=not args.no_wait,
+        seed=args.seed
     )
     await runner.run(max_rounds=args.max_rounds)
 
