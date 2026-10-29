@@ -29,6 +29,10 @@ export function buildGraph(data) {
   })
 }
 
+export function resumeGraph(data) {
+  return service({ url: '/api/graph/resume', method: 'post', data })
+}
+
 /**
  * 查询任务状态
  * @param {String} taskId - 任务ID

@@ -457,7 +457,22 @@ def build_graph():
         return _build_graph_impl()
 
 
-def _build_graph_impl():
+@graph_bp.route('/resume', methods=['POST'])
+def resume_graph():
+    """Recovery-only endpoint: never create, delete, or resubmit a Cloud graph.
+
+    A separate route also fails safely against an older running backend, rather
+    than sending a retry to its destructive legacy build handler.
+    """
+    data = request.get_json(silent=True) or {}
+    project_id = data.get("project_id")
+    if not project_id:
+        return _build_graph_impl(resume_only=True)
+    with _project_build_lock(project_id):
+        return _build_graph_impl(resume_only=True)
+
+
+def _build_graph_impl(*, resume_only=False):
     """
     接口2：根据project_id构建图谱
     
@@ -519,6 +534,18 @@ def _build_graph_impl():
                 "success": False,
                 "error": "force must be a JSON boolean"
             }), 400
+
+        if resume_only and (
+            force or not project.graph_id or not project.zep_batch_id
+            or not project.zep_batch_operation_id
+            or project.status not in {
+                ProjectStatus.FAILED, ProjectStatus.GRAPH_BUILDING, ProjectStatus.GRAPH_COMPLETED,
+            }
+        ):
+            return jsonify({
+                "success": False,
+                "error": "Recovery requires an existing graph and saved batch. No graph was changed; forced rebuilds are not permitted on this endpoint.",
+            }), 409
         
         if project.status == ProjectStatus.CREATED:
             return jsonify({
@@ -527,7 +554,7 @@ def _build_graph_impl():
             }), 400
         
         resume_existing_batch = False
-        if project.status == ProjectStatus.GRAPH_BUILDING:
+        if project.status in {ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED}:
             if _project_has_active_build(project):
                 return jsonify({
                     "success": True,
@@ -535,6 +562,7 @@ def _build_graph_impl():
                         "project_id": project_id,
                         "task_id": project.graph_build_task_id,
                         "graph_id": project.graph_id,
+                        "status": project.status.value,
                         "reused": True,
                         "message": t('api.graphBuilding')
                     }
@@ -555,11 +583,14 @@ def _build_graph_impl():
                 }:
                     resume_existing_batch = True
 
-            if not resume_existing_batch:
+            if not resume_existing_batch and (
+                project.status == ProjectStatus.GRAPH_BUILDING or project.graph_id
+            ):
                 project.status = ProjectStatus.FAILED
                 project.error = (
-                    "Graph build task is no longer present; the persisted Zep "
-                    "batch cannot be resumed automatically"
+                    "The existing Zep graph cannot be resumed automatically. "
+                    "It has been preserved; an explicit forced rebuild is "
+                    "required to replace it."
                 )
                 ProjectManager.save_project(project)
                 if not force:
@@ -577,6 +608,7 @@ def _build_graph_impl():
                     "project_id": project_id,
                     "task_id": project.graph_build_task_id,
                     "graph_id": project.graph_id,
+                    "status": project.status.value,
                     "reused": True,
                     "message": t('progress.graphBuildComplete')
                 }
@@ -598,10 +630,6 @@ def _build_graph_impl():
                 "error": "chunk_overlap must satisfy 0 <= chunk_overlap < chunk_size"
             }), 400
         
-        # 更新项目配置
-        project.chunk_size = chunk_size
-        project.chunk_overlap = chunk_overlap
-        
         # 获取提取的文本
         text = ProjectManager.get_extracted_text(project_id)
         if not text:
@@ -618,8 +646,22 @@ def _build_graph_impl():
                 "error": t('api.ontologyNotFound')
             }), 400
 
+        if resume_existing_batch:
+            chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=chunk_overlap)
+            builder.validate_batch_chunks(chunks, batch_size=350)
+            if builder.build_operation_id(project.graph_id, chunks) != project.zep_batch_operation_id:
+                return jsonify({
+                    "success": False,
+                    "error": "Saved Zep batch does not match the requested input. Restore the original input/settings to resume; the existing graph has been preserved.",
+                    "recoverable": True,
+                }), 409
+
+        project.chunk_size = chunk_size
+        project.chunk_overlap = chunk_overlap
+
+        # A failed local wait is not permission to delete a successful Cloud graph.
         # Only mutate Cloud state after the complete rebuild request validates.
-        if project.status == ProjectStatus.FAILED or (
+        if (project.status == ProjectStatus.FAILED and not resume_existing_batch) or (
             force and project.status == ProjectStatus.GRAPH_COMPLETED
         ):
             graph_id_to_delete = project.graph_id
@@ -642,6 +684,7 @@ def _build_graph_impl():
         # 更新项目状态
         project.status = ProjectStatus.GRAPH_BUILDING
         project.graph_build_task_id = task_id
+        project.error = None
         ProjectManager.save_project(project)
         
         # Capture locale before spawning background thread
@@ -825,6 +868,7 @@ def _build_graph_impl():
                 "project_id": project_id,
                 "task_id": task_id,
                 "resumed": resume_existing_batch,
+                "status": ProjectStatus.GRAPH_BUILDING.value,
                 "message": t('api.graphBuildStarted', taskId=task_id)
             }
         })

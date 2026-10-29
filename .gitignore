@@ -55,6 +55,7 @@ backend/logs/
 
 # 上传文件
 backend/uploads/
+backups/
 
 # Docker 数据
 data/

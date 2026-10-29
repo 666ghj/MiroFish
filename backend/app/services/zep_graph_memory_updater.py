@@ -616,6 +616,7 @@ class ZepGraphMemoryUpdater:
                 )
                 if getattr(episode, "processed", False):
                     pending.remove(episode_uuid)
+                    self._pending_episode_uuids = list(pending)
             if pending:
                 time.sleep(3)
         self._pending_episode_uuids = []

@@ -14,7 +14,8 @@ for (const path in localeFiles) {
   }
 }
 
-const savedLocale = localStorage.getItem('locale') || 'zh'
+const defaultLocale = import.meta.env.VITE_DEFAULT_LOCALE || 'zh'
+const savedLocale = localStorage.getItem('locale') || defaultLocale
 
 const i18n = createI18n({
   legacy: false,

@@ -35,6 +35,16 @@
       </div>
     </header>
 
+    <div v-if="error" class="recovery-banner" role="alert">
+      <div>
+        <p>{{ error }}</p>
+        <p v-if="canResumeGraph">{{ $t('main.graphRecoveryHint') }}</p>
+      </div>
+      <button v-if="canResumeGraph" :disabled="buildStarting" @click="startBuildGraph(true)">
+        {{ $t('main.resumeGraph') }}
+      </button>
+    </div>
+
     <!-- Main Content Area -->
     <main class="content-area">
       <!-- Left Panel: Graph -->
@@ -83,7 +93,7 @@ import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, getProject, buildGraph, resumeGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
@@ -103,12 +113,16 @@ const currentProjectId = ref(route.params.projectId)
 const loading = ref(false)
 const graphLoading = ref(false)
 const error = ref('')
+const buildStarting = ref(false)
 const projectData = ref(null)
 const graphData = ref(null)
 const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
+const canResumeGraph = computed(() => Boolean(
+  projectData.value?.graph_id && projectData.value?.zep_batch_id && projectData.value?.ontology
+))
 
 // Polling timers
 let pollTimer = null
@@ -243,9 +257,9 @@ const loadProject = async () => {
       
       if (res.data.status === 'ontology_generated' && !res.data.graph_id) {
         await startBuildGraph()
-      } else if (res.data.status === 'graph_building' && res.data.graph_build_task_id) {
-        currentPhase.value = 1
-        startPollingTask(res.data.graph_build_task_id)
+      } else if (res.data.status === 'graph_building') {
+        // Reconcile saved batches after a backend restart; old task IDs are in-memory only.
+        await startBuildGraph(true)
       } else if (res.data.status === 'graph_completed' && res.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(res.data.graph_id)
@@ -263,24 +277,30 @@ const loadProject = async () => {
 }
 
 const updatePhaseByStatus = (status) => {
+  error.value = ''
   switch (status) {
     case 'created':
     case 'ontology_generated': currentPhase.value = 0; break;
     case 'graph_building': currentPhase.value = 1; break;
     case 'graph_completed': currentPhase.value = 2; break;
-    case 'failed': error.value = 'Project failed'; break;
+    case 'failed': error.value = projectData.value?.error || 'Project failed'; break;
   }
 }
 
-const startBuildGraph = async () => {
+const startBuildGraph = async (resume = false) => {
+  if (buildStarting.value) return
+  buildStarting.value = true
+  stopPolling()
+  stopGraphPolling()
+  error.value = ''
   try {
     currentPhase.value = 1
     buildProgress.value = { progress: 0, message: 'Starting build...' }
     addLog('Initiating graph build...')
     
-    const res = await buildGraph({ project_id: currentProjectId.value })
+    const res = await (resume ? resumeGraph : buildGraph)({ project_id: currentProjectId.value })
     if (res.success) {
-      if (res.data.reused && res.data.graph_id) {
+      if (res.data.reused && res.data.status === 'graph_completed' && res.data.graph_id) {
         currentPhase.value = 2
         buildProgress.value = null
         const projectRes = await getProject(currentProjectId.value)
@@ -300,6 +320,11 @@ const startBuildGraph = async () => {
   } catch (err) {
     error.value = err.message
     addLog(`Exception in startBuildGraph: ${err.message}`)
+    if (resume && err.response?.status === 404) {
+      error.value = t('main.restartBackend')
+    }
+  } finally {
+    buildStarting.value = false
   }
 }
 
@@ -328,8 +353,9 @@ const fetchGraphData = async () => {
 }
 
 const startPollingTask = (taskId) => {
-  pollTaskStatus(taskId)
+  stopPolling()
   pollTimer = setInterval(() => pollTaskStatus(taskId), 2000)
+  pollTaskStatus(taskId)
 }
 
 const pollTaskStatus = async (taskId) => {
@@ -359,12 +385,23 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
-        error.value = task.error
-        addLog(`Graph build task failed: ${task.error}`)
+        stopGraphPolling()
+        error.value = task.message || 'Graph processing stopped. Resume the saved graph to check its status.'
+        const projRes = await getProject(currentProjectId.value)
+        if (projRes.success) {
+          projectData.value = projRes.data
+          error.value = projRes.data.error || error.value
+        }
+        addLog(`Graph build task failed: ${error.value}`)
       }
     }
   } catch (e) {
-    console.error(e)
+    stopPolling()
+    error.value = e.message || 'Could not read graph processing status.'
+    try {
+      const projRes = await getProject(currentProjectId.value)
+      if (projRes.success) projectData.value = projRes.data
+    } catch (_) { /* Keep the original actionable error. */ }
   }
 }
 
@@ -419,6 +456,28 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.recovery-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  background: #fff3e0;
+  color: #653b00;
+  border-bottom: 1px solid #f0d3a5;
+}
+.recovery-banner p { margin: 4px 0; overflow-wrap: anywhere; }
+.recovery-banner button {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border: 1px solid #653b00;
+  border-radius: 6px;
+  background: white;
+  color: inherit;
+  cursor: pointer;
+}
+.recovery-banner button:disabled { opacity: 0.5; cursor: wait; }
+
 .main-view {
   height: 100vh;
   display: flex;

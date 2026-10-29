@@ -1,5 +1,10 @@
 import service from './index'
 
+// Use the configured API origin; the endpoint serves an attachment directly.
+export const getReportDownloadUrl = (reportId) => {
+  return service.getUri({ url: `/api/report/${encodeURIComponent(reportId)}/download` })
+}
+
 /**
  * 开始报告生成
  * @param {Object} data - { simulation_id, force_regenerate? }

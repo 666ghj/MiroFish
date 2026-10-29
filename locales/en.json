@@ -72,6 +72,9 @@
     "initializing": "Initializing..."
   },
   "main": {
+    "resumeGraph": "Resume graph processing",
+    "restartBackend": "Restart MiroFish with npm run dev to load graph recovery, then refresh this page. Your existing Zep batch will be preserved.",
+    "graphRecoveryHint": "Resume to check the existing graph and continue processing. Your uploaded documents will be reused.",
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
@@ -177,6 +180,7 @@
     "generating": "Generating"
   },
   "step3": {
+    "finalizingResults": "All rounds are finished. Saving results to the graph before the report is ready…",
     "startGenerateReport": "Generate Report",
     "generatingReport": "Starting...",
     "waitingForActions": "Waiting for agent actions...",
@@ -208,6 +212,7 @@
     "generatingReportBtn": "Starting..."
   },
   "step4": {
+    "downloadReport": "Download report (.md)",
     "generatingSection": "Generating {title}...",
     "goToInteraction": "Enter Deep Interaction",
     "waitingForReportAgent": "Waiting for Report Agent...",

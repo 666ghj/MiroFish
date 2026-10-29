@@ -72,6 +72,9 @@
     "initializing": "初始化中..."
   },
   "main": {
+    "resumeGraph": "继续处理图谱",
+    "restartBackend": "请使用 npm run dev 重启 MiroFish 以加载图谱恢复功能，然后刷新页面。现有 Zep 批次将被保留。",
+    "graphRecoveryHint": "继续检查现有图谱的处理状态，并复用已上传的文档。",
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
@@ -177,6 +180,7 @@
     "generating": "生成中"
   },
   "step3": {
+    "finalizingResults": "所有轮次已完成。正在将结果保存到图谱，完成后即可生成报告…",
     "startGenerateReport": "开始生成结果报告",
     "generatingReport": "启动中...",
     "waitingForActions": "Waiting for agent actions...",
@@ -208,6 +212,7 @@
     "generatingReportBtn": "启动中..."
   },
   "step4": {
+    "downloadReport": "下载报告 (.md)",
     "generatingSection": "正在生成{title}...",
     "goToInteraction": "进入深度互动",
     "waitingForReportAgent": "Waiting for Report Agent...",
