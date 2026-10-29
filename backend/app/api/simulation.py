@@ -1906,9 +1906,13 @@ def get_run_status(simulation_id: str):
                 }
             })
         
+        status_data = run_state.to_dict()
+        updater = ZepGraphMemoryManager.get_updater(simulation_id)
+        if updater is not None:
+            status_data['graph_ingestion'] = updater.get_stats()
         return jsonify({
             "success": True,
-            "data": run_state.to_dict()
+            "data": status_data
         })
         
     except Exception as e:

@@ -3,6 +3,7 @@ import threading
 
 from flask import Flask
 from types import SimpleNamespace
+import pytest
 
 from app.api import graph as graph_api
 from app.api import simulation as simulation_api
@@ -183,8 +184,10 @@ def test_stale_build_after_restart_is_recoverable_instead_of_reused(monkeypatch)
     assert saved == [ProjectStatus.FAILED]
 
 
-def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
-    project = _project(ProjectStatus.GRAPH_BUILDING)
+@pytest.mark.parametrize("local_status", [ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED])
+@pytest.mark.parametrize("batch_status", ["queued", "processing", "succeeded"])
+def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch, local_status, batch_status):
+    project = _project(local_status)
     created_threads = []
 
     class Tasks:
@@ -200,7 +203,10 @@ def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
 
         def get_batch_summary(self, batch_id):
             assert batch_id == "batch-1"
-            return SimpleNamespace(status="processing")
+            return SimpleNamespace(status=batch_status)
+
+        validate_batch_chunks = staticmethod(lambda *_args, **_kwargs: None)
+        build_operation_id = staticmethod(lambda *_args: "operation-1")
 
     class Thread:
         def __init__(self, *, target, daemon):

@@ -1,5 +1,20 @@
 <template>
   <div class="report-panel">
+    <div v-if="isComplete && reportId" class="report-toolbar">
+      <a
+        class="download-report-btn"
+        :href="getReportDownloadUrl(reportId)"
+        :download="`${reportId}.md`"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="M7 10l5 5 5-5M12 15V3" />
+        </svg>
+        {{ $t('step4.downloadReport') }}
+      </a>
+    </div>
     <!-- Main Split Layout -->
     <div class="main-split-layout">
       <!-- LEFT PANEL: Report Style -->
@@ -393,7 +408,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, getReportDownloadUrl } from '../api/report'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -2208,6 +2223,40 @@ watch(() => props.reportId, (newId) => {
 </script>
 
 <style scoped>
+.report-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.download-report-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #1F2937;
+  border-radius: 6px;
+  background: #1F2937;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.download-report-btn:hover {
+  background: #374151;
+}
+
+.download-report-btn:focus-visible {
+  outline: 3px solid #60A5FA;
+  outline-offset: 3px;
+}
+
 .report-panel {
   height: 100%;
   display: flex;

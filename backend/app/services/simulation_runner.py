@@ -246,6 +246,26 @@ class SimulationRunner:
             )
 
     @classmethod
+    def _has_live_process(cls, simulation_id: str, state: Optional[SimulationRunState]) -> bool:
+        """Treat an unverifiable saved PID as live to preserve its open files."""
+        process = cls._processes.get(simulation_id)
+        if process is not None:
+            return process.poll() is None
+        pid = getattr(state, "process_pid", None)
+        if not pid:
+            return False
+        if IS_WINDOWS:
+            # os.kill(pid, 0) is not a harmless liveness probe on Windows.
+            return True
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+    @classmethod
     def _sync_simulation_status(
         cls,
         simulation_id: str,
@@ -433,7 +453,10 @@ class SimulationRunner:
             }
             if (
                 existing and existing.runner_status in active_statuses
-            ) or ZepGraphMemoryManager.get_updater(simulation_id) is not None:
+            ) or (
+                cls._has_live_process(simulation_id, existing)
+                or ZepGraphMemoryManager.get_updater(simulation_id) is not None
+            ):
                 raise ValueError(f"模拟已在运行或结束处理中: {simulation_id}")
             cls._save_run_state(state)
         
@@ -650,6 +673,10 @@ class SimulationRunner:
                     reddit_position = cls._read_action_log(
                         reddit_actions_log, reddit_position, state, "reddit"
                     )
+
+                # The producer stays alive for interviews after its round loops
+                # finish. Drain graph writes at the end markers, not at exit.
+                cls._finalize_completed_simulation(state)
                 
                 # 更新状态
                 cls._save_run_state(state)
@@ -679,6 +706,7 @@ class SimulationRunner:
                 if state.runner_status not in {
                     RunnerStatus.STOPPED,
                     RunnerStatus.FAILED,
+                    RunnerStatus.COMPLETED,
                 }:
                     manual_stop = simulation_id in cls._manual_stop_requests
                     desired_status = (
@@ -820,10 +848,10 @@ class SimulationRunner:
                                     if all_completed:
                                         # Platform completion is only an input
                                         # signal. The monitor publishes the
-                                        # terminal status after the process has
-                                        # exited and Zep ingestion has drained.
+                                        # terminal status after both round loops
+                                        # end and Zep ingestion has drained.
                                         logger.info(
-                                            f"所有平台已结束，等待进程与图谱写入完成: "
+                                            f"所有平台已结束，等待图谱写入完成: "
                                             f"{state.simulation_id}"
                                         )
                                 
@@ -878,6 +906,46 @@ class SimulationRunner:
             logger.warning(f"读取动作日志失败: {log_path}, error={e}")
             return position
     
+    @classmethod
+    def _finalize_completed_simulation(cls, state: SimulationRunState) -> bool:
+        """Finish graph ingestion without shutting down the interview environment.
+
+        Called only after consuming both action-log tails. STOPPING remains the
+        report barrier while the updater flushes and verifies accepted episodes.
+        A failed drain retains the updater and never publishes success.
+        """
+        simulation_id = state.simulation_id
+        with cls._finalization_lock(simulation_id):
+            if (
+                state.runner_status not in {RunnerStatus.RUNNING, RunnerStatus.STARTING}
+                or simulation_id in cls._manual_stop_requests
+                or not cls._check_all_platforms_completed(state)
+            ):
+                return False
+
+            state.runner_status = RunnerStatus.STOPPING
+            state.twitter_running = False
+            state.reddit_running = False
+            cls._save_run_state(state)
+            cls._sync_simulation_status(simulation_id, RunnerStatus.STOPPING)
+            try:
+                if (
+                    cls._graph_memory_enabled.get(simulation_id, False)
+                    or ZepGraphMemoryManager.get_updater(simulation_id) is not None
+                ):
+                    ZepGraphMemoryManager.stop_updater(simulation_id)
+                    cls._graph_memory_enabled.pop(simulation_id, None)
+            except Exception as error:
+                state.runner_status = RunnerStatus.FAILED
+                state.error = f"Zep graph ingestion is incomplete: {error}"
+            else:
+                state.runner_status = RunnerStatus.COMPLETED
+                state.error = None
+            state.completed_at = datetime.now().isoformat()
+            cls._save_run_state(state)
+            cls._sync_simulation_status(simulation_id, state.runner_status, state.error)
+            return state.runner_status == RunnerStatus.COMPLETED
+
     @classmethod
     def _check_all_platforms_completed(cls, state: SimulationRunState) -> bool:
         """
@@ -970,6 +1038,16 @@ class SimulationRunner:
                 raise ValueError(f"模拟不存在: {simulation_id}")
             if state.runner_status == RunnerStatus.STOPPED:
                 return state
+
+            # A detached producer may survive a backend restart. Without its
+            # process handle, marking it stopped would let force-start delete
+            # databases that it still has open. Require explicit recovery.
+            if simulation_id not in cls._processes and cls._has_live_process(simulation_id, state):
+                raise RuntimeError(
+                    f"Saved simulation process {state.process_pid} is still alive "
+                    "or cannot be verified after the backend restart. Recover or "
+                    "close it before restarting; its saved files are preserved."
+                )
 
             pending_updater = ZepGraphMemoryManager.get_updater(simulation_id)
             retrying_finalization = (
@@ -1390,6 +1468,15 @@ class SimulationRunner:
         
         if not os.path.exists(sim_dir):
             return {"success": True, "message": "模拟目录不存在，无需清理"}
+
+        # A completed simulation can still own an interview environment. Never
+        # unlink its databases until that process has actually closed them.
+        state = cls.get_run_state(simulation_id)
+        if cls._has_live_process(simulation_id, state):
+            return {
+                "success": False,
+                "errors": ["Close the existing simulation environment before clearing its files."],
+            }
         
         cleaned_files = []
         errors = []
@@ -1503,6 +1590,13 @@ class SimulationRunner:
                             simulation_id,
                             RunnerStatus.STOPPING,
                         )
+
+                if state.runner_status == RunnerStatus.COMPLETED and updater is None:
+                    # Closing an idle interview process must not downgrade the
+                    # already completed simulation or re-submit its graph data.
+                    if process is not None and process.poll() is None:
+                        cls._terminate_process(process, simulation_id, timeout=5)
+                    continue
 
                 needs_finalization = bool(
                     (process is not None and process.poll() is None)

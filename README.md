@@ -176,6 +176,44 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+### Recovering graphs and completing simulations
+
+- If graph processing times out locally, reopen the project and select
+  **Resume graph processing**. Recovery checks the saved Cloud batch and its
+  original input without uploading the documents again or replacing the graph.
+  An unrecoverable graph is preserved until an explicit forced rebuild.
+- Graph construction waits up to 30 minutes by default. Set a positive
+  `ZEP_GRAPH_BUILD_TIMEOUT_SECONDS` in `.env` to change this timeout.
+- New simulations default to a five-round preview. Change the round limit or
+  disable the custom limit in environment setup to run the full configuration.
+- Reopening a simulation reconnects to its saved state instead of automatically
+  restarting it. If the status request fails, no new run is submitted.
+- After all rounds finish, the app flushes remaining graph updates and waits for
+  Cloud processing before enabling reports. The simulation environment stays
+  available for agent interviews. A processing failure keeps reporting blocked;
+  it does not silently mark incomplete results as successful.
+- Completed reports have a **Download report (.md)** control above the report
+  panel. It downloads the existing report without regenerating it.
+
+Recovery of a saved graph is separate from checkpoint recovery of an interrupted
+simulation: this does not add general resume support for interrupted agent actions.
+Files belonging to a surviving simulation process are protected from cleanup.
+Close the existing environment before attempting to clear or restart that run.
+
+To configure the initial UI language, set `VITE_DEFAULT_LOCALE` in
+`frontend/.env.local` (for example, `en`). An existing language selection in the
+browser takes precedence; the default remains Chinese when unset.
+
+### Verification
+
+```bash
+cd backend
+uv run pytest tests -q
+cd ../frontend
+npm test
+npm run build
+```
+
 ## 📬 Join the Conversation
 
 <div align="center">

@@ -636,7 +636,9 @@ class GraphBuilderService:
     ) -> List[str]:
         """Wait for a Batch API terminal state and validate every item."""
 
-        timeout = timeout or ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        timeout = Config.ZEP_GRAPH_BUILD_TIMEOUT_SECONDS if timeout is None else timeout
+        if timeout <= 0:
+            raise ValueError("Batch wait timeout must be positive")
         start_time = time.time()
         terminal_states = {"succeeded", "partial", "failed", "invalid", "canceled"}
 

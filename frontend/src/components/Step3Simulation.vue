@@ -93,7 +93,7 @@
       <div class="action-controls">
         <button 
           class="action-btn primary"
-          :disabled="phase !== 2 || isGeneratingReport"
+          :disabled="phase !== 2 || !['completed', 'stopped'].includes(runStatus.runner_status) || isGeneratingReport"
           @click="handleNextStep"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
@@ -101,6 +101,10 @@
           <span v-if="!isGeneratingReport" class="arrow-icon">→</span>
         </button>
       </div>
+    </div>
+
+    <div v-if="runStatus.runner_status === 'stopping' && checkPlatformsCompleted(runStatus)" class="finalization-notice" role="status">
+      {{ $t('step3.finalizingResults') }}
     </div>
 
     <!-- Main Content: Dual Timeline -->
@@ -381,24 +385,43 @@ const resetAllState = () => {
 
 // 启动模拟
 const doStartSimulation = async () => {
+  if (isStarting.value) return
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
   }
 
-  // 先重置所有状态，确保不会受到上一次模拟的影响
-  resetAllState()
-  
   isStarting.value = true
   startError.value = null
-  addLog(t('log.startingDualSim'))
-  emit('update-status', 'processing')
   
   try {
+    // Reopening this screen must attach to saved work, never force a rerun.
+    // If status cannot be read, fail closed rather than risk paid duplicate work.
+    const existing = await getRunStatus(props.simulationId)
+    if (!existing.success || !existing.data?.runner_status) {
+      throw new Error(existing.error || t('common.unknownError'))
+    }
+    if (existing.data.runner_status !== 'idle') {
+      runStatus.value = existing.data
+      const active = ['starting', 'running', 'paused', 'stopping'].includes(existing.data.runner_status)
+      phase.value = active ? 1 : 2
+      emit('update-status', active ? 'processing' : existing.data.runner_status === 'failed' ? 'error' : 'completed')
+      stopPolling()
+      if (active) {
+        startStatusPolling()
+        startDetailPolling()
+      }
+      await fetchRunStatusDetail()
+      return
+    }
+
+    resetAllState()
+    isStarting.value = true
+    addLog(t('log.startingDualSim'))
+    emit('update-status', 'processing')
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: true,  // 强制重新开始
       enable_graph_memory_update: true  // 开启动态图谱更新
     }
     
@@ -643,6 +666,7 @@ const formatActionTime = (timestamp) => {
 }
 
 const handleNextStep = async () => {
+  if (!['completed', 'stopped'].includes(runStatus.value.runner_status)) return
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
@@ -688,10 +712,10 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
+onMounted(async () => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    await doStartSimulation()
   }
 })
 
@@ -701,6 +725,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.finalization-notice {
+  padding: 12px 24px;
+  color: #334155;
+  background: #eff6ff;
+  border-bottom: 1px solid #dbeafe;
+  font-size: 14px;
+}
 .simulation-panel {
   height: 100%;
   display: flex;

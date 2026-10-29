@@ -31,6 +31,8 @@ class Config:
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    # Graph ingestion can outlast ten minutes; a timed-out batch remains resumable.
+    ZEP_GRAPH_BUILD_TIMEOUT_SECONDS = int(os.environ.get('ZEP_GRAPH_BUILD_TIMEOUT_SECONDS', '1800'))
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -68,6 +70,8 @@ class Config:
             errors.append("LLM_API_KEY 未配置")
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
+        if cls.ZEP_GRAPH_BUILD_TIMEOUT_SECONDS <= 0:
+            errors.append("ZEP_GRAPH_BUILD_TIMEOUT_SECONDS must be positive")
         if os.environ.get("ZEP_API_URL"):
             errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
         if cls.DEBUG:
