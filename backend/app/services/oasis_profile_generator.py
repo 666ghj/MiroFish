@@ -539,6 +539,26 @@ class OasisProfileGenerator:
         """判断是否是群体/机构类型实体"""
         return entity_type.lower() in self.GROUP_ENTITY_TYPES
     
+    @staticmethod
+    def _as_profile_object(value: Any) -> Dict[str, Any]:
+        """The profile object in a model's JSON reply.
+
+        Some models answer ``[{...}]`` (a list of one profile) or wrap it (``{"profile": {...}}``). Indexing a list
+        with ``"bio"`` raised "list indices must be integers" three times in a row and the entity got a
+        rule-generated persona instead of the model's. Anything that holds no profile object raises, so the caller
+        retries as it does for any other bad reply.
+        """
+        if isinstance(value, list):
+            objects = [item for item in value if isinstance(item, dict)]
+            value = next((o for o in objects if "bio" in o or "persona" in o), objects[0] if objects else None)
+        if isinstance(value, dict) and "bio" not in value and "persona" not in value:
+            wrapped = [v for v in value.values() if isinstance(v, dict) and ("bio" in v or "persona" in v)]
+            if len(wrapped) == 1:
+                value = wrapped[0]
+        if not isinstance(value, dict):
+            raise ValueError("the model's reply holds no JSON profile object")
+        return value
+
     def _generate_profile_with_llm(
         self,
         entity_name: str,
@@ -595,7 +615,7 @@ class OasisProfileGenerator:
                 
                 # 尝试解析JSON
                 try:
-                    result = json.loads(content)
+                    result = self._as_profile_object(json.loads(content))
                     
                     # 验证必需字段
                     if "bio" not in result or not result["bio"]:
