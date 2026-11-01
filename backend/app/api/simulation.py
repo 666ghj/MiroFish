@@ -345,7 +345,10 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - completed: 运行完成，说明准备早就完成了
         # - stopped: 已停止，说明准备早就完成了
         # - failed: 运行失败（但准备是完成的）
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
+        # - stopping / paused: a run that was being stopped (or paused) when its process died keeps that status in
+        #   state.json; without them /prepare treated the simulation as new and REGENERATED its profiles and
+        #   config, overwriting the personas of a run that had already been played
+        prepared_statuses = ["ready", "preparing", "running", "stopping", "paused", "completed", "stopped", "failed"]
         if status in prepared_statuses and config_generated:
             # 获取文件统计信息
             profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
@@ -1773,6 +1776,7 @@ def start_simulation():
                 "success": False,
                 "error": "enable_graph_memory_update must be a JSON boolean",
             }), 400
+        enable_graph_memory_update = _graph_updates_allowed(enable_graph_memory_update)
         if not isinstance(force, bool):
             return jsonify({
                 "success": False,
@@ -2064,6 +2068,7 @@ def resume_simulation():
         enable_graph_memory_update = data.get('enable_graph_memory_update', False)
         if not isinstance(enable_graph_memory_update, bool):
             return jsonify({"success": False, "error": "enable_graph_memory_update must be a JSON boolean"}), 400
+        enable_graph_memory_update = _graph_updates_allowed(enable_graph_memory_update)
 
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
@@ -2141,19 +2146,22 @@ def stop_simulation():
                 "error": t('api.requireSimulationId')
             }), 400
         
-        run_state = SimulationRunner.stop_simulation(simulation_id)
+        # graceful: end after the round in progress (the checkpoint then covers every finished round) instead of
+        # killing the process mid-round. Returns at once with runner_status "stopping"; poll run-status for "stopped".
+        run_state = SimulationRunner.stop_simulation(simulation_id, **({'graceful': True} if data.get('graceful') else {}))
 
         # 更新模拟状态
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         if state:
             # Closing a finished run's interview environment must not
-            # downgrade its result to "stopped".
-            state.status = (
-                SimulationStatus.COMPLETED
-                if run_state.runner_status == RunnerStatus.COMPLETED
-                else SimulationStatus.STOPPED
-            )
+            # downgrade its result to "stopped"; a graceful stop is still under way (the monitor publishes STOPPED).
+            if run_state.runner_status == RunnerStatus.COMPLETED:
+                state.status = SimulationStatus.COMPLETED
+            elif run_state.runner_status == RunnerStatus.STOPPING:
+                state.status = SimulationStatus.STOPPING
+            else:
+                state.status = SimulationStatus.STOPPED
             state.error = None
             manager._save_simulation_state(state)
         
@@ -2190,6 +2198,50 @@ def stop_simulation():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+def _graph_updates_allowed(requested: bool) -> bool:
+    """Whether a run may write its activity into the Zep graph as it plays.
+
+    Zep takes in each batch asynchronously and, on a big run, falls far behind (about one episode a minute was
+    seen against hundreds queued), so the run ends "failed" waiting for it. ``ZEP_GRAPH_MEMORY_UPDATE=false`` in
+    .env turns the live write off for every run whatever the UI asks; the report then searches the graph as it was
+    built from the seed documents, without the run's own activity.
+    """
+    if os.environ.get("ZEP_GRAPH_MEMORY_UPDATE", "").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return requested
+
+
+@simulation_bp.route('/pause', methods=['POST'])
+def pause_simulation():
+    """Pause a running simulation after the round in progress. Body: ``{"simulation_id": "sim_xxxx"}``.
+
+    Returns the run state with ``runner_status: "paused"`` at once; the run script waits at the next round boundary
+    (its process, memory and checkpoint stay as they are) until ``/continue`` or ``/stop``.
+    """
+    return _control_simulation(SimulationRunner.pause_simulation)
+
+
+@simulation_bp.route('/continue', methods=['POST'])
+def continue_simulation():
+    """Let a paused simulation carry on. Body: ``{"simulation_id": "sim_xxxx"}``."""
+    return _control_simulation(SimulationRunner.continue_simulation)
+
+
+def _control_simulation(action):
+    try:
+        simulation_id = (request.get_json(silent=True) or {}).get('simulation_id')
+        if not simulation_id:
+            return jsonify({"success": False, "error": t('api.requireSimulationId')}), 400
+        return jsonify({"success": True, "data": action(simulation_id).to_dict()})
+    except SimulationStopPending as e:
+        return jsonify({"success": False, "pending": True, "error": str(e)}), 409
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"控制模拟失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 # ============== 实时状态监控接口 ==============
@@ -2238,9 +2290,13 @@ def get_run_status(simulation_id: str):
                 }
             })
         
+        data = run_state.to_dict()
+        # Every round was played; only Zep is still taking in the activity. The UI shows this as "finished, graph
+        # sync pending" (with a retry and a partial report) rather than as a failed simulation.
+        data["graph_sync_pending"] = SimulationRunner.graph_sync_incomplete_only(simulation_id)
         return jsonify({
             "success": True,
-            "data": run_state.to_dict()
+            "data": data
         })
         
     except Exception as e:

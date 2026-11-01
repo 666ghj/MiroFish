@@ -104,6 +104,33 @@ a post twice, for example) leaves no record.
 the same seed still differ in what the agents write, and those differences feed back into the run. Do not treat a
 seed as "replay this run".
 
+### Pausing and stopping a run without losing a round
+
+The Step 3 header has **Pause** and **Stop after this round** while a single run is going. Both act at a round
+boundary, never inside a round:
+
+- **Pause** lets the round in progress finish, then the run script waits (its process, memory and agents' chat
+  history stay as they are) until you press **Continue**. The status shows `paused` at once; it means "paused, or
+  about to pause at the end of this round".
+- **Stop after this round** lets the round in progress finish, writes nothing half done, and ends the script on its
+  own. The checkpoint (database and chat memory) then covers every finished round, so **Resume** continues exactly
+  from there. The status shows `stopping` until the script has exited, then `stopped`. While it is stopping, **Stop
+  now** kills the process immediately (that round is lost and redone on resume, as after a crash).
+- A stop that waits longer than `SIM_STOP_GRACE_SECONDS` (default 900) for a round that never ends (a stuck model
+  call) is killed after all.
+- No end-of-run poll runs after a stop; the questions are asked when the run finishes its last round.
+
+How it works: the backend writes `control.json` (`{"action": "run" | "pause" | "stop"}`) into the simulation folder
+and the script reads it before every round, after the previous round's checkpoint. A file rather than a signal,
+because Windows cannot deliver a catchable signal to the script: the only thing the backend could do there is kill it
+in the middle of a round (which is what Stop used to do). A missing or unreadable file means "run", and starting a run
+removes any old request.
+
+API: `POST /api/simulation/pause`, `POST /api/simulation/continue` (both `{"simulation_id": ...}`), and
+`POST /api/simulation/stop` with `"graceful": true` (returns at once with `runner_status: "stopping"`; poll
+`run-status`). Without `graceful` the stop is immediate, as before. Ensembles are not covered yet: the ensemble Stop
+button still stops its runs immediately.
+
 ### Resuming a stopped run
 
 A run that was stopped (or whose process died) does not have to start over. **Resume** continues it after its last
@@ -333,6 +360,23 @@ describe your source material, not the simulated chatter (the ensemble statistic
 tool needs a live simulation environment, which ensemble runs do not keep.
 
 ---
+
+### When Zep falls behind a run
+
+A single run writes each agent's activity into the Zep knowledge graph as it plays (`enable_graph_memory_update`), and
+the report agent searches that graph. Zep takes the activity in asynchronously and on a big run it can be far slower
+than the simulation: a run of ~470 activities queued ~240 episodes while Zep worked through about one a minute. At the
+end of the run the backend waits for Zep (`ZEP_INGESTION_WAIT_TIMEOUT_SECONDS`, default 600) and, if it is still
+behind, used to end the run as plain `failed`, which also blocked the report.
+
+- A run that played every round of every platform and failed **only** on that wait is shown as *finished, graph sync
+  pending* (`graph_sync_pending: true` in `run-status`). Step 3 offers **Retry graph sync** (it waits for Zep again;
+  it works once Zep has caught up) and Generate Report, which asks whether to write the report from the part of the
+  graph that is ready (`allow_partial_graph`; the normal report barrier is unchanged for every other failure).
+- `ZEP_INGESTION_WAIT_TIMEOUT_SECONDS` raises the wait at the end of a run.
+- `ZEP_GRAPH_MEMORY_UPDATE=false` turns the live write off for every run (UI and API requests are overridden): nothing
+  to wait for, but the report then searches only the graph built from the seed documents. Ensembles never write to
+  the graph, so they are not affected.
 
 ### Hosting the Twitter feed ranker (optional)
 

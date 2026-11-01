@@ -25,6 +25,20 @@ if _SCRIPTS_DIR not in sys.path:
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _preload_run_helpers():
+    """Load the real ``sim_control``/``sim_resume`` helpers into ``sys.modules`` once.
+
+    ``SimulationRunner._sim_control()`` caches by module name but resolves the
+    path from the class's ``SCRIPTS_DIR`` at first load, so a test that stubs
+    ``SCRIPTS_DIR`` would otherwise pin a stub (or fail outright) for every
+    later test — making the suite order-dependent. The real helpers only do
+    file IO against the passed sim directory, so they are safe under tmp_path.
+    """
+    import sim_control  # noqa: F401
+    import sim_resume  # noqa: F401
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _isolate_data_directories(tmp_path_factory):
     from app.config import Config
     from app.models.project import ProjectManager

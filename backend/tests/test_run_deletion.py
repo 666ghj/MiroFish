@@ -12,7 +12,7 @@ from app.models.project import ProjectManager
 from app.services.ensemble_runner import EnsembleManager
 from app.services.report_agent import ReportManager
 from app.services.simulation_manager import SimulationManager, SimulationState, SimulationStatus
-from app.services.simulation_runner import RunnerStatus
+from app.services.simulation_runner import RunnerStatus, SimulationRunner
 
 from test_ensemble_manager import BASE_ID, QUESTIONS, env  # noqa: F401  (env is a fixture)
 
@@ -123,3 +123,69 @@ def test_a_failing_graph_deletion_leaves_everything_in_place(world, monkeypatch)
 
 def test_deleting_an_unknown_run_is_a_404(world):
     assert world.client.delete("/api/simulation/sim_missing").status_code == 404
+
+
+# --- a COMPLETED run keeps its interview process alive: deletion must quiet it first ---
+
+def _solo_plan(simulation_id, with_project=True):
+    from app.services.run_deletion import DeletionPlan
+
+    return DeletionPlan(
+        simulation_id=simulation_id,
+        project_id=None,
+        graph_id=None,
+        simulation_ids=[simulation_id],
+        ensemble_ids=[],
+        report_ids=[],
+    )
+
+
+def test_delete_run_quits_the_idle_interview_environment_before_removing_files(monkeypatch):
+    from app.services import run_deletion as deletion_module
+    from app.services.run_deletion import delete_run
+
+    monkeypatch.setattr(deletion_module, "plan_deletion", _solo_plan)
+    monkeypatch.setattr(deletion_module, "_busy_reasons", lambda plan, is_preparing: [])
+    events = []
+    monkeypatch.setattr(
+        SimulationRunner, "_close_idle_environment",
+        classmethod(lambda cls, simulation_id: events.append(("close", simulation_id))),
+    )
+    monkeypatch.setattr(
+        deletion_module.shutil, "rmtree",
+        lambda path, **_kwargs: events.append(("rmtree", path)),
+    )
+    monkeypatch.setattr(
+        deletion_module.ZepGraphMemoryManager, "discard_inactive_updater",
+        classmethod(lambda cls, simulation_id: None),
+    )
+
+    delete_run("sim-1")
+
+    # If the environment is not terminated first, the surviving monitor
+    # recreates the folder rmtree just removed.
+    assert events[0] == ("close", "sim-1")
+    assert ("rmtree", os.path.join(SimulationManager.SIMULATION_DATA_DIR, "sim-1")) in events
+
+
+def test_delete_run_aborts_wholly_when_the_environment_refuses_to_close(monkeypatch):
+    from app.services import run_deletion as deletion_module
+    from app.services.run_deletion import RunBusy, delete_run
+    from app.services.simulation_runner import SimulationStopPending
+
+    monkeypatch.setattr(deletion_module, "plan_deletion", _solo_plan)
+    monkeypatch.setattr(deletion_module, "_busy_reasons", lambda plan, is_preparing: [])
+
+    def refuse(cls, simulation_id):
+        raise SimulationStopPending("模拟环境仍在关闭中")
+
+    monkeypatch.setattr(SimulationRunner, "_close_idle_environment", classmethod(refuse))
+    removed = []
+    monkeypatch.setattr(
+        deletion_module.shutil, "rmtree", lambda path, **_kwargs: removed.append(path)
+    )
+
+    with pytest.raises(RunBusy, match="仍在关闭中"):
+        delete_run("sim-1")
+
+    assert removed == []

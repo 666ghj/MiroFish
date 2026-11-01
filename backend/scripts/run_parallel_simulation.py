@@ -159,6 +159,7 @@ def init_logging_for_simulation(simulation_dir: str):
 
 from action_logger import SimulationLogManager, PlatformActionLogger
 import sim_behavior
+import sim_control
 import sim_embeddings
 import sim_resume
 import sim_runtime
@@ -1420,6 +1421,17 @@ async def _run_platform_simulation(
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
+            interrupted = True
+            break
+
+        # control.json (written by the backend): pause or stop between rounds, never inside one. The previous round's
+        # checkpoint is already written, so a run that stops here resumes exactly from here.
+        if await sim_control.honour(
+            simulation_dir, log_info, spec["label"], round_num,
+            should_abort=lambda: bool(_shutdown_event and _shutdown_event.is_set()),
+        ) == sim_control.STOP:
+            if _shutdown_event:
+                _shutdown_event.set()   # the other platform stops at its next round; no poll, no waiting for commands
             interrupted = True
             break
 

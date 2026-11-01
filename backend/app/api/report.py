@@ -89,6 +89,14 @@ def generate_report():
                 "error": "force_regenerate must be a JSON boolean",
             }), 400
 
+        # Explicit opt-in: generate from a Zep graph that is still missing some of the run's activity (see below)
+        allow_partial_graph = data.get('allow_partial_graph', False)
+        if not isinstance(allow_partial_graph, bool):
+            return jsonify({
+                "success": False,
+                "error": "allow_partial_graph must be a JSON boolean",
+            }), 400
+
         ensemble_id = data.get('ensemble_id')
         if ensemble_id is not None:
             if not isinstance(ensemble_id, str) or not ensemble_id.strip():
@@ -121,9 +129,15 @@ def generate_report():
             RunnerStatus.PAUSED,
             RunnerStatus.STOPPING,
         }
-        if updater is not None or (
+        # A run that played every round but whose Zep graph sync timed out (Zep can take hours to process a big
+        # run) is blocked by default: the report searches that graph. The user may still accept a partial graph.
+        graph_sync_only = (
+            not ensemble_id and SimulationRunner.graph_sync_incomplete_only(simulation_id)
+        )
+        partial_ok = allow_partial_graph and graph_sync_only
+        if not partial_ok and (updater is not None or (
             run_state is not None and run_state.runner_status in active_statuses
-        ):
+        )):
             return jsonify({
                 "success": False,
                 "error": (
@@ -131,12 +145,13 @@ def generate_report():
                     "wait for a terminal run status before generating a report"
                 ),
                 "ingestion_pending": updater is not None,
+                "can_generate_partial": graph_sync_only,
             }), 409
         successful_terminal_statuses = {
             RunnerStatus.COMPLETED,
             RunnerStatus.STOPPED,
         }
-        if not ensemble_id and (
+        if not ensemble_id and not partial_ok and (
             run_state is None
             or run_state.runner_status not in successful_terminal_statuses
         ):
@@ -146,6 +161,7 @@ def generate_report():
                     "A successfully completed or stopped simulation is required "
                     "before generating a report"
                 ),
+                "can_generate_partial": graph_sync_only,
             }), 409
 
         # 获取项目信息

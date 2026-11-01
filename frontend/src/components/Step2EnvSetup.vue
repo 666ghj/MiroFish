@@ -923,8 +923,15 @@ const startPrepareSimulation = async () => {
   }
 }
 
+// Skip a tick when the previous request is still in flight, so slow
+// responses cannot pile up on the server during long prepare phases.
 const startPolling = () => {
-  pollTimer = setInterval(pollPrepareStatus, 2000)
+  let inFlight = false
+  pollTimer = setInterval(() => {
+    if (inFlight) return
+    inFlight = true
+    Promise.resolve(pollPrepareStatus()).finally(() => { inFlight = false })
+  }, 2000)
 }
 
 const stopPolling = () => {
@@ -935,7 +942,12 @@ const stopPolling = () => {
 }
 
 const startProfilesPolling = () => {
-  profilesTimer = setInterval(fetchProfilesRealtime, 3000)
+  let inFlight = false
+  profilesTimer = setInterval(() => {
+    if (inFlight) return
+    inFlight = true
+    Promise.resolve(fetchProfilesRealtime()).finally(() => { inFlight = false })
+  }, 3000)
 }
 
 const stopProfilesPolling = () => {
@@ -1051,7 +1063,12 @@ const fetchProfilesRealtime = async () => {
 
 // 配置轮询
 const startConfigPolling = () => {
-  configTimer = setInterval(fetchConfigRealtime, 2000)
+  let inFlight = false
+  configTimer = setInterval(() => {
+    if (inFlight) return
+    inFlight = true
+    Promise.resolve(fetchConfigRealtime()).finally(() => { inFlight = false })
+  }, 2000)
 }
 
 const stopConfigPolling = () => {

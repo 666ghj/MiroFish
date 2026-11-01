@@ -157,8 +157,24 @@ export const listEnsembles = (simulationId) => {
  * 停止模拟
  * @param {Object} data - { simulation_id }
  */
-export const stopSimulation = (data) => {
+export const stopSimulation = (data) => {   // data.graceful = true: end after the round in progress (resumable exactly)
   return service.post('/api/simulation/stop', data)
+}
+
+/**
+ * Pause a running simulation after the round in progress (its process and memory stay as they are)
+ * @param {Object} data - { simulation_id }
+ */
+export const pauseSimulation = (data) => {
+  return service.post('/api/simulation/pause', data)
+}
+
+/**
+ * Let a paused simulation carry on with its next round
+ * @param {Object} data - { simulation_id }
+ */
+export const continueSimulation = (data) => {
+  return service.post('/api/simulation/continue', data)
 }
 
 /**

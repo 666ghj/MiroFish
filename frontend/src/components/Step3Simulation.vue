@@ -97,10 +97,20 @@
       </div>
 
       <div v-if="!ensembleMode" class="action-controls">
+        <!-- Pause, or stop after the round in progress (so the run can be resumed exactly from there) -->
+        <template v-if="canControl">
+          <button v-if="!isPaused" class="action-btn" :disabled="isControlling || isWinding" @click="doPause">{{ $t('step3.pauseBtn') }}</button>
+          <button v-else class="action-btn" :disabled="isControlling" @click="doContinue">{{ $t('step3.continueBtn') }}</button>
+          <button class="action-btn" :disabled="isControlling || isWinding" @click="doStopAfterRound">{{ $t('step3.stopAfterRoundBtn') }}</button>
+        </template>
+        <button v-if="runStatus.graph_sync_pending" class="action-btn" :disabled="isRetryingSync" @click="doRetryGraphSync">
+          {{ isRetryingSync ? $t('step3.retryingGraphSync') : $t('step3.retryGraphSyncBtn') }}
+        </button>
+        <button v-if="isWinding" class="action-btn danger" :disabled="isStopping" @click="handleStopSimulation">{{ $t('step3.stopNowBtn') }}</button>
         <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
-          @click="handleNextStep"
+          @click="handleNextStep()"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
           {{ isGeneratingReport ? $t('step3.generatingReportBtn') : $t('step3.startGenerateReportBtn') }}
@@ -108,6 +118,10 @@
         </button>
       </div>
     </div>
+
+    <p v-if="!ensembleMode && runStatus.graph_sync_pending" class="control-note" role="status">{{ $t('step3.graphSyncNote') }}</p>
+    <p v-if="!ensembleMode && isPaused" class="control-note" role="status">{{ $t('step3.pausedNote') }}</p>
+    <p v-if="!ensembleMode && isWinding" class="control-note" role="status">{{ $t('step3.stoppingNote') }}</p>
 
     <!-- A stopped run can continue where it stopped (or start over) -->
     <div v-if="offerResume" class="resume-offer" role="region" :aria-label="$t('resume.title')">
@@ -337,6 +351,8 @@ import { useI18n } from 'vue-i18n'
 import {
   startSimulation,
   stopSimulation,
+  pauseSimulation,
+  continueSimulation,
   getRunStatus,
   getRunStatusDetail,
   getResumeInfo,
@@ -390,6 +406,11 @@ const startError = ref(null)
 const runStatus = ref({})
 // The process is working (or finishing up): the live status line and the failure banner only matter then
 const isRunActive = computed(() => ['starting', 'running'].includes(runStatus.value.runner_status))
+// Pause / stop after this round: offered while the process is alive. "stopping" = a graceful stop is under way.
+const isPaused = computed(() => runStatus.value.runner_status === 'paused')
+const isWinding = computed(() => runStatus.value.runner_status === 'stopping')
+const canControl = computed(() => !ensembleMode.value && ['running', 'paused'].includes(runStatus.value.runner_status))
+const isControlling = ref(false)
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
@@ -577,16 +598,69 @@ const handleStopSimulation = async () => {
   }
 }
 
+// Pause / continue / stop after the round in progress. The status shown comes from the backend (polled), the
+// optimistic value below only bridges the gap until the next poll.
+const control = async (call, requested, failed, status) => {
+  if (!props.simulationId || isControlling.value) return
+  isControlling.value = true
+  try {
+    const res = await call
+    if (res.success) {
+      addLog(t(requested))
+      runStatus.value = { ...runStatus.value, runner_status: res.data?.runner_status || status }
+    } else {
+      addLog(t(failed, { error: res.error || t('common.unknownError') }))
+    }
+  } catch (err) {
+    addLog(t(failed, { error: err.message }))
+  } finally {
+    isControlling.value = false
+  }
+}
+const doPause = () => control(pauseSimulation({ simulation_id: props.simulationId }), 'log.pauseRequested', 'log.pauseFailed', 'paused')
+const doContinue = () => control(continueSimulation({ simulation_id: props.simulationId }), 'log.continueRequested', 'log.continueFailed', 'running')
+const doStopAfterRound = () => control(stopSimulation({ simulation_id: props.simulationId, graceful: true }), 'log.stopAfterRoundRequested', 'log.stopFailed', 'stopping')
+
+// The run played every round but Zep had not finished taking in its activity when the wait ran out: ask the backend to
+// finish that wait again. It can take minutes (it waits for Zep), and fails again while Zep is still behind.
+const isRetryingSync = ref(false)
+const doRetryGraphSync = async () => {
+  if (!props.simulationId || isRetryingSync.value) return
+  isRetryingSync.value = true
+  addLog(t('log.graphSyncRetrying'))
+  try {
+    const res = await stopSimulation({ simulation_id: props.simulationId })
+    addLog(res.success ? t('log.graphSyncRetryDone') : t('log.graphSyncRetryFailed', { error: res.error || t('common.unknownError') }))
+  } catch (err) {
+    addLog(t('log.graphSyncRetryFailed', { error: err.message }))
+  } finally {
+    isRetryingSync.value = false
+    fetchRunStatus()
+  }
+}
+
 // 轮询状态
 let statusTimer = null
 let detailTimer = null
+let statusInFlight = false
+let detailInFlight = false
 
+// Skip a tick when the previous request is still in flight, so slow responses
+// cannot pile up on the server.
 const startStatusPolling = () => {
-  statusTimer = setInterval(fetchRunStatus, 2000)
+  statusTimer = setInterval(() => {
+    if (statusInFlight) return
+    statusInFlight = true
+    Promise.resolve(fetchRunStatus()).finally(() => { statusInFlight = false })
+  }, 2000)
 }
 
 const startDetailPolling = () => {
-  detailTimer = setInterval(fetchRunStatusDetail, 3000)
+  detailTimer = setInterval(() => {
+    if (detailInFlight) return
+    detailInFlight = true
+    Promise.resolve(fetchRunStatusDetail()).finally(() => { detailInFlight = false })
+  }, 3000)
 }
 
 const stopPolling = () => {
@@ -632,7 +706,13 @@ const fetchRunStatus = async () => {
       
       // runner_status is authoritative because the backend only publishes a
       // terminal state after the Zep ingestion barrier has completed.
-      if (isFailed) {
+      if (isFailed && data.graph_sync_pending) {
+        // Every round was played; only Zep is still taking in the activity. Not a failed simulation.
+        addLog(t('log.simGraphSyncPending'))
+        phase.value = 2
+        stopPolling()
+        emit('update-status', 'completed')
+      } else if (isFailed) {
         addLog(t('log.simFailed') + (data.error ? `: ${data.error}` : ''))
         phase.value = 2
         stopPolling()
@@ -757,7 +837,9 @@ const formatActionTime = (timestamp) => {
   }
 }
 
-const handleNextStep = async () => {
+// allowPartialGraph: the run played every round but Zep has not finished taking in its activity; the report is then
+// written from the part of the graph that is there, and only when the user has agreed to that
+const handleNextStep = async (allowPartialGraph = false) => {
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
@@ -774,7 +856,8 @@ const handleNextStep = async () => {
   try {
     const res = await generateReport({
       simulation_id: props.simulationId,
-      force_regenerate: true
+      force_regenerate: true,
+      ...(allowPartialGraph ? { allow_partial_graph: true } : {})
     })
     
     if (res.success && res.data) {
@@ -788,8 +871,15 @@ const handleNextStep = async () => {
       isGeneratingReport.value = false
     }
   } catch (err) {
-    addLog(t('log.reportGenException', { error: err.message }))
     isGeneratingReport.value = false
+    if (!allowPartialGraph && err.response?.data?.can_generate_partial) {
+      addLog(t('log.reportGraphBehind'))
+      if (window.confirm(t('step3.partialGraphConfirm'))) {
+        return handleNextStep(true)
+      }
+      return
+    }
+    addLog(t('log.reportGenException', { error: err.message }))
   }
 }
 
@@ -1040,6 +1130,18 @@ onUnmounted(() => {
 .action-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.action-controls .action-btn:not(.primary) {
+  border: 1px solid var(--c-d1d5db);
+  background: var(--c-ffffff);
+  color: var(--c-4b5563);
+}
+
+.control-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--c-4b5563);
 }
 
 /* --- Main Content Area --- */

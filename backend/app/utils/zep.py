@@ -25,7 +25,17 @@ ZEP_CLOUD_BASE_URL = "https://api.getzep.com/api/v2"
 ZEP_HTTP_REQUEST_TIMEOUT_SECONDS = 60.0
 # Zep ingestion is asynchronous and may take several minutes. Preserve the
 # original GraphBuilder deadline while keeping it separate from HTTP timeout.
-ZEP_INGESTION_WAIT_TIMEOUT_SECONDS = 600
+# A big simulation can queue hundreds of episodes that Zep works through at its own pace (about one a minute was
+# seen), so the wait at the end of a run can be raised with ZEP_INGESTION_WAIT_TIMEOUT_SECONDS in .env.
+def _wait_timeout_seconds(default: int = 600) -> int:
+    try:
+        value = int(float(os.environ.get("ZEP_INGESTION_WAIT_TIMEOUT_SECONDS") or 0))
+    except ValueError:
+        value = 0
+    return value if value > 0 else default
+
+
+ZEP_INGESTION_WAIT_TIMEOUT_SECONDS = _wait_timeout_seconds()
 MAX_ZEP_SEARCH_QUERY_CHARS = 400
 MAX_ZEP_SEARCH_RESULTS = 50
 
@@ -104,6 +114,22 @@ def is_retryable_zep_error(error: BaseException) -> bool:
     return False
 
 
+def is_pre_rejection_write_error(error: BaseException) -> bool:
+    """Return whether a failed *write* was rejected before Zep processed it.
+
+    A 429 is a rate-limiter rejection and a connect failure means the request
+    never reached the API, so replaying the write cannot duplicate facts.
+    Timeouts and 5xx responses are ambiguous outcomes and must never be
+    replayed, because graph writes have no idempotency key.
+    """
+
+    if isinstance(error, httpx.ConnectError):
+        return True
+    if isinstance(error, ZepApiError):
+        return error.status_code == 429
+    return False
+
+
 def _retry_after_seconds(error: BaseException) -> float | None:
     if not isinstance(error, ZepApiError) or not error.headers:
         return None
@@ -151,6 +177,56 @@ def call_zep_read_with_retry(
             )
             logger.warning(
                 "Zep %s attempt %s/%s failed (%s); retrying in %.1fs",
+                operation_name,
+                attempt,
+                max_attempts,
+                type(error).__name__,
+                delay,
+            )
+            sleep(delay)
+
+    raise AssertionError("unreachable")
+
+
+def call_zep_write_with_pre_rejection_retry(
+    operation: Callable[[], T],
+    *,
+    operation_name: str,
+    max_attempts: int = 4,
+    initial_delay: float = 2.0,
+    max_delay: float = 30.0,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> T:
+    """Replay a Zep write only when it was rejected before processing.
+
+    Safe to replay: 429 rejections and connect failures (nothing was written).
+    Never replayed: ambiguous outcomes such as timeouts or 5xx, which keep
+    the fail-closed contract for non-idempotent graph writes.
+    """
+
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return operation()
+        except Exception as error:
+            if attempt == max_attempts or not is_pre_rejection_write_error(error):
+                raise
+            if deadline is not None and time.time() >= deadline:
+                raise
+
+            retry_after = _retry_after_seconds(error)
+            delay = min(
+                retry_after if retry_after is not None else initial_delay * (2 ** (attempt - 1)),
+                max_delay,
+            )
+            if deadline is not None:
+                delay = min(delay, max(0.0, deadline - time.time()))
+            logger.warning(
+                "Zep %s attempt %s/%s rejected before processing (%s); "
+                "replaying in %.1fs",
                 operation_name,
                 attempt,
                 max_attempts,

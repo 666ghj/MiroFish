@@ -395,3 +395,31 @@ def test_action_queries_timeline_and_stats_exclude_setup_and_poll(monkeypatch, t
     stats = {row["agent_id"]: row["total_actions"] for row in SimulationRunner.get_agent_stats(simulation_id)}
     assert stats == {2: 1, 3: 1, 5: 1}
     assert sum(entry["total_actions"] for entry in SimulationRunner.get_timeline(simulation_id)) == 3
+
+
+def test_action_cache_tails_appends_and_recovers_from_truncation(monkeypatch, tmp_path):
+    simulation_id = "sim-action-cache"
+    log = tmp_path / simulation_id / "twitter" / "actions.jsonl"
+    monkeypatch.setattr(SimulationRunner, "RUN_STATE_DIR", str(tmp_path))
+    SimulationRunner.clear_actions_file_cache()
+
+    _write_log(log, RECORDS[:3])
+    assert sorted(a.agent_id for a in SimulationRunner.get_all_actions(simulation_id)) == [2]
+
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write("".join(json.dumps(r) + "\n" for r in RECORDS[3:]))
+    assert sorted(a.agent_id for a in SimulationRunner.get_all_actions(simulation_id)) == [2, 3, 5]
+
+    # A half-written line (writer mid-append) must be neither parsed nor dropped.
+    pending_record = json.dumps(_record(6, 4))
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(pending_record[:40])
+    assert sorted(a.agent_id for a in SimulationRunner.get_all_actions(simulation_id)) == [2, 3, 5]
+
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(pending_record[40:] + "\n")
+    assert sorted(a.agent_id for a in SimulationRunner.get_all_actions(simulation_id)) == [2, 3, 5, 6]
+
+    # Truncation or rewrite (log cleanup) invalidates the tail offset.
+    log.write_text(json.dumps(_record(7, 5)) + "\n", encoding="utf-8")
+    assert sorted(a.agent_id for a in SimulationRunner.get_all_actions(simulation_id)) == [7]

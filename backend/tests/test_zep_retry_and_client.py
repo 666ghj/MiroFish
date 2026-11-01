@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from zep_cloud.core.api_error import ApiError as ZepApiError
 
@@ -47,6 +48,51 @@ def test_rate_limit_retry_respects_retry_after():
     assert result == "ok"
     assert len(calls) == 2
     assert sleeps == [7.0]
+
+
+def test_write_retry_replays_pre_rejection_errors():
+    for error in (
+        ZepApiError(status_code=429, body={"message": "rate limited"}),
+        httpx.ConnectError("connection refused"),
+    ):
+        calls = []
+
+        def operation():
+            calls.append(True)
+            if len(calls) == 1:
+                raise error
+            return "ok"
+
+        result = zep.call_zep_write_with_pre_rejection_retry(
+            operation,
+            operation_name="replayable write",
+            sleep=lambda _seconds: None,
+        )
+
+        assert result == "ok"
+        assert len(calls) == 2, type(error).__name__
+
+
+def test_write_retry_never_replays_ambiguous_outcomes():
+    for error in (
+        ZepApiError(status_code=500, body={"message": "boom"}),
+        ZepApiError(status_code=408, body={"message": "timeout"}),
+        httpx.ReadTimeout("slow response"),
+    ):
+        calls = []
+
+        def operation():
+            calls.append(True)
+            raise error
+
+        with pytest.raises(type(error)):
+            zep.call_zep_write_with_pre_rejection_retry(
+                operation,
+                operation_name="ambiguous write",
+                sleep=lambda _seconds: None,
+            )
+
+        assert len(calls) == 1, type(error).__name__
 
 
 def test_zep_client_is_shared_and_uses_an_explicit_timeout(monkeypatch):

@@ -19,7 +19,7 @@ from ..utils.logger import get_logger
 from .ensemble_runner import EnsembleManager
 from .report_agent import ReportManager
 from .simulation_manager import SimulationManager, SimulationStatus
-from .simulation_runner import RunnerStatus, SimulationRunner
+from .simulation_runner import RunnerStatus, SimulationRunner, SimulationStopPending
 from .zep_graph_memory_updater import ZepGraphMemoryManager
 
 logger = get_logger("mirofish.run_deletion")
@@ -127,6 +127,20 @@ def delete_run(
     reasons = _busy_reasons(plan, is_preparing)
     if reasons:
         raise RunBusy("; ".join(reasons))
+
+    # A COMPLETED run deliberately keeps its interview process alive, and the
+    # surviving monitor rewrites run_state.json every couple of seconds: it
+    # would recreate the folder we are about to remove and (on Windows) keep
+    # DB files locked so rmtree silently half-fails. Quiet every such
+    # environment first, before anything is deleted, so a run that refuses to
+    # close aborts the whole operation.
+    for sim_id in plan.simulation_ids:
+        try:
+            SimulationRunner._close_idle_environment(sim_id)
+        except SimulationStopPending as pending:
+            raise RunBusy(str(pending))
+        except Exception as error:
+            raise RunBusy(f"{sim_id} could not be closed: {error}")
 
     if plan.project_id and plan.graph_id:
         delete_graph(plan.graph_id)  # may raise; nothing local has been removed yet
