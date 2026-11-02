@@ -1,6 +1,7 @@
 """\n配置管理\n统一从项目根目录的 .env 文件加载配置\n"""
 
 import os
+import sys
 from dotenv import load_dotenv
 
 # 加载项目根目录的 .env 文件
@@ -12,6 +13,11 @@ if os.path.exists(project_root_env):
 else:
     # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
     load_dotenv(override=True)
+
+# 新的模型接口名称（TWITTER_LLM_* / REDDIT_LLM_* / TWITTER_RERANKER_* / MAIN_LLM_*）映射到代码读取的旧名称
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import env_aliases  # noqa: E402
+env_aliases.apply()
 
 
 class Config:

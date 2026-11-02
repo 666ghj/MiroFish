@@ -104,6 +104,9 @@ else:
         load_dotenv(_backend_env)
         print(f"已加载环境配置: {_backend_env}")
 
+import env_aliases
+env_aliases.apply()   # TWITTER_LLM_* / REDDIT_LLM_* / TWITTER_RERANKER_* / MAIN_LLM_* -> the names read below
+
 
 class MaxTokensWarningFilter(logging.Filter):
     """过滤掉 camel-ai 关于 max_tokens 的警告（我们故意不设置 max_tokens，让模型自行决定）"""

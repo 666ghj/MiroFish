@@ -2,7 +2,7 @@
 
 OASIS ranks the Twitter feed (``recsys_type="twhin-bert"``) by embedding every post and every agent profile with
 Twitter's ``twhin-bert-base`` on the local CPU, every round, and loads the 0.5 GB model on the first ranking call.
-With ``LLM_EMBEDDING_BASE_URL`` set, ``install_remote_embeddings`` replaces just that step: the ranking itself
+With ``TWITTER_RERANKER_BASE_URL`` (formerly ``LLM_EMBEDDING_BASE_URL``) set, ``install_remote_embeddings`` replaces just that step: the ranking itself
 (similarity, recency, follower weighting) stays OASIS's. Texts are embedded once and cached, so a round only sends
 the posts and the changed profiles it has not seen.
 
@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
+
+from env_aliases import with_aliases
 
 DEFAULT_MODEL = "twhin-bert-base"
 DEFAULT_TIMEOUT = 120.0   # a cold container loads the model before it answers
@@ -116,7 +118,8 @@ class RemoteEmbedder:
 
 
 def settings(environ: Mapping[str, str]) -> Optional[Dict[str, Any]]:
-    """The embedding endpoint from the environment, or None when ``LLM_EMBEDDING_BASE_URL`` is not set."""
+    """The embedding endpoint from the environment, or None when ``TWITTER_RERANKER_BASE_URL`` (``LLM_EMBEDDING_BASE_URL``) is not set."""
+    environ = with_aliases(environ)                  # TWITTER_RERANKER_* is the newer spelling of LLM_EMBEDDING_*
     base_url = (environ.get("LLM_EMBEDDING_BASE_URL") or "").strip()
     if not base_url:
         return None

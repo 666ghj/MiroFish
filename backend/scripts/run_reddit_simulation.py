@@ -49,6 +49,9 @@ else:
     if os.path.exists(_backend_env):
         load_dotenv(_backend_env)
 
+import env_aliases
+env_aliases.apply()
+
 
 import re
 

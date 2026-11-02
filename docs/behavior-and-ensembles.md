@@ -76,10 +76,10 @@ slow model or provider one of those requests can take minutes.
   types; if the model writes something else, the post goes to an agent whose type or name is close enough
   (`Official` → `GovernmentOfficial`, a name such as `Ministry of Home Affairs`), and otherwise to the most
   influential agents one after another, so that not every post comes from the same account.
-- A separate, stronger or faster model can do this work: set `LLM_PREP_API_KEY` and `LLM_PREP_MODEL_NAME` (and
-  `LLM_PREP_BASE_URL` if it is on another provider). It writes the agent personas and the simulation config, **and the
+- A separate, stronger or faster model can do this work: set `MAIN_LLM_API_KEY` and `MAIN_LLM_MODEL_NAME` (and
+  `MAIN_LLM_BASE_URL` if it is on another provider). It writes the agent personas and the simulation config, **and the
   final report** (including the report tools' sub-question step); the simulation run itself keeps using `LLM_*`. Without
-  `LLM_PREP_*` everything uses the main model, as before.
+  `MAIN_LLM_*` everything uses the Twitter model (`TWITTER_LLM_*`), as before.
 
 ---
 
@@ -382,7 +382,7 @@ behind, used to end the run as plain `failed`, which also blocked the report.
 
 OASIS ranks the Twitter feed with Twitter's `twhin-bert-base`: every round it embeds all posts and every agent
 profile on the local CPU, and it loads the 0.5 GB model on the first ranking call. On a small machine that is the
-heaviest part of a run (about 1 GB of RAM and most of both cores). `LLM_EMBEDDING_BASE_URL` sends just that step to a
+heaviest part of a run (about 1 GB of RAM and most of both cores). `TWITTER_RERANKER_BASE_URL` sends just that step to a
 hosted endpoint; the ranking itself (similarity, recency, follower weighting) stays OASIS's. Reddit's ranker is
 cheap and is not affected.
 
@@ -408,9 +408,9 @@ modal secret create mirofish-embeddings EMBEDDING_API_TOKEN=<a long random strin
 modal deploy backend/deploy/modal_embeddings.py
 ```
 
-then put the printed URL (`/v1` is added when the URL has no path), the same token and `LLM_EMBEDDING_MODEL_NAME=twhin-bert-base` in `.env`
+then put the printed URL (`/v1` is added when the URL has no path), the same token and `TWITTER_RERANKER_MODEL_NAME=twhin-bert-base` in `.env`
 (see `.env.example`) and restart the backend. The run log then says `Twitter 推荐系统的嵌入改用远程接口`. Stop the
-endpoint with `modal app stop mirofish-embeddings`; unset `LLM_EMBEDDING_BASE_URL` to go back to the local model.
+endpoint with `modal app stop mirofish-embeddings`; unset `TWITTER_RERANKER_BASE_URL` to go back to the local model.
 
 ## 5. Where things live
 
@@ -427,3 +427,8 @@ endpoint with `modal app stop mirofish-embeddings`; unset `LLM_EMBEDDING_BASE_UR
 | UI | `Step2EnvSetup.vue`, `ScheduledEventsEditor.vue`, `EnsembleRunPanel.vue`, `EnsembleSummaryTable.vue`, `Step4Report.vue` |
 
 Run the tests with `uv run pytest` from `backend/`.
+
+
+## Model endpoint names
+
+`.env` names the four model endpoints `TWITTER_LLM_*`, `REDDIT_LLM_*`, `TWITTER_RERANKER_*` and `MAIN_LLM_*` (each with `API_KEY`, `BASE_URL`, `MODEL_NAME`). The old names (`LLM_*`, `LLM_BOOST_*`, `LLM_EMBEDDING_*`, `LLM_PREP_*`) still work; if both are set, the new one wins (`backend/env_aliases.py`).
