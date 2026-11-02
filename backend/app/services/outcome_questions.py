@@ -330,7 +330,7 @@ def derive_outcome_questions(
     before the ensemble starts.
     """
     if llm_json is None:
-        client = LLMClient()
+        client = LLMClient.for_preparation()   # the MAIN model, like the ontology and the report
 
         def llm_json(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             return client.chat_json(messages, temperature=0.3, max_attempts=2)

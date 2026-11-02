@@ -77,8 +77,9 @@ slow model or provider one of those requests can take minutes.
   (`Official` → `GovernmentOfficial`, a name such as `Ministry of Home Affairs`), and otherwise to the most
   influential agents one after another, so that not every post comes from the same account.
 - A separate, stronger or faster model can do this work: set `MAIN_LLM_API_KEY` and `MAIN_LLM_MODEL_NAME` (and
-  `MAIN_LLM_BASE_URL` if it is on another provider). It writes the agent personas and the simulation config, **and the
-  final report** (including the report tools' sub-question step); the simulation run itself keeps using `LLM_*`. Without
+  `MAIN_LLM_BASE_URL` if it is on another provider). It writes the **ontology** (which agent types exist), the agent personas, the simulation config, the ensemble's outcome
+  questions, **and the final report** (including the report tools' sub-question step); the simulation run itself keeps
+  using `LLM_*`. Without
   `MAIN_LLM_*` everything uses the Twitter model (`TWITTER_LLM_*`), as before.
 
 ---

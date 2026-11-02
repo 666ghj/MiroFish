@@ -198,7 +198,8 @@ class OntologyGenerator:
     """
     
     def __init__(self, llm_client: Optional[LLMClient] = None):
-        self.llm_client = llm_client or LLMClient()
+        # the ontology decides which agents exist, so it uses the MAIN model (MAIN_LLM_*, else the main LLM_* one)
+        self.llm_client = llm_client or LLMClient.for_preparation()
     
     def generate(
         self,
