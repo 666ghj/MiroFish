@@ -100,3 +100,69 @@ def test_zero_entities_persists_failed_state_and_raises(tmp_path, monkeypatch):
     assert persisted["config_generated"] is False
     assert persisted["config_reasoning"] == ""
     assert "没有找到符合条件的实体" in persisted["error"]
+
+
+# --- a second /prepare while one is running ------------------------------------
+
+def _prepare_client(tmp_path, monkeypatch, simulation_id="sim_busy"):
+    monkeypatch.setattr(SimulationManager, "SIMULATION_DATA_DIR", str(tmp_path))
+    manager = SimulationManager()
+    manager._save_simulation_state(
+        SimulationState(simulation_id=simulation_id, project_id="project", graph_id="graph",
+                        status=SimulationStatus.PREPARING, entities_count=17)
+    )
+    app = create_app()
+    app.config.update(TESTING=True)
+    return app.test_client()
+
+
+def _prepare_task(simulation_id, status, idle_seconds=0):
+    from datetime import datetime, timedelta
+
+    from app.models.task import TaskManager, TaskStatus
+
+    manager = TaskManager()
+    task_id = manager.create_task("simulation_prepare", metadata={"simulation_id": simulation_id})
+    task = manager.get_task(task_id)
+    task.status = TaskStatus(status)
+    task.updated_at = datetime.now() - timedelta(seconds=idle_seconds)
+    return task_id
+
+
+def test_a_second_prepare_follows_the_running_task_instead_of_starting_another(tmp_path, monkeypatch):
+    from app.models.task import TaskManager
+
+    client = _prepare_client(tmp_path, monkeypatch)
+    running = _prepare_task("sim_busy", "processing")
+    before = len(TaskManager().list_tasks(task_type="simulation_prepare"))
+
+    response = client.post("/api/simulation/prepare", json={"simulation_id": "sim_busy"})
+
+    data = response.json["data"]
+    assert response.status_code == 200 and response.json["success"] is True
+    assert data["task_id"] == running and data["already_running"] is True and data["status"] == "preparing"
+    assert data["expected_entities_count"] == 17
+    assert len(TaskManager().list_tasks(task_type="simulation_prepare")) == before   # nothing new was created
+
+    forced = client.post("/api/simulation/prepare", json={"simulation_id": "sim_busy", "force_regenerate": True})
+    assert forced.json["data"]["task_id"] == running                                   # force does not restart it either
+
+
+@pytest.mark.parametrize("status,idle", [("completed", 0), ("failed", 0), ("processing", 31 * 60)])
+def test_a_finished_or_dead_task_does_not_block_preparing(tmp_path, monkeypatch, status, idle):
+    from app.api import simulation as simulation_api
+
+    client = _prepare_client(tmp_path, monkeypatch, "sim_free")
+    _prepare_task("sim_free", status, idle_seconds=idle)
+    assert simulation_api._running_prepare_task("sim_free") is None
+    # (and the endpoint goes on to its normal checks: this project does not exist, so it reports that)
+    response = client.post("/api/simulation/prepare", json={"simulation_id": "sim_free"})
+    assert response.status_code == 404
+
+
+def test_another_simulations_task_does_not_block(tmp_path, monkeypatch):
+    from app.api import simulation as simulation_api
+
+    _prepare_client(tmp_path, monkeypatch, "sim_mine")
+    _prepare_task("sim_someone_else", "processing")
+    assert simulation_api._running_prepare_task("sim_mine") is None

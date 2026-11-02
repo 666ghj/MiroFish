@@ -19,6 +19,7 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ..utils.llm_client import clean_chat_text
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
 from ..utils.zep import (
     call_zep_read_with_retry,
@@ -248,9 +249,10 @@ class OasisProfileGenerator:
         zep_api_key: Optional[str] = None,
         graph_id: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
+        prep = Config.prep_llm()
+        self.api_key = api_key or prep["api_key"]
+        self.base_url = base_url or prep["base_url"]
+        self.model_name = model_name or prep["model_name"]
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -537,6 +539,26 @@ class OasisProfileGenerator:
         """判断是否是群体/机构类型实体"""
         return entity_type.lower() in self.GROUP_ENTITY_TYPES
     
+    @staticmethod
+    def _as_profile_object(value: Any) -> Dict[str, Any]:
+        """The profile object in a model's JSON reply.
+
+        Some models answer ``[{...}]`` (a list of one profile) or wrap it (``{"profile": {...}}``). Indexing a list
+        with ``"bio"`` raised "list indices must be integers" three times in a row and the entity got a
+        rule-generated persona instead of the model's. Anything that holds no profile object raises, so the caller
+        retries as it does for any other bad reply.
+        """
+        if isinstance(value, list):
+            objects = [item for item in value if isinstance(item, dict)]
+            value = next((o for o in objects if "bio" in o or "persona" in o), objects[0] if objects else None)
+        if isinstance(value, dict) and "bio" not in value and "persona" not in value:
+            wrapped = [v for v in value.values() if isinstance(v, dict) and ("bio" in v or "persona" in v)]
+            if len(wrapped) == 1:
+                value = wrapped[0]
+        if not isinstance(value, dict):
+            raise ValueError("the model's reply holds no JSON profile object")
+        return value
+
     def _generate_profile_with_llm(
         self,
         entity_name: str,
@@ -582,7 +604,8 @@ class OasisProfileGenerator:
                     # 不设置max_tokens，让LLM自由发挥
                 )
                 
-                content = extract_chat_completion_text(response)
+                # reasoning models (Gemma <thought>, DeepSeek <think>) answer after their notes
+                content = clean_chat_text(extract_chat_completion_text(response))
                 
                 # 检查是否被截断（finish_reason不是'stop'）
                 finish_reason = response.choices[0].finish_reason
@@ -592,7 +615,7 @@ class OasisProfileGenerator:
                 
                 # 尝试解析JSON
                 try:
-                    result = json.loads(content)
+                    result = self._as_profile_object(json.loads(content))
                     
                     # 验证必需字段
                     if "bio" not in result or not result["bio"]:

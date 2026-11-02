@@ -451,7 +451,9 @@ class Report:
     created_at: str = ""
     completed_at: str = ""
     error: Optional[str] = None
-    
+    # 报告若基于集合运行（ensemble）的统计生成，记录对应的 ensemble_id
+    ensemble_id: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "report_id": self.report_id,
@@ -463,7 +465,8 @@ class Report:
             "markdown_content": self.markdown_content,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
-            "error": self.error
+            "error": self.error,
+            "ensemble_id": self.ensemble_id,
         }
 
 
@@ -546,6 +549,58 @@ TOOL_DESC_INTERVIEW_AGENTS = """\
 - 采访摘要和观点对比
 
 【重要】需要OASIS模拟环境正在运行才能使用此功能！"""
+
+TOOL_DESC_ENSEMBLE_STATS = """\
+【集合运行统计 - 多次独立模拟的分布】
+本报告基于同一场景的多次带不同随机种子的独立模拟（集合运行）。这个工具返回对这些运行的聚合统计，
+所有数字都是跨运行的分布（均值、标准差、最小/最大、p10、中位数、p90），而不是单次运行的点估计。
+
+【可查看的部分】（参数 section）
+- overview: 运行次数、问卷解析率、免责声明（默认）
+- polls: 所有结束问卷问题的分布；也可以直接传问题ID（如 q1）只看某一题
+- stance_drift: 在模拟中改变了立场的Agent数量/比例
+- behavior: 动作数、发帖/评论/点赞数、各立场群体的发帖份额、互动最多的Agent、每轮活跃度
+- hot_topics: 热点关键词在各次运行中被提及的次数分布
+- replicates: 每次运行的种子、状态和关键结果
+
+【使用场景】
+- 需要引用概率、比例、数量或立场倾向时（务必引用"范围"，而不只是均值）
+- 需要判断某个结论是稳定的还是只出现在个别运行里
+- 需要用数据证实或推翻"生成器假设"
+"""
+
+ENSEMBLE_TOOL_HINT = "\n- ensemble_stats: 查看多次独立运行的统计分布（涉及数字、比例、概率时必须使用，并引用范围）"
+
+ENSEMBLE_PLAN_CONTEXT_TEMPLATE = """\
+【集合运行统计摘要】（基于 {n_ok} 次带不同随机种子的独立模拟，不是单次模拟）
+{summary_markdown}
+
+【生成器假设（待检验，不是事实；它从未提供给任何Agent）】
+{hypothesis}
+
+请让大纲围绕这些分布与不确定性展开：既要说明"通常会发生什么"，也要说明各次运行之间的分歧，
+并安排章节用集合运行的数据来证实或推翻上面的假设。
+
+"""
+
+ENSEMBLE_SECTION_RULES_TEMPLATE = """\
+
+═══════════════════════════════════════════════════════════════
+【集合运行规则 - 必须遵守】
+═══════════════════════════════════════════════════════════════
+
+本报告基于同一场景的 {n_ok} 次带不同随机种子的独立模拟（集合运行），而不是单次模拟。
+
+1. 涉及数量、比例、概率、立场倾向时，必须调用 ensemble_stats，并引用其中的"范围"
+   （p10–p90、最小–最大、各次运行之间的差异），不要只写单次运行的点估计。
+2. 如果各次运行的结果分歧很大（分布很宽，或少数运行与多数相反），要如实指出"不确定性大"，不要硬下结论。
+3. 数字只能引用 ensemble_stats 返回的值，禁止自行推算或四舍五入成更"漂亮"的数字。
+4. 报告中至少一次用报告语言说明下面这句免责声明（可以翻译，意思不变）：
+   {caveat}
+5. 下面的"生成器假设"只是一个待检验的假设，不是事实：请用集合运行的数据证实或推翻它，
+   并明确写出结论（证实 / 部分证实 / 推翻）。
+   生成器假设：{hypothesis}
+"""
 
 # ── 大纲规划 prompt ──
 
@@ -718,7 +773,7 @@ SECTION_SYSTEM_PROMPT_TEMPLATE = """\
 - insight_forge: 深度洞察分析，自动分解问题并多维度检索事实和关系
 - panorama_search: 广角全景搜索，了解事件全貌、时间线和演变过程
 - quick_search: 快速验证某个具体信息点
-- interview_agents: 采访模拟Agent，获取不同角色的第一人称观点和真实反应
+- interview_agents: 采访模拟Agent，获取不同角色的第一人称观点和真实反应{ensemble_tool_hint}
 
 ═══════════════════════════════════════════════════════════════
 【工作流程】
@@ -826,6 +881,13 @@ REACT_TOOL_LIMIT_MSG = (
     '请立即基于已获取的信息，以 "Final Answer:" 开头输出章节内容。'
 )
 
+REACT_MALFORMED_TOOL_CALL_MSG = (
+    "【格式错误】你的 <tool_call> 无法执行：缺少工具名称（name）。"
+    "必须使用下面的完整格式，参数放在 parameters 里：\n"
+    '<tool_call>\n{{"name": "工具名称", "parameters": {{"query": "检索内容"}}}}\n</tool_call>\n'
+    "可用工具：{valid_tools}。请重新输出一个正确的 <tool_call>，或在信息已足够时输出 Final Answer。"
+)
+
 REACT_UNUSED_TOOLS_HINT = "\n💡 你还没有使用过: {unused_list}，建议尝试不同工具获取多角度信息"
 
 REACT_FORCE_FINAL_MSG = "已达到工具调用限制，请直接输出 Final Answer: 并生成章节内容。"
@@ -893,24 +955,35 @@ class ReportAgent:
         simulation_id: str,
         simulation_requirement: str,
         llm_client: Optional[LLMClient] = None,
-        zep_tools: Optional[ZepToolsService] = None
+        zep_tools: Optional[ZepToolsService] = None,
+        ensemble_id: Optional[str] = None
     ):
         """
         初始化Report Agent
-        
+
         Args:
             graph_id: 图谱ID
             simulation_id: 模拟ID
             simulation_requirement: 模拟需求描述
             llm_client: LLM客户端（可选）
             zep_tools: Zep工具服务（可选）
+            ensemble_id: 集合运行ID（可选）。提供时，报告基于多次独立运行的统计分布：
+                规划阶段拿到统计摘要，章节可以调用 ensemble_stats 工具；没有时与以前完全一致。
         """
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
-        
-        self.llm = llm_client or LLMClient()
+        self.ensemble_id = ensemble_id
+        self._ensemble_summary: Optional[Dict[str, Any]] = None
+        self._ensemble_markdown = ""
+        self._hypothesis = ""
+
+        # The report uses the same model as the simulation preparation (LLM_PREP_*, else the main one).
+        self.llm = llm_client or LLMClient.for_preparation()
         self.zep_tools = zep_tools or ZepToolsService()
+
+        if ensemble_id:
+            self._load_ensemble_context()
         
         # 工具定义
         self.tools = self._define_tools()
@@ -922,8 +995,41 @@ class ReportAgent:
         
         logger.info(t('report.agentInitDone', graphId=graph_id, simulationId=simulation_id))
     
+    def _load_ensemble_context(self) -> None:
+        """Load the ensemble's summary and the generator's hypothesis (ensemble reports only)."""
+        from .ensemble_runner import EnsembleManager
+        from .simulation_manager import SimulationManager
+
+        summary = EnsembleManager.summary(self.ensemble_id)
+        if summary is None:
+            raise ValueError(f"集合运行 {self.ensemble_id} 还没有聚合结果，无法基于它生成报告")
+        self._ensemble_summary = summary
+        # summary.md is capped so the planning prompt stays a reasonable size
+        self._ensemble_markdown = (EnsembleManager.summary_markdown(self.ensemble_id) or "")[:12000]
+
+        config = SimulationManager().get_simulation_config(self.simulation_id) or {}
+        # narrative_direction is the generator's guess at the outcome. It is never
+        # shown to simulated agents; here it is only a hypothesis to test.
+        self._hypothesis = str((config.get("event_config") or {}).get("narrative_direction") or "").strip()
+
+    def _ensemble_hypothesis_text(self) -> str:
+        return self._hypothesis or "（生成器没有给出假设）"
+
     def _define_tools(self) -> Dict[str, Dict[str, Any]]:
         """定义可用工具"""
+        tools = self._base_tools()
+        if self.ensemble_id:
+            tools["ensemble_stats"] = {
+                "name": "ensemble_stats",
+                "description": TOOL_DESC_ENSEMBLE_STATS,
+                "parameters": {
+                    "section": "要查看的部分：overview / polls / 问题ID（如 q1）/ stance_drift / behavior / hot_topics / replicates（可选，默认 overview）"
+                }
+            }
+        return tools
+
+    def _base_tools(self) -> Dict[str, Dict[str, Any]]:
+        """基础检索工具（有没有集合运行都有）"""
         return {
             "insight_forge": {
                 "name": "insight_forge",
@@ -1011,6 +1117,13 @@ class ReportAgent:
                 )
                 return result.to_text()
             
+            elif tool_name == "ensemble_stats" and self.ensemble_id:
+                from .ensemble_aggregator import select_summary_section
+
+                section = parameters.get("section") or parameters.get("query") or "overview"
+                result = select_summary_section(self._ensemble_summary or {}, section)
+                return json.dumps(result, ensure_ascii=False, indent=1)
+
             elif tool_name == "interview_agents":
                 # 深度采访 - 调用真实的OASIS采访API获取模拟Agent的回答（双平台）
                 interview_topic = parameters.get("interview_topic", parameters.get("query", ""))
@@ -1085,9 +1198,13 @@ class ReportAgent:
         for match in re.finditer(xml_pattern, response, re.DOTALL):
             try:
                 call_data = json.loads(match.group(1))
-                tool_calls.append(call_data)
             except json.JSONDecodeError:
-                pass
+                continue
+            # A block without a tool name (a model that wrote only the arguments) is not a call:
+            # everything downstream reads call["name"].
+            call = self._normalize_tool_call(call_data)
+            if call is not None:
+                tool_calls.append(call)
 
         if tool_calls:
             return tool_calls
@@ -1099,7 +1216,7 @@ class ReportAgent:
             try:
                 call_data = json.loads(stripped)
                 if self._is_valid_tool_call(call_data):
-                    tool_calls.append(call_data)
+                    tool_calls.append(self._normalize_tool_call(call_data))
                     return tool_calls
             except json.JSONDecodeError:
                 pass
@@ -1111,17 +1228,37 @@ class ReportAgent:
             try:
                 call_data = json.loads(match.group(1))
                 if self._is_valid_tool_call(call_data):
-                    tool_calls.append(call_data)
+                    tool_calls.append(self._normalize_tool_call(call_data))
             except json.JSONDecodeError:
                 pass
 
         return tool_calls
 
+    @staticmethod
+    def _normalize_tool_call(data: Any) -> Optional[Dict[str, Any]]:
+        """``{"name", "parameters"}`` for a parsed tag-format call, or None when it names no tool.
+
+        Accepts ``tool`` for ``name`` and ``params`` / ``arguments`` for ``parameters``. Models also write the
+        arguments next to the name (``{"name": "insight_forge", "query": "..."}``); those keys are the
+        parameters, otherwise the tool runs with no query ("Zep search query must not be empty"). A tool name that is not one of ours
+        is kept: executing it answers with the list of valid tools, which is better feedback for the model
+        than silence. Only a call with no usable name at all is dropped.
+        """
+        if not isinstance(data, dict):
+            return None
+        name = data.get("name") or data.get("tool")
+        if not isinstance(name, str) or not name.strip():
+            return None
+        named = next((data[key] for key in ("parameters", "params", "arguments") if isinstance(data.get(key), dict)), {})
+        loose = {k: v for k, v in data.items() if k not in ("name", "tool", "parameters", "params", "arguments")}
+        return {"name": name.strip(), "parameters": {**loose, **named}}
+
     def _is_valid_tool_call(self, data: dict) -> bool:
         """校验解析出的 JSON 是否是合法的工具调用"""
         # 支持 {"name": ..., "parameters": ...} 和 {"tool": ..., "params": ...} 两种键名
         tool_name = data.get("name") or data.get("tool")
-        if tool_name and tool_name in self.VALID_TOOL_NAMES:
+        # self.tools also holds ensemble_stats when the report is built on an ensemble
+        if tool_name and (tool_name in self.VALID_TOOL_NAMES or tool_name in self.tools):
             # 统一键名为 name / parameters
             if "tool" in data:
                 data["name"] = data.pop("tool")
@@ -1173,8 +1310,29 @@ class ReportAgent:
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
         return cleaned.strip()
 
+    def _ensemble_plan_context(self) -> str:
+        """The ensemble summary placed ahead of the planning prompt ("" without an ensemble)."""
+        if not self.ensemble_id:
+            return ""
+        return ENSEMBLE_PLAN_CONTEXT_TEMPLATE.format(
+            n_ok=(self._ensemble_summary or {}).get("n_replicates_ok", "?"),
+            summary_markdown=self._ensemble_markdown,
+            hypothesis=self._ensemble_hypothesis_text(),
+        )
+
+    def _ensemble_section_rules(self) -> str:
+        """Rules appended to every section prompt ("" without an ensemble)."""
+        if not self.ensemble_id:
+            return ""
+        summary = self._ensemble_summary or {}
+        return ENSEMBLE_SECTION_RULES_TEMPLATE.format(
+            n_ok=summary.get("n_replicates_ok", "?"),
+            caveat=summary.get("caveat", ""),
+            hypothesis=self._ensemble_hypothesis_text(),
+        )
+
     def plan_outline(
-        self, 
+        self,
         progress_callback: Optional[Callable] = None
     ) -> ReportOutline:
         """
@@ -1203,7 +1361,7 @@ class ReportAgent:
             progress_callback("planning", 30, t('progress.generatingOutline'))
         
         system_prompt = f"{PLAN_SYSTEM_PROMPT}\n\n{get_language_instruction()}"
-        user_prompt = PLAN_USER_PROMPT_TEMPLATE.format(
+        user_prompt = self._ensemble_plan_context() + PLAN_USER_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
             total_nodes=context.get('graph_statistics', {}).get('total_nodes', 0),
             total_edges=context.get('graph_statistics', {}).get('total_edges', 0),
@@ -1297,8 +1455,9 @@ class ReportAgent:
             simulation_requirement=self.simulation_requirement,
             section_title=section.title,
             tools_description=self._get_tools_description(),
+            ensemble_tool_hint=ENSEMBLE_TOOL_HINT if self.ensemble_id else "",
         )
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}{self._ensemble_section_rules()}"
 
         # 构建用户prompt - 每个已完成章节各传入最大4000字
         if previous_sections:
@@ -1326,8 +1485,11 @@ class ReportAgent:
         max_iterations = 5  # 最大迭代轮数
         min_tool_calls = 3  # 最少工具调用次数
         conflict_retries = 0  # 工具调用与Final Answer同时出现的连续冲突次数
+        malformed_retries = 0  # <tool_call> 写了但无法执行（如缺少工具名）而要求重写的次数
         used_tools = set()  # 记录已调用过的工具名
         all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
+        if self.ensemble_id:
+            all_tools.add("ensemble_stats")
 
         # 报告上下文，用于InsightForge的子问题生成
         report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement}"
@@ -1410,6 +1572,17 @@ class ReportAgent:
                     has_tool_calls=has_tool_calls,
                     has_final_answer=has_final_answer
                 )
+
+            # ── <tool_call> 块无法执行（如没有工具名）：要求按格式重写，而不是当成正文 ──
+            if not has_tool_calls and not has_final_answer and "<tool_call>" in response and malformed_retries < 2:
+                malformed_retries += 1
+                logger.warning(f"Section '{section.title}': unusable <tool_call> (attempt {malformed_retries}), asking again")
+                messages.append({"role": "assistant", "content": ReportAgent._strip_fake_tool_results(response)})
+                messages.append({
+                    "role": "user",
+                    "content": REACT_MALFORMED_TOOL_CALL_MSG.format(valid_tools=", ".join(sorted(all_tools))),
+                })
+                continue
 
             # ── 情况1：LLM 输出了 Final Answer ──
             if has_final_answer:
@@ -1612,9 +1785,10 @@ class ReportAgent:
             graph_id=self.graph_id,
             simulation_requirement=self.simulation_requirement,
             status=ReportStatus.PENDING,
-            created_at=datetime.now().isoformat()
+            created_at=datetime.now().isoformat(),
+            ensemble_id=self.ensemble_id
         )
-        
+
         # 已完成的章节标题列表（用于进度追踪）
         completed_section_titles = []
         
@@ -2540,7 +2714,8 @@ class ReportManager:
             markdown_content=markdown_content,
             created_at=data.get('created_at', ''),
             completed_at=data.get('completed_at', ''),
-            error=data.get('error')
+            error=data.get('error'),
+            ensemble_id=data.get('ensemble_id')
         )
     
     @classmethod
@@ -2564,6 +2739,19 @@ class ReportManager:
         
         return None
     
+    @classmethod
+    def find_completed_report(cls, simulation_id: str, ensemble_id: Optional[str] = None) -> Optional[Report]:
+        """The newest COMPLETED report of a simulation built on exactly this ensemble.
+
+        ``ensemble_id=None`` means a plain (single-run) report. A plain report and an
+        ensemble report of the same simulation are different documents, so one never
+        stands in for the other.
+        """
+        for report in cls.list_reports(simulation_id=simulation_id, limit=1000):
+            if report.status == ReportStatus.COMPLETED and (report.ensemble_id or None) == (ensemble_id or None):
+                return report
+        return None
+
     @classmethod
     def list_reports(cls, simulation_id: Optional[str] = None, limit: int = 50) -> List[Report]:
         """列出报告"""

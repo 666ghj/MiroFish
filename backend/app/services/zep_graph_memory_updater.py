@@ -16,6 +16,7 @@ from ..utils.locale import get_locale, set_locale
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
     call_zep_read_with_retry,
+    call_zep_write_with_pre_rejection_retry,
     get_zep_client,
 )
 
@@ -235,6 +236,12 @@ class ZepGraphMemoryUpdater:
     
     # 发送间隔（秒），避免请求过快
     SEND_INTERVAL = 0.5
+
+    # Episode ingestion polling budget per cycle. Large runs queue hundreds
+    # of episodes; sweeping every one each few seconds triggers 429s.
+    EPISODE_CHECKS_PER_CYCLE = 20
+    EPISODE_REQUEST_PACING_SECONDS = 0.5
+    EPISODE_CYCLE_INTERVAL_SECONDS = 5.0
     
     # Zep recommends keeping an episode below 10,000 characters. Leave room
     # for future source formatting changes.
@@ -312,7 +319,7 @@ class ZepGraphMemoryUpdater:
     
     def stop(self):
         """Drain the worker, flush tail events, and wait for Cloud ingestion."""
-        deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        drain_deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
         # Serialize the accepting->closed transition with add_activity's
         # check+enqueue operation. This closes the small race where a producer
         # could enqueue after both the worker and final flush had exited.
@@ -320,7 +327,7 @@ class ZepGraphMemoryUpdater:
             self._running = False
 
         if self._worker_thread and self._worker_thread.is_alive():
-            join_timeout = max(0.0, deadline - time.time())
+            join_timeout = max(0.0, drain_deadline - time.time())
             self._worker_thread.join(timeout=join_timeout)
             if self._worker_thread.is_alive():
                 raise TimeoutError(
@@ -330,7 +337,7 @@ class ZepGraphMemoryUpdater:
         # The worker has drained the queue. Only now is it safe to flush
         # buffers; doing this before join loses an item already dequeued by the
         # worker but not yet buffered.
-        self._flush_remaining(deadline=deadline)
+        self._flush_remaining(deadline=drain_deadline)
 
         if self._failed_batches:
             raise RuntimeError(
@@ -338,7 +345,11 @@ class ZepGraphMemoryUpdater:
                 "simulation graph ingestion is incomplete"
             )
 
-        self._wait_for_pending_episodes(deadline=deadline)
+        # Ingestion gets its own fresh budget: a long drain must not eat into
+        # the time Zep needs to process already-accepted episodes.
+        self._wait_for_pending_episodes(
+            deadline=time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        )
         
         logger.info(f"ZepGraphMemoryUpdater 已停止: graph_id={self.graph_id}, "
                    f"total_activities={self._total_activities}, "
@@ -491,29 +502,33 @@ class ZepGraphMemoryUpdater:
             if deadline is not None and time.time() >= deadline:
                 raise _DrainDeadlineExceeded(processed_count)
             try:
-                episode = self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text,
-                    created_at=self._to_rfc3339(payload_activities[-1].timestamp),
-                    source_description="MiroFish simulation activity batch",
-                    metadata={
-                        "source": "mirofish_simulation",
-                        "simulation_id": self.simulation_id,
-                        "platform": platform,
-                        "activity_count": len(payload_activities),
-                        "first_round": min(a.round_num for a in payload_activities),
-                        "last_round": max(a.round_num for a in payload_activities),
-                        "agent_ids": ",".join(
-                            str(value)
-                            for value in sorted({a.agent_id for a in payload_activities})
-                        ),
-                        "action_types": ",".join(
-                            value
-                            for value in sorted({a.action_type for a in payload_activities})
-                            if value
-                        ) or "unknown",
-                    },
+                episode = call_zep_write_with_pre_rejection_retry(
+                    lambda: self.client.graph.add(
+                        graph_id=self.graph_id,
+                        type="text",
+                        data=combined_text,
+                        created_at=self._to_rfc3339(payload_activities[-1].timestamp),
+                        source_description="MiroFish simulation activity batch",
+                        metadata={
+                            "source": "mirofish_simulation",
+                            "simulation_id": self.simulation_id,
+                            "platform": platform,
+                            "activity_count": len(payload_activities),
+                            "first_round": min(a.round_num for a in payload_activities),
+                            "last_round": max(a.round_num for a in payload_activities),
+                            "agent_ids": ",".join(
+                                str(value)
+                                for value in sorted({a.agent_id for a in payload_activities})
+                            ),
+                            "action_types": ",".join(
+                                value
+                                for value in sorted({a.action_type for a in payload_activities})
+                                if value
+                            ) or "unknown",
+                        },
+                    ),
+                    operation_name=f"add {platform} episode",
+                    deadline=deadline,
                 )
 
                 episode_uuid = (
@@ -597,27 +612,37 @@ class ZepGraphMemoryUpdater:
                     del self._platform_buffers[platform][:processed_count]
 
     def _wait_for_pending_episodes(self, *, deadline: float | None = None) -> None:
-        pending = set(self._pending_episode_uuids)
+        pending = list(self._pending_episode_uuids)
         if not pending:
             return
 
         if deadline is None:
             deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        # Zep ingests queued episodes roughly one per minute, so sweeping a
+        # GET per pending episode every 3s only produced 429 storms that ate
+        # the deadline. Check the oldest episodes first (ingestion follows
+        # arrival order), pace the requests, and idle between cycles.
         while pending:
             if time.time() >= deadline:
                 raise TimeoutError(
                     f"Zep simulation ingestion timed out with {len(pending)} "
                     "episode(s) pending"
                 )
-            for episode_uuid in list(pending):
+            window = pending[: self.EPISODE_CHECKS_PER_CYCLE]
+            unchecked_tail = pending[len(window):]
+            still_pending = []
+            for index, episode_uuid in enumerate(window):
+                if index:
+                    time.sleep(self.EPISODE_REQUEST_PACING_SECONDS)
                 episode = call_zep_read_with_retry(
                     lambda: self.client.graph.episode.get(uuid_=episode_uuid),
                     operation_name=f"poll simulation episode {episode_uuid}",
                 )
-                if getattr(episode, "processed", False):
-                    pending.remove(episode_uuid)
-            if pending:
-                time.sleep(3)
+                if not getattr(episode, "processed", False):
+                    still_pending.append(episode_uuid)
+            if still_pending or unchecked_tail:
+                time.sleep(self.EPISODE_CYCLE_INTERVAL_SECONDS)
+            pending = still_pending + unchecked_tail
         self._pending_episode_uuids = []
     
     def get_stats(self) -> Dict[str, Any]:
@@ -662,11 +687,18 @@ class ZepGraphMemoryManager:
         Returns:
             ZepGraphMemoryUpdater实例
         """
+        # Drain any previous updater outside the manager lock: stop() can poll
+        # Cloud for minutes and would block get_updater() callers meanwhile.
+        # On failure the old updater stays registered (same as before) so
+        # report/deletion barriers still see the incomplete ingestion.
         with cls._lock:
-            # 如果已存在，先停止旧的
-            if simulation_id in cls._updaters:
-                cls._updaters[simulation_id].stop()
-            
+            previous = cls._updaters.get(simulation_id)
+        if previous is not None:
+            previous.stop()
+
+        with cls._lock:
+            if previous is not None and cls._updaters.get(simulation_id) is previous:
+                cls._updaters.pop(simulation_id, None)
             updater = ZepGraphMemoryUpdater(
                 graph_id,
                 simulation_id=simulation_id,

@@ -13,6 +13,7 @@ from ..config import Config
 from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
 from ..services.simulation_manager import SimulationManager
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.ensemble_runner import EnsembleManager, EnsembleError
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
 from ..models.project import ProjectManager, ProjectStatus
 from ..models.task import TaskManager, TaskStatus
@@ -29,6 +30,22 @@ logger = get_logger('mirofish.api.report')
 
 # ============== 报告生成接口 ==============
 
+def _ensemble_report_problem(simulation_id: str, ensemble_id: str):
+    """None when a report can be built on this ensemble, else (error message, HTTP status)."""
+    try:
+        ensemble = EnsembleManager.get(ensemble_id)
+    except EnsembleError as error:
+        return str(error), error.status_code
+    if ensemble.get("base_simulation_id") != simulation_id:
+        return "The ensemble belongs to a different simulation", 400
+    if ensemble.get("status") not in ("completed", "partial") or EnsembleManager.summary(ensemble_id) is None:
+        return (
+            "The ensemble has not finished aggregating; wait for it to complete "
+            "before generating a report"
+        ), 409
+    return None
+
+
 @report_bp.route('/generate', methods=['POST'])
 def generate_report():
     """
@@ -40,7 +57,8 @@ def generate_report():
     请求（JSON）：
         {
             "simulation_id": "sim_xxxx",    // 必填，模拟ID
-            "force_regenerate": false        // 可选，强制重新生成
+            "force_regenerate": false,       // 可选，强制重新生成
+            "ensemble_id": "ens_xxxx"        // 可选，基于该集合运行（多次独立模拟）的统计分布生成报告
         }
     
     返回：
@@ -70,6 +88,23 @@ def generate_report():
                 "success": False,
                 "error": "force_regenerate must be a JSON boolean",
             }), 400
+
+        # Explicit opt-in: generate from a Zep graph that is still missing some of the run's activity (see below)
+        allow_partial_graph = data.get('allow_partial_graph', False)
+        if not isinstance(allow_partial_graph, bool):
+            return jsonify({
+                "success": False,
+                "error": "allow_partial_graph must be a JSON boolean",
+            }), 400
+
+        ensemble_id = data.get('ensemble_id')
+        if ensemble_id is not None:
+            if not isinstance(ensemble_id, str) or not ensemble_id.strip():
+                return jsonify({
+                    "success": False,
+                    "error": "ensemble_id must be a non-empty string",
+                }), 400
+            ensemble_id = ensemble_id.strip()
         
         # 获取模拟信息
         manager = SimulationManager()
@@ -81,6 +116,11 @@ def generate_report():
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
 
+        if ensemble_id:
+            problem = _ensemble_report_problem(simulation_id, ensemble_id)
+            if problem:
+                return jsonify({"success": False, "error": problem[0]}), problem[1]
+
         run_state = SimulationRunner.get_run_state(simulation_id)
         updater = ZepGraphMemoryManager.get_updater(simulation_id)
         active_statuses = {
@@ -89,9 +129,15 @@ def generate_report():
             RunnerStatus.PAUSED,
             RunnerStatus.STOPPING,
         }
-        if updater is not None or (
+        # A run that played every round but whose Zep graph sync timed out (Zep can take hours to process a big
+        # run) is blocked by default: the report searches that graph. The user may still accept a partial graph.
+        graph_sync_only = (
+            not ensemble_id and SimulationRunner.graph_sync_incomplete_only(simulation_id)
+        )
+        partial_ok = allow_partial_graph and graph_sync_only
+        if not partial_ok and (updater is not None or (
             run_state is not None and run_state.runner_status in active_statuses
-        ):
+        )):
             return jsonify({
                 "success": False,
                 "error": (
@@ -99,12 +145,13 @@ def generate_report():
                     "wait for a terminal run status before generating a report"
                 ),
                 "ingestion_pending": updater is not None,
+                "can_generate_partial": graph_sync_only,
             }), 409
         successful_terminal_statuses = {
             RunnerStatus.COMPLETED,
             RunnerStatus.STOPPED,
         }
-        if (
+        if not ensemble_id and not partial_ok and (
             run_state is None
             or run_state.runner_status not in successful_terminal_statuses
         ):
@@ -114,6 +161,7 @@ def generate_report():
                     "A successfully completed or stopped simulation is required "
                     "before generating a report"
                 ),
+                "can_generate_partial": graph_sync_only,
             }), 409
 
         # 获取项目信息
@@ -183,10 +231,18 @@ def generate_report():
                     "success": False,
                     "error": "The project graph changed while reporting was starting",
                 }), 409
-            if refreshed_updater is not None or (
+            # The same opt-in as above, judged again under the lock: a run that played every round and only has
+            # a Zep graph that is still catching up keeps its updater registered, which is exactly what the
+            # barrier checks for.
+            partial_ok_now = (
+                allow_partial_graph
+                and not ensemble_id
+                and SimulationRunner.graph_sync_incomplete_only(simulation_id)
+            )
+            if not partial_ok_now and (refreshed_updater is not None or (
                 refreshed_run_state is not None
                 and refreshed_run_state.runner_status in active_statuses
-            ):
+            )):
                 return jsonify({
                     "success": False,
                     "error": (
@@ -195,7 +251,7 @@ def generate_report():
                     ),
                     "ingestion_pending": refreshed_updater is not None,
                 }), 409
-            if (
+            if not ensemble_id and not partial_ok_now and (
                 refreshed_run_state is None
                 or refreshed_run_state.runner_status
                 not in successful_terminal_statuses
@@ -212,18 +268,18 @@ def generate_report():
             # concurrent rerun cannot make the returned report stale between
             # the status check and response.
             if not force_regenerate:
-                existing_report = ReportManager.get_report_by_simulation(
-                    simulation_id
+                # A plain report and an ensemble report of one simulation are different
+                # documents: only reuse a report built on the same ensemble (or none).
+                existing_report = ReportManager.find_completed_report(
+                    simulation_id, ensemble_id
                 )
-                if (
-                    existing_report
-                    and existing_report.status == ReportStatus.COMPLETED
-                ):
+                if existing_report:
                     return jsonify({
                         "success": True,
                         "data": {
                             "simulation_id": simulation_id,
                             "report_id": existing_report.report_id,
+                            "ensemble_id": existing_report.ensemble_id,
                             "status": "completed",
                             "message": t('api.reportAlreadyExists'),
                             "already_generated": True
@@ -236,7 +292,8 @@ def generate_report():
                 metadata={
                     "simulation_id": simulation_id,
                     "graph_id": graph_id,
-                    "report_id": report_id
+                    "report_id": report_id,
+                    "ensemble_id": ensemble_id
                 }
             )
             current_locale = get_locale()
@@ -255,7 +312,8 @@ def generate_report():
                     agent = ReportAgent(
                         graph_id=graph_id,
                         simulation_id=simulation_id,
-                        simulation_requirement=simulation_requirement
+                        simulation_requirement=simulation_requirement,
+                        ensemble_id=ensemble_id
                     )
 
                     def progress_callback(stage, progress, message):
@@ -303,6 +361,7 @@ def generate_report():
             "data": {
                 "simulation_id": simulation_id,
                 "report_id": report_id,
+                "ensemble_id": ensemble_id,
                 "task_id": task_id,
                 "status": "generating",
                 "message": t('api.reportGenerateStarted'),

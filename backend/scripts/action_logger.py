@@ -16,7 +16,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
 class PlatformActionLogger:
@@ -48,9 +48,18 @@ class PlatformActionLogger:
         action_type: str,
         action_args: Optional[Dict[str, Any]] = None,
         result: Optional[str] = None,
-        success: bool = True
+        success: bool = True,
+        phase: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None
     ):
-        """记录一个动作"""
+        """记录一个动作
+
+        phase 标记非常规记录：
+            "setup"    运行开始时播种的关注图（不计入动作统计、不写入Zep）
+            "injected" 用户编写的定时事件（正常的发帖动作，附带 event_id）
+            "poll"     结束时的最终问卷访谈（不计入动作统计）
+        常规的轮次动作不带 phase 字段。
+        """
         entry = {
             "round": round_num,
             "timestamp": datetime.now().isoformat(),
@@ -61,11 +70,15 @@ class PlatformActionLogger:
             "result": result,
             "success": success,
         }
-        
+        if phase:
+            entry["phase"] = phase
+        if extra:
+            entry.update(extra)
+
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
-    
-    def log_round_start(self, round_num: int, simulated_hour: int):
+
+    def log_round_start(self, round_num: int, simulated_hour: int, active_agent_ids: Optional[List[int]] = None):
         """记录轮次开始"""
         entry = {
             "round": round_num,
@@ -73,18 +86,47 @@ class PlatformActionLogger:
             "event_type": "round_start",
             "simulated_hour": simulated_hour,
         }
+        if active_agent_ids is not None:
+            entry["active_agent_ids"] = list(active_agent_ids)
         
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
     
-    def log_round_end(self, round_num: int, actions_count: int):
-        """记录轮次结束"""
+    def log_agent_error(self, round_num: int, agent_id: int, error_kind: str, message: str):
+        """记录某个Agent本轮的模型调用失败（OASIS 会吞掉这类错误，界面据此提示用户）"""
+        entry = {
+            "round": round_num,
+            "timestamp": datetime.now().isoformat(),
+            "event_type": "agent_error",
+            "agent_id": agent_id,
+            "error_kind": error_kind,
+            "message": message,
+        }
+
+        with open(self.log_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+    def log_poll_status(self, status: Dict[str, Any]):
+        """记录最终问卷的进度（已回答人数、第几次重试、最近的错误类型）"""
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "event_type": "poll_status",
+            **status,
+        }
+
+        with open(self.log_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+    def log_round_end(self, round_num: int, actions_count: int, failed_count: Optional[int] = None):
+        """记录轮次结束（failed_count: 本轮模型调用失败的Agent数）"""
         entry = {
             "round": round_num,
             "timestamp": datetime.now().isoformat(),
             "event_type": "round_end",
             "actions_count": actions_count,
         }
+        if failed_count is not None:
+            entry["failed_count"] = failed_count
         
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
@@ -102,6 +144,20 @@ class PlatformActionLogger:
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
     
+    def log_resume(self, from_round: int, exact: bool, memory: bool = False):
+        """记录从上次完成的一轮之后继续（只是一个标记，监控据此忽略；日志已被截断到该轮结尾）"""
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "event_type": "resume",
+            "platform": self.platform,
+            "from_round": from_round,
+            "exact": exact,
+            "memory": memory,
+        }
+
+        with open(self.log_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
     def log_simulation_end(self, total_rounds: int, total_actions: int):
         """记录模拟结束"""
         entry = {
@@ -239,7 +295,7 @@ class ActionLogger:
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
     
-    def log_round_start(self, round_num: int, simulated_hour: int, platform: str):
+    def log_round_start(self, round_num: int, simulated_hour: int, platform: str, active_agent_ids: Optional[List[int]] = None):
         entry = {
             "round": round_num,
             "timestamp": datetime.now().isoformat(),
@@ -247,6 +303,8 @@ class ActionLogger:
             "event_type": "round_start",
             "simulated_hour": simulated_hour,
         }
+        if active_agent_ids is not None:
+            entry["active_agent_ids"] = list(active_agent_ids)
         
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')

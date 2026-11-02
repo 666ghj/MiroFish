@@ -1,6 +1,7 @@
 """\n配置管理\n统一从项目根目录的 .env 文件加载配置\n"""
 
 import os
+import sys
 from dotenv import load_dotenv
 
 # 加载项目根目录的 .env 文件
@@ -12,6 +13,11 @@ if os.path.exists(project_root_env):
 else:
     # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
     load_dotenv(override=True)
+
+# 新的模型接口名称（TWITTER_LLM_* / REDDIT_LLM_* / TWITTER_RERANKER_* / MAIN_LLM_*）映射到代码读取的旧名称
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import env_aliases  # noqa: E402
+env_aliases.apply()
 
 
 class Config:
@@ -28,7 +34,27 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
-    
+    # 配置生成阶段单次LLM请求的最长等待时间（秒）；超时后重试，而不是无限等待
+    LLM_REQUEST_TIMEOUT = float(os.environ.get('LLM_REQUEST_TIMEOUT', '300'))
+
+    # Optional stronger/faster model used only while PREPARING a simulation
+    # (agent personas and the simulation config). Needs LLM_PREP_API_KEY and
+    # LLM_PREP_MODEL_NAME; LLM_PREP_BASE_URL falls back to LLM_BASE_URL.
+    LLM_PREP_API_KEY = os.environ.get('LLM_PREP_API_KEY')
+    LLM_PREP_BASE_URL = os.environ.get('LLM_PREP_BASE_URL')
+    LLM_PREP_MODEL_NAME = os.environ.get('LLM_PREP_MODEL_NAME')
+
+    @classmethod
+    def prep_llm(cls) -> dict:
+        """(api_key, base_url, model_name) for preparation calls: the PREP model if set, else the main one."""
+        if cls.LLM_PREP_API_KEY and cls.LLM_PREP_MODEL_NAME:
+            return {
+                "api_key": cls.LLM_PREP_API_KEY,
+                "base_url": cls.LLM_PREP_BASE_URL or cls.LLM_BASE_URL,
+                "model_name": cls.LLM_PREP_MODEL_NAME,
+            }
+        return {"api_key": cls.LLM_API_KEY, "base_url": cls.LLM_BASE_URL, "model_name": cls.LLM_MODEL_NAME}
+
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
     

@@ -285,7 +285,7 @@ def test_monitor_start_failure_terminates_the_spawned_process(monkeypatch, tmp_p
         }),
         encoding="utf-8",
     )
-    (scripts_dir / "run_twitter_simulation.py").write_text("pass\n", encoding="utf-8")
+    (scripts_dir / "run_parallel_simulation.py").write_text("pass\n", encoding="utf-8")
 
     class Process:
         pid = 123

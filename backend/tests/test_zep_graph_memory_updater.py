@@ -3,6 +3,7 @@ import threading
 from queue import Queue
 
 import pytest
+from zep_cloud.core.api_error import ApiError as ZepApiError
 
 from app.services import zep_graph_memory_updater as updater_module
 from app.services.zep_graph_memory_updater import (
@@ -118,6 +119,65 @@ def test_failed_non_idempotent_write_is_reported_by_stop(monkeypatch):
         updater.stop()
 
     assert updater.get_stats()["failed_count"] == 1
+
+
+def test_rate_limited_episode_write_is_replayed_without_failing(monkeypatch):
+    writes = []
+
+    def add(**kwargs):
+        writes.append(kwargs)
+        if len(writes) == 1:
+            raise ZepApiError(status_code=429, body={"message": "rate limited"})
+        return SimpleNamespace(uuid_="episode-1")
+
+    updater = _updater(monkeypatch, add)
+    monkeypatch.setattr(updater_module.time, "sleep", lambda _seconds: None)
+
+    updater._send_batch_activities([_activity()], "twitter")
+
+    assert len(writes) == 2
+    assert updater._failed_batches == []
+    assert updater.get_stats()["items_sent"] == 1
+
+
+def test_ambiguous_write_outcome_stays_fail_closed(monkeypatch):
+    calls = []
+
+    def add(**_kwargs):
+        calls.append(True)
+        raise ZepApiError(status_code=500, body={"message": "boom"})
+
+    updater = _updater(monkeypatch, add)
+    monkeypatch.setattr(updater_module.time, "sleep", lambda _seconds: None)
+
+    updater._send_batch_activities([_activity()], "twitter")
+
+    assert len(calls) == 1
+    assert len(updater._failed_batches) == 1
+
+
+def test_episode_polling_checks_oldest_window_per_cycle(monkeypatch):
+    updater = _updater(monkeypatch, lambda **_kwargs: SimpleNamespace(uuid_="x"))
+    window = updater.EPISODE_CHECKS_PER_CYCLE
+    updater._pending_episode_uuids = [f"episode-{i}" for i in range(window + 5)]
+    checked = []
+    monkeypatch.setattr(
+        updater.client.graph.episode,
+        "get",
+        lambda uuid_: checked.append(uuid_)
+        or SimpleNamespace(processed=True),
+    )
+    monkeypatch.setattr(updater_module.time, "time", lambda: 0.0)
+    sleeps = []
+    monkeypatch.setattr(updater_module.time, "sleep", sleeps.append)
+
+    updater._wait_for_pending_episodes()
+
+    assert checked[:window] == [f"episode-{i}" for i in range(window)]
+    assert len(checked) == window + 5
+    assert updater._pending_episode_uuids == []
+    # One idle between the two cycles; request pacing fires inside each cycle.
+    assert sleeps.count(updater.EPISODE_CYCLE_INTERVAL_SECONDS) == 1
 
 
 def test_failed_simulation_action_is_not_ingested(monkeypatch):
