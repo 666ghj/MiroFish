@@ -2294,6 +2294,8 @@ def get_run_status(simulation_id: str):
         # Every round was played; only Zep is still taking in the activity. The UI shows this as "finished, graph
         # sync pending" (with a retry and a partial report) rather than as a failed simulation.
         data["graph_sync_pending"] = SimulationRunner.graph_sync_incomplete_only(simulation_id)
+        # "stopping" with no process left means the backend is waiting for Zep, not for the run: killing does nothing
+        data["process_alive"] = SimulationRunner.has_live_process(simulation_id)
         return jsonify({
             "success": True,
             "data": data

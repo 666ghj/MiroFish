@@ -248,6 +248,7 @@
     "retryGraphSyncBtn": "重试图谱同步",
     "retryingGraphSync": "等待 Zep...",
     "graphSyncNote": "模拟已跑完所有轮次。Zep 仍在处理其中一部分活动，大型运行可能需要数小时。你可以现在用已就绪的那部分图谱生成报告，也可以稍后重试同步。",
+    "stoppingZepNote": "模拟已结束，正在等待 Zep 处理完其活动（最长十分钟）；再次点击“停止”不会有任何效果。结束后你可以重试同步，或用已就绪的部分图谱生成报告。",
     "pauseBtn": "暂停",
     "continueBtn": "继续",
     "stopAfterRoundBtn": "本轮结束后停止",

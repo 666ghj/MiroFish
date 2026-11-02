@@ -248,6 +248,7 @@
     "retryGraphSyncBtn": "Retry graph sync",
     "retryingGraphSync": "Waiting for Zep...",
     "graphSyncNote": "The simulation played every round. Zep is still taking in part of its activity, which can take hours on a big run. You can generate the report now from the part of the graph that is ready, or retry the sync later.",
+    "stoppingZepNote": "The simulation has ended. Waiting for Zep to finish taking in its activity (up to ten minutes); clicking Stop again changes nothing. When it ends you can retry the sync or generate the report from the part of the graph that is ready.",
     "pauseBtn": "Pause",
     "continueBtn": "Continue",
     "stopAfterRoundBtn": "Stop after this round",

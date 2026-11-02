@@ -57,3 +57,11 @@ def test_a_genuinely_failed_or_unfinished_run_is_not_called_sync_pending(monkeyp
     assert run_status(monkeypatch, error="Process exit code 1")["graph_sync_pending"] is False
     assert run_status(monkeypatch, reddit_completed=False)["graph_sync_pending"] is False
     assert run_status(monkeypatch, runner_status=RunnerStatus.COMPLETED, error=None)["graph_sync_pending"] is False
+
+
+def test_run_status_says_whether_a_process_is_left(monkeypatch):
+    # "stopping" with no process left means the backend waits for Zep: the UI must not offer a pointless Stop now
+    monkeypatch.setattr(SimulationRunner, "has_live_process", classmethod(lambda _c, _id: False))
+    assert run_status(monkeypatch, runner_status=RunnerStatus.STOPPING)["process_alive"] is False
+    monkeypatch.setattr(SimulationRunner, "has_live_process", classmethod(lambda _c, _id: True))
+    assert run_status(monkeypatch, runner_status=RunnerStatus.RUNNING)["process_alive"] is True

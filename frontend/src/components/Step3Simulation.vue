@@ -106,7 +106,7 @@
         <button v-if="runStatus.graph_sync_pending" class="action-btn" :disabled="isRetryingSync" @click="doRetryGraphSync">
           {{ isRetryingSync ? $t('step3.retryingGraphSync') : $t('step3.retryGraphSyncBtn') }}
         </button>
-        <button v-if="isWinding" class="action-btn danger" :disabled="isStopping" @click="handleStopSimulation">{{ $t('step3.stopNowBtn') }}</button>
+        <button v-if="isWinding && runStatus.process_alive !== false" class="action-btn danger" :disabled="isStopping" @click="handleStopSimulation">{{ $t('step3.stopNowBtn') }}</button>
         <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
@@ -121,7 +121,7 @@
 
     <p v-if="!ensembleMode && runStatus.graph_sync_pending" class="control-note" role="status">{{ $t('step3.graphSyncNote') }}</p>
     <p v-if="!ensembleMode && isPaused" class="control-note" role="status">{{ $t('step3.pausedNote') }}</p>
-    <p v-if="!ensembleMode && isWinding" class="control-note" role="status">{{ $t('step3.stoppingNote') }}</p>
+    <p v-if="!ensembleMode && isWinding" class="control-note" role="status">{{ runStatus.process_alive === false ? $t('step3.stoppingZepNote') : $t('step3.stoppingNote') }}</p>
 
     <!-- A stopped run can continue where it stopped (or start over) -->
     <div v-if="offerResume" class="resume-offer" role="region" :aria-label="$t('resume.title')">

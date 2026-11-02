@@ -519,10 +519,36 @@ class SimulationRunner:
                     success=a.get("success", True),
                 ))
             
-            return state
+            return cls._settle_orphaned_stop(state)
         except Exception as e:
             logger.error(f"加载运行状态失败: {str(e)}")
             return None
+
+    @classmethod
+    def _settle_orphaned_stop(cls, state: SimulationRunState) -> SimulationRunState:
+        """Give a STOPPING state read from disk its real ending when the stop it belongs to died with the process.
+
+        A stop writes STOPPING to disk *before* it drains Zep, which can take minutes; restarting the backend in the
+        middle leaves that on disk with nothing running and no Zep updater registered (the updater lives in memory).
+        Nothing would ever move it on, and a STOPPING run cannot be resumed, restarted or reported on. With a live
+        process or a registered updater the stop is real and is left alone. A stop that was waiting on the Zep sync
+        ends as the graph-sync failure it was (the report can then still be generated from a partial graph);
+        any other ends as STOPPED.
+        """
+        if state.runner_status != RunnerStatus.STOPPING:
+            return state
+        simulation_id = state.simulation_id
+        if cls.has_live_process(simulation_id) or ZepGraphMemoryManager.get_updater(simulation_id) is not None:
+            return state
+        graph_sync = str(state.error or "").startswith(cls.GRAPH_SYNC_ERROR_PREFIX)
+        state.runner_status = RunnerStatus.FAILED if graph_sync else RunnerStatus.STOPPED
+        state.twitter_running = False
+        state.reddit_running = False
+        state.completed_at = state.completed_at or datetime.now().isoformat()
+        logger.warning(f"停止过程随进程中断，状态改为 {state.runner_status.value}: {simulation_id}")
+        cls._save_run_state(state)
+        cls._sync_simulation_status(simulation_id, state.runner_status, state.error if graph_sync else None)
+        return state
     
     @classmethod
     def _save_run_state(cls, state: SimulationRunState):

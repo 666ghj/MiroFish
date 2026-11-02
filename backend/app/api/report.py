@@ -231,10 +231,18 @@ def generate_report():
                     "success": False,
                     "error": "The project graph changed while reporting was starting",
                 }), 409
-            if refreshed_updater is not None or (
+            # The same opt-in as above, judged again under the lock: a run that played every round and only has
+            # a Zep graph that is still catching up keeps its updater registered, which is exactly what the
+            # barrier checks for.
+            partial_ok_now = (
+                allow_partial_graph
+                and not ensemble_id
+                and SimulationRunner.graph_sync_incomplete_only(simulation_id)
+            )
+            if not partial_ok_now and (refreshed_updater is not None or (
                 refreshed_run_state is not None
                 and refreshed_run_state.runner_status in active_statuses
-            ):
+            )):
                 return jsonify({
                     "success": False,
                     "error": (
@@ -243,7 +251,7 @@ def generate_report():
                     ),
                     "ingestion_pending": refreshed_updater is not None,
                 }), 409
-            if not ensemble_id and (
+            if not ensemble_id and not partial_ok_now and (
                 refreshed_run_state is None
                 or refreshed_run_state.runner_status
                 not in successful_terminal_statuses

@@ -31,6 +31,43 @@ def finished_run(**changes):
     return SimpleNamespace(**state)
 
 
+class _Project(SimpleNamespace):
+    pass
+
+
+def _full_project():
+    from app.models.project import ProjectStatus
+
+    return _Project(project_id="proj-1", graph_id="graph-1", status=ProjectStatus.GRAPH_COMPLETED,
+                    simulation_requirement="requirement")
+
+
+def _no_background_work(monkeypatch):
+    started = []
+    monkeypatch.setattr(report_api, "TaskManager", lambda: SimpleNamespace(create_task=lambda **_k: "task-1"))
+    monkeypatch.setattr(report_api, "register_graph_reader", lambda *_a: None)
+    monkeypatch.setattr(report_api.threading, "Thread",
+                        lambda target=None, **_k: SimpleNamespace(start=lambda: started.append(target)))
+    return started
+
+
+def test_with_the_opt_in_the_report_is_really_started_past_both_barriers(monkeypatch):
+    # the barrier is checked twice (the second time under the graph lock): both must honour the opt-in
+    started = _no_background_work(monkeypatch)
+    for updater in (object(), None):
+        body, status = call(monkeypatch, finished_run(), updater=updater, project=_full_project(),
+                            body={"allow_partial_graph": True, "force_regenerate": True})
+        assert status == 200 and body["success"] is True, (updater, body)
+        assert body["data"]["task_id"] == "task-1"
+    assert len(started) == 2
+
+
+def test_without_the_opt_in_the_second_barrier_still_blocks(monkeypatch):
+    started = _no_background_work(monkeypatch)
+    body, status = call(monkeypatch, finished_run(), project=_full_project(), body={"force_regenerate": True})
+    assert status == 409 and started == []
+
+
 def test_by_default_the_run_is_still_blocked_but_the_answer_says_a_partial_report_is_possible(monkeypatch):
     body, status = call(monkeypatch, finished_run())
     assert status == 409 and body["can_generate_partial"] is True and body["ingestion_pending"] is True
