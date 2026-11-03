@@ -172,6 +172,23 @@
               <span>{{ $t('home.inputParams') }}</span>
             </div>
 
+<div class="console-section">
+              <div class="console-header">
+                <span class="console-label">{{ $t('home.projectName') }}</span>
+                <span class="console-meta">{{ $t('home.projectNameOptional') }}</span>
+              </div>
+              <div class="input-wrapper">
+                <input
+                  v-model="formData.projectName"
+                  class="text-input"
+                  type="text"
+                  maxlength="100"
+                  :placeholder="$t('home.projectNamePlaceholder')"
+                  :disabled="loading"
+                />
+              </div>
+            </div>
+
             <!-- 输入区域 -->
             <div class="console-section">
               <div class="console-header">
@@ -221,7 +238,9 @@ const router = useRouter()
 
 // 表单数据
 const formData = ref({
-  simulationRequirement: ''
+  simulationRequirement: '',
+  // 留空表示由后端使用默认名称 'Unnamed Project'
+  projectName: ''
 })
 
 // 文件列表
@@ -300,7 +319,11 @@ const startSimulation = () => {
   
   // 存储待上传的数据
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
+    setPendingUpload(
+      files.value,
+      formData.value.simulationRequirement,
+      formData.value.projectName.trim()
+    )
     
     // 立即跳转到Process页面（使用特殊标识表示新建项目）
     router.push({
@@ -812,6 +835,22 @@ const startSimulation = () => {
   resize: vertical;
   outline: none;
   min-height: 150px;
+}
+
+.text-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  outline: none;
+  color: var(--black);
+  box-sizing: border-box;
+}
+
+.text-input::placeholder {
+  color: #AAA;
 }
 
 .model-badge {
