@@ -208,6 +208,10 @@ const handleNewProject = async () => {
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
     formData.append('simulation_requirement', pending.simulationRequirement)
+    // 项目名称留空时不发送该字段，后端会使用默认值 'Unnamed Project'
+    if (pending.projectName) {
+      formData.append('project_name', pending.projectName)
+    }
     
     const res = await generateOntology(formData)
     if (res.success) {
