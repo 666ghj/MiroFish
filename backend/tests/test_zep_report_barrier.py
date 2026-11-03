@@ -138,6 +138,7 @@ def test_failed_ingestion_cannot_generate_a_report_after_restart(monkeypatch):
     with app.test_request_context(
         "/api/report/generate",
         method="POST",
+        headers={"Accept-Language": "en"},
         json={"simulation_id": "sim-1"},
     ):
         body, status = _json_result(report_api.generate_report())

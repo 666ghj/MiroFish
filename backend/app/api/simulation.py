@@ -1556,12 +1556,12 @@ def start_simulation():
         if not isinstance(enable_graph_memory_update, bool):
             return jsonify({
                 "success": False,
-                "error": "enable_graph_memory_update must be a JSON boolean",
+                "error": t('api.graphMemoryBoolean'),
             }), 400
         if not isinstance(force, bool):
             return jsonify({
                 "success": False,
-                "error": "force must be a JSON boolean",
+                "error": t('api.forceBoolean'),
             }), 400
 
         # 验证 max_rounds 参数
@@ -1649,7 +1649,7 @@ def start_simulation():
                     if stopped.runner_status != RunnerStatus.STOPPED:
                         return jsonify({
                             "success": False,
-                            "error": "Previous simulation did not reach STOPPED",
+                            "error": t('api.previousSimulationNotStopped'),
                         }), 409
 
                 # 如果是强制模式，清理运行日志
@@ -1714,8 +1714,7 @@ def start_simulation():
                     return jsonify({
                         "success": False,
                         "error": (
-                            "The project graph changed while the simulation "
-                            "was starting; retry after refreshing the project"
+                            t('api.graphChangedForSimulation')
                         ),
                     }), 409
                 if (
@@ -1725,8 +1724,7 @@ def start_simulation():
                     return jsonify({
                         "success": False,
                         "error": (
-                            "The simulation references an older graph; "
-                            "prepare it again before enabling graph memory"
+                            t('api.oldGraphForMemory')
                         ),
                     }), 409
                 active_reports = get_graph_readers(graph_id)
@@ -1734,9 +1732,7 @@ def start_simulation():
                     return jsonify({
                         "success": False,
                         "error": (
-                            "A report is currently reading this graph; wait "
-                            "for report generation to finish before enabling "
-                            "graph memory updates"
+                            t('api.reportReadingGraph')
                         ),
                         "active_reports": active_reports,
                     }), 409

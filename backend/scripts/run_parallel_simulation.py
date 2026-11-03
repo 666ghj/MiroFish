@@ -89,6 +89,8 @@ _project_root = os.path.abspath(os.path.join(_backend_dir, '..'))
 sys.path.insert(0, _scripts_dir)
 sys.path.insert(0, _backend_dir)
 
+from simulation_locale import apply_output_language, interview_prompt
+
 # 加载项目根目录的 .env 文件（包含 LLM_API_KEY 等配置）
 from dotenv import load_dotenv
 _env_file = os.path.join(_project_root, '.env')
@@ -330,7 +332,7 @@ class ParallelIPCHandler:
             agent = agent_graph.get_agent(agent_id)
             interview_action = ManualAction(
                 action_type=ActionType.INTERVIEW,
-                action_args={"prompt": prompt}
+                action_args={"prompt": interview_prompt(prompt)}
             )
             actions = {agent: interview_action}
             await env.step(actions)
@@ -460,7 +462,7 @@ class ParallelIPCHandler:
                         agent = self.twitter_agent_graph.get_agent(agent_id)
                         twitter_actions[agent] = ManualAction(
                             action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
+                            action_args={"prompt": interview_prompt(prompt)}
                         )
                     except Exception as e:
                         print(f"  警告: 无法获取Twitter Agent {agent_id}: {e}")
@@ -487,7 +489,7 @@ class ParallelIPCHandler:
                         agent = self.reddit_agent_graph.get_agent(agent_id)
                         reddit_actions[agent] = ManualAction(
                             action_type=ActionType.INTERVIEW,
-                            action_args={"prompt": prompt}
+                            action_args={"prompt": interview_prompt(prompt)}
                         )
                     except Exception as e:
                         print(f"  警告: 无法获取Reddit Agent {agent_id}: {e}")
@@ -1140,6 +1142,7 @@ async def run_twitter_simulation(
         model=model,
         available_actions=TWITTER_ACTIONS,
     )
+    apply_output_language(result.agent_graph)
     
     # 从配置文件获取 Agent 真实名称映射（使用 entity_name 而非默认的 Agent_X）
     agent_names = get_agent_names_from_config(config)
@@ -1331,6 +1334,7 @@ async def run_reddit_simulation(
         model=model,
         available_actions=REDDIT_ACTIONS,
     )
+    apply_output_language(result.agent_graph)
     
     # 从配置文件获取 Agent 真实名称映射（使用 entity_name 而非默认的 Agent_X）
     agent_names = get_agent_names_from_config(config)

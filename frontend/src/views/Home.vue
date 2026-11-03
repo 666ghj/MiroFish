@@ -44,7 +44,7 @@
         <div class="hero-right">
           <!-- Logo 区域 -->
           <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="MiroFish Logo" class="hero-logo" />
+            <img src="../assets/logo/MiroFish_logo_left.jpeg" :alt="$t('ui.logoAlt')" class="hero-logo" />
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">
@@ -897,57 +897,69 @@ const startSimulation = () => {
 </style>
 
 <style>
-/* English locale adjustments (unscoped to target html[lang]) */
-html[lang="en"] .main-title {
+/* Latin-script locale adjustments (unscoped to target html[lang]) */
+html:is([lang="en"], [lang="pt-BR"]) .main-title {
   font-size: 3.5rem;
   font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: -1px;
 }
 
-html[lang="en"] .hero-desc {
+html:is([lang="en"], [lang="pt-BR"]) .hero-desc {
   text-align: left;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: 0;
 }
 
-html[lang="en"] .slogan-text {
+html:is([lang="en"], [lang="pt-BR"]) .slogan-text {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: 0;
 }
 
-html[lang="en"] .tag-row {
+html:is([lang="en"], [lang="pt-BR"]) .tag-row {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-html[lang="en"] .navbar .nav-links {
+html:is([lang="en"], [lang="pt-BR"]) .navbar .nav-links {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Left pane: system status + workflow */
-html[lang="en"] .status-section {
+html:is([lang="en"], [lang="pt-BR"]) .status-section {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-html[lang="en"] .status-section .status-ready {
+html:is([lang="en"], [lang="pt-BR"]) .status-section .status-ready {
   font-size: 1.6rem;
 }
 
-html[lang="en"] .status-section .metric-value {
+html:is([lang="en"], [lang="pt-BR"]) .status-section .metric-value {
   font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 1.4rem;
 }
 
-html[lang="en"] .workflow-list .step-title {
+html:is([lang="en"], [lang="pt-BR"]) .workflow-list .step-title {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-html[lang="en"] .workflow-list .step-desc {
+html:is([lang="en"], [lang="pt-BR"]) .workflow-list .step-desc {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   font-size: 0.72rem !important;
   line-height: 1.4 !important;
 }
 
-html[lang="en"] .workflow-list {
+html:is([lang="en"], [lang="pt-BR"]) .workflow-list {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+</style>
+
+<style>
+html[lang="pt-BR"] .home-container .main-title {
+  font-size: clamp(2.2rem, 4vw, 3.5rem);
+}
+html[lang="pt-BR"] .home-container .section-title {
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+html[lang="pt-BR"] .home-container .metric-value {
+  font-size: clamp(1.2rem, 2.4vw, 1.75rem);
 }
 </style>
