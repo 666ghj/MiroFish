@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -205,7 +211,16 @@
     "forceStopSuccess": "模拟已强制停止",
     "forceStopFailed": "强制停止失败: {error}",
     "startGenerateReportBtn": "开始生成结果报告",
-    "generatingReportBtn": "启动中..."
+    "generatingReportBtn": "启动中...",
+    "pauseBtn": "暂停",
+    "pauseTooltip": "暂停 — 在下一个轮次边界（约 5 秒内）停止开启新轮次。模拟进程与运行环境保持存活，数据不会丢失。点击「继续」可从同一轮接着跑。",
+    "pausingBtn": "暂停中...",
+    "resumeBtn": "继续",
+    "resumeTooltip": "继续 — 让已暂停的模拟从它停下的那一轮接着运行。运行环境从未被销毁，因此不会丢失任何进度。",
+    "resumingBtn": "继续中...",
+    "stopBtn": "停止",
+    "stopTooltip": "停止 — 永久结束本次运行：进程被终止，模拟环境被销毁，之后无法恢复。已产生的进度会保留。运行中或暂停时均可使用。",
+    "stoppingBtn": "停止中..."
   },
   "step4": {
     "generatingSection": "正在生成{title}...",
@@ -565,7 +580,15 @@
     "getReportInfoFailed": "获取报告信息失败: {error}",
     "enterStep": "进入 Step {step}: {name}",
     "returnToStep": "返回 Step {step}: {name}",
-    "customSimRounds": "自定义模拟轮数: {rounds} 轮"
+    "customSimRounds": "自定义模拟轮数: {rounds} 轮",
+    "pauseException": "暂停异常: {error}",
+    "pauseFailed": "暂停失败: {error}",
+    "pausingSim": "正在暂停模拟（新轮次将在下一个轮次边界停止，环境保持存活）...",
+    "resumeException": "继续异常: {error}",
+    "resumeFailed": "继续失败: {error}",
+    "resumingSim": "正在继续模拟...",
+    "simPaused": "⏸ 模拟已暂停于第 {current}/{total} 轮。进程与运行环境仍然存活 — 点击「继续」可从该轮接着运行。",
+    "simResumed": "▶ 模拟已从第 {round} 轮继续运行。"
   },
   "report": {
     "taskStarted": "报告生成任务开始",
@@ -663,5 +686,8 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "simulationRun": {
+    "paused": "已暂停"
   }
 }

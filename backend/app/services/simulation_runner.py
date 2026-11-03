@@ -237,6 +237,9 @@ class SimulationRunner:
     _finalization_locks: Dict[str, threading.Lock] = {}
     _finalization_locks_guard = threading.Lock()
     _manual_stop_requests: set[str] = set()
+    # 已收到暂停请求的模拟。监控线程据此保留 PAUSED 状态，
+    # 避免用内存中的旧状态把外部写入的暂停状态覆盖回 RUNNING。
+    _paused_requests: set[str] = set()
 
     @classmethod
     def _finalization_lock(cls, simulation_id: str) -> threading.Lock:
@@ -652,6 +655,23 @@ class SimulationRunner:
                     )
                 
                 # 更新状态
+                # 注意：监控线程持有的是启动时读取的状态对象，每轮都会整体
+                # 写回。若期间有 pause/resume 请求改变了磁盘上的状态，
+                # 直接写回会把它覆盖掉。因此这里先重新读取，并以暂停请求为准。
+                if simulation_id in cls._paused_requests:
+                    state.runner_status = RunnerStatus.PAUSED
+                else:
+                    latest = cls.get_run_state(simulation_id)
+                    if latest is not None and latest.runner_status in {
+                        RunnerStatus.PAUSED,
+                        RunnerStatus.STOPPING,
+                        RunnerStatus.STOPPED,
+                        RunnerStatus.FAILED,
+                    }:
+                        state.runner_status = latest.runner_status
+                    elif state.runner_status == RunnerStatus.PAUSED:
+                        # 已恢复运行
+                        state.runner_status = RunnerStatus.RUNNING
                 cls._save_run_state(state)
                 time.sleep(2)
             
@@ -962,6 +982,79 @@ class SimulationRunner:
                 process.wait(timeout=5)
     
     @classmethod
+    def _pause_control_path(cls, simulation_id: str) -> str:
+        return os.path.join(cls.RUN_STATE_DIR, simulation_id, "pause_control.json")
+
+    @classmethod
+    def _write_pause_control(cls, simulation_id: str, action: str) -> None:
+        """写入暂停控制文件，通知模拟子进程在轮边界挂起/恢复。
+
+        子进程通过轮询该文件工作，因此这里不需要向其发送信号：
+        环境进程保持存活，恢复后从当前轮次继续。
+        """
+        path = cls._pause_control_path(simulation_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({"action": action, "at": datetime.now().isoformat()}, f)
+        os.replace(tmp, path)
+
+    @classmethod
+    def pause_simulation(cls, simulation_id: str) -> SimulationRunState:
+        """暂停运行中的模拟（保留进程与环境，可恢复）"""
+        with cls._finalization_lock(simulation_id):
+            state = cls.get_run_state(simulation_id)
+            if not state:
+                raise ValueError(f"模拟不存在: {simulation_id}")
+            if state.runner_status == RunnerStatus.PAUSED:
+                return state
+            if state.runner_status != RunnerStatus.RUNNING:
+                raise ValueError(
+                    f"只有运行中的模拟可以暂停: {simulation_id}, "
+                    f"status={state.runner_status}"
+                )
+            process = cls._processes.get(simulation_id)
+            if not process or process.poll() is not None:
+                raise ValueError(f"模拟进程未在运行，无法暂停: {simulation_id}")
+
+            cls._write_pause_control(simulation_id, "pause")
+            # 明确标记为暂停请求，使监控线程不会把它当作自然完成
+            cls._paused_requests.add(simulation_id)
+            state.runner_status = RunnerStatus.PAUSED
+            state.updated_at = datetime.now().isoformat()
+            cls._save_run_state(state)
+            cls._sync_simulation_status(simulation_id, RunnerStatus.PAUSED)
+
+        logger.info(f"模拟已暂停: {simulation_id}")
+        return state
+
+    @classmethod
+    def resume_simulation(cls, simulation_id: str) -> SimulationRunState:
+        """恢复已暂停的模拟（从当前轮次继续）"""
+        with cls._finalization_lock(simulation_id):
+            state = cls.get_run_state(simulation_id)
+            if not state:
+                raise ValueError(f"模拟不存在: {simulation_id}")
+            if state.runner_status != RunnerStatus.PAUSED:
+                raise ValueError(
+                    f"只有已暂停的模拟可以恢复: {simulation_id}, "
+                    f"status={state.runner_status}"
+                )
+            process = cls._processes.get(simulation_id)
+            if not process or process.poll() is not None:
+                raise ValueError(f"模拟进程已结束，无法恢复: {simulation_id}")
+
+            cls._write_pause_control(simulation_id, "resume")
+            cls._paused_requests.discard(simulation_id)
+            state.runner_status = RunnerStatus.RUNNING
+            state.updated_at = datetime.now().isoformat()
+            cls._save_run_state(state)
+            cls._sync_simulation_status(simulation_id, RunnerStatus.RUNNING)
+
+        logger.info(f"模拟已恢复: {simulation_id}")
+        return state
+
+    @classmethod
     def stop_simulation(cls, simulation_id: str) -> SimulationRunState:
         """停止模拟"""
         with cls._finalization_lock(simulation_id):
@@ -994,6 +1087,8 @@ class SimulationRunner:
 
             state.runner_status = RunnerStatus.STOPPING
             cls._manual_stop_requests.add(simulation_id)
+            # 停止优先于暂停：清除暂停标记，使暂停中的进程可以退出
+            cls._paused_requests.discard(simulation_id)
             cls._save_run_state(state)
             cls._sync_simulation_status(simulation_id, RunnerStatus.STOPPING)
 
