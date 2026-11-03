@@ -69,8 +69,43 @@ def _active_graph_consumers(graph_id: str) -> list[str]:
             continue
         run_state = SimulationRunner.get_run_state(simulation.simulation_id)
         if run_state and run_state.runner_status in active_runner_statuses:
+            # A persisted active status is not proof of a live consumer. If the
+            # runner process was killed (crash, Ctrl-C, machine restart) its
+            # state can be left mid-flight at STARTING/RUNNING/PAUSED/STOPPING
+            # forever, which would make the graph - and therefore the project -
+            # permanently undeletable. Only treat the simulation as a consumer
+            # when its recorded process is actually still alive.
+            if not _runner_process_is_alive(run_state):
+                logger.info(
+                    "Ignoring stale %s state for %s (pid %s not running)",
+                    run_state.runner_status.value,
+                    simulation.simulation_id,
+                    run_state.process_pid,
+                )
+                continue
             active.add(simulation.simulation_id)
     return sorted(active)
+
+
+def _runner_process_is_alive(run_state) -> bool:
+    """Return True only if the simulation process for this run state exists.
+
+    Falls back to "alive" when no pid was recorded, so a genuinely running
+    simulation is never treated as stale.
+    """
+    pid = getattr(run_state, "process_pid", None)
+    if not pid:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but belongs to another user.
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _delete_cloud_graph_if_present(graph_id: str | None) -> None:

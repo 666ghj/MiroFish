@@ -416,3 +416,60 @@ def test_graph_reset_and_memory_start_cannot_cross_between_delete_and_clear(
     assert results["start"][1] == 409
     assert runner_called == []
     assert project.graph_id is None
+
+
+def _stale_consumer_fixture(monkeypatch, runner_status, pid):
+    """Point _active_graph_consumers at one simulation with a given run state."""
+    monkeypatch.setattr(
+        graph_api.ZepGraphMemoryManager,
+        "get_simulation_ids_for_graph",
+        classmethod(lambda _cls, _graph_id: []),
+    )
+    monkeypatch.setattr(
+        graph_api,
+        "SimulationManager",
+        lambda: SimpleNamespace(
+            list_simulations=lambda: [
+                SimpleNamespace(simulation_id="sim-1", graph_id="graph-1")
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        graph_api.SimulationRunner,
+        "get_run_state",
+        classmethod(
+            lambda _cls, _simulation_id: SimpleNamespace(
+                runner_status=runner_status, process_pid=pid
+            )
+        ),
+    )
+
+
+def test_dead_runner_process_is_not_an_active_graph_consumer(monkeypatch):
+    # A killed runner leaves its state at STOPPING forever. That must not keep
+    # the graph (and therefore the project) permanently undeletable.
+    _stale_consumer_fixture(monkeypatch, graph_api.RunnerStatus.STOPPING, 4242)
+    monkeypatch.setattr(
+        graph_api.os,
+        "kill",
+        lambda _pid, _sig: (_ for _ in ()).throw(ProcessLookupError()),
+    )
+
+    assert graph_api._active_graph_consumers("graph-1") == []
+
+
+def test_live_runner_process_is_still_an_active_graph_consumer(monkeypatch):
+    # The liveness check must not weaken the guard for a simulation that is
+    # genuinely still running.
+    _stale_consumer_fixture(monkeypatch, graph_api.RunnerStatus.RUNNING, 4242)
+    monkeypatch.setattr(graph_api.os, "kill", lambda _pid, _sig: None)
+
+    assert graph_api._active_graph_consumers("graph-1") == ["sim-1"]
+
+
+def test_run_state_without_a_pid_is_treated_as_alive(monkeypatch):
+    # Older states may predate process_pid; stay conservative rather than
+    # deleting a graph out from under a running simulation.
+    _stale_consumer_fixture(monkeypatch, graph_api.RunnerStatus.RUNNING, None)
+
+    assert graph_api._active_graph_consumers("graph-1") == ["sim-1"]
