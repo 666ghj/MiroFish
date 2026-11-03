@@ -68,7 +68,7 @@ def generate_report():
         if not isinstance(force_regenerate, bool):
             return jsonify({
                 "success": False,
-                "error": "force_regenerate must be a JSON boolean",
+                "error": t('api.forceRegenerateBoolean'),
             }), 400
         
         # 获取模拟信息
@@ -95,8 +95,7 @@ def generate_report():
             return jsonify({
                 "success": False,
                 "error": (
-                    "Simulation or Zep graph ingestion is still active; "
-                    "wait for a terminal run status before generating a report"
+                    t('api.waitForSimulation')
                 ),
                 "ingestion_pending": updater is not None,
             }), 409
@@ -111,8 +110,7 @@ def generate_report():
             return jsonify({
                 "success": False,
                 "error": (
-                    "A successfully completed or stopped simulation is required "
-                    "before generating a report"
+                    t('api.requireFinishedSimulation')
                 ),
             }), 409
 
@@ -127,7 +125,7 @@ def generate_report():
         if project.status != ProjectStatus.GRAPH_COMPLETED:
             return jsonify({
                 "success": False,
-                "error": "The project graph must be completely built before reporting",
+                "error": t('api.graphIncompleteForReport'),
             }), 409
 
         graph_id = project.graph_id
@@ -140,8 +138,7 @@ def generate_report():
             return jsonify({
                 "success": False,
                 "error": (
-                    "The simulation references an older graph; prepare it "
-                    "again before generating a report"
+                    t('api.oldGraphForReport')
                 ),
             }), 409
         
@@ -181,7 +178,7 @@ def generate_report():
             ):
                 return jsonify({
                     "success": False,
-                    "error": "The project graph changed while reporting was starting",
+                    "error": t('api.graphChangedForReport'),
                 }), 409
             if refreshed_updater is not None or (
                 refreshed_run_state is not None
@@ -190,8 +187,7 @@ def generate_report():
                 return jsonify({
                     "success": False,
                     "error": (
-                        "Simulation or Zep graph ingestion became active; "
-                        "retry after it reaches a terminal state"
+                        t('api.ingestionBecameActive')
                     ),
                     "ingestion_pending": refreshed_updater is not None,
                 }), 409
@@ -203,8 +199,7 @@ def generate_report():
                 return jsonify({
                     "success": False,
                     "error": (
-                        "A successfully completed or stopped simulation is "
-                        "required before generating a report"
+                        t('api.requireFinishedSimulation')
                     ),
                 }), 409
 

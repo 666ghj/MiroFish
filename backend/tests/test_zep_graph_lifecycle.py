@@ -320,6 +320,7 @@ def test_force_must_be_a_json_boolean(monkeypatch):
     with app.test_request_context(
         "/api/graph/build",
         method="POST",
+        headers={"Accept-Language": "en"},
         json={"project_id": "proj-1", "force": "false"},
     ):
         body, status = _json_result(graph_api.build_graph())

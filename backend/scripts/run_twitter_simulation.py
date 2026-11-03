@@ -36,6 +36,8 @@ _project_root = os.path.abspath(os.path.join(_backend_dir, '..'))
 sys.path.insert(0, _scripts_dir)
 sys.path.insert(0, _backend_dir)
 
+from simulation_locale import apply_output_language, interview_prompt
+
 # 加载项目根目录的 .env 文件（包含 LLM_API_KEY 等配置）
 from dotenv import load_dotenv
 _env_file = os.path.join(_project_root, '.env')
@@ -225,7 +227,7 @@ class IPCHandler:
             # 创建Interview动作
             interview_action = ManualAction(
                 action_type=ActionType.INTERVIEW,
-                action_args={"prompt": prompt}
+                action_args={"prompt": interview_prompt(prompt)}
             )
             
             # 执行Interview
@@ -265,7 +267,7 @@ class IPCHandler:
                     agent = self.agent_graph.get_agent(agent_id)
                     actions[agent] = ManualAction(
                         action_type=ActionType.INTERVIEW,
-                        action_args={"prompt": prompt}
+                        action_args={"prompt": interview_prompt(prompt)}
                     )
                     agent_prompts[agent_id] = prompt
                 except Exception as e:
@@ -580,6 +582,7 @@ class TwitterSimulationRunner:
             model=model,
             available_actions=self.AVAILABLE_ACTIONS,
         )
+        apply_output_language(self.agent_graph)
         
         # 数据库路径
         db_path = self._get_db_path()

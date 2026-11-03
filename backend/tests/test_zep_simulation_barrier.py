@@ -197,6 +197,7 @@ def test_simulation_start_rejects_string_booleans(field):
     with app.test_request_context(
         "/api/simulation/start",
         method="POST",
+        headers={"Accept-Language": "en"},
         json={"simulation_id": "sim-1", field: "false"},
     ):
         response, status = simulation_api.start_simulation()

@@ -157,7 +157,7 @@
                 @click="goToProject"
                 :disabled="!selectedProject.project_id"
               >
-                <span class="btn-step">Step1</span>
+                <span class="btn-step">{{ $t('ui.step1') }}</span>
                 <span class="btn-icon">◇</span>
                 <span class="btn-text">{{ $t('history.step1Button') }}</span>
               </button>
@@ -165,7 +165,7 @@
                 class="modal-btn btn-simulation" 
                 @click="goToSimulation"
               >
-                <span class="btn-step">Step2</span>
+                <span class="btn-step">{{ $t('ui.step2') }}</span>
                 <span class="btn-icon">◈</span>
                 <span class="btn-text">{{ $t('history.step2Button') }}</span>
               </button>
@@ -174,7 +174,7 @@
                 @click="goToReport"
                 :disabled="!selectedProject.report_id"
               >
-                <span class="btn-step">Step4</span>
+                <span class="btn-step">{{ $t('ui.step4') }}</span>
                 <span class="btn-icon">◆</span>
                 <span class="btn-text">{{ $t('history.step4Button') }}</span>
               </button>
@@ -383,9 +383,9 @@ const getFileType = (filename) => {
 
 // 获取文件类型标签文本
 const getFileTypeLabel = (filename) => {
-  if (!filename) return 'FILE'
+  if (!filename) return t('ui.file')
   const ext = filename.split('.').pop()?.toUpperCase()
-  return ext || 'FILE'
+  return ext || t('ui.file')
 }
 
 // 截断文件名（保留扩展名）

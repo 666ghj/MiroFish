@@ -517,7 +517,7 @@ def _build_graph_impl():
         if not isinstance(force, bool):
             return jsonify({
                 "success": False,
-                "error": "force must be a JSON boolean"
+                "error": t('api.forceBoolean')
             }), 400
         
         if project.status == ProjectStatus.CREATED:
@@ -587,7 +587,7 @@ def _build_graph_impl():
         chunk_size = data.get('chunk_size', project.chunk_size or Config.DEFAULT_CHUNK_SIZE)
         chunk_overlap = data.get('chunk_overlap', project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP)
         if not isinstance(chunk_size, int) or chunk_size <= 0:
-            return jsonify({"success": False, "error": "chunk_size must be a positive integer"}), 400
+            return jsonify({"success": False, "error": t('api.chunkSizePositive')}), 400
         if (
             not isinstance(chunk_overlap, int)
             or chunk_overlap < 0
@@ -595,7 +595,7 @@ def _build_graph_impl():
         ):
             return jsonify({
                 "success": False,
-                "error": "chunk_overlap must satisfy 0 <= chunk_overlap < chunk_size"
+                "error": t('api.chunkOverlapRange')
             }), 400
         
         # 更新项目配置
@@ -920,7 +920,7 @@ def delete_graph(graph_id: str):
         if not projects:
             return jsonify({
                 "success": False,
-                "error": "No local project references this graph"
+                "error": t('api.graphNoLocalProject')
             }), 404
         project_ids = sorted({project.project_id for project in projects})
         with ExitStack() as stack:

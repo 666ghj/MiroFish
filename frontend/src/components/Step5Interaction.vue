@@ -8,7 +8,7 @@
           <!-- Report Header -->
           <div class="report-header-block">
             <div class="report-meta">
-              <span class="report-tag">Prediction Report</span>
+              <span class="report-tag">{{ $t('ui.predictionReport') }}</span>
               <span class="report-id">ID: {{ reportId || 'REF-2024-X92' }}</span>
             </div>
             <h1 class="main-title">{{ reportOutline.title }}</h1>
@@ -72,7 +72,7 @@
             <div class="waiting-ring"></div>
             <div class="waiting-ring"></div>
           </div>
-          <span class="waiting-text">Waiting for Report Agent...</span>
+          <span class="waiting-text">{{ $t('step4.waitingForReportAgent') }}</span>
         </div>
       </div>
 
@@ -266,7 +266,7 @@
               <div class="message-content">
                 <div class="message-header">
                   <span class="sender-name">
-                    {{ msg.role === 'user' ? 'You' : (chatTarget === 'report_agent' ? 'Report Agent' : (selectedAgent?.username || 'Agent')) }}
+                    {{ msg.role === 'user' ? $t('ui.you') : (chatTarget === 'report_agent' ? $t('ui.reportAgent') : (selectedAgent?.username || $t('ui.agent'))) }}
                   </span>
                   <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
                 </div>
@@ -416,7 +416,7 @@ import { useI18n } from 'vue-i18n'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   reportId: String,
@@ -544,7 +544,7 @@ const selectAgent = (agent, idx) => {
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
   try {
-    return new Date(timestamp).toLocaleTimeString('en-US', { 
+    return new Date(timestamp).toLocaleTimeString(locale.value, {
       hour12: false, 
       hour: '2-digit', 
       minute: '2-digit'
@@ -722,9 +722,9 @@ const sendToAgent = async (message) => {
     const historyContext = chatHistory.value
       .slice(0, -1)
       .slice(-6)
-      .map(msg => `${msg.role === 'user' ? '提问者' : '你'}：${msg.content}`)
+      .map(msg => `${msg.role === 'user' ? t('ui.interviewer') : t('ui.you')}：${msg.content}`)
       .join('\n')
-    prompt = `以下是我们之前的对话：\n${historyContext}\n\n现在我的新问题是：${message}`
+    prompt = t('ui.chatHistory', { history: historyContext, message })
   }
   
   const res = await interviewAgents({
@@ -2577,8 +2577,19 @@ watch(() => props.simulationId, (newId) => {
 </style>
 
 <style>
-/* English locale: smaller report title */
-html[lang="en"] .report-header-block .main-title {
+/* Latin-script locales: smaller report title */
+html:is([lang="en"], [lang="pt-BR"]) .report-header-block .main-title {
   font-size: 28px;
+}
+</style>
+
+<style>
+/* Longer translated controls must remain reachable in the interaction pane. */
+html[lang="pt-BR"] .interaction-panel .action-bar,
+html[lang="pt-BR"] .interaction-panel .action-bar-tabs {
+  flex-wrap: wrap;
+}
+html[lang="pt-BR"] .interaction-panel .action-bar-tabs {
+  min-width: 0;
 }
 </style>
