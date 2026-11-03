@@ -62,6 +62,7 @@
           @next-step="handleNextStep"
           @add-log="addLog"
           @update-status="updateStatus"
+          @update-runner-status="updateRunnerStatus"
         />
       </div>
     </main>
@@ -99,7 +100,8 @@ const projectData = ref(null)
 const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
-const currentStatus = ref('processing') // processing | completed | error
+const currentStatus = ref('processing') // processing | paused | completed | error
+const runnerStatus = ref('idle') // idle | starting | running | paused | stopping | stopped | completed | failed
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -116,16 +118,19 @@ const rightPanelStyle = computed(() => {
 
 // --- Status Computed ---
 const statusClass = computed(() => {
+  if (runnerStatus.value === 'paused') return 'paused'
   return currentStatus.value
 })
 
 const statusText = computed(() => {
-  if (currentStatus.value === 'error') return 'Error'
-  if (currentStatus.value === 'completed') return 'Completed'
-  return 'Running'
+  if (currentStatus.value === 'error') return t('common.error')
+  if (currentStatus.value === 'completed') return t('common.completed')
+  if (runnerStatus.value === 'paused') return t('simulationRun.paused')
+  return t('common.running')
 })
 
-const isSimulating = computed(() => currentStatus.value === 'processing')
+// 暂停时图谱不应继续自动刷新（运行本身已经停下来）
+const isSimulating = computed(() => currentStatus.value === 'processing' && runnerStatus.value !== 'paused')
 
 // --- Helpers ---
 const addLog = (msg) => {
@@ -138,6 +143,11 @@ const addLog = (msg) => {
 
 const updateStatus = (status) => {
   currentStatus.value = status
+}
+
+// 由 Step3Simulation 上报的 runner_status，用于区分"运行中"与"已暂停"
+const updateRunnerStatus = (status) => {
+  runnerStatus.value = status
 }
 
 // --- Layout Methods ---
@@ -345,11 +355,15 @@ onUnmounted(() => {
 }
 
 .brand {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
   cursor: pointer;
+}
+
+.brand-logo {
+  height: 26px;
+  width: auto;
+  display: block;
 }
 
 .view-switcher {
@@ -424,7 +438,8 @@ onUnmounted(() => {
   background: #CCC;
 }
 
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
+.status-indicator.processing .dot { background: #0275D8; animation: pulse 1s infinite; }
+.status-indicator.paused .dot { background: #B8860B; }
 .status-indicator.completed .dot { background: #4CAF50; }
 .status-indicator.error .dot { background: #F44336; }
 

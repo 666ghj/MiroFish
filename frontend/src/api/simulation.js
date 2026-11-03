@@ -87,11 +87,29 @@ export const startSimulation = (data) => {
 }
 
 /**
- * 停止模拟
+ * 停止模拟（永久结束，环境会被销毁，无法恢复）
  * @param {Object} data - { simulation_id }
  */
 export const stopSimulation = (data) => {
   return service.post('/api/simulation/stop', data)
+}
+
+/**
+ * 暂停模拟（在下一轮边界停止开启新轮次，进程与环境保持存活）
+ * @param {Object} data - { simulation_id }
+ * @returns {Promise} { success, data: { simulation_id, runner_status: 'paused', current_round, total_rounds } }
+ */
+export const pauseSimulation = (data) => {
+  return service.post('/api/simulation/pause', data)
+}
+
+/**
+ * 恢复模拟（从暂停的轮次继续，不重头开始）
+ * @param {Object} data - { simulation_id }
+ * @returns {Promise} { success, data: { simulation_id, runner_status: 'running' } }
+ */
+export const resumeSimulation = (data) => {
+  return service.post('/api/simulation/resume', data)
 }
 
 /**

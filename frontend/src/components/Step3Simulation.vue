@@ -91,6 +91,42 @@
       </div>
 
       <div class="action-controls">
+        <!-- 暂停：仅运行中可用。停止开启新轮次，进程与环境保持存活，可恢复 -->
+        <button
+          v-if="isRunningStatus"
+          class="action-btn pause"
+          :disabled="isPausing"
+          :title="$t('step3.pauseTooltip')"
+          @click="handlePauseSimulation"
+        >
+          <span class="btn-symbol">❙❙</span>
+          {{ isPausing ? $t('step3.pausingBtn') : $t('step3.pauseBtn') }}
+        </button>
+
+        <!-- 恢复：仅暂停时可用。从暂停的那一轮继续，不会重头开始 -->
+        <button
+          v-if="isPausedStatus"
+          class="action-btn resume"
+          :disabled="isResuming"
+          :title="$t('step3.resumeTooltip')"
+          @click="handleResumeSimulation"
+        >
+          <span class="btn-symbol">▶</span>
+          {{ isResuming ? $t('step3.resumingBtn') : $t('step3.resumeBtn') }}
+        </button>
+
+        <!-- 停止：运行中或暂停时可用。永久结束，环境被销毁，无法恢复，但进度保留 -->
+        <button
+          v-if="canStop"
+          class="action-btn stop"
+          :disabled="isStopping"
+          :title="$t('step3.stopTooltip')"
+          @click="handleStopSimulation"
+        >
+          <span class="btn-symbol">■</span>
+          {{ isStopping ? $t('step3.stoppingBtn') : $t('step3.stopBtn') }}
+        </button>
+
         <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
@@ -292,6 +328,8 @@ import { useI18n } from 'vue-i18n'
 import {
   startSimulation,
   stopSimulation,
+  pauseSimulation,
+  resumeSimulation,
   getRunStatus,
   getRunStatusDetail
 } from '../api/simulation'
@@ -311,7 +349,7 @@ const props = defineProps({
   systemLogs: Array
 })
 
-const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
+const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status', 'update-runner-status'])
 
 const router = useRouter()
 
@@ -320,6 +358,8 @@ const isGeneratingReport = ref(false)
 const phase = ref(0) // 0: 未开始, 1: 运行中, 2: 已完成
 const isStarting = ref(false)
 const isStopping = ref(false)
+const isPausing = ref(false)
+const isResuming = ref(false)
 const startError = ref(null)
 const runStatus = ref({})
 const allActions = ref([]) // 所有动作（增量累积）
@@ -360,6 +400,14 @@ const redditElapsedTime = computed(() => {
   return formatElapsedTime(runStatus.value.reddit_current_round || 0)
 })
 
+// 运行状态（以 runner_status 为准）
+// 取值: idle | starting | running | paused | stopping | stopped | completed | failed
+const runnerStatus = computed(() => runStatus.value.runner_status || 'idle')
+const isRunningStatus = computed(() => runnerStatus.value === 'running')
+const isPausedStatus = computed(() => runnerStatus.value === 'paused')
+// 停止按钮在运行中或暂停时可用（终态下没有可停止的东西）
+const canStop = computed(() => isRunningStatus.value || isPausedStatus.value)
+
 // Methods
 const addLog = (msg) => {
   emit('add-log', msg)
@@ -376,6 +424,8 @@ const resetAllState = () => {
   startError.value = null
   isStarting.value = false
   isStopping.value = false
+  isPausing.value = false
+  isResuming.value = false
   stopPolling()  // 停止之前可能存在的轮询
 }
 
@@ -437,7 +487,78 @@ const doStartSimulation = async () => {
   }
 }
 
+// 暂停模拟
+// 语义：在下一轮边界停止开启新轮次（约 5 秒内生效），
+//       进程与模拟环境保持存活，什么都不会丢失，可以在同一轮恢复。
+const handlePauseSimulation = async () => {
+  if (!props.simulationId || isPausing.value) return
+
+  isPausing.value = true
+  addLog(t('log.pausingSim'))
+
+  try {
+    const res = await pauseSimulation({ simulation_id: props.simulationId })
+
+    if (res.success) {
+      const data = res.data || {}
+      // 立即反映后端返回的 paused 状态，不必等待下一次轮询
+      runStatus.value = {
+        ...runStatus.value,
+        ...data,
+        runner_status: data.runner_status || 'paused'
+      }
+      addLog(t('log.simPaused', {
+        current: data.current_round ?? runStatus.value.twitter_current_round ?? 0,
+        total: data.total_rounds ?? runStatus.value.total_rounds ?? '-'
+      }))
+      emit('update-runner-status', 'paused')
+    } else {
+      addLog(t('log.pauseFailed', { error: res.error || t('common.unknownError') }))
+    }
+  } catch (err) {
+    addLog(t('log.pauseException', { error: err.message }))
+  } finally {
+    isPausing.value = false
+  }
+}
+
+// 恢复模拟
+// 语义：从暂停的那一轮继续，环境从未被销毁，不会重头开始。
+const handleResumeSimulation = async () => {
+  if (!props.simulationId || isResuming.value) return
+
+  isResuming.value = true
+  addLog(t('log.resumingSim'))
+
+  try {
+    const res = await resumeSimulation({ simulation_id: props.simulationId })
+
+    if (res.success) {
+      const data = res.data || {}
+      runStatus.value = {
+        ...runStatus.value,
+        ...data,
+        runner_status: data.runner_status || 'running'
+      }
+      phase.value = 1
+      // 暂停期间轮询可能已经停止，这里确保它重新运行
+      startStatusPolling()
+      startDetailPolling()
+      emit('update-status', 'processing')
+      addLog(t('log.simResumed', { round: runStatus.value.twitter_current_round ?? 0 }))
+      emit('update-runner-status', 'running')
+    } else {
+      addLog(t('log.resumeFailed', { error: res.error || t('common.unknownError') }))
+    }
+  } catch (err) {
+    addLog(t('log.resumeException', { error: err.message }))
+  } finally {
+    isResuming.value = false
+  }
+}
+
 // 停止模拟
+// 语义：永久结束本次运行，模拟环境会被销毁，无法恢复；已产生的进度保留。
 const handleStopSimulation = async () => {
   if (!props.simulationId) return
   
@@ -450,8 +571,10 @@ const handleStopSimulation = async () => {
     if (res.success) {
       addLog(t('log.simStoppedSuccess'))
       phase.value = 2
+      runStatus.value = { ...runStatus.value, runner_status: 'stopped' }
       stopPolling()
       emit('update-status', 'completed')
+      emit('update-runner-status', 'stopped')
     } else {
       addLog(t('log.stopFailed', { error: res.error || t('common.unknownError') }))
     }
@@ -500,6 +623,9 @@ const fetchRunStatus = async () => {
       
       runStatus.value = data
       
+      // 上报 runner_status，供父视图区分"运行中"与"已暂停"
+      emit('update-runner-status', data.runner_status || 'idle')
+      
       // 分别检测各平台的轮次变化并输出日志
       if (data.twitter_current_round > prevTwitterRound.value) {
         addLog(`[Plaza] R${data.twitter_current_round}/${data.total_rounds} | T:${data.twitter_simulated_hours || 0}h | A:${data.twitter_actions_count}`)
@@ -515,6 +641,11 @@ const fetchRunStatus = async () => {
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
       const isFailed = data.runner_status === 'failed'
       
+      // 暂停仍然属于"进行中"：进程与环境都活着，Progress 保留
+      if (data.runner_status === 'paused') {
+        phase.value = 1
+      }
+      
       // runner_status is authoritative because the backend only publishes a
       // terminal state after the Zep ingestion barrier has completed.
       if (isFailed) {
@@ -522,11 +653,13 @@ const fetchRunStatus = async () => {
         phase.value = 2
         stopPolling()
         emit('update-status', 'error')
+        emit('update-runner-status', 'failed')
       } else if (isCompleted) {
         addLog(t('log.simCompleted'))
         phase.value = 2
         stopPolling()
         emit('update-status', 'completed')
+        emit('update-runner-status', data.runner_status)
       }
     }
   } catch (err) {
@@ -873,6 +1006,12 @@ onUnmounted(() => {
 }
 
 /* Action Button */
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .action-btn {
   display: inline-flex;
   align-items: center;
@@ -895,6 +1034,38 @@ onUnmounted(() => {
 
 .action-btn.primary:hover:not(:disabled) {
   background: #333;
+}
+
+/* 暂停 / 恢复 / 停止 —— 三个语义完全不同的控件，配色刻意区分 */
+.action-btn.pause,
+.action-btn.resume,
+.action-btn.stop {
+  background: #FFF;
+  border: 1px solid #D0D0D0;
+  color: #333;
+}
+
+.action-btn.pause:hover:not(:disabled) {
+  border-color: #B8860B;
+  color: #8A6508;
+  background: rgba(184, 134, 11, 0.07);
+}
+
+.action-btn.resume:hover:not(:disabled) {
+  border-color: #1A936F;
+  color: #14734F;
+  background: rgba(26, 147, 111, 0.07);
+}
+
+.action-btn.stop:hover:not(:disabled) {
+  border-color: #C5283D;
+  color: #A31F31;
+  background: rgba(197, 40, 61, 0.07);
+}
+
+.btn-symbol {
+  font-size: 10px;
+  line-height: 1;
 }
 
 .action-btn:disabled {
