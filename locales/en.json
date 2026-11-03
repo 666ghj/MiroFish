@@ -75,7 +75,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -205,7 +211,16 @@
     "forceStopSuccess": "Simulation force stopped",
     "forceStopFailed": "Force stop failed: {error}",
     "startGenerateReportBtn": "Generate Report",
-    "generatingReportBtn": "Starting..."
+    "generatingReportBtn": "Starting...",
+    "pauseBtn": "Pause",
+    "pauseTooltip": "PAUSE — stops starting new rounds at the next round boundary (within ~5s). The simulation process and environment stay alive and nothing is lost. Resume continues from the same round.",
+    "pausingBtn": "Pausing...",
+    "resumeBtn": "Resume",
+    "resumeTooltip": "RESUME — continues a paused run from the round it stopped at. The environment was never torn down, so no progress is lost.",
+    "resumingBtn": "Resuming...",
+    "stopBtn": "Stop",
+    "stopTooltip": "STOP — ends this run permanently: the process is terminated and the simulation environment is destroyed, so it cannot be resumed. Progress made so far is kept. Works while running or paused.",
+    "stoppingBtn": "Stopping..."
   },
   "step4": {
     "generatingSection": "Generating {title}...",
@@ -565,7 +580,15 @@
     "getReportInfoFailed": "Failed to get report info: {error}",
     "enterStep": "Entering Step {step}: {name}",
     "returnToStep": "Returning to Step {step}: {name}",
-    "customSimRounds": "Custom simulation rounds: {rounds} rounds"
+    "customSimRounds": "Custom simulation rounds: {rounds} rounds",
+    "pauseException": "Pause error: {error}",
+    "pauseFailed": "Pause failed: {error}",
+    "pausingSim": "Pausing simulation (new rounds will stop at the next round boundary; environment stays alive)...",
+    "resumeException": "Resume error: {error}",
+    "resumeFailed": "Resume failed: {error}",
+    "resumingSim": "Resuming simulation...",
+    "simPaused": "⏸ Simulation paused at round {current}/{total}. Process and environment are still alive — press Resume to continue from this round.",
+    "simResumed": "▶ Simulation resumed from round {round}."
   },
   "report": {
     "taskStarted": "Report generation task started",
@@ -663,5 +686,8 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "simulationRun": {
+    "paused": "Paused"
   }
 }

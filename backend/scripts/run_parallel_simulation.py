@@ -81,6 +81,51 @@ from typing import Dict, Any, List, Optional, Tuple
 _shutdown_event = None
 _cleanup_done = False
 
+# 暂停控制：控制文件由后端写入（跨进程通信）。
+# 值 "pause" 让轮次循环在轮边界挂起；"resume"/删除文件恢复正常运行。
+_PAUSE_CONTROL_FILE = None
+_PAUSE_POLL_SECONDS = 0.5
+
+
+def _set_pause_control_file(path: Optional[str]) -> None:
+    global _PAUSE_CONTROL_FILE
+    _PAUSE_CONTROL_FILE = path
+
+
+def _read_pause_control() -> str:
+    """读取暂停控制文件。返回 'pause' | 'resume' | ''（无控制）。"""
+    if not _PAUSE_CONTROL_FILE or not os.path.exists(_PAUSE_CONTROL_FILE):
+        return ""
+    try:
+        with open(_PAUSE_CONTROL_FILE, 'r', encoding='utf-8') as f:
+            return (json.load(f) or {}).get("action", "")
+    except (json.JSONDecodeError, OSError):
+        return ""
+
+
+async def _await_resume(log_info=None) -> bool:
+    """在轮边界挂起，直到收到 resume/停止信号。
+
+    返回 True 表示应当继续运行，False 表示应当退出（收到停止信号）。
+    环境进程保持存活，因此恢复后从当前轮次继续。
+    """
+    if log_info:
+        log_info("已暂停：当前轮次完成后挂起，环境保持运行（可恢复）")
+    while True:
+        if _shutdown_event and _shutdown_event.is_set():
+            if log_info:
+                log_info("暂停期间收到退出信号，停止模拟")
+            return False
+        action = _read_pause_control()
+        if action != "pause":
+            if log_info:
+                log_info("收到恢复信号，继续模拟")
+            return True
+        try:
+            await asyncio.sleep(_PAUSE_POLL_SECONDS)
+        except asyncio.CancelledError:
+            return False
+
 # 添加 backend 目录到路径
 # 脚本固定位于 backend/scripts/ 目录
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1231,7 +1276,12 @@ async def run_twitter_simulation(
             if main_logger:
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
             break
-        
+
+        # 暂停闸门：在轮边界挂起，不销毁环境，恢复后从当前轮继续
+        if _read_pause_control() == "pause":
+            if not await _await_resume(log_info):
+                break
+
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
         simulated_day = simulated_minutes // (60 * 24) + 1
@@ -1430,7 +1480,12 @@ async def run_reddit_simulation(
             if main_logger:
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
             break
-        
+
+        # 暂停闸门：在轮边界挂起，不销毁环境，恢复后从当前轮继续
+        if _read_pause_control() == "pause":
+            if not await _await_resume(log_info):
+                break
+
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
         simulated_day = simulated_minutes // (60 * 24) + 1
@@ -1533,6 +1588,9 @@ async def main():
     config = load_config(args.config)
     simulation_dir = os.path.dirname(args.config) or "."
     wait_for_commands = not args.no_wait
+
+    # 暂停控制文件：位于模拟目录内，由后端进程写入以暂停/恢复轮次循环
+    _set_pause_control_file(os.path.join(simulation_dir, "pause_control.json"))
     
     # 初始化日志配置（禁用 OASIS 日志，清理旧文件）
     init_logging_for_simulation(simulation_dir)
