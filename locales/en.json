@@ -69,13 +69,22 @@
     "promptPlaceholder": "// Describe your simulation or prediction requirement in natural language",
     "engineBadge": "Engine: MiroFish-V1.0",
     "startEngine": "Start Engine",
-    "initializing": "Initializing..."
+    "initializing": "Initializing...",
+    "projectName": "01b / Project Name",
+    "projectNameOptional": "Optional",
+    "projectNamePlaceholder": "// Leave empty to use the default name “Unnamed Project”"
   },
   "main": {
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -205,7 +214,16 @@
     "forceStopSuccess": "Simulation force stopped",
     "forceStopFailed": "Force stop failed: {error}",
     "startGenerateReportBtn": "Generate Report",
-    "generatingReportBtn": "Starting..."
+    "generatingReportBtn": "Starting...",
+    "pauseBtn": "Pause",
+    "resumeBtn": "Resume",
+    "stopBtn": "Stop",
+    "pausingBtn": "Pausing...",
+    "resumingBtn": "Resuming...",
+    "stoppingBtn": "Stopping...",
+    "pauseTooltip": "PAUSE — stops starting new rounds at the next round boundary (within ~5s). The simulation process and environment stay alive and nothing is lost. Resume continues from the same round.",
+    "resumeTooltip": "RESUME — continues a paused run from the round it stopped at. The environment was never torn down, so no progress is lost.",
+    "stopTooltip": "STOP — ends this run permanently: the process is terminated and the simulation environment is destroyed, so it cannot be resumed. Progress made so far is kept. Works while running or paused."
   },
   "step4": {
     "generatingSection": "Generating {title}...",
@@ -297,6 +315,71 @@
     "toggleMaximize": "Maximize/Restore",
     "closeHint": "Close hint"
   },
+  "process": {
+    "stepName": "Graph Construction",
+    "graphTitle": "Real-time Knowledge Graph",
+    "nodeStat": "Nodes",
+    "edgeStat": "Relationships",
+    "refreshGraph": "Refresh graph",
+    "exitFullscreen": "Exit fullscreen",
+    "enterFullscreen": "Fullscreen",
+    "buildingRealtime": "Updating in real-time...",
+    "loadingGraphData": "Loading graph data...",
+    "waitingOntologyTitle": "Waiting for ontology generation",
+    "waitingOntologyHint": "Graph construction will start automatically once generation completes",
+    "buildingGraphTitle": "Building graph",
+    "buildingGraphHint": "Data will appear shortly...",
+    "processFlowTitle": "Build Pipeline",
+    "ontologyPhaseTitle": "Ontology Generation",
+    "ontologyPhaseDesc": "After you upload a document, the LLM analyzes its content and automatically generates an ontology structure suited to opinion simulation (entity types + relation types)",
+    "apiDescription": "API Description",
+    "generationProgress": "Generation Progress",
+    "generatedEntityTypes": "Generated Entity Types ({count})",
+    "generatedRelationTypes": "Generated Relation Types ({count})",
+    "moreRelations": "+{count} more relations...",
+    "waitingOntology": "Waiting for ontology generation...",
+    "graphPhaseTitle": "Graph Construction",
+    "graphPhaseDesc": "Based on the generated ontology, the document is chunked and the Zep API is called to build the knowledge graph, extracting entities and relationships",
+    "waitingOntologyComplete": "Waiting for ontology generation to complete...",
+    "buildProgress": "Build Progress",
+    "buildResult": "Build Result",
+    "entityNodes": "Entity Nodes",
+    "relationEdges": "Relation Edges",
+    "entityTypes": "Entity Types",
+    "graphPhaseDoneTitle": "Construction Complete",
+    "graphPhaseDoneDesc": "Ready for the next step",
+    "enterEnvSetup": "Enter Environment Setup",
+    "projectInfo": "Project Info",
+    "projectName": "Project Name",
+    "projectId": "Project ID",
+    "graphId": "Graph ID",
+    "simulationRequirement": "Simulation Requirement",
+    "statusFailed": "Construction failed",
+    "statusCompleted": "Construction complete",
+    "statusBuildingGraph": "Building graph",
+    "statusGeneratingOntology": "Generating ontology",
+    "statusInitializing": "Initializing",
+    "phaseDone": "Done",
+    "phaseInProgress": "In progress",
+    "phaseWaiting": "Waiting",
+    "envSetupInDevelopment": "Environment setup is under development...",
+    "errorNoPendingFiles": "No files pending upload. Please return to the homepage and try again.",
+    "progressUploadingAndAnalyzing": "Uploading files and analyzing documents...",
+    "errorOntologyGenerationFailed": "Ontology generation failed",
+    "errorProjectInitFailed": "Project initialization failed: {error}",
+    "errorUnknown": "Unknown error",
+    "errorLoadProjectFailed": "Failed to load project",
+    "errorProcessingFailed": "Processing failed",
+    "progressStartingBuild": "Starting graph construction...",
+    "progressBuildTaskStarted": "Graph construction task started...",
+    "errorStartBuildFailed": "Failed to start graph construction",
+    "progressProcessing": "Processing...",
+    "progressBuildCompleteLoading": "Construction complete, loading graph...",
+    "errorGraphBuildFailed": "Graph construction failed: {error}",
+    "waitingGraphData": "Waiting for graph data...",
+    "unnamed": "Unnamed",
+    "unknownNode": "Unknown"
+  },
   "history": {
     "title": "Simulation History",
     "graphBuild": "Graph Build",
@@ -316,7 +399,23 @@
     "notStarted": "Not started",
     "roundsProgress": "{current}/{total} rounds",
     "untitledSimulation": "Untitled simulation",
-    "unknownFile": "Unknown file"
+    "unknownFile": "Unknown file",
+    "projectName": "Project Name",
+    "untitledProject": "Untitled project",
+    "rename": "Rename",
+    "delete": "Delete",
+    "renameTitle": "Rename Project",
+    "renameTooltip": "Rename this project. Only the display name changes — the project ID and all its data stay the same.",
+    "deleteTooltip": "Delete this project permanently. The project and its graph/simulation data are removed and cannot be recovered.",
+    "projectNamePlaceholder": "Enter a new project name",
+    "renaming": "Saving...",
+    "deleting": "Deleting...",
+    "renameEmpty": "Project name cannot be empty.",
+    "renameFailed": "Rename failed",
+    "deleteTitle": "Delete Project",
+    "deleteConfirm": "Are you sure you want to delete the project “{name}”?",
+    "deleteWarning": "This permanently removes the project, its graph and its simulation data. This action cannot be undone.",
+    "deleteFailed": "Delete failed"
   },
   "api": {
     "projectNotFound": "Project not found: {id}",
@@ -388,7 +487,9 @@
     "envRunning": "Environment is running and ready for Interview commands",
     "envNotRunningShort": "Environment not running or closed",
     "requireGraphIdAndQuery": "Please provide graph_id and query",
-    "initReportAgent": "Initializing Report Agent..."
+    "initReportAgent": "Initializing Report Agent...",
+    "requireProjectName": "Project name is required",
+    "projectNameTooLong": "Project name must be 100 characters or fewer"
   },
   "progress": {
     "initGraphService": "Initializing graph build service...",
@@ -565,7 +666,15 @@
     "getReportInfoFailed": "Failed to get report info: {error}",
     "enterStep": "Entering Step {step}: {name}",
     "returnToStep": "Returning to Step {step}: {name}",
-    "customSimRounds": "Custom simulation rounds: {rounds} rounds"
+    "customSimRounds": "Custom simulation rounds: {rounds} rounds",
+    "pausingSim": "Pausing simulation (new rounds will stop at the next round boundary; environment stays alive)...",
+    "simPaused": "⏸ Simulation paused at round {current}/{total}. Process and environment are still alive — press Resume to continue from this round.",
+    "pauseFailed": "Pause failed: {error}",
+    "pauseException": "Pause error: {error}",
+    "resumingSim": "Resuming simulation...",
+    "simResumed": "▶ Simulation resumed from round {round}.",
+    "resumeFailed": "Resume failed: {error}",
+    "resumeException": "Resume error: {error}"
   },
   "report": {
     "taskStarted": "Report generation task started",
@@ -663,5 +772,8 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "simulationRun": {
+    "paused": "Paused"
   }
 }

@@ -64,3 +64,41 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 获取全部项目列表
+ * 与 /api/simulation/history 不同，这里包含仅生成了本体/图谱、尚未创建模拟的项目
+ * @returns {Promise} { success, data: [{ project_id, name, status, created_at, graph_id }], count }
+ */
+export function listProjects() {
+  return service({
+    url: '/api/graph/project/list',
+    method: 'get'
+  })
+}
+
+/**
+ * 重命名项目
+ * @param {String} projectId - 项目ID
+ * @param {String} name - 新的项目名称
+ * @returns {Promise} { success, data: { project_id, name } }
+ */
+export function renameProject(projectId, name) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'patch',
+    data: { name }
+  })
+}
+
+/**
+ * 删除项目
+ * @param {String} projectId - 项目ID
+ * @returns {Promise} { success }
+ */
+export function deleteProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'delete'
+  })
+}

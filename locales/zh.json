@@ -69,13 +69,22 @@
     "promptPlaceholder": "// 用自然语言输入模拟或预测需求（例.武大若发布撤销肖某处分的公告，会引发什么舆情走向）",
     "engineBadge": "引擎: MiroFish-V1.0",
     "startEngine": "启动引擎",
-    "initializing": "初始化中..."
+    "initializing": "初始化中...",
+    "projectName": "01b / 项目名称",
+    "projectNameOptional": "选填",
+    "projectNamePlaceholder": "// 留空则使用默认名称「Unnamed Project」"
   },
   "main": {
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -205,7 +214,16 @@
     "forceStopSuccess": "模拟已强制停止",
     "forceStopFailed": "强制停止失败: {error}",
     "startGenerateReportBtn": "开始生成结果报告",
-    "generatingReportBtn": "启动中..."
+    "generatingReportBtn": "启动中...",
+    "pauseBtn": "暂停",
+    "resumeBtn": "继续",
+    "stopBtn": "停止",
+    "pausingBtn": "暂停中...",
+    "resumingBtn": "继续中...",
+    "stoppingBtn": "停止中...",
+    "pauseTooltip": "暂停 — 在下一个轮次边界（约 5 秒内）停止开启新轮次。模拟进程与运行环境保持存活，数据不会丢失。点击「继续」可从同一轮接着跑。",
+    "resumeTooltip": "继续 — 让已暂停的模拟从它停下的那一轮接着运行。运行环境从未被销毁，因此不会丢失任何进度。",
+    "stopTooltip": "停止 — 永久结束本次运行：进程被终止，模拟环境被销毁，之后无法恢复。已产生的进度会保留。运行中或暂停时均可使用。"
   },
   "step4": {
     "generatingSection": "正在生成{title}...",
@@ -297,6 +315,71 @@
     "toggleMaximize": "最大化/还原",
     "closeHint": "关闭提示"
   },
+  "process": {
+    "stepName": "图谱构建",
+    "graphTitle": "实时知识图谱",
+    "nodeStat": "节点",
+    "edgeStat": "关系",
+    "refreshGraph": "刷新图谱",
+    "exitFullscreen": "退出全屏",
+    "enterFullscreen": "全屏显示",
+    "buildingRealtime": "实时更新中...",
+    "loadingGraphData": "图谱数据加载中...",
+    "waitingOntologyTitle": "等待本体生成",
+    "waitingOntologyHint": "生成完成后将自动开始构建图谱",
+    "buildingGraphTitle": "图谱构建中",
+    "buildingGraphHint": "数据即将显示...",
+    "processFlowTitle": "构建流程",
+    "ontologyPhaseTitle": "本体生成",
+    "ontologyPhaseDesc": "上传文档后，LLM分析文档内容，自动生成适合舆论模拟的本体结构（实体类型 + 关系类型）",
+    "apiDescription": "接口说明",
+    "generationProgress": "生成进度",
+    "generatedEntityTypes": "生成的实体类型 ({count})",
+    "generatedRelationTypes": "生成的关系类型 ({count})",
+    "moreRelations": "+{count} 更多关系...",
+    "waitingOntology": "等待本体生成...",
+    "graphPhaseTitle": "图谱构建",
+    "graphPhaseDesc": "基于生成的本体，将文档分块后调用 Zep API 构建知识图谱，提取实体和关系",
+    "waitingOntologyComplete": "等待本体生成完成...",
+    "buildProgress": "构建进度",
+    "buildResult": "构建结果",
+    "entityNodes": "实体节点",
+    "relationEdges": "关系边",
+    "entityTypes": "实体类型",
+    "graphPhaseDoneTitle": "构建完成",
+    "graphPhaseDoneDesc": "准备进入下一步骤",
+    "enterEnvSetup": "进入环境搭建",
+    "projectInfo": "项目信息",
+    "projectName": "项目名称",
+    "projectId": "项目ID",
+    "graphId": "图谱ID",
+    "simulationRequirement": "模拟需求",
+    "statusFailed": "构建失败",
+    "statusCompleted": "构建完成",
+    "statusBuildingGraph": "图谱构建中",
+    "statusGeneratingOntology": "本体生成中",
+    "statusInitializing": "初始化中",
+    "phaseDone": "已完成",
+    "phaseInProgress": "进行中",
+    "phaseWaiting": "等待中",
+    "envSetupInDevelopment": "环境搭建功能开发中...",
+    "errorNoPendingFiles": "没有待上传的文件，请返回首页重新操作",
+    "progressUploadingAndAnalyzing": "正在上传文件并分析文档...",
+    "errorOntologyGenerationFailed": "本体生成失败",
+    "errorProjectInitFailed": "项目初始化失败: {error}",
+    "errorUnknown": "未知错误",
+    "errorLoadProjectFailed": "加载项目失败",
+    "errorProcessingFailed": "处理失败",
+    "progressStartingBuild": "正在启动图谱构建...",
+    "progressBuildTaskStarted": "图谱构建任务已启动...",
+    "errorStartBuildFailed": "启动图谱构建失败",
+    "progressProcessing": "处理中...",
+    "progressBuildCompleteLoading": "构建完成，正在加载图谱...",
+    "errorGraphBuildFailed": "图谱构建失败: {error}",
+    "waitingGraphData": "等待图谱数据...",
+    "unnamed": "未命名",
+    "unknownNode": "未知"
+  },
   "history": {
     "title": "推演记录",
     "graphBuild": "图谱构建",
@@ -316,7 +399,23 @@
     "notStarted": "未开始",
     "roundsProgress": "{current}/{total} 轮",
     "untitledSimulation": "未命名模拟",
-    "unknownFile": "未知文件"
+    "unknownFile": "未知文件",
+    "projectName": "项目名称",
+    "untitledProject": "未命名项目",
+    "rename": "重命名",
+    "delete": "删除",
+    "renameTitle": "重命名项目",
+    "renameTooltip": "重命名该项目。仅修改显示名称，项目 ID 及其全部数据保持不变。",
+    "deleteTooltip": "永久删除该项目。项目及其图谱/模拟数据都会被移除，且无法恢复。",
+    "projectNamePlaceholder": "请输入新的项目名称",
+    "renaming": "保存中...",
+    "deleting": "删除中...",
+    "renameEmpty": "项目名称不能为空",
+    "renameFailed": "重命名失败",
+    "deleteTitle": "删除项目",
+    "deleteConfirm": "确定要删除项目「{name}」吗？",
+    "deleteWarning": "此操作会永久删除该项目及其图谱、模拟数据，且无法撤销。",
+    "deleteFailed": "删除失败"
   },
   "api": {
     "projectNotFound": "项目不存在: {id}",
@@ -388,7 +487,9 @@
     "envRunning": "环境正在运行，可以接收Interview命令",
     "envNotRunningShort": "环境未运行或已关闭",
     "requireGraphIdAndQuery": "请提供 graph_id 和 query",
-    "initReportAgent": "初始化Report Agent..."
+    "initReportAgent": "初始化Report Agent...",
+    "requireProjectName": "项目名称不能为空",
+    "projectNameTooLong": "项目名称不能超过 100 个字符"
   },
   "progress": {
     "initGraphService": "初始化图谱构建服务...",
@@ -565,7 +666,15 @@
     "getReportInfoFailed": "获取报告信息失败: {error}",
     "enterStep": "进入 Step {step}: {name}",
     "returnToStep": "返回 Step {step}: {name}",
-    "customSimRounds": "自定义模拟轮数: {rounds} 轮"
+    "customSimRounds": "自定义模拟轮数: {rounds} 轮",
+    "pausingSim": "正在暂停模拟（新轮次将在下一个轮次边界停止，环境保持存活）...",
+    "simPaused": "⏸ 模拟已暂停于第 {current}/{total} 轮。进程与运行环境仍然存活 — 点击「继续」可从该轮接着运行。",
+    "pauseFailed": "暂停失败: {error}",
+    "pauseException": "暂停异常: {error}",
+    "resumingSim": "正在继续模拟...",
+    "simResumed": "▶ 模拟已从第 {round} 轮继续运行。",
+    "resumeFailed": "继续失败: {error}",
+    "resumeException": "继续异常: {error}"
   },
   "report": {
     "taskStarted": "报告生成任务开始",
@@ -663,5 +772,8 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "simulationRun": {
+    "paused": "已暂停"
   }
 }
