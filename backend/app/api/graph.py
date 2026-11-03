@@ -210,6 +210,54 @@ def _delete_project_impl(project_id: str):
     })
 
 
+@graph_bp.route('/project/<project_id>', methods=['PATCH'])
+def rename_project(project_id: str):
+    """
+    重命名项目
+
+    请求（JSON）：
+        {
+            "name": "我的项目"   // 必填，1-100 字符
+        }
+
+    返回：
+        {
+            "success": true,
+            "data": { "project_id": "proj_xxxx", "name": "我的项目" }
+        }
+    """
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({
+            "success": False,
+            "error": t('api.requireProjectName')
+        }), 400
+    if len(name) > 100:
+        return jsonify({
+            "success": False,
+            "error": t('api.projectNameTooLong')
+        }), 400
+
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({
+            "success": False,
+            "error": t('api.projectNotFound', id=project_id)
+        }), 404
+
+    project.name = name
+    ProjectManager.save_project(project)
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "project_id": project.project_id,
+            "name": project.name,
+        }
+    })
+
+
 @graph_bp.route('/project/<project_id>/reset', methods=['POST'])
 def reset_project(project_id: str):
     with _project_build_lock(project_id):
