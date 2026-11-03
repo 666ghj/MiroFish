@@ -21,7 +21,7 @@
     <div v-if="projects.length > 0" class="cards-container" :class="{ expanded: isExpanded }" :style="containerStyle">
       <div 
         v-for="(project, index) in projects" 
-        :key="project.simulation_id"
+        :key="getCardKey(project)"
         class="project-card"
         :class="{ expanded: isExpanded, hovering: hoveringCard === index }"
         :style="getCardStyle(index)"
@@ -31,7 +31,7 @@
       >
         <!-- 卡片头部：simulation_id 和 功能可用状态 -->
         <div class="card-header">
-          <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
+          <span class="card-id">{{ getCardId(project) }}</span>
           <div class="card-status-icons">
             <span 
               class="status-icon" 
@@ -39,7 +39,8 @@
               :title="$t('history.graphBuild')"
             >◇</span>
             <span 
-              class="status-icon available" 
+              class="status-icon" 
+              :class="{ available: project.simulation_id, unavailable: !project.simulation_id }"
               :title="$t('history.envSetup')"
             >◈</span>
             <span 
@@ -77,8 +78,8 @@
           </div>
         </div>
 
-        <!-- 卡片标题（使用模拟需求的前20字作为标题） -->
-        <h3 class="card-title">{{ getSimulationTitle(project.simulation_requirement) }}</h3>
+        <!-- 卡片标题（优先显示项目名称，其次回退到模拟需求前20字） -->
+        <h3 class="card-title">{{ getProjectTitle(project) }}</h3>
 
         <!-- 卡片描述（模拟需求完整展示） -->
         <p class="card-desc">{{ truncateText(project.simulation_requirement, 55) }}</p>
@@ -92,6 +93,20 @@
           <span class="card-progress" :class="getProgressClass(project)">
             <span class="status-dot">●</span> {{ formatRounds(project) }}
           </span>
+        </div>
+
+        <!-- 项目操作：重命名 / 删除 -->
+        <div class="card-actions" @click.stop>
+          <button
+            class="card-action-btn rename"
+            :title="$t('history.renameTooltip')"
+            @click.stop="openRename(project)"
+          >✎ {{ $t('history.rename') }}</button>
+          <button
+            class="card-action-btn delete"
+            :title="$t('history.deleteTooltip')"
+            @click.stop="openDelete(project)"
+          >✕ {{ $t('history.delete') }}</button>
         </div>
         
         <!-- 底部装饰线 (hover时展开) -->
@@ -113,13 +128,30 @@
             <!-- 弹窗头部 -->
             <div class="modal-header">
               <div class="modal-title-section">
-                <span class="modal-id">{{ formatSimulationId(selectedProject.simulation_id) }}</span>
+                <span class="modal-id">{{ getCardId(selectedProject) }}</span>
+                <span class="modal-project-name" v-if="selectedProject.name">{{ selectedProject.name }}</span>
                 <span class="modal-progress" :class="getProgressClass(selectedProject)">
                   <span class="status-dot">●</span> {{ formatRounds(selectedProject) }}
                 </span>
                 <span class="modal-create-time">{{ formatDate(selectedProject.created_at) }} {{ formatTime(selectedProject.created_at) }}</span>
               </div>
               <button class="modal-close" @click="closeModal">×</button>
+            </div>
+
+            <!-- 项目操作栏 -->
+            <div class="modal-project-bar">
+              <div class="modal-project-meta">
+                <span class="modal-label">{{ $t('history.projectName') }}</span>
+                <span class="modal-project-value">{{ selectedProject.name || $t('history.untitledProject') }}</span>
+              </div>
+              <div class="modal-project-buttons">
+                <button class="modal-small-btn" @click.stop="openRename(selectedProject)">
+                  {{ $t('history.rename') }}
+                </button>
+                <button class="modal-small-btn danger" @click.stop="openDelete(selectedProject)">
+                  {{ $t('history.delete') }}
+                </button>
+              </div>
             </div>
 
             <!-- 弹窗内容 -->
@@ -164,6 +196,7 @@
               <button 
                 class="modal-btn btn-simulation" 
                 @click="goToSimulation"
+                :disabled="!selectedProject.simulation_id"
               >
                 <span class="btn-step">Step2</span>
                 <span class="btn-icon">◈</span>
@@ -187,6 +220,70 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 重命名项目弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="renamingProject" class="modal-overlay" @click.self="closeRename">
+          <div class="modal-content dialog-content">
+            <div class="modal-header">
+              <span class="modal-id">{{ $t('history.renameTitle') }}</span>
+              <button class="modal-close" @click="closeRename">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="modal-label">{{ $t('history.projectName') }}</div>
+              <input
+                ref="renameInput"
+                v-model="renameValue"
+                class="rename-input"
+                type="text"
+                maxlength="100"
+                :placeholder="$t('history.projectNamePlaceholder')"
+                @keyup.enter="submitRename"
+              />
+              <div v-if="renameError" class="dialog-error">{{ renameError }}</div>
+            </div>
+            <div class="dialog-actions">
+              <button class="dialog-btn" :disabled="isRenaming" @click="closeRename">
+                {{ $t('common.cancel') }}
+              </button>
+              <button class="dialog-btn primary" :disabled="isRenaming" @click="submitRename">
+                {{ isRenaming ? $t('history.renaming') : $t('common.confirm') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 删除项目确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="deletingProject" class="modal-overlay" @click.self="closeDelete">
+          <div class="modal-content dialog-content">
+            <div class="modal-header">
+              <span class="modal-id">{{ $t('history.deleteTitle') }}</span>
+              <button class="modal-close" @click="closeDelete">×</button>
+            </div>
+            <div class="modal-body">
+              <p class="dialog-warning">
+                {{ $t('history.deleteConfirm', { name: deleteTargetName }) }}
+              </p>
+              <p class="dialog-warning-hint">{{ $t('history.deleteWarning') }}</p>
+              <div v-if="deleteError" class="dialog-error">{{ deleteError }}</div>
+            </div>
+            <div class="dialog-actions">
+              <button class="dialog-btn" :disabled="isDeleting" @click="closeDelete">
+                {{ $t('common.cancel') }}
+              </button>
+              <button class="dialog-btn danger" :disabled="isDeleting" @click="submitDelete">
+                {{ isDeleting ? $t('history.deleting') : $t('history.delete') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -195,6 +292,7 @@ import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } f
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getSimulationHistory } from '../api/simulation'
+import { listProjects, renameProject, deleteProject } from '../api/graph'
 
 const router = useRouter()
 const route = useRoute()
@@ -211,6 +309,16 @@ let observer = null
 let isAnimating = false  // 动画锁，防止闪烁
 let expandDebounceTimer = null  // 防抖定时器
 let pendingState = null  // 记录待执行的目标状态
+
+// 重命名 / 删除状态
+const renamingProject = ref(null)
+const renameValue = ref('')
+const renameError = ref('')
+const isRenaming = ref(false)
+const renameInput = ref(null)
+const deletingProject = ref(null)
+const deleteError = ref('')
+const isDeleting = ref(false)
 
 // 卡片布局配置 - 调整为更宽的比例
 const CARDS_PER_ROW = 4
@@ -350,6 +458,36 @@ const getSimulationTitle = (requirement) => {
   return requirement.length > 20 ? title + '...' : title
 }
 
+// 卡片唯一键：仅有图谱的项目没有 simulation_id
+const getCardKey = (project) => project.project_id || project.simulation_id || `idx_${Math.random()}`
+
+// 卡片头部标识：有模拟显示 SIM_xxx，否则回退到项目ID
+const getCardId = (project) => {
+  if (project.simulation_id) return formatSimulationId(project.simulation_id)
+  if (project.project_id) return formatProjectId(project.project_id)
+  return 'SIM_UNKNOWN'
+}
+
+// 格式化 project_id 显示（截取前6位）
+const formatProjectId = (projectId) => {
+  if (!projectId) return 'PROJ_UNKNOWN'
+  const prefix = projectId.replace('proj_', '').slice(0, 6)
+  return `PROJ_${prefix.toUpperCase()}`
+}
+
+// 卡片标题：优先项目名称，其次模拟需求，最后占位
+const getProjectTitle = (project) => {
+  if (project.name) return project.name
+  return getSimulationTitle(project.simulation_requirement)
+}
+
+// 删除确认中展示的项目名称（必须指名道姓）
+const deleteTargetName = computed(() => {
+  const project = deletingProject.value
+  if (!project) return ''
+  return project.name || getSimulationTitle(project.simulation_requirement) || getCardId(project)
+})
+
 // 格式化 simulation_id 显示（截取前6位）
 const formatSimulationId = (simulationId) => {
   if (!simulationId) return 'SIM_UNKNOWN'
@@ -443,18 +581,162 @@ const goToReport = () => {
 }
 
 // 加载历史项目
+//
+// 两个数据源合并：
+//  1. /api/simulation/history —— 带文件/报告等详情的模拟记录
+//  2. /api/graph/project/list —— 全部项目，包含只生成了本体/图谱、
+//     还没有模拟的项目（否则这些项目无法被重命名或删除）
 const loadHistory = async () => {
   try {
     loading.value = true
-    const response = await getSimulationHistory(20)
-    if (response.success) {
-      projects.value = response.data || []
+
+    const [historyResult, projectResult] = await Promise.allSettled([
+      getSimulationHistory(20),
+      listProjects()
+    ])
+
+    const historyItems =
+      historyResult.status === 'fulfilled' && historyResult.value?.success
+        ? historyResult.value.data || []
+        : []
+    if (historyResult.status === 'rejected') {
+      console.error('加载历史项目失败:', historyResult.reason)
     }
+
+    const projectItems =
+      projectResult.status === 'fulfilled' && projectResult.value?.success
+        ? projectResult.value.data || []
+        : []
+    if (projectResult.status === 'rejected') {
+      console.error('加载项目列表失败:', projectResult.reason)
+    }
+
+    projects.value = mergeProjects(projectItems, historyItems)
   } catch (error) {
     console.error('加载历史项目失败:', error)
     projects.value = []
   } finally {
     loading.value = false
+  }
+}
+
+// 合并：以项目列表为全集，把模拟详情附加到对应项目上
+const mergeProjects = (projectItems, historyItems) => {
+  const merged = []
+  const byProjectId = new Map()
+
+  projectItems.forEach((proj) => {
+    const entry = { ...proj }
+    merged.push(entry)
+    if (proj.project_id) byProjectId.set(proj.project_id, entry)
+  })
+
+  historyItems.forEach((sim) => {
+    const match = sim.project_id ? byProjectId.get(sim.project_id) : null
+    if (match) {
+      // 项目列表缺少的模拟详情字段用历史记录补齐，已有字段以模拟详情为准
+      Object.assign(match, sim, { name: match.name || sim.name })
+    } else {
+      // 模拟记录指向的项目已经不在项目列表中，仍然展示它
+      merged.push({ ...sim })
+    }
+  })
+
+  return merged
+}
+
+// 打开重命名弹窗
+const openRename = (project) => {
+  renamingProject.value = project
+  renameValue.value = project.name || ''
+  renameError.value = ''
+  nextTick(() => {
+    renameInput.value?.focus()
+    renameInput.value?.select()
+  })
+}
+
+// 关闭重命名弹窗
+const closeRename = () => {
+  renamingProject.value = null
+  renameValue.value = ''
+  renameError.value = ''
+  isRenaming.value = false
+}
+
+// 提交重命名
+const submitRename = async () => {
+  const project = renamingProject.value
+  if (!project || isRenaming.value) return
+
+  const newName = renameValue.value.trim()
+  if (!newName) {
+    renameError.value = t('history.renameEmpty')
+    return
+  }
+  if (newName === project.name) {
+    closeRename()
+    return
+  }
+
+  isRenaming.value = true
+  renameError.value = ''
+  try {
+    const response = await renameProject(project.project_id, newName)
+    if (response.success) {
+      // 同步本地数据，避免整页刷新造成的闪烁
+      project.name = response.data?.name || newName
+      if (selectedProject.value === project) {
+        selectedProject.value = { ...project }
+      }
+      closeRename()
+      await loadHistory()
+    } else {
+      renameError.value = response.error || t('history.renameFailed')
+    }
+  } catch (err) {
+    renameError.value = err.message || t('history.renameFailed')
+  } finally {
+    isRenaming.value = false
+  }
+}
+
+// 打开删除确认弹窗
+const openDelete = (project) => {
+  deletingProject.value = project
+  deleteError.value = ''
+}
+
+// 关闭删除确认弹窗
+const closeDelete = () => {
+  deletingProject.value = null
+  deleteError.value = ''
+  isDeleting.value = false
+}
+
+// 提交删除
+const submitDelete = async () => {
+  const project = deletingProject.value
+  if (!project || isDeleting.value) return
+
+  isDeleting.value = true
+  deleteError.value = ''
+  try {
+    const response = await deleteProject(project.project_id)
+    if (response.success) {
+      // 关掉可能正打开的项目详情弹窗
+      if (selectedProject.value === project) {
+        closeModal()
+      }
+      closeDelete()
+      await loadHistory()
+    } else {
+      deleteError.value = response.error || t('history.deleteFailed')
+    }
+  } catch (err) {
+    deleteError.value = err.message || t('history.deleteFailed')
+  } finally {
+    isDeleting.value = false
   }
 }
 
@@ -973,6 +1255,218 @@ onUnmounted(() => {
 
 .project-card:hover .card-bottom-line {
   width: 100%;
+}
+
+/* ===== 卡片上的项目操作按钮 ===== */
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #F3F4F6;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.project-card:hover .card-actions,
+.project-card:focus-within .card-actions {
+  opacity: 1;
+}
+
+.card-action-btn {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: #6B7280;
+  transition: all 0.2s ease;
+}
+
+.card-action-btn.rename:hover {
+  border-color: #0275D8;
+  color: #0275D8;
+  background: rgba(2, 117, 216, 0.06);
+}
+
+.card-action-btn.delete:hover {
+  border-color: #C5283D;
+  color: #C5283D;
+  background: rgba(197, 40, 61, 0.06);
+}
+
+/* ===== 弹窗中的项目名称与操作栏 ===== */
+.modal-project-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-project-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 32px;
+  border-bottom: 1px solid #F3F4F6;
+  background: #FAFAFA;
+}
+
+.modal-project-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modal-project-meta .modal-label {
+  margin-bottom: 0;
+}
+
+.modal-project-value {
+  font-size: 0.9rem;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-project-buttons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.modal-small-btn {
+  padding: 6px 14px;
+  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: #4B5563;
+  transition: all 0.2s ease;
+}
+
+.modal-small-btn:hover {
+  border-color: #111827;
+  color: #111827;
+}
+
+.modal-small-btn.danger:hover {
+  border-color: #C5283D;
+  color: #C5283D;
+}
+
+/* ===== 重命名 / 删除确认弹窗 ===== */
+.dialog-content {
+  width: 440px;
+}
+
+.rename-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  color: #111827;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.rename-input:focus {
+  border-color: #0275D8;
+}
+
+.dialog-warning {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.dialog-warning-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #9CA3AF;
+  line-height: 1.55;
+}
+
+.dialog-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(197, 40, 61, 0.3);
+  background: rgba(197, 40, 61, 0.06);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: #C5283D;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 32px 24px;
+}
+
+.dialog-btn {
+  min-width: 96px;
+  padding: 10px 18px;
+  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4B5563;
+  transition: all 0.2s ease;
+}
+
+.dialog-btn:hover:not(:disabled) {
+  border-color: #111827;
+  color: #111827;
+}
+
+.dialog-btn.primary {
+  background: #111827;
+  border-color: #111827;
+  color: #FFFFFF;
+}
+
+.dialog-btn.primary:hover:not(:disabled) {
+  background: #0275D8;
+  border-color: #0275D8;
+  color: #FFFFFF;
+}
+
+.dialog-btn.danger {
+  background: #C5283D;
+  border-color: #C5283D;
+  color: #FFFFFF;
+}
+
+.dialog-btn.danger:hover:not(:disabled) {
+  background: #A31F31;
+  border-color: #A31F31;
+  color: #FFFFFF;
+}
+
+.dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 空状态 */

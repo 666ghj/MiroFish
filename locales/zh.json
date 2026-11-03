@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -316,7 +322,23 @@
     "notStarted": "未开始",
     "roundsProgress": "{current}/{total} 轮",
     "untitledSimulation": "未命名模拟",
-    "unknownFile": "未知文件"
+    "unknownFile": "未知文件",
+    "delete": "删除",
+    "deleteConfirm": "确定要删除项目「{name}」吗？",
+    "deleteFailed": "删除失败",
+    "deleteTitle": "删除项目",
+    "deleteTooltip": "永久删除该项目。项目及其图谱/模拟数据都会被移除，且无法恢复。",
+    "deleteWarning": "此操作会永久删除该项目及其图谱、模拟数据，且无法撤销。",
+    "deleting": "删除中...",
+    "projectName": "项目名称",
+    "projectNamePlaceholder": "请输入新的项目名称",
+    "rename": "重命名",
+    "renameEmpty": "项目名称不能为空",
+    "renameFailed": "重命名失败",
+    "renameTitle": "重命名项目",
+    "renameTooltip": "重命名该项目。仅修改显示名称，项目 ID 及其全部数据保持不变。",
+    "renaming": "保存中...",
+    "untitledProject": "未命名项目"
   },
   "api": {
     "projectNotFound": "项目不存在: {id}",
@@ -388,7 +410,9 @@
     "envRunning": "环境正在运行，可以接收Interview命令",
     "envNotRunningShort": "环境未运行或已关闭",
     "requireGraphIdAndQuery": "请提供 graph_id 和 query",
-    "initReportAgent": "初始化Report Agent..."
+    "initReportAgent": "初始化Report Agent...",
+    "projectNameTooLong": "项目名称不能超过 100 个字符",
+    "requireProjectName": "项目名称不能为空"
   },
   "progress": {
     "initGraphService": "初始化图谱构建服务...",

@@ -75,7 +75,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -316,7 +322,23 @@
     "notStarted": "Not started",
     "roundsProgress": "{current}/{total} rounds",
     "untitledSimulation": "Untitled simulation",
-    "unknownFile": "Unknown file"
+    "unknownFile": "Unknown file",
+    "delete": "Delete",
+    "deleteConfirm": "Are you sure you want to delete the project “{name}”?",
+    "deleteFailed": "Delete failed",
+    "deleteTitle": "Delete Project",
+    "deleteTooltip": "Delete this project permanently. The project and its graph/simulation data are removed and cannot be recovered.",
+    "deleteWarning": "This permanently removes the project, its graph and its simulation data. This action cannot be undone.",
+    "deleting": "Deleting...",
+    "projectName": "Project Name",
+    "projectNamePlaceholder": "Enter a new project name",
+    "rename": "Rename",
+    "renameEmpty": "Project name cannot be empty.",
+    "renameFailed": "Rename failed",
+    "renameTitle": "Rename Project",
+    "renameTooltip": "Rename this project. Only the display name changes — the project ID and all its data stay the same.",
+    "renaming": "Saving...",
+    "untitledProject": "Untitled project"
   },
   "api": {
     "projectNotFound": "Project not found: {id}",
@@ -388,7 +410,9 @@
     "envRunning": "Environment is running and ready for Interview commands",
     "envNotRunningShort": "Environment not running or closed",
     "requireGraphIdAndQuery": "Please provide graph_id and query",
-    "initReportAgent": "Initializing Report Agent..."
+    "initReportAgent": "Initializing Report Agent...",
+    "projectNameTooLong": "Project name must be 100 characters or fewer",
+    "requireProjectName": "Project name is required"
   },
   "progress": {
     "initGraphService": "Initializing graph build service...",
