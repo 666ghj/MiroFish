@@ -78,6 +78,8 @@
     "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
   },
   "step1": {
+    "retryBuild": "重试图谱构建",
+    "retryBuildHint": "修正配置后，使用现有来源和本体重试图谱构建，不会重新生成本体。",
     "ontologyGeneration": "本体生成",
     "ontologyCompleted": "已完成",
     "ontologyGenerating": "生成中",
@@ -319,6 +321,7 @@
     "unknownFile": "未知文件"
   },
   "api": {
+    "zepAccessRejected": "Zep Cloud 拒绝访问（HTTP {status}）。请检查 ZEP_API_KEY 及项目权限。此处必须使用独立于 LLM 服务商的 Zep Cloud 密钥。修正后可重试图谱构建，已保存的本体可以复用。",
     "projectNotFound": "项目不存在: {id}",
     "projectDeleteFailed": "项目不存在或删除失败: {id}",
     "projectDeleted": "项目已删除: {id}",

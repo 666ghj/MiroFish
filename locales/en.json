@@ -78,6 +78,8 @@
     "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
   },
   "step1": {
+    "retryBuild": "Retry graph build",
+    "retryBuildHint": "Correct the configuration, then retry graph construction using the existing source and ontology. This does not regenerate the ontology.",
     "ontologyGeneration": "Ontology Generation",
     "ontologyCompleted": "Completed",
     "ontologyGenerating": "Generating",
@@ -319,6 +321,7 @@
     "unknownFile": "Unknown file"
   },
   "api": {
+    "zepAccessRejected": "Zep Cloud rejected access (HTTP {status}). Check ZEP_API_KEY and its project permissions. It must be a Zep Cloud key, separate from the LLM provider key. After correcting it, retry graph construction; the saved ontology can be reused.",
     "projectNotFound": "Project not found: {id}",
     "projectDeleteFailed": "Project not found or deletion failed: {id}",
     "projectDeleted": "Project deleted: {id}",

@@ -10,6 +10,7 @@ import threading
 from contextlib import ExitStack, nullcontext
 from flask import request, jsonify
 from zep_cloud import NotFoundError
+from zep_cloud.core.api_error import ApiError as ZepApiError
 
 from . import graph_bp
 from ..config import Config
@@ -803,16 +804,21 @@ def _build_graph_impl():
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
                 build_logger.debug(traceback.format_exc())
                 
+                auth_failure = isinstance(e, ZepApiError) and e.status_code in (401, 403)
+                public_error = (
+                    t('api.zepAccessRejected', status=e.status_code)
+                    if auth_failure else str(e)
+                )
                 with _project_build_lock(project_id):
                     project.status = ProjectStatus.FAILED
-                    project.error = str(e)
+                    project.error = public_error
                     ProjectManager.save_project(project)
 
                     task_manager.update_task(
                         task_id,
                         status=TaskStatus.FAILED,
-                        message=t('progress.buildFailed', error=str(e)),
-                        error=traceback.format_exc()
+                        message=t('progress.buildFailed', error=public_error),
+                        error=public_error if auth_failure else traceback.format_exc()
                     )
         
         # 启动后台线程
