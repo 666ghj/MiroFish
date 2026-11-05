@@ -17,7 +17,7 @@ from zep_cloud import NotFoundError
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
-from ..utils.locale import get_locale, t
+from ..utils.locale import get_language_instruction, get_locale, t
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from ..utils.zep import (
     call_zep_read_with_retry,
@@ -384,7 +384,7 @@ class InterviewResult:
             f"**采访主题:** {self.interview_topic}",
             f"**采访人数:** {self.interviewed_count} / {self.total_agents} 位模拟Agent",
             "\n### 采访对象选择理由",
-            self.selection_reasoning or "（自动选择）",
+            self.selection_reasoning or ("（自动选择）" if get_locale() == 'zh' else "(chosen automatically)"),
             "\n---",
             "\n### 采访实录",
         ]
@@ -395,10 +395,10 @@ class InterviewResult:
                 text_parts.append(interview.to_text())
                 text_parts.append("\n---")
         else:
-            text_parts.append("（无采访记录）\n\n---")
+            text_parts.append(("（无采访记录）" if get_locale() == 'zh' else "(no interview transcripts)") + "\n\n---")
 
         text_parts.append("\n### 采访摘要与核心观点")
-        text_parts.append(self.summary or "（无摘要）")
+        text_parts.append(self.summary or ("（无摘要）" if get_locale() == 'zh' else "(no summary)"))
 
         return "\n".join(text_parts)
 
@@ -1120,7 +1120,7 @@ class ZepToolsService:
         try:
             response = self.llm.chat_json(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": f"{system_prompt}\n\n{get_language_instruction()}"},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3
@@ -1385,9 +1385,9 @@ class ZepToolsService:
             
             # 检查API调用是否成功
             if not api_result.get("success", False):
-                error_msg = api_result.get("error", "未知错误")
+                error_msg = api_result.get("error", "未知错误" if get_locale() == 'zh' else "unknown error")
                 logger.warning(t("console.interviewApiReturnedFailure", error=error_msg))
-                result.summary = f"采访API调用失败：{error_msg}。请检查OASIS模拟环境状态。"
+                result.summary = f"采访API调用失败：{error_msg}。请检查OASIS模拟环境状态。" if get_locale() == 'zh' else f"Interview API call failed: {error_msg}. Check that the simulation environment is running."
                 return result
             
             # Step 5: 解析API返回结果，构建AgentInterview对象
@@ -1460,13 +1460,13 @@ class ZepToolsService:
         except ValueError as e:
             # 模拟环境未运行
             logger.warning(t("console.interviewApiCallFailed", error=e))
-            result.summary = f"采访失败：{str(e)}。模拟环境可能已关闭，请确保OASIS环境正在运行。"
+            result.summary = f"采访失败：{str(e)}。模拟环境可能已关闭，请确保OASIS环境正在运行。" if get_locale() == 'zh' else f"Interview failed: {e}. The simulation environment may be closed; it must be running for interviews."
             return result
         except Exception as e:
             logger.error(t("console.interviewApiCallException", error=e))
             import traceback
             logger.error(traceback.format_exc())
-            result.summary = f"采访过程发生错误：{str(e)}"
+            result.summary = f"采访过程发生错误：{str(e)}" if get_locale() == 'zh' else f"Error during the interview: {e}"
             return result
         
         # Step 6: 生成采访摘要
@@ -1603,14 +1603,14 @@ class ZepToolsService:
         try:
             response = self.llm.chat_json(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": f"{system_prompt}\n\n{get_language_instruction()}"},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3
             )
             
             selected_indices = response.get("selected_indices", [])[:max_agents]
-            reasoning = response.get("reasoning", "基于相关性自动选择")
+            reasoning = response.get("reasoning", "基于相关性自动选择" if get_locale() == 'zh' else "Chosen automatically by relevance")
             
             # 获取选中的Agent完整信息
             selected_agents = []
@@ -1662,7 +1662,7 @@ class ZepToolsService:
         try:
             response = self.llm.chat_json(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": f"{system_prompt}\n\n{get_language_instruction()}"},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.5
@@ -1720,7 +1720,7 @@ class ZepToolsService:
         try:
             summary = self.llm.chat(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": f"{system_prompt}\n\n{get_language_instruction()}"},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3,
