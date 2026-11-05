@@ -1,4 +1,5 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -34,7 +35,23 @@ def test_graph_auth_failure_preserves_ontology_and_returns_actionable_error(monk
 
         def create_graph(self, **kwargs):
             created.append('graph attempt')
-            raise ApiError(status_code=status, headers={'private-header': 'private-value'}, body='PRIVATE-PROVIDER-BODY')
+            if len(created) == 1:
+                raise ApiError(status_code=status, headers={'private-header': 'private-value'}, body='PRIVATE-PROVIDER-BODY')
+            kwargs['graph_id_callback']('fixed-graph')
+            return 'fixed-graph'
+
+        def set_ontology(self, *args):
+            pass
+
+        def add_text_batches(self, *args, **kwargs):
+            kwargs['batch_created_callback']('fixed-batch', 'operation')
+            return SimpleNamespace(batch_id='fixed-batch')
+
+        def _wait_for_batch(self, *args):
+            pass
+
+        def get_graph_data(self, graph_id):
+            return {'node_count': 0, 'edge_count': 0}
 
     class Thread:
         def __init__(self, *, target, daemon):
@@ -58,14 +75,21 @@ def test_graph_auth_failure_preserves_ontology_and_returns_actionable_error(monk
             response = graph_api.build_graph()
         threads.pop(0)()
         assert response.status_code == 200
-        assert project.status == ProjectStatus.FAILED
         assert project.ontology == {'entity_types': [], 'edge_types': []}
-        assert project.graph_id is None
-        assert 'Zep Cloud' in project.error
-        assert 'ZEP_API_KEY' in project.error
-        assert 'PRIVATE-PROVIDER-BODY' not in project.error
-        assert 'private-header' not in project.error
-        assert updates[-1]['status'] == TaskStatus.FAILED
-        assert updates[-1]['error'] == project.error
-        assert 'Traceback' not in updates[-1]['error']
+        if attempt == 0:
+            assert project.status == ProjectStatus.FAILED
+            assert project.graph_id is None
+            assert 'Zep Cloud' in project.error
+            assert 'ZEP_API_KEY' in project.error
+            assert 'PRIVATE-PROVIDER-BODY' not in project.error
+            assert 'private-header' not in project.error
+            assert updates[-1]['status'] == TaskStatus.FAILED
+            assert updates[-1]['error'] == project.error
+            assert 'Traceback' not in updates[-1]['error']
+            monkeypatch.setattr(graph_api.Config, 'ZEP_API_KEY', 'corrected-test-key')
+        else:
+            assert project.status == ProjectStatus.GRAPH_COMPLETED
+            assert project.graph_id == 'fixed-graph'
+            assert project.error is None
+            assert updates[-1]['status'] == TaskStatus.COMPLETED
     assert len(created) == 2
