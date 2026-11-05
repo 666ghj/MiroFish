@@ -665,6 +665,10 @@
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
   },
   "aiSettings": {
+    "distinctZepKey": "The Zep field contains an LLM provider key. Use a separate project API key from Zep Cloud; MiniMax/M Plan keys cannot authenticate to Zep.",
+    "needsCorrection": "needs correction",
+    "zepPurpose": "Zep Cloud is a separate graph and memory service required by this MiroFish workflow. Get its project API key from the Zep dashboard.",
+
     "minimaxApi": "MiniMax — API key (pay as you go)",
     "minimaxPlan": "MiniMax — M Plan API key",
     "apiHint": "Uses a standard MiniMax API key and charges your account balance. An M Plan key cannot be substituted for this key type.",

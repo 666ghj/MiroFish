@@ -25,6 +25,12 @@ class SettingsError(ValueError):
         super().__init__(code)
 
 
+def misplaced_zep_key(zep_key, llm_key):
+    """Catch known cross-provider mistakes without contacting either provider."""
+    zep_key = (zep_key or '').strip()
+    return bool(zep_key) and (zep_key == (llm_key or '').strip() or zep_key.startswith('sk-cp-'))
+
+
 def public_settings():
     base = Config.LLM_BASE_URL or ''
     try:
@@ -37,6 +43,7 @@ def public_settings():
     return {
         'llm_configured': bool(Config.LLM_API_KEY),
         'zep_configured': bool(Config.ZEP_API_KEY),
+        'zep_key_misplaced': misplaced_zep_key(Config.ZEP_API_KEY, Config.LLM_API_KEY),
         'llm_base_url': base,
         'llm_model_name': Config.LLM_MODEL_NAME or '',
         'minimax_key_type': ('m_plan' if (Config.LLM_API_KEY or '').startswith('sk-cp-') else 'api')
@@ -71,6 +78,8 @@ def _validate(data):
             raise SettingsError('keyTypeMismatch')
     if not all(values.values()):
         raise SettingsError('required')
+    if misplaced_zep_key(values['ZEP_API_KEY'], values['LLM_API_KEY']):
+        raise SettingsError('distinctZepKey')
     return values
 
 

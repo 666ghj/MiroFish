@@ -22,8 +22,10 @@
           <input id="llm-model-name" v-model="form.llm_model_name" type="text" required :disabled="saving" />
           <label for="llm-api-key">{{ $t('aiSettings.llmKey') }} <span v-if="status.llm_configured">({{ $t('aiSettings.configured') }})</span></label>
           <input id="llm-api-key" v-model="form.llm_api_key" type="password" autocomplete="off" :required="!status.llm_configured || form.llm_base_url !== status.llm_base_url" :disabled="saving" :placeholder="status.llm_configured ? $t('aiSettings.keepKey') : ''" />
-          <label for="zep-api-key">{{ $t('aiSettings.zepKey') }} <span v-if="status.zep_configured">({{ $t('aiSettings.configured') }})</span></label>
-          <input id="zep-api-key" v-model="form.zep_api_key" type="password" autocomplete="off" :required="!status.zep_configured" :disabled="saving" :placeholder="status.zep_configured ? $t('aiSettings.keepKey') : ''" />
+          <label for="zep-api-key">{{ $t('aiSettings.zepKey') }} <span v-if="status.zep_key_misplaced">({{ $t('aiSettings.needsCorrection') }})</span><span v-else-if="status.zep_configured">({{ $t('aiSettings.configured') }})</span></label>
+          <input id="zep-api-key" v-model="form.zep_api_key" type="password" autocomplete="off" :required="!status.zep_configured || status.zep_key_misplaced" :disabled="saving" :placeholder="status.zep_configured && !status.zep_key_misplaced ? $t('aiSettings.keepKey') : ''" />
+          <p v-if="status.zep_key_misplaced" role="alert" class="settings-error">{{ $t('aiSettings.distinctZepKey') }}</p>
+          <p class="settings-hint">{{ $t('aiSettings.zepPurpose') }}</p>
           <p class="settings-hint"><a href="https://app.getzep.com/" target="_blank" rel="noopener noreferrer">{{ $t('aiSettings.getZep') }}</a></p>
           <p class="settings-hint">{{ $t('aiSettings.storage') }}</p>
           <button type="submit" class="save-settings" :disabled="saving">{{ $t(saving ? 'aiSettings.saving' : 'aiSettings.save') }}</button>

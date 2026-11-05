@@ -196,3 +196,42 @@ def test_mismatched_minimax_key_type_cannot_change_billing_configuration(setup, 
     assert response.status_code == 400
     assert not path.exists()
     assert Config.LLM_API_KEY is None
+
+
+@pytest.mark.parametrize('zep_key', ['unit-test-llm-key', 'sk-cp-wrong-provider-test-only'])
+def test_llm_credentials_cannot_be_saved_as_zep_keys(setup, zep_key):
+    client, token, path = setup
+    response = post(client, token, {**payload(), 'zep_api_key': zep_key})
+    assert response.status_code == 400
+    assert 'Zep Cloud' in response.json['error']
+    assert not path.exists()
+    assert Config.ZEP_API_KEY is None
+    assert zep_key not in response.get_data(as_text=True)
+
+
+def test_saved_cross_provider_key_is_flagged_without_returning_it(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setattr(Config, 'LLM_API_KEY', 'sk-cp-test-only-same-key')
+    monkeypatch.setattr(Config, 'ZEP_API_KEY', 'sk-cp-test-only-same-key')
+    response = client.get('/api/settings/ai')
+    assert response.json['data']['zep_key_misplaced'] is True
+    assert 'sk-cp-test-only-same-key' not in response.get_data(as_text=True)
+
+
+def test_misplaced_zep_key_blocks_ontology_before_project_or_llm_work(setup, monkeypatch, tmp_path):
+    import io
+    from app.api import graph
+    from app.models.project import ProjectManager
+
+    client, _, _ = setup
+    monkeypatch.setattr(Config, 'LLM_API_KEY', 'sk-cp-test-only-same-key')
+    monkeypatch.setattr(Config, 'ZEP_API_KEY', 'sk-cp-test-only-same-key')
+    monkeypatch.setattr(ProjectManager, 'PROJECTS_DIR', str(tmp_path / 'projects'))
+    monkeypatch.setattr(graph, 'OntologyGenerator', lambda: pytest.fail('Do not consume LLM tokens for this configuration mistake'))
+    response = client.post('/api/graph/ontology/generate', data={
+        'simulation_requirement': 'Test question',
+        'files': (io.BytesIO(b'Test article.'), 'source.txt'),
+    }, headers={'Accept-Language': 'en'})
+    assert response.status_code == 400
+    assert 'Zep Cloud' in response.json['error']
+    assert ProjectManager.list_projects() == []

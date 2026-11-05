@@ -665,6 +665,10 @@
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
   },
   "aiSettings": {
+    "distinctZepKey": "Zep 字段中填写了 LLM 服务商的密钥。请使用 Zep Cloud 项目的独立 API 密钥，MiniMax/M Plan 密钥无法用于 Zep 身份验证。",
+    "needsCorrection": "需要修正",
+    "zepPurpose": "Zep Cloud 是此 MiroFish 流程所需的独立图谱和记忆服务。请从 Zep 控制台获取项目 API 密钥。",
+
     "minimaxApi": "MiniMax — API 密钥（按量付费）",
     "minimaxPlan": "MiniMax — M Plan API 密钥",
     "apiHint": "使用标准 MiniMax API 密钥，费用从账户余额扣除。此类型不能替换为 M Plan 密钥。",
