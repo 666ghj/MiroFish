@@ -34,6 +34,12 @@ _build_locks: dict[str, threading.Lock] = {}
 _build_locks_guard = threading.Lock()
 
 
+def _zep_auth_error(error):
+    if isinstance(error, ZepApiError) and error.status_code in (401, 403):
+        return t('api.zepAccessRejected', status=error.status_code)
+    return None
+
+
 class GraphInUseError(RuntimeError):
     pass
 
@@ -804,11 +810,8 @@ def _build_graph_impl():
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
                 build_logger.debug(traceback.format_exc())
                 
-                auth_failure = isinstance(e, ZepApiError) and e.status_code in (401, 403)
-                public_error = (
-                    t('api.zepAccessRejected', status=e.status_code)
-                    if auth_failure else str(e)
-                )
+                auth_error = _zep_auth_error(e)
+                public_error = auth_error or str(e)
                 with _project_build_lock(project_id):
                     project.status = ProjectStatus.FAILED
                     project.error = public_error
@@ -818,7 +821,7 @@ def _build_graph_impl():
                         task_id,
                         status=TaskStatus.FAILED,
                         message=t('progress.buildFailed', error=public_error),
-                        error=public_error if auth_failure else traceback.format_exc()
+                        error=public_error if auth_error else traceback.format_exc()
                     )
         
         # 启动后台线程
@@ -838,6 +841,9 @@ def _build_graph_impl():
     except GraphInUseError as e:
         return jsonify({"success": False, "error": str(e)}), 409
     except Exception as e:
+        auth_error = _zep_auth_error(e)
+        if auth_error:
+            return jsonify(success=False, error=auth_error), 502
         return jsonify({
             "success": False,
             "error": str(e),

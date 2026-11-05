@@ -35,10 +35,14 @@ def test_graph_auth_failure_preserves_ontology_and_returns_actionable_error(monk
 
         def create_graph(self, **kwargs):
             created.append('graph attempt')
+            kwargs['graph_id_callback']('pending-graph')
             if len(created) == 1:
                 raise ApiError(status_code=status, headers={'private-header': 'private-value'}, body='PRIVATE-PROVIDER-BODY')
             kwargs['graph_id_callback']('fixed-graph')
             return 'fixed-graph'
+
+        def delete_graph(self, graph_id):
+            assert graph_id == 'pending-graph'
 
         def set_ontology(self, *args):
             pass
@@ -61,6 +65,7 @@ def test_graph_auth_failure_preserves_ontology_and_returns_actionable_error(monk
             threads.append(self.target)
 
     monkeypatch.setattr(graph_api.Config, 'ZEP_API_KEY', 'test-only-key')
+    monkeypatch.setattr(graph_api, '_active_graph_consumers', lambda graph_id: [])
     monkeypatch.setattr(graph_api, 'TaskManager', Tasks)
     monkeypatch.setattr(graph_api, 'GraphBuilderService', Builder)
     monkeypatch.setattr(graph_api.threading, 'Thread', Thread)
@@ -78,7 +83,7 @@ def test_graph_auth_failure_preserves_ontology_and_returns_actionable_error(monk
         assert project.ontology == {'entity_types': [], 'edge_types': []}
         if attempt == 0:
             assert project.status == ProjectStatus.FAILED
-            assert project.graph_id is None
+            assert project.graph_id == 'pending-graph'
             assert 'Zep Cloud' in project.error
             assert 'ZEP_API_KEY' in project.error
             assert 'PRIVATE-PROVIDER-BODY' not in project.error
@@ -86,6 +91,18 @@ def test_graph_auth_failure_preserves_ontology_and_returns_actionable_error(monk
             assert updates[-1]['status'] == TaskStatus.FAILED
             assert updates[-1]['error'] == project.error
             assert 'Traceback' not in updates[-1]['error']
+            def rejected_cleanup(self, graph_id):
+                raise ApiError(status_code=status, body='PRIVATE-CLEANUP-BODY')
+
+            original_delete = Builder.delete_graph
+            monkeypatch.setattr(Builder, 'delete_graph', rejected_cleanup)
+            with app.test_request_context('/api/graph/build', method='POST', json={'project_id': project.project_id}, headers={'Accept-Language': 'en'}):
+                failed_response, failed_status = graph_api.build_graph()
+            assert failed_status == 502
+            assert 'ZEP_API_KEY' in failed_response.json['error']
+            assert 'PRIVATE-CLEANUP-BODY' not in failed_response.get_data(as_text=True)
+            assert 'traceback' not in failed_response.json
+            monkeypatch.setattr(Builder, 'delete_graph', original_delete)
             monkeypatch.setattr(graph_api.Config, 'ZEP_API_KEY', 'corrected-test-key')
         else:
             assert project.status == ProjectStatus.GRAPH_COMPLETED
