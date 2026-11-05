@@ -1,6 +1,6 @@
 # Configure AI from the local web interface
 
-Start the backend and frontend as usual and open Home on the server computer using `http://localhost:3000`. Choose **Configure AI** in the navigation bar. Enter the HTTPS OpenAI-compatible API base URL, model name, model API key and Zep Cloud key, then choose **Save configuration**.
+Start the backend and frontend as usual and open Home on the server computer using `http://localhost:3000`. Choose **Configure AI** in the navigation bar. Select **MiniMax**, **OpenAI** or **Custom OpenAI-compatible API**. A preset fills the API URL and a model name; both remain editable. Enter the model API key and Zep Cloud key, then choose **Save configuration**. The MiniMax preset uses `https://api.minimax.io/v1` and `MiniMax-M3.1-Flash`, following the [official OpenAI-compatible API documentation](https://platform.minimax.io/docs/api-reference/text-openai-api). Adjust the model for your account if needed. No MiniMax request is made on selection or save.
 
 The backend can now start without keys so that first-run setup is reachable. Invalid deployment options such as `ZEP_API_URL` still stop startup. Saving is a local configuration operation: it does not call providers, consume tokens, verify credentials, build a graph or start a simulation. You still need accounts and valid access to the selected model and Zep Cloud.
 

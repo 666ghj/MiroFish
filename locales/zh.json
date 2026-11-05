@@ -665,6 +665,9 @@
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
   },
   "aiSettings": {
+    "provider": "AI 服务商",
+    "customProvider": "自定义 OpenAI 兼容 API",
+
     "open": "配置 AI",
     "close": "关闭",
     "description": "连接兼容 OpenAI 的模型及用于图谱构建的 Zep Cloud。保存后即可开始新项目。",

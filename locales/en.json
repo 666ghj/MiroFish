@@ -665,6 +665,9 @@
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
   },
   "aiSettings": {
+    "provider": "AI provider",
+    "customProvider": "Custom OpenAI-compatible API",
+
     "open": "Configure AI",
     "close": "Close",
     "description": "Connect an OpenAI-compatible model and Zep Cloud for graph construction. Save the configuration here, then start a new project.",
