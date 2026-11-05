@@ -57,8 +57,10 @@
           :projectData="projectData"
           :ontologyProgress="ontologyProgress"
           :buildProgress="buildProgress"
+          :buildError="error"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          @retry-build="startBuildGraph"
           @next-step="handleNextStep"
         />
         <!-- Step 2: 环境搭建 -->
@@ -268,11 +270,15 @@ const updatePhaseByStatus = (status) => {
     case 'ontology_generated': currentPhase.value = 0; break;
     case 'graph_building': currentPhase.value = 1; break;
     case 'graph_completed': currentPhase.value = 2; break;
-    case 'failed': error.value = 'Project failed'; break;
+    case 'failed':
+      if (projectData.value?.ontology) currentPhase.value = 1
+      error.value = 'Project failed'
+      break;
   }
 }
 
 const startBuildGraph = async () => {
+  error.value = ''
   try {
     currentPhase.value = 1
     buildProgress.value = { progress: 0, message: 'Starting build...' }

@@ -125,6 +125,12 @@
             {{ $t('step1.graphRagDesc') }}
           </p>
           
+          <div v-if="buildError && projectData?.ontology" class="build-error" role="alert">
+            <p>{{ buildError }}</p>
+            <p>{{ $t('step1.retryBuildHint') }}</p>
+            <button type="button" class="action-btn" @click="$emit('retry-build')">{{ $t('step1.retryBuild') }}</button>
+          </div>
+
           <!-- Stats Cards -->
           <div class="stats-grid">
             <div class="stat-card">
@@ -200,11 +206,12 @@ const props = defineProps({
   projectData: Object,
   ontologyProgress: Object,
   buildProgress: Object,
+  buildError: String,
   graphData: Object,
   systemLogs: { type: Array, default: () => [] }
 })
 
-defineEmits(['next-step'])
+defineEmits(['next-step', 'retry-build'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
@@ -273,6 +280,8 @@ watch(() => props.systemLogs.length, () => {
 </script>
 
 <style scoped>
+.build-error { padding: 12px; border: 1px solid #e6b3ac; border-radius: 4px; color: #a4261b; overflow-wrap: anywhere; }
+
 .workbench-panel {
   height: 100%;
   background-color: #FAFAFA;
