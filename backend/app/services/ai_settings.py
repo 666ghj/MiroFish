@@ -33,16 +33,19 @@ def public_settings():
             base = ''
     except ValueError:
         base = ''
+        parsed = urlsplit('')
     return {
         'llm_configured': bool(Config.LLM_API_KEY),
         'zep_configured': bool(Config.ZEP_API_KEY),
         'llm_base_url': base,
         'llm_model_name': Config.LLM_MODEL_NAME or '',
+        'minimax_key_type': ('m_plan' if (Config.LLM_API_KEY or '').startswith('sk-cp-') else 'api')
+        if parsed.hostname == 'api.minimax.io' and Config.LLM_API_KEY else None,
     }
 
 
 def _validate(data):
-    if not isinstance(data, dict) or set(data) - _FIELDS.keys():
+    if not isinstance(data, dict) or set(data) - (_FIELDS.keys() | {'minimax_key_type'}):
         raise SettingsError('invalid')
     if any(not isinstance(value, str) or len(value) > 4096 or '${' in value or any(ord(char) < 32 or ord(char) == 127 for char in value) for value in data.values()):
         raise SettingsError('invalid')
@@ -59,6 +62,13 @@ def _validate(data):
         raise SettingsError('keyForNewProvider')
     values['LLM_API_KEY'] = values['LLM_API_KEY'] or Config.LLM_API_KEY or ''
     values['ZEP_API_KEY'] = values['ZEP_API_KEY'] or Config.ZEP_API_KEY or ''
+    key_type = data.get('minimax_key_type')
+    if key_type not in (None, 'api', 'm_plan'):
+        raise SettingsError('invalid')
+    if parsed.hostname == 'api.minimax.io' and key_type and values['LLM_API_KEY']:
+        actual_type = 'm_plan' if values['LLM_API_KEY'].startswith('sk-cp-') else 'api'
+        if actual_type != key_type:
+            raise SettingsError('keyTypeMismatch')
     if not all(values.values()):
         raise SettingsError('required')
     return values

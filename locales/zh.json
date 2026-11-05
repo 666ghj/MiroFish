@@ -665,6 +665,12 @@
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
   },
   "aiSettings": {
+    "minimaxApi": "MiniMax — API 密钥（按量付费）",
+    "minimaxPlan": "MiniMax — M Plan API 密钥",
+    "apiHint": "使用标准 MiniMax API 密钥，费用从账户余额扣除。此类型不能替换为 M Plan 密钥。",
+    "planHint": "请使用 Plan Details 中的 M Plan API 密钥（sk-cp-…）。使用套餐额度和积分。两种密钥使用同一 API 地址，实际密钥决定计费方式。",
+    "keyTypeMismatch": "MiniMax 密钥与所选类型不符。sk-cp- 密钥请选择 M Plan，或输入对应的标准 API 密钥。",
+
     "provider": "AI 服务商",
     "customProvider": "自定义 OpenAI 兼容 API",
 

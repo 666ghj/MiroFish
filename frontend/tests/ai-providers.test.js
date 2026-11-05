@@ -14,3 +14,10 @@ test('reopening settings recognizes the provider without rewriting custom URLs',
   assert.equal(detectProvider('https://my-model.example.org/v1'), 'custom')
   assert.equal(detectProvider('https://api.minimax.io.evil.example/v1'), 'custom')
 })
+
+test('MiniMax M Plan retains its separate key type on the shared endpoint', () => {
+  const plan = aiProviders.find(item => item.id === 'minimax_m_plan')
+  assert.equal(plan.keyType, 'm_plan')
+  assert.equal(detectProvider(plan.baseUrl, 'm_plan'), 'minimax_m_plan')
+  assert.equal(detectProvider(plan.baseUrl, 'api'), 'minimax')
+})

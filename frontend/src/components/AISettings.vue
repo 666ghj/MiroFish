@@ -13,8 +13,9 @@
         <form v-if="loaded" @submit.prevent="save">
           <label for="ai-provider">{{ $t('aiSettings.provider') }}</label>
           <select id="ai-provider" v-model="selectedProvider" :disabled="saving" @change="selectProvider">
-            <option v-for="provider in aiProviders" :key="provider.id" :value="provider.id">{{ provider.label || $t('aiSettings.customProvider') }}</option>
+            <option v-for="provider in aiProviders" :key="provider.id" :value="provider.id">{{ provider.labelKey ? $t(provider.labelKey) : provider.label || $t('aiSettings.customProvider') }}</option>
           </select>
+          <p v-if="selectedProvider.startsWith('minimax')" class="settings-hint">{{ $t(selectedProvider === 'minimax_m_plan' ? 'aiSettings.planHint' : 'aiSettings.apiHint') }}</p>
           <label for="llm-base-url">{{ $t('aiSettings.baseUrl') }}</label>
           <input id="llm-base-url" v-model="form.llm_base_url" type="url" required :disabled="saving" @input="selectedProvider = detectProvider(form.llm_base_url)" />
           <label for="llm-model-name">{{ $t('aiSettings.model') }}</label>
@@ -66,7 +67,7 @@ async function openSettings() {
     setupToken = response.data.setup_token
     form.llm_base_url = response.data.llm_base_url
     form.llm_model_name = response.data.llm_model_name
-    selectedProvider.value = detectProvider(form.llm_base_url)
+    selectedProvider.value = detectProvider(form.llm_base_url, response.data.minimax_key_type)
     loaded.value = true
     await nextTick()
     document.getElementById('llm-base-url')?.focus()
@@ -111,7 +112,8 @@ async function save() {
   saved.value = false
   error.value = ''
   try {
-    const response = await saveAISettings({ ...form }, setupToken)
+    const provider = aiProviders.find(item => item.id === selectedProvider.value)
+    const response = await saveAISettings({ ...form, ...(provider?.keyType ? { minimax_key_type: provider.keyType } : {}) }, setupToken)
     status.value = response.data
     form.llm_api_key = ''
     form.zep_api_key = ''

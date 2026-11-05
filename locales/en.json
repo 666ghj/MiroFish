@@ -665,6 +665,12 @@
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
   },
   "aiSettings": {
+    "minimaxApi": "MiniMax — API key (pay as you go)",
+    "minimaxPlan": "MiniMax — M Plan API key",
+    "apiHint": "Uses a standard MiniMax API key and charges your account balance. An M Plan key cannot be substituted for this key type.",
+    "planHint": "Use the M Plan API key from Plan Details (sk-cp-…). Uses your plan quota and credit packs. Both key types use the same API URL; the actual key determines billing.",
+    "keyTypeMismatch": "The MiniMax key does not match the selected type. Choose M Plan for an sk-cp- key, or enter the corresponding standard API key.",
+
     "provider": "AI provider",
     "customProvider": "Custom OpenAI-compatible API",
 

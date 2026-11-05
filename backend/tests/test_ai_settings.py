@@ -176,3 +176,23 @@ def test_new_clients_use_saved_values_without_provider_calls(setup, monkeypatch)
     monkeypatch.setattr(zep, '_cached_zep_client', lambda key, timeout: key)
     assert zep.get_zep_client() == 'unit-test-zep-key'
     assert client.get('/api/settings/ai').headers['Cache-Control'] == 'no-store'
+
+
+@pytest.mark.parametrize('kind,key', [('m_plan', 'sk-cp-test-only-key'), ('api', 'standard-test-only-key')])
+def test_minimax_key_type_is_explicit_and_reopens_without_revealing_key(setup, kind, key):
+    client, token, _ = setup
+    data = {**payload(), 'llm_base_url': 'https://api.minimax.io/v1', 'llm_api_key': key, 'minimax_key_type': kind}
+    response = post(client, token, data)
+    assert response.status_code == 200
+    assert response.json['data']['minimax_key_type'] == kind
+    assert key not in response.get_data(as_text=True)
+    assert client.get('/api/settings/ai').json['data']['minimax_key_type'] == kind
+
+
+@pytest.mark.parametrize('kind,key', [('api', 'sk-cp-test-only-key'), ('m_plan', 'standard-test-only-key')])
+def test_mismatched_minimax_key_type_cannot_change_billing_configuration(setup, kind, key):
+    client, token, path = setup
+    response = post(client, token, {**payload(), 'llm_base_url': 'https://api.minimax.io/v1', 'llm_api_key': key, 'minimax_key_type': kind})
+    assert response.status_code == 400
+    assert not path.exists()
+    assert Config.LLM_API_KEY is None
