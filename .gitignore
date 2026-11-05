@@ -4,6 +4,7 @@ Thumbs.db
 
 # 环境变量（保护敏感信息）
 .env
+.mirofish-ai-*
 .env.local
 .env.*.local
 .env.development

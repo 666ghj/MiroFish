@@ -25,7 +25,7 @@ from app.config import Config
 def main():
     """主函数"""
     # 验证配置
-    errors = Config.validate()
+    errors = Config.validate(allow_missing_keys=True)
     if errors:
         print("配置错误:")
         for err in errors:
@@ -33,6 +33,9 @@ def main():
         print("\n请检查 .env 文件中的配置")
         sys.exit(1)
     
+    if not Config.LLM_API_KEY or not Config.ZEP_API_KEY:
+        print('AI is not configured. Open Home locally and select Configure AI, or edit the root .env file.')
+
     # 创建应用
     app = create_app()
     

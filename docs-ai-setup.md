@@ -1,0 +1,13 @@
+# Configure AI from the local web interface
+
+Start the backend and frontend as usual and open Home on the server computer using `http://localhost:3000`. Choose **Configure AI** in the navigation bar. Enter the HTTPS OpenAI-compatible API base URL, model name, model API key and Zep Cloud key, then choose **Save configuration**.
+
+The backend can now start without keys so that first-run setup is reachable. Invalid deployment options such as `ZEP_API_URL` still stop startup. Saving is a local configuration operation: it does not call providers, consume tokens, verify credentials, build a graph or start a simulation. You still need accounts and valid access to the selected model and Zep Cloud.
+
+The form writes the root `.env` with owner-only permissions (0600), preserves unrelated options/comments and applies settings to new backend clients and simulation subprocesses. Existing running clients/processes retain their previous configuration; start a new project after setup. The existing `.env` and environment-variable deployment path remains available. Use that path for HTTP/local model servers, unusual ports or remote deployment; the web form supports HTTPS provider URLs on port 443.
+
+Leave an already configured key blank to retain it. Changing the provider URL requires entering the model key again, so a stored credential is never silently reused at a different destination. Stored keys are never sent back to the browser, stored in browser local storage, or included in request/error logs. Input fields are cleared after saving/closing. The `.env` file contains local plaintext secrets and must remain private; it and temporary setup files are excluded from Git.
+
+Web setup accepts only loopback clients with localhost/loopback Host and Origin values, and writes require a short-lived process token obtained by the local dialog. It is not a remote administration or multi-user credential-management interface. LAN clients, foreign browser origins and DNS-rebinding hostnames cannot use this endpoint. If running in a container where the client is not seen as loopback, configure `.env` through the existing deployment path.
+
+Offline regression tests cover persistence/permissions, quoted-key round trips, retaining keys, provider changes, failed writes, malformed payloads, local/foreign-origin restrictions, setup tokens, and secret redaction. Paid model/Zep access and a full OASIS simulation require separate validation with the user's accounts.

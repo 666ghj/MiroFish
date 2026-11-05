@@ -663,5 +663,30 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
-  }
+  },
+  "aiSettings": {
+    "open": "配置 AI",
+    "close": "关闭",
+    "description": "连接兼容 OpenAI 的模型及用于图谱构建的 Zep Cloud。保存后即可开始新项目。",
+    "baseUrl": "兼容 OpenAI 的 API 地址（HTTPS）",
+    "model": "模型名称",
+    "llmKey": "AI API 密钥",
+    "zepKey": "Zep Cloud API 密钥",
+    "configured": "已配置",
+    "keepKey": "留空以保留当前密钥",
+    "getZep": "获取 Zep Cloud 密钥",
+    "storage": "保存在后端本地 .env 文件中，密钥不会返回浏览器。保存时不会调用服务商或验证账户权限。",
+    "save": "保存配置",
+    "saving": "保存中…",
+    "saved": "已保存到本地。新的 AI 请求和模拟进程将使用此配置，正在运行的任务保留原配置。",
+    "loading": "加载配置中…",
+    "retry": "重试",
+    "localOnly": "请在服务器本机通过 localhost 配置 AI，或编辑 .env 文件。不支持远程网页配置。",
+    "reload": "请重新打开此对话框后保存。",
+    "invalid": "配置无效，请使用不含控制字符的纯文本。",
+    "invalidBaseUrl": "请输入使用 443 端口、不含凭据、查询参数或片段的 HTTPS API 地址。",
+    "keyForNewProvider": "更换服务商地址时，请重新输入 AI API 密钥。",
+    "required": "请提供 API 地址、模型名称及两项 API 密钥。",
+    "saveFailed": "无法保存本地 .env 文件，请检查后端文件权限后重试。"
+}
 }

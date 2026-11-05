@@ -17,7 +17,7 @@ service.interceptors.request.use(
     return config
   },
   error => {
-    console.error('Request error:', error)
+    console.error('Request error:', error.config?.url?.startsWith('/api/settings/') ? error.message : error)
     return Promise.reject(error)
   }
 )
@@ -36,7 +36,7 @@ service.interceptors.response.use(
     return res
   },
   error => {
-    console.error('Response error:', error)
+    console.error('Response error:', error.config?.url?.startsWith('/api/settings/') ? error.message : error)
     const apiError = error.response?.data?.error || error.response?.data?.message
     
     // 处理超时

@@ -663,5 +663,30 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
-  }
+  },
+  "aiSettings": {
+    "open": "Configure AI",
+    "close": "Close",
+    "description": "Connect an OpenAI-compatible model and Zep Cloud for graph construction. Save the configuration here, then start a new project.",
+    "baseUrl": "OpenAI-compatible API URL (HTTPS)",
+    "model": "Model name",
+    "llmKey": "AI API key",
+    "zepKey": "Zep Cloud API key",
+    "configured": "configured",
+    "keepKey": "Leave empty to keep the current key",
+    "getZep": "Get a Zep Cloud key",
+    "storage": "Saved in the backend’s local .env file. Keys are never returned to the browser. Saving does not call a provider or verify account access.",
+    "save": "Save configuration",
+    "saving": "Saving…",
+    "saved": "Saved locally. New AI requests and simulation processes will use these settings. Existing running work keeps its previous configuration.",
+    "loading": "Loading configuration…",
+    "retry": "Retry",
+    "localOnly": "Configure AI from localhost on the server computer, or edit its .env file. Remote web setup is disabled.",
+    "reload": "Reopen this dialog and try saving again.",
+    "invalid": "Invalid configuration. Use plain text values without control characters.",
+    "invalidBaseUrl": "Enter an HTTPS API URL on port 443 without credentials, query parameters or fragments.",
+    "keyForNewProvider": "Enter the AI API key again when changing the provider URL.",
+    "required": "Provide the API URL, model name and both API keys.",
+    "saveFailed": "Could not save the local .env file. Check the backend file permissions and try again."
+}
 }
