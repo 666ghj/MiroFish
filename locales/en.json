@@ -663,5 +663,43 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
-  }
+  },
+  "aiSettings": {
+    "distinctZepKey": "The Zep field contains an LLM provider key. Use a separate project API key from Zep Cloud; MiniMax/M Plan keys cannot authenticate to Zep.",
+    "needsCorrection": "needs correction",
+    "zepPurpose": "Zep Cloud is a separate graph and memory service required by this MiroFish workflow. Get its project API key from the Zep dashboard.",
+
+    "minimaxApi": "MiniMax — API key (pay as you go)",
+    "minimaxPlan": "MiniMax — M Plan API key",
+    "apiHint": "Uses a standard MiniMax API key and charges your account balance. An M Plan key cannot be substituted for this key type.",
+    "planHint": "Use the M Plan API key from Plan Details (sk-cp-…). Uses your plan quota and credit packs. Both key types use the same API URL; the actual key determines billing.",
+    "keyTypeMismatch": "The MiniMax key does not match the selected type. Choose M Plan for an sk-cp- key, or enter the corresponding standard API key.",
+
+    "provider": "AI provider",
+    "customProvider": "Custom OpenAI-compatible API",
+
+    "open": "Configure AI",
+    "close": "Close",
+    "description": "Connect an OpenAI-compatible model and Zep Cloud for graph construction. Save the configuration here, then start a new project.",
+    "baseUrl": "OpenAI-compatible API URL (HTTPS)",
+    "model": "Model name",
+    "llmKey": "AI API key",
+    "zepKey": "Zep Cloud API key",
+    "configured": "configured",
+    "keepKey": "Leave empty to keep the current key",
+    "getZep": "Get a Zep Cloud key",
+    "storage": "Saved in the backend’s local .env file. Keys are never returned to the browser. Saving does not call a provider or verify account access.",
+    "save": "Save configuration",
+    "saving": "Saving…",
+    "saved": "Saved locally. New AI requests and simulation processes will use these settings. Existing running work keeps its previous configuration.",
+    "loading": "Loading configuration…",
+    "retry": "Retry",
+    "localOnly": "Configure AI from localhost on the server computer, or edit its .env file. Remote web setup is disabled.",
+    "reload": "Reopen this dialog and try saving again.",
+    "invalid": "Invalid configuration. Use plain text values without control characters.",
+    "invalidBaseUrl": "Enter an HTTPS API URL on port 443 without credentials, query parameters or fragments.",
+    "keyForNewProvider": "Enter the AI API key again when changing the provider URL.",
+    "required": "Provide the API URL, model name and both API keys.",
+    "saveFailed": "Could not save the local .env file. Check the backend file permissions and try again."
+}
 }

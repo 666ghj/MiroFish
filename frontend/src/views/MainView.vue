@@ -21,6 +21,7 @@
       </div>
 
       <div class="header-right">
+        <AISettings />
         <LanguageSwitcher />
         <div class="step-divider"></div>
         <div class="workflow-step">
@@ -86,6 +87,7 @@ import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import AISettings from '../components/AISettings.vue'
 
 const route = useRoute()
 const router = useRouter()

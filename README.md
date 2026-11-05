@@ -105,6 +105,9 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 
 #### 1. Configure Environment Variables
 
+For local source installations, you can also start the services without keys and select **Configure AI** on Home. See [local web setup](docs-ai-setup.md) for supported providers, storage and deployment boundaries.
+
+
 ```bash
 # Copy the example configuration file
 cp .env.example .env
