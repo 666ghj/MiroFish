@@ -136,8 +136,13 @@ def test_failed_disk_write_does_not_apply_runtime_values(setup, monkeypatch):
 
 def test_request_logging_never_records_settings_body(setup, caplog):
     client, token, _ = setup
-    with caplog.at_level(logging.DEBUG, logger='mirofish.request'):
-        assert post(client, token).status_code == 200
+    logger = logging.getLogger('mirofish.request')
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger='mirofish.request'):
+            assert post(client, token).status_code == 200
+    finally:
+        logger.removeHandler(caplog.handler)
     assert '/api/settings/ai' in caplog.text
     assert 'unit-test-llm-key' not in caplog.text
     assert 'unit-test-zep-key' not in caplog.text
