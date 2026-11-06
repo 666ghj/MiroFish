@@ -93,7 +93,7 @@
       <div class="action-controls">
         <button 
           class="action-btn primary"
-          :disabled="phase !== 2 || isGeneratingReport"
+          :disabled="!canGenerateReport || isGeneratingReport"
           @click="handleNextStep"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
@@ -322,6 +322,9 @@ const isStarting = ref(false)
 const isStopping = ref(false)
 const startError = ref(null)
 const runStatus = ref({})
+const canGenerateReport = computed(() => phase.value === 2 &&
+  ['completed', 'stopped'].includes(runStatus.value.runner_status))
+
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
@@ -448,6 +451,7 @@ const handleStopSimulation = async () => {
     const res = await stopSimulation({ simulation_id: props.simulationId })
     
     if (res.success) {
+      runStatus.value = res.data || {}
       addLog(t('log.simStoppedSuccess'))
       phase.value = 2
       stopPolling()
@@ -643,6 +647,10 @@ const formatActionTime = (timestamp) => {
 }
 
 const handleNextStep = async () => {
+  // Phase 2 also represents a failed run; only the backend's successful
+  // terminal states confirm that graph ingestion is ready for reporting.
+  if (!canGenerateReport.value) return
+
   if (!props.simulationId) {
     addLog(t('log.errorMissingSimId'))
     return
