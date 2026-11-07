@@ -2545,25 +2545,38 @@ class ReportManager:
     
     @classmethod
     def get_report_by_simulation(cls, simulation_id: str) -> Optional[Report]:
-        """根据模拟ID获取报告"""
+        """Return the newest completed report, or the newest attempt if none completed."""
         cls._ensure_reports_dir()
-        
+
+        selected = None
+        selected_key = None
         for item in os.listdir(cls.REPORTS_DIR):
-            item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 新格式：文件夹
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report and report.simulation_id == simulation_id:
-                    return report
-            # 兼容旧格式：JSON文件
+            if os.path.isdir(os.path.join(cls.REPORTS_DIR, item)):
+                report_id = item
             elif item.endswith('.json'):
                 report_id = item[:-5]
+            else:
+                continue
+
+            try:
                 report = cls.get_report(report_id)
-                if report and report.simulation_id == simulation_id:
-                    return report
-        
-        return None
-    
+            except (FileNotFoundError, json.JSONDecodeError):
+                # A concurrent writer or deletion must not hide older reports.
+                continue
+            if not report or report.simulation_id != simulation_id:
+                continue
+
+            key = (
+                report.status == ReportStatus.COMPLETED,
+                report.created_at or "",
+                report.report_id,
+            )
+            if selected_key is None or key > selected_key:
+                selected = report
+                selected_key = key
+
+        return selected
+
     @classmethod
     def list_reports(cls, simulation_id: Optional[str] = None, limit: int = 50) -> List[Report]:
         """列出报告"""
