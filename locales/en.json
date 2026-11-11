@@ -1,5 +1,7 @@
 {
   "common": {
+    "darkMode": "Dark mode",
+    "lightMode": "Light mode",
     "confirm": "Confirm",
     "cancel": "Cancel",
     "loading": "Loading...",

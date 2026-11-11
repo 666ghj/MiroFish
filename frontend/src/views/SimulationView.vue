@@ -22,6 +22,7 @@
 
       <div class="header-right">
         <LanguageSwitcher />
+        <ThemeToggle />
         <div class="step-divider"></div>
         <div class="workflow-step">
           <span class="step-num">Step 2/5</span>
@@ -73,6 +74,7 @@ import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from '../api/simulation'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import ThemeToggle from '../components/ThemeToggle.vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
