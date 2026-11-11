@@ -1,5 +1,7 @@
 {
   "common": {
+    "darkMode": "深色模式",
+    "lightMode": "浅色模式",
     "confirm": "确认",
     "cancel": "取消",
     "loading": "加载中...",

@@ -44,4 +44,8 @@
 button {
   font-family: inherit;
 }
+
+html[data-theme='dark'] {
+  filter: invert(1) hue-rotate(180deg);
+}
 </style>

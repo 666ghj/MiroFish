@@ -22,6 +22,7 @@
 
       <div class="header-right">
         <LanguageSwitcher />
+        <ThemeToggle />
         <div class="step-divider"></div>
         <div class="workflow-step">
           <span class="step-num">Step 4/5</span>
@@ -73,6 +74,7 @@ import { getProject, getGraphData } from '../api/graph'
 import { getSimulation } from '../api/simulation'
 import { getReport } from '../api/report'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import ThemeToggle from '../components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
