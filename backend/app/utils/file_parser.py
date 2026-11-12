@@ -13,7 +13,7 @@ def _read_text_with_fallback(file_path: str) -> str:
     读取文本文件，UTF-8失败时自动探测编码。
     
     采用多级回退策略：
-    1. 首先尝试 UTF-8 解码
+    1. 首先尝试 UTF-8 解码（utf-8-sig，自动去掉文件开头的 BOM）
     2. 使用 charset_normalizer 检测编码
     3. 回退到 chardet 检测编码
     4. 最终使用 UTF-8 + errors='replace' 兜底
@@ -26,9 +26,10 @@ def _read_text_with_fallback(file_path: str) -> str:
     """
     data = Path(file_path).read_bytes()
     
-    # 首先尝试 UTF-8
+    # UTF-8 with a leading BOM decodes as UTF-8 but leaves U+FEFF in the text.
+    # utf-8-sig accepts both BOM and BOM-less UTF-8.
     try:
-        return data.decode('utf-8')
+        return data.decode('utf-8-sig')
     except UnicodeDecodeError:
         pass
     
