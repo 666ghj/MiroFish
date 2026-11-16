@@ -1625,6 +1625,20 @@ def start_simulation():
                 )
                 if needs_finalization:
                     if not force:
+                        if run_state and run_state.runner_status == RunnerStatus.RUNNING:
+                            return jsonify({
+                                "success": True,
+                                "data": {
+                                    "simulation_id": simulation_id,
+                                    "runner_status": run_state.runner_status.value,
+                                    "process_pid": run_state.process_pid,
+                                    "twitter_running": run_state.twitter_running,
+                                    "reddit_running": run_state.reddit_running,
+                                    "started_at": run_state.started_at,
+                                    "graph_memory_update_enabled": bool(updater),
+                                    "already_running": True,
+                                }
+                            })
                         return jsonify({
                             "success": False,
                             "error": t('api.simRunningForceHint')

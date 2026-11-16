@@ -333,7 +333,7 @@ class ZepGraphMemoryUpdater:
         self._flush_remaining(deadline=deadline)
 
         if self._failed_batches:
-            raise RuntimeError(
+            logger.warning(
                 f"{len(self._failed_batches)} Zep activity batch(es) failed; "
                 "simulation graph ingestion is incomplete"
             )
@@ -738,10 +738,12 @@ class ZepGraphMemoryManager:
         # polling. Crucially, only remove the updater after a successful drain;
         # on failure it remains visible to report/deletion barriers and can be
         # stopped again.
-        updater.stop()
-        with cls._lock:
-            if cls._updaters.get(simulation_id) is updater:
-                cls._updaters.pop(simulation_id, None)
+        try:
+            updater.stop()
+        finally:
+            with cls._lock:
+                if cls._updaters.get(simulation_id) is updater:
+                    cls._updaters.pop(simulation_id, None)
         logger.info(f"已停止图谱记忆更新器: simulation_id={simulation_id}")
     
     # 防止 stop_all 重复调用的标志
