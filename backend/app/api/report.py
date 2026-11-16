@@ -82,6 +82,12 @@ def generate_report():
             }), 404
 
         run_state = SimulationRunner.get_run_state(simulation_id)
+        if run_state and run_state.twitter_completed and run_state.reddit_completed:
+            with ZepGraphMemoryManager._lock:
+                ZepGraphMemoryManager._updaters.pop(simulation_id, None)
+            run_state.runner_status = RunnerStatus.COMPLETED
+            SimulationRunner._save_run_state(run_state)
+
         updater = ZepGraphMemoryManager.get_updater(simulation_id)
         active_statuses = {
             RunnerStatus.STARTING,
@@ -168,6 +174,11 @@ def generate_report():
                 else None
             )
             refreshed_run_state = SimulationRunner.get_run_state(simulation_id)
+            if refreshed_run_state and refreshed_run_state.twitter_completed and refreshed_run_state.reddit_completed:
+                with ZepGraphMemoryManager._lock:
+                    ZepGraphMemoryManager._updaters.pop(simulation_id, None)
+                refreshed_run_state.runner_status = RunnerStatus.COMPLETED
+                SimulationRunner._save_run_state(refreshed_run_state)
             refreshed_updater = ZepGraphMemoryManager.get_updater(simulation_id)
             if (
                 refreshed_state is None

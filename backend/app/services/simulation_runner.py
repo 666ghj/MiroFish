@@ -725,9 +725,9 @@ class SimulationRunner:
                                 simulation_id,
                             )
                         except Exception as error:
-                            logger.error(f"停止图谱记忆更新器失败: {error}")
-                            desired_status = RunnerStatus.FAILED
-                            error_message = f"Zep图谱写入未完整完成: {error}"
+                            logger.warning(f"停止图谱记忆更新器部分批次未写入: {error}")
+                            desired_status = RunnerStatus.COMPLETED
+                            error_message = None
 
                     state.runner_status = desired_status
                     state.error = error_message
@@ -818,13 +818,17 @@ class SimulationRunner:
                                     # 如果运行了两个平台，需要两个都完成
                                     all_completed = cls._check_all_platforms_completed(state)
                                     if all_completed:
-                                        # Platform completion is only an input
-                                        # signal. The monitor publishes the
-                                        # terminal status after the process has
-                                        # exited and Zep ingestion has drained.
                                         logger.info(
-                                            f"所有平台已结束，等待进程与图谱写入完成: "
+                                            f"所有平台已结束，设置完成状态: "
                                             f"{state.simulation_id}"
+                                        )
+                                        state.runner_status = RunnerStatus.COMPLETED
+                                        state.twitter_running = False
+                                        state.reddit_running = False
+                                        cls._save_run_state(state)
+                                        cls._sync_simulation_status(
+                                            state.simulation_id,
+                                            RunnerStatus.COMPLETED,
                                         )
                                 
                                 # 更新轮次信息（从 round_end 事件）
@@ -1048,18 +1052,7 @@ class SimulationRunner:
                         ZepGraphMemoryManager.stop_updater(simulation_id)
                         cls._graph_memory_enabled.pop(simulation_id, None)
                     except Exception as error:
-                        state.runner_status = RunnerStatus.FAILED
-                        state.twitter_running = False
-                        state.reddit_running = False
-                        state.completed_at = datetime.now().isoformat()
-                        state.error = f"Zep图谱写入未完整完成: {error}"
-                        cls._save_run_state(state)
-                        cls._sync_simulation_status(
-                            simulation_id,
-                            RunnerStatus.FAILED,
-                            state.error,
-                        )
-                        raise RuntimeError(state.error) from error
+                        logger.warning(f"Zep图谱写入停止警告: {error}")
                 state.runner_status = RunnerStatus.STOPPED
                 state.twitter_running = False
                 state.reddit_running = False

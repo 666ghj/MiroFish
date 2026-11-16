@@ -48,6 +48,9 @@ htmlcov/
 # 文档与测试程序
 mydoc/
 mytest/
+doc/
+docs/
+run.sh
 
 # 日志文件
 backend/logs/

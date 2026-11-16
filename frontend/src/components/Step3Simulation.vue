@@ -512,7 +512,7 @@ const fetchRunStatus = async () => {
       }
       
       // 检测模拟是否已完成（通过 runner_status 或平台完成状态判断）
-      const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
+      const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped' || checkPlatformsCompleted(data)
       const isFailed = data.runner_status === 'failed'
       
       // runner_status is authoritative because the backend only publishes a
@@ -688,9 +688,33 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
+onMounted(async () => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
+    try {
+      const res = await getRunStatus(props.simulationId)
+      if (res.success && res.data) {
+        const data = res.data
+        runStatus.value = data
+        const isDone = data.runner_status === 'completed' || data.runner_status === 'stopped' || checkPlatformsCompleted(data)
+        if (isDone) {
+          phase.value = 2
+          emit('update-status', 'completed')
+          addLog(t('log.simCompleted'))
+          await fetchRunStatusDetail()
+          return
+        }
+        if (data.runner_status === 'running') {
+          phase.value = 1
+          emit('update-status', 'processing')
+          startStatusPolling()
+          startDetailPolling()
+          return
+        }
+      }
+    } catch (e) {
+      console.warn('Check run status on mount failed:', e)
+    }
     doStartSimulation()
   }
 })

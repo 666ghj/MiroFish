@@ -149,51 +149,13 @@ const toggleMaximize = (target) => {
   }
 }
 
-const handleGoBack = async () => {
-  // 在返回 Step 2 之前，先关闭正在运行的模拟
+const handleGoBack = () => {
   addLog(t('log.preparingGoBack'))
   
-  // 停止轮询
+  // 停止图谱轮询
   stopGraphRefresh()
   
-  try {
-    // 先尝试优雅关闭模拟环境
-    const envStatusRes = await getEnvStatus({ simulation_id: currentSimulationId.value })
-    
-    if (envStatusRes.success && envStatusRes.data?.env_alive) {
-      addLog(t('log.closingSimEnv'))
-      try {
-        await closeSimulationEnv({ 
-          simulation_id: currentSimulationId.value,
-          timeout: 10
-        })
-        addLog(t('log.simEnvClosed'))
-      } catch (closeErr) {
-        addLog(t('log.closeSimEnvFailed'))
-        try {
-          await stopSimulation({ simulation_id: currentSimulationId.value })
-          addLog(t('log.simForceStopSuccess'))
-        } catch (stopErr) {
-          addLog(t('log.forceStopFailed', { error: stopErr.message }))
-        }
-      }
-    } else {
-      // 环境未运行，检查是否需要停止进程
-      if (isSimulating.value) {
-        addLog(t('log.stoppingSimProcess'))
-        try {
-          await stopSimulation({ simulation_id: currentSimulationId.value })
-          addLog(t('log.simStopped'))
-        } catch (err) {
-          addLog(t('log.stopSimFailed', { error: err.message }))
-        }
-      }
-    }
-  } catch (err) {
-    addLog(t('log.checkStatusFailed', { error: err.message }))
-  }
-  
-  // 返回到 Step 2 (环境搭建)
+  // 返回到 Step 2 (环境搭建)，后台模拟保持继续运行
   router.push({ name: 'Simulation', params: { simulationId: currentSimulationId.value } })
 }
 
