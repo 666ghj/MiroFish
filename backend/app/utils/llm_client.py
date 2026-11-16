@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from ..config import Config
 from .openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from .key_pool import LLMKeyPool, get_default_key_pool
 
 
 logger = logging.getLogger(__name__)
@@ -89,25 +90,29 @@ def _contains_additional_json_container(content: str) -> bool:
 
 
 class LLMClient:
-    """LLM客户端"""
+    """LLM客户端，支持多Key池化轮询与Rate Limit自动故障转移"""
     
     def __init__(
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        key_pool: Optional[LLMKeyPool] = None,
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
         
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
+        if api_key:
+            self.key_pool = LLMKeyPool(api_keys=[api_key], base_url=self.base_url)
+            self.api_key = api_key
+        elif key_pool:
+            self.key_pool = key_pool
+            self.api_key = key_pool.entries[0].key
+        else:
+            self.key_pool = get_default_key_pool(base_url=self.base_url)
+            self.api_key = self.key_pool.entries[0].key
         
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        self.client = self.key_pool.get_client(self.api_key)
 
     def _create_completion(
         self,
@@ -117,16 +122,19 @@ class LLMClient:
         max_tokens: Optional[int],
         response_format: Optional[Dict[str, Any]],
     ) -> Any:
-        """Send one raw Chat Completions request through the compatibility layer."""
+        """Send one raw Chat Completions request with KeyPool failover."""
 
-        return create_chat_completion(
-            self.client,
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format=response_format,
-        )
+        def _do_request(client: OpenAI, key: str):
+            return create_chat_completion(
+                client,
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+
+        return self.key_pool.execute_with_failover(_do_request)
     
     def chat(
         self,

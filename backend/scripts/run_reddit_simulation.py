@@ -440,8 +440,10 @@ class RedditSimulationRunner:
         - LLM_BASE_URL: API基础URL
         - LLM_MODEL_NAME: 模型名称
         """
-        # 优先从 .env 读取配置
-        llm_api_key = os.environ.get("LLM_API_KEY", "")
+        # 优先从 .env 读取配置 (支持 LLM_API_KEYS 或 LLM_API_KEY)
+        import re
+        keys = [k.strip() for k in re.split(r'[,;\n\r]+', os.environ.get("LLM_API_KEYS", "") or os.environ.get("LLM_API_KEY", "")) if k.strip()]
+        llm_api_key = keys[0] if keys else ""
         llm_base_url = os.environ.get("LLM_BASE_URL", "")
         llm_model = os.environ.get("LLM_MODEL_NAME", "")
         

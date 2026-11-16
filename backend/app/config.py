@@ -26,6 +26,7 @@ class Config:
     
     # LLM配置（统一使用OpenAI格式）
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
+    LLM_API_KEYS = os.environ.get('LLM_API_KEYS')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
@@ -61,11 +62,19 @@ class Config:
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
     
     @classmethod
+    def get_llm_api_keys(cls) -> list[str]:
+        """获取所有配置的LLM API Key列表"""
+        raw = cls.LLM_API_KEYS or cls.LLM_API_KEY or ""
+        from .utils.key_pool import parse_key_list
+        return parse_key_list(raw)
+
+    @classmethod
     def validate(cls) -> list[str]:
         """验证必要配置"""
         errors: list[str] = []
-        if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY 未配置")
+        keys = cls.get_llm_api_keys()
+        if not keys:
+            errors.append("LLM_API_KEY 未配置 (请配置 LLM_API_KEY 或 LLM_API_KEYS)")
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
         if os.environ.get("ZEP_API_URL"):
