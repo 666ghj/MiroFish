@@ -995,22 +995,35 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
         config: 模拟配置字典
         use_boost: 是否使用加速 LLM 配置（如果可用）
     """
-    # 检查是否有加速配置
+    # 检查是否有加速配置或多Key配置
     boost_api_key = os.environ.get("LLM_BOOST_API_KEY", "")
+    boost_api_keys_raw = os.environ.get("LLM_BOOST_API_KEYS", "")
     boost_base_url = os.environ.get("LLM_BOOST_BASE_URL", "")
     boost_model = os.environ.get("LLM_BOOST_MODEL_NAME", "")
-    has_boost_config = bool(boost_api_key)
+
+    # 解析通用Key列表
+    import re
+    general_keys = [k.strip() for k in re.split(r'[,;\n\r]+', os.environ.get("LLM_API_KEYS", "") or os.environ.get("LLM_API_KEY", "")) if k.strip()]
+    boost_keys = [k.strip() for k in re.split(r'[,;\n\r]+', boost_api_keys_raw or boost_api_key) if k.strip()]
+
+    has_boost_config = bool(boost_keys)
     
-    # 根据参数和配置情况选择使用哪个 LLM
+    # 根据参数和配置情况选择使用哪个 LLM Key
     if use_boost and has_boost_config:
         # 使用加速配置
-        llm_api_key = boost_api_key
+        llm_api_key = boost_keys[0]
         llm_base_url = boost_base_url
         llm_model = boost_model or os.environ.get("LLM_MODEL_NAME", "")
         config_label = "[加速LLM]"
+    elif use_boost and len(general_keys) > 1:
+        # 没有单独加速配置，但提供了多个通用Key，Reddit自动使用第二个Key进行分流
+        llm_api_key = general_keys[1]
+        llm_base_url = os.environ.get("LLM_BASE_URL", "")
+        llm_model = os.environ.get("LLM_MODEL_NAME", "")
+        config_label = "[分流LLM Key#2]"
     else:
-        # 使用通用配置
-        llm_api_key = os.environ.get("LLM_API_KEY", "")
+        # 使用通用配置第一个Key
+        llm_api_key = general_keys[0] if general_keys else os.environ.get("LLM_API_KEY", "")
         llm_base_url = os.environ.get("LLM_BASE_URL", "")
         llm_model = os.environ.get("LLM_MODEL_NAME", "")
         config_label = "[通用LLM]"
