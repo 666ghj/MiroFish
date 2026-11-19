@@ -34,6 +34,7 @@ MiroFish 桌面版（Windows x64）打包脚本
 import argparse
 import os
 import shutil
+import subprocess
 import sys
 import zipfile
 
@@ -218,8 +219,29 @@ def write_readme(stage, mode):
 
 
 def make_zip(stage, out_dir, name):
+    """压缩安装包。
+
+    优先调用系统 zip（多线程 + 更快），没有时退回 Python 的 zipfile。
+    """
     zip_path = os.path.join(out_dir, name + '.zip')
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
     log(f'压缩 -> {zip_path}')
+
+    if shutil.which('zip'):
+        parent = os.path.dirname(os.path.abspath(stage))
+        try:
+            subprocess.check_call(['zip', '-r', '-q', '-6', os.path.abspath(zip_path), name], cwd=parent)
+        except subprocess.CalledProcessError as exc:
+            log(f'系统 zip 失败（{exc}），改用 Python zipfile')
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        else:
+            count = sum(len(files) for _, _, files in os.walk(stage))
+            size = os.path.getsize(zip_path) / 1024 / 1024
+            log(f'完成：{zip_path}（{count} 个文件，{size:.0f} MB）')
+            return zip_path
+
     count = 0
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for root, _, files in os.walk(stage):
@@ -227,6 +249,7 @@ def make_zip(stage, out_dir, name):
                 full = os.path.join(root, fn)
                 zf.write(full, os.path.join(name, os.path.relpath(full, stage)))
                 count += 1
+
     size = os.path.getsize(zip_path) / 1024 / 1024
     log(f'完成：{zip_path}（{count} 个文件，{size:.0f} MB）')
     return zip_path
@@ -276,8 +299,8 @@ def main():
     log(f'未压缩体积: {total / 1024 / 1024:.1f} MB')
 
     # 用安装包内的 icon.ico 重新编译启动器，保证 exe 图标与窗口图标一致
-    import subprocess
     try:
+        sys.path.insert(0, DESKTOP_DIR)
         from fetch_sources import compile_launcher
         compile_launcher(os.path.dirname(args.exe))
         shutil.copy2(os.path.join(os.path.dirname(args.exe), 'MiroFish.exe'),

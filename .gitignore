@@ -60,3 +60,5 @@ backend/uploads/
 # 桌面版打包中间产物（MiroFish.exe 由 desktop/fetch_sources.py 生成）
 desktop/icon.ico
 desktop/icon.png
+*.pdb
+desktop/icon_source.png.orig

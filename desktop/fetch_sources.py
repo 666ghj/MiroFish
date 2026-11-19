@@ -200,6 +200,7 @@ def compile_launcher(build_dir):
     exe = os.path.join(build_dir, 'MiroFish.exe')
     launcher = os.path.join(DESKTOP_DIR, 'launcher.c')
     rc = os.path.join(DESKTOP_DIR, 'app.rc')
+    ico_path = os.path.join(DESKTOP_DIR, 'icon.ico')
 
     compiler = None
     if shutil.which('zig'):
@@ -213,6 +214,10 @@ def compile_launcher(build_dir):
                 compiler = [candidate, 'cc']
         except ImportError:
             pass
+
+    if not os.path.exists(ico_path or ''):
+        # 保证 app.rc 引用的 icon.ico 一定存在
+        build_icon(build_dir)
 
     if compiler:
         run(compiler + [
