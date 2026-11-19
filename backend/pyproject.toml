@@ -22,6 +22,8 @@ dependencies = [
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",
+    # camel-ai 0.2.78 依赖 mcp 1.x 的 FastMCP，mcp 2.x 会导致 import 失败
+    "mcp==1.29.0",
     
     # 文件处理
     "PyMuPDF>=1.24.0",

@@ -114,6 +114,15 @@ def write_requirements(stage):
 
 def populate_runtime(stage, wheels_dir, embed_dir):
     py_dir = os.path.join(stage, 'runtime', 'python')
+    # 允许传入上一级目录（内部还有一层 cp3xx/）
+    if not os.path.exists(os.path.join(embed_dir, 'python.exe')):
+        nested = [d for d in os.listdir(embed_dir)
+                  if os.path.isfile(os.path.join(embed_dir, d, 'python.exe'))]
+        if nested:
+            embed_dir = os.path.join(embed_dir, nested[0])
+        else:
+            raise SystemExit(f'--embed 目录里没有 python.exe: {embed_dir}')
+
     log(f'复制 Python 运行时 -> {py_dir}')
     copy_tree(embed_dir, py_dir)
 
