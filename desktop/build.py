@@ -141,6 +141,22 @@ def populate_runtime(stage, wheels_dir, embed_dir):
               ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyi'))
 
 
+def ensure_launcher(exe_path):
+    """若启动器不存在（且本机无法编译），从仓库缓存恢复。"""
+    if os.path.exists(exe_path):
+        return exe_path
+    cached = os.path.join(DESKTOP_DIR, 'MiroFish.exe')
+    if os.path.exists(cached):
+        os.makedirs(os.path.dirname(exe_path), exist_ok=True)
+        shutil.copy2(cached, exe_path)
+        log(f'使用仓库内预编译启动器 -> {exe_path}')
+        return exe_path
+    raise SystemExit(
+        f'缺少启动器 {exe_path}。\n'
+        '  请在有编译器（或 Windows）的环境执行: python desktop/fetch_sources.py\n'
+        '  或直接使用仓库内预编译的 desktop/MiroFish.exe')
+
+
 def copy_tools(stage, tools_dir):
     """拷贝 uv.exe 等工具（在线安装版用它们安装依赖）。"""
     if not tools_dir or not os.path.isdir(tools_dir):
@@ -164,7 +180,7 @@ def write_console_bat(stage):
                 'echo 正在启动 MiroFish（关闭此窗口即退出程序）...\n'
                 'echo 如果窗口一闪而过，请先在 MiroFish.exe 同目录查看 Setup.bat 是否执行成功。\n'
                 'echo.\n'
-                f'"{APP_NAME}.exe" --console --headless\n'
+                f'"{APP_NAME}.exe" --console --no-setup\n'
                 'pause\n')
 
 
@@ -269,8 +285,7 @@ def main():
     ap.add_argument('--zip', action='store_true')
     args = ap.parse_args()
 
-    if not os.path.exists(args.exe):
-        raise SystemExit(f'缺少启动器 {args.exe}，请先运行: python desktop/fetch_sources.py')
+    args.exe = ensure_launcher(args.exe)
 
     suffix = 'offline' if args.mode == 'offline' else 'setup'
     name = f'{APP_NAME}-{VERSION}-windows-x64-{suffix}'
