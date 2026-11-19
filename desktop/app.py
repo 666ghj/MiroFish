@@ -17,14 +17,14 @@ MiroFish Desktop —— 桌面版启动器（Windows）
   --debug          打开 pywebview 的调试能力
 """
 
-import base64
+import atexit
 import os
 import secrets
+import signal
 import socket
 import sys
 import threading
 import time
-import webbrowser
 
 APP_NAME = 'MiroFish'
 
@@ -261,6 +261,30 @@ def start_backend(port: int):
     return app
 
 
+def install_shutdown_hooks() -> None:
+    """任何退出路径都尽量回收模拟子进程（Windows 下信号支持有限，用 atexit 兜底）。"""
+    def _cleanup(*_args):
+        try:
+            from app.services.simulation_runner import SimulationRunner
+            SimulationRunner.cleanup_all_simulations()
+        except Exception:
+            pass
+
+    try:
+        atexit.register(_cleanup)
+    except Exception:
+        pass
+
+    for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, lambda *_: (os._exit(0)))
+        except Exception:
+            pass
+
+
 def run_server(app, port: int) -> None:
     """使用 waitress 启动（Windows 上比 werkzeug 更稳，且不会开 reloader）。"""
     try:
@@ -318,6 +342,7 @@ def run(headless: bool = False, port: int = 0, debug: bool = False) -> int:
     print(f'[MiroFish] 数据目录: {data_root()}')
 
     prepare_runtime_env(port)
+    install_shutdown_hooks()
     app = start_backend(port)
 
     server_thread = threading.Thread(target=run_server, args=(app, port), daemon=True,
