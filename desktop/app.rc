@@ -1,0 +1,32 @@
+#include <windows.h>
+
+1 ICON "icon.ico"
+
+1 VERSIONINFO
+FILEVERSION 0, 1, 0, 0
+PRODUCTVERSION 0, 1, 0, 0
+FILEOS 0x00040004L
+FILETYPE 0x00000001L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "MiroFish"
+            VALUE "FileDescription",  "MiroFish - 群体智能预测引擎"
+            VALUE "FileVersion",      "0.1.0.0"
+            VALUE "InternalName",     "MiroFish"
+            VALUE "LegalCopyright",   "AGPL-3.0"
+            VALUE "OriginalFilename", "MiroFish.exe"
+            VALUE "ProductName",      "MiroFish"
+            VALUE "ProductVersion",   "0.1.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+/* 让 Windows 以 UTF-8 处理程序清单里的字符串 */
+1 24 "app.manifest"

@@ -8,13 +8,32 @@ from dotenv import load_dotenv
 
 # 加载项目根目录的 .env 文件
 # 路径: MiroFish/.env (相对于 backend/app/config.py)
-project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
+# 桌面版启动器会通过 MIROFISH_ENV_FILE 指定用户数据目录下的 .env
+_env_override = os.environ.get('MIROFISH_ENV_FILE')
+project_root_env = _env_override or os.path.join(os.path.dirname(__file__), '../../.env')
 
-if os.path.exists(project_root_env):
+if project_root_env and os.path.exists(project_root_env):
     load_dotenv(project_root_env, override=True)
 else:
     # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
     load_dotenv(override=True)
+
+
+def _resolve_data_dir() -> str:
+    """
+    解析可写数据目录。
+
+    源码部署时默认仍是 backend/uploads（保持原有行为）；
+    桌面版（--desktop）由启动器设置 MIROFISH_DATA_DIR 指向用户数据目录，
+    因为安装目录（如 C:\\Program Files）通常是只读的。
+    """
+    data_dir = os.environ.get('MIROFISH_DATA_DIR')
+    if data_dir:
+        return os.path.abspath(data_dir)
+    return os.path.join(os.path.dirname(__file__), '../uploads')
+
+
+DATA_DIR = _resolve_data_dir()
 
 
 class Config:
@@ -37,7 +56,7 @@ class Config:
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
+    UPLOAD_FOLDER = DATA_DIR
     ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
     
     # 文本处理配置
@@ -46,7 +65,7 @@ class Config:
     
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
-    OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
+    OASIS_SIMULATION_DATA_DIR = os.path.join(DATA_DIR, 'simulations')
     
     # OASIS平台可用动作配置
     OASIS_TWITTER_ACTIONS = [

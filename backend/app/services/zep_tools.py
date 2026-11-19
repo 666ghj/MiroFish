@@ -1509,8 +1509,7 @@ class ZepToolsService:
         
         # 构建人设文件路径
         sim_dir = os.path.join(
-            os.path.dirname(__file__), 
-            f'../../uploads/simulations/{simulation_id}'
+            Config.OASIS_SIMULATION_DATA_DIR, simulation_id
         )
         
         profiles = []

@@ -176,6 +176,34 @@ docker compose up -d
 
 > 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
 
+### 三、Windows 桌面版（.exe，免安装）
+
+不想折腾 Python / Node 环境时，可以直接使用打包好的 Windows 桌面程序：
+
+1. 从 [Releases](https://github.com/cfunkycreations-tech/MiroFish/releases) 下载
+   `MiroFish-*-windows-x64-offline.zip`（完整离线版，内置 Python 运行时与全部依赖）
+   或 `MiroFish-*-windows-x64-setup.zip`（在线安装版，首次运行自动下载依赖）。
+2. 解压到任意目录（不要放在 `C:\Program Files` 这类需要管理员权限的目录）。
+3. 双击 `MiroFish.exe`：
+   * 完整离线版：直接打开原生窗口；
+   * 在线安装版：首次会提示下载运行环境（约 500 MB～1 GB），之后即可离线使用。
+4. 首次打开会自动进入「配置 MiroFish」页面，填入大模型与 Zep 的 API Key，
+   点击「测试连通性」确认可用后保存，就可以开始预测了。
+
+桌面版特性：
+
+| 能力 | 说明 |
+|------|------|
+| 原生窗口 | 基于 WebView2（Windows 10/11 自带），无需浏览器 |
+| 一键配置 | 界面内填写 API Key，保存在 `%APPDATA%\MiroFish\.env`，升级不丢失数据 |
+| 数据隔离 | 后端只监听 `127.0.0.1` 的随机空闲端口，不对外开放 |
+| 排错入口 | `MiroFish-Console.bat` 保留控制台与日志；`--browser` 可回退到浏览器 |
+| 自动更新提示 | 启动时检查 Releases 新版本（离线时静默跳过） |
+
+> 源码自行打包：`python desktop/fetch_sources.py` 准备素材，再执行
+> `python desktop/build.py --mode offline`（或 `--mode setup`）。
+> 推送到 `v*` tag 时，GitHub Actions 会自动在 `windows-latest` 上构建并上传 Release。
+
 ## 📬 更多交流
 
 <div align="center">

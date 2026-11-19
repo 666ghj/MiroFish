@@ -23,6 +23,7 @@ ENV/
 *.egg-info/
 dist/
 build/
+!desktop/build.py
 
 # Node.js
 node_modules/
@@ -56,5 +57,6 @@ backend/logs/
 # 上传文件
 backend/uploads/
 
-# Docker 数据
-data/
+# 桌面版打包中间产物（MiroFish.exe 由 desktop/fetch_sources.py 生成）
+desktop/icon.ico
+desktop/icon.png

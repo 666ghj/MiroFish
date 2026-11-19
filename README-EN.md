@@ -176,6 +176,32 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+### Option 3: Windows Desktop App (.exe, no install)
+
+If you'd rather not set up Python and Node.js, grab the packaged desktop build:
+
+1. Download `MiroFish-*-windows-x64-offline.zip` (fully offline, bundles Python and all
+   dependencies) or `MiroFish-*-windows-x64-setup.zip` (small; downloads the runtime on
+   first launch) from [Releases](https://github.com/cfunkycreations-tech/MiroFish/releases).
+2. Extract anywhere you have write access (avoid `C:\Program Files`).
+3. Double-click `MiroFish.exe`.
+4. On first launch the app opens the **Configure MiroFish** page — paste your LLM and Zep
+   API keys, hit *Test connection*, then *Save*.
+
+Desktop highlights:
+
+| Feature | Details |
+|---------|---------|
+| Native window | WebView2 (ships with Windows 10/11), no browser needed |
+| In-app setup | API keys stored in `%APPDATA%\MiroFish\.env`; survives upgrades |
+| Local only | Backend binds `127.0.0.1` on a random free port |
+| Troubleshooting | `MiroFish-Console.bat` keeps the console/logs; `--browser` falls back to a browser |
+| Update hint | Checks GitHub Releases on startup, silently skipped when offline |
+
+> Build it yourself: `python desktop/fetch_sources.py` to fetch the Windows wheels and
+> embeddable Python, then `python desktop/build.py --mode offline` (or `--mode setup`).
+> Pushing a `v*` tag triggers the `desktop-build` GitHub Actions workflow.
+
 ## 📬 Join the Conversation
 
 <div align="center">

@@ -1,0 +1,102 @@
+name: Build Windows desktop app
+
+# 在 GitHub 的 windows-latest 上直接构建原生 Windows 桌面版：
+#   * 不需要交叉编译，MiroFish.exe 由 MSVC 编译
+#   * 产物为完整离线包（内置 Python 运行时 + 全部依赖）
+#
+# 触发方式：
+#   * 推送 tag（v*）时自动构建并上传到 Release
+#   * 手动 workflow_dispatch
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: '内置 Python 版本（3.11 / 3.12 / 3.13）'
+        default: '3.12'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version || '3.12' }}
+
+      - name: Record version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/version.txt -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv ziglang pillow pytest
+
+      - name: Fetch Windows wheels + embeddable Python
+        run: python desktop/fetch_sources.py --build-dir build
+
+      - name: Compile MiroFish.exe (MSVC)
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          $devcmd = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
+          cmd /c "`"$devcmd`" -arch=amd64 && cl /nologo /O2 /MT /DUNICODE /D_UNICODE desktop\launcher.c desktop\app.res /Fe:build\MiroFish.exe ole32.lib shell32.lib user32.lib"
+
+      - name: Verify launcher
+        run: python desktop/verify_exe.py build/MiroFish.exe
+
+      - name: Run desktop tests
+        run: python -m pytest desktop/tests -q
+
+      - name: Package offline build
+        run: |
+          python desktop/build.py --mode offline `
+            --wheels build/wheels-win${{ (inputs.python_version || '3.12') == '3.12' && '312' || '311' }} `
+            --embed build/embed312 `
+            --exe build/MiroFish.exe --out dist --zip
+
+      - name: Package setup build
+        run: python desktop/build.py --mode setup --exe build/MiroFish.exe --out dist --zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiroFish-windows-x64-v${{ steps.version.outputs.version }}
+          path: dist/*.zip
+          retention-days: 14
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
