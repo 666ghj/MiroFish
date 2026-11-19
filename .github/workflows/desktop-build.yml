@@ -17,6 +17,12 @@ on:
         description: '内置 Python 版本（3.11 / 3.12 / 3.13）'
         default: '3.12'
         required: false
+      create_release:
+        description: '构建完成后创建/更新 Release（手动触发时）'
+        type: boolean
+        default: true
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -41,13 +47,6 @@ jobs:
         with:
           python-version: ${{ inputs.python_version || '3.12' }}
 
-      - name: Record version
-        id: version
-        shell: pwsh
-        run: |
-          $version = (Get-Content desktop/version.txt -Raw).Trim()
-          "version=$version" >> $env:GITHUB_OUTPUT
-
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -60,16 +59,11 @@ jobs:
           python -m pip install uv ziglang pillow pytest
 
       - name: Fetch Windows wheels + embeddable Python
-        run: python desktop/fetch_sources.py --build-dir build
+        run: python desktop/fetch_sources.py --build-dir build --skip-exe
 
       - name: Compile MiroFish.exe (MSVC)
-        shell: pwsh
-        run: |
-          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
-            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath
-          $devcmd = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
-          cmd /c "`"$devcmd`" -arch=amd64 && cl /nologo /O2 /MT /DUNICODE /D_UNICODE desktop\launcher.c desktop\app.res /Fe:build\MiroFish.exe ole32.lib shell32.lib user32.lib"
+        shell: cmd
+        run: desktop\build_launcher.bat
 
       - name: Verify launcher
         run: python desktop/verify_exe.py build/MiroFish.exe
@@ -78,10 +72,13 @@ jobs:
         run: python -m pytest desktop/tests -q
 
       - name: Package offline build
+        shell: pwsh
         run: |
+          $ver = "${{ inputs.python_version || '3.12' }}"
+          $tag = $ver.Replace('.', '')
           python desktop/build.py --mode offline `
-            --wheels build/wheels-win${{ (inputs.python_version || '3.12') == '3.12' && '312' || '311' }} `
-            --embed build/embed312 `
+            --wheels "build/wheels-win$tag" `
+            --embed "build/embed$tag" `
             --exe build/MiroFish.exe --out dist --zip
 
       - name: Package setup build
@@ -90,13 +87,36 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MiroFish-windows-x64-v${{ steps.version.outputs.version }}
+          name: MiroFish-windows-x64-v${{ steps.ver.outputs.version }}
           path: dist/*.zip
           retention-days: 14
 
-      - name: Attach to release
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Get-Content desktop/version.txt -Raw).Trim()
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Attach to release (tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
           generate_release_notes: true
+
+      - name: Create or update release (manual trigger)
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: MiroFish ${{ steps.ver.outputs.version }} · Windows x64
+          files: dist/*.zip
+          generate_release_notes: true
+
+      - name: Publish release uploaded alongside a draft release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/*.zip

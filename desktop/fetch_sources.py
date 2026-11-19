@@ -229,15 +229,13 @@ def compile_launcher(build_dir):
         return exe
 
     if sys.platform == 'win32':
-        # 本机就是 Windows：用 MSVC + rc.exe（需在 “x64 Native Tools” 命令行里运行）
-        windres = shutil.which('windres')
-        res = os.path.join(build_dir, 'app.res.o')
-        if windres:
-            run([windres, os.path.join(DESKTOP_DIR, 'app.rc'), '-O', 'coff', '-o', res], cwd=DESKTOP_DIR)
-            run(['cl', '/nologo', '/O2', f'/Fe:{exe}', launcher, res,
-                 'ole32.lib', 'shell32.lib', 'user32.lib'], cwd=DESKTOP_DIR)
-            log(f'启动器 -> {exe}')
-            return exe
+        # 本机就是 Windows：用仓库里的批处理调用 MSVC（优先）/ gcc 后备
+        bat = os.path.join(DESKTOP_DIR, 'build_launcher.bat')
+        if os.path.exists(bat):
+            run(['cmd', '/c', bat], cwd=REPO_ROOT)
+            if os.path.exists(exe):
+                log(f'启动器 -> {exe}')
+                return exe
 
     raise SystemExit('找不到可用的 C 编译器。请先执行: pip install ziglang')
 
