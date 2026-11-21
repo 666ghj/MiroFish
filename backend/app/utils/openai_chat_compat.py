@@ -51,6 +51,10 @@ def create_chat_completion(
     if max_tokens is not None:
         if gpt5_family:
             kwargs["max_completion_tokens"] = max_tokens
+        elif model and model.strip().lower().startswith("gemini"):
+            # Gemini 2.5/3 models include thinking budget inside max_tokens;
+            # ensure at least 16384 so structured JSON never truncates mid-object.
+            kwargs["max_tokens"] = max(int(max_tokens), 16384)
         else:
             kwargs["max_tokens"] = max_tokens
 

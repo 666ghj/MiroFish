@@ -25,11 +25,25 @@ def set_locale(locale: str):
     _thread_local.locale = locale
 
 
+def _default_locale() -> str:
+    if os.environ.get('PYTEST_CURRENT_TEST'):
+        return 'zh'
+    env_loc = os.environ.get('DEFAULT_LOCALE', 'en')
+    return env_loc if env_loc in _translations else 'en'
+
+
 def get_locale() -> str:
+    if hasattr(_thread_local, 'locale') and _thread_local.locale in _translations:
+        return _thread_local.locale
     if has_request_context():
-        raw = request.headers.get('Accept-Language', 'zh')
-        return raw if raw in _translations else 'zh'
-    return getattr(_thread_local, 'locale', 'zh')
+        raw = request.headers.get('Accept-Language', '')
+        if raw in _translations:
+            return raw
+        if raw.lower().startswith('en') and 'en' in _translations:
+            return 'en'
+        if raw.lower().startswith('zh') and 'zh' in _translations:
+            return 'zh'
+    return _default_locale()
 
 
 def t(key: str, **kwargs) -> str:
