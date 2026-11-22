@@ -1,0 +1,21 @@
+# fly.toml app configuration file generated for iapmpy on 2026-11-22T03:24:04Z
+#
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
+#
+
+app = 'iapmpy'
+primary_region = 'ams'
+
+[build]
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
