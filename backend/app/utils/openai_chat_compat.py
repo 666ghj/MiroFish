@@ -7,7 +7,28 @@ gracefully adapting request parameters for GPT-5 family models.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+
+logger = logging.getLogger(__name__)
+
+JSON_OBJECT_RESPONSE_FORMAT: Dict[str, str] = {"type": "json_object"}
+
+_UNSUPPORTED_RESPONSE_FORMAT_CODES = {
+    "unsupported_parameter",
+    "unsupported_value",
+    "unknown_parameter",
+    "invalid_parameter",
+}
+_UNSUPPORTED_RESPONSE_FORMAT_PHRASES = (
+    "not support",
+    "unsupported",
+    "unknown parameter",
+    "unrecognized parameter",
+    # LM Studio: "'response_format.type' must be 'json_schema' or 'text'"
+    "must be",
+)
 
 
 def is_gpt5_family(model: Optional[str]) -> bool:
@@ -55,6 +76,87 @@ def create_chat_completion(
             kwargs["max_tokens"] = max_tokens
 
     return client.chat.completions.create(**kwargs)
+
+
+def is_response_format_unsupported(error: Exception) -> bool:
+    """Detect an explicit provider rejection of JSON response_format.
+
+    Accepts OpenAI-style error objects as well as providers that report the
+    error as a plain string, e.g. LM Studio's
+    ``{"error": "'response_format.type' must be 'json_schema' or 'text'"}``
+    (which the OpenAI SDK exposes as ``error.body == "<message>"``).
+    """
+
+    if getattr(error, "status_code", None) not in {400, 422}:
+        return False
+
+    details = getattr(error, "body", None)
+    if isinstance(details, dict):
+        details = details.get("error", details)
+    if isinstance(details, str):
+        details = {"message": details}
+    if not isinstance(details, dict):
+        return False
+
+    param = str(details.get("param") or "").strip().lower()
+    if param == "response_format" or param.startswith("response_format."):
+        return True
+
+    message = str(details.get("message") or "").lower()
+    if "response_format" not in message:
+        return False
+
+    code = str(details.get("code") or "").lower()
+    return code in _UNSUPPORTED_RESPONSE_FORMAT_CODES or any(
+        phrase in message for phrase in _UNSUPPORTED_RESPONSE_FORMAT_PHRASES
+    )
+
+
+def create_json_chat_completion(
+    client: Any,
+    *,
+    model: str,
+    messages: List[Dict[str, Any]],
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    json_mode: bool = True,
+) -> Tuple[Any, bool]:
+    """
+    Request a JSON object, degrading to prompt-only JSON guidance when the
+    provider explicitly rejects ``response_format``.
+
+    Returns ``(response, json_mode)``. Callers should pass the returned
+    ``json_mode`` into their next request so a provider that rejected
+    ``response_format`` is not asked again for every entity. Any other
+    provider error is propagated unchanged.
+    """
+    if json_mode:
+        try:
+            response = create_chat_completion(
+                client,
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=JSON_OBJECT_RESPONSE_FORMAT,
+            )
+            return response, True
+        except Exception as error:
+            if not is_response_format_unsupported(error):
+                raise
+            logger.warning(
+                "LLM provider explicitly rejected response_format; "
+                "retrying with prompt-only JSON guidance"
+            )
+
+    response = create_chat_completion(
+        client,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return response, False
 
 
 def extract_chat_completion_text(response: Any) -> str:

@@ -10,7 +10,11 @@ from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
-from .openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from .openai_chat_compat import (
+    create_chat_completion,
+    extract_chat_completion_text,
+    is_response_format_unsupported as _is_response_format_unsupported,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -22,46 +26,6 @@ class LLMResponseError(ValueError):
     def __init__(self, message: str, *, finish_reason: Optional[str] = None):
         super().__init__(message)
         self.finish_reason = finish_reason
-
-
-def _is_response_format_unsupported(error: Exception) -> bool:
-    """Detect an explicit provider rejection of JSON response_format."""
-
-    if getattr(error, "status_code", None) not in {400, 422}:
-        return False
-
-    body = getattr(error, "body", None)
-    if not isinstance(body, dict):
-        return False
-
-    details = body.get("error", body)
-    if not isinstance(details, dict):
-        return False
-
-    param = str(details.get("param") or "").strip().lower()
-    if param == "response_format" or param.startswith("response_format."):
-        return True
-
-    message = str(details.get("message") or "").lower()
-    if "response_format" not in message:
-        return False
-
-    code = str(details.get("code") or "").lower()
-    unsupported_codes = {
-        "unsupported_parameter",
-        "unsupported_value",
-        "unknown_parameter",
-        "invalid_parameter",
-    }
-    unsupported_phrases = (
-        "not support",
-        "unsupported",
-        "unknown parameter",
-        "unrecognized parameter",
-    )
-    return code in unsupported_codes or any(
-        phrase in message for phrase in unsupported_phrases
-    )
 
 
 def _clean_chat_text(content: str) -> str:

@@ -21,7 +21,7 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
-from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from ..utils.openai_chat_compat import create_json_chat_completion, extract_chat_completion_text
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.simulation_config')
@@ -240,7 +240,9 @@ class SimulationConfigGenerator:
             api_key=self.api_key,
             base_url=self.base_url
         )
-    
+        # Cleared once the provider explicitly rejects response_format
+        self._json_mode = True
+
     def generate_config(
         self,
         simulation_id: str,
@@ -441,16 +443,16 @@ class SimulationConfigGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = create_chat_completion(
+                response, self._json_mode = create_json_chat_completion(
                     self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
                     temperature=0.7 - (attempt * 0.1),  # 每次重试降低温度
                     # 不设置max_tokens，让LLM自由发挥
+                    json_mode=self._json_mode,
                 )
                 
                 content = extract_chat_completion_text(response)

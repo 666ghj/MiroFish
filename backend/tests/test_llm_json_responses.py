@@ -257,3 +257,22 @@ def test_chat_json_reports_missing_choices_without_retrying_forever():
         )
 
     assert len(sequence.calls) == 2
+
+
+def test_chat_json_falls_back_for_lm_studio_plain_string_rejection():
+    class PlainStringError(RuntimeError):
+        status_code = 400
+        # The OpenAI SDK exposes LM Studio's {"error": "<message>"} as a string body
+        body = "'response_format.type' must be 'json_schema' or 'text'"
+
+    sequence = CompletionSequence(PlainStringError(), _response('{"ok": true}'))
+    client = _client_for(sequence)
+
+    result = client.chat_json(
+        messages=[{"role": "user", "content": "Return JSON"}],
+        max_attempts=1,
+    )
+
+    assert result == {"ok": True}
+    assert sequence.calls[0]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in sequence.calls[1]

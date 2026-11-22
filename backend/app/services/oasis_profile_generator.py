@@ -19,7 +19,7 @@ from openai import OpenAI
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
-from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from ..utils.openai_chat_compat import create_json_chat_completion, extract_chat_completion_text
 from ..utils.zep import (
     call_zep_read_with_retry,
     get_zep_client,
@@ -259,7 +259,9 @@ class OasisProfileGenerator:
             api_key=self.api_key,
             base_url=self.base_url
         )
-        
+        # Cleared once the provider explicitly rejects response_format
+        self._json_mode = True
+
         # Zep客户端用于检索丰富上下文
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
         self.zep_client = None
@@ -570,16 +572,16 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = create_chat_completion(
+                response, self._json_mode = create_json_chat_completion(
                     self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
                     temperature=0.7 - (attempt * 0.1),  # 每次重试降低温度
                     # 不设置max_tokens，让LLM自由发挥
+                    json_mode=self._json_mode,
                 )
                 
                 content = extract_chat_completion_text(response)
