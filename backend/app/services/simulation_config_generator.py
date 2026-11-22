@@ -242,7 +242,7 @@ class SimulationConfigGenerator:
         )
         # Cleared once the provider explicitly rejects response_format
         self._json_mode = True
-
+    
     def generate_config(
         self,
         simulation_id: str,

@@ -261,7 +261,7 @@ class OasisProfileGenerator:
         )
         # Cleared once the provider explicitly rejects response_format
         self._json_mode = True
-
+        
         # Zep客户端用于检索丰富上下文
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
         self.zep_client = None
