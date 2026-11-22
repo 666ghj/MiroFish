@@ -1,4 +1,5 @@
 import json
+import secrets
 from types import SimpleNamespace
 
 import pytest
@@ -256,7 +257,7 @@ def test_json_completion_handles_real_lm_studio_error_through_openai_sdk():
 
     client = OpenAI(
         base_url="http://lmstudio.test/v1",
-        api_key="lm-studio",
+        api_key=secrets.token_urlsafe(16),  # never sent anywhere: mock transport
         max_retries=0,
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
