@@ -91,6 +91,12 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
 5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
 
+### Local ChatGPT connection
+
+In a local Windows source installation, open **Proveedor de IA** and select **Continuar con ChatGPT**. Authorize MiroFish in the browser, choose a model from the account's available models, then select **Usar ChatGPT en MiroFish**. This flow uses OpenAI's public-client OAuth sign-in and Responses API with your ChatGPT plan. It does not require Codex CLI or an OpenAI API key. Zep still requires `ZEP_API_KEY`.
+
+The local backend stores the ChatGPT session encrypted with Windows DPAPI outside this repository, under `%LOCALAPPDATA%\MiroFish`. Only new tasks use the selected provider. **Volver a OpenRouter** restores the provider configured at backend startup. This is for local open-source use; a commercial hosted product needs its own approved integration or separately billed OpenAI API. Review simulation actions and generated reports before relying on them.
+
 ## 🚀 Quick Start
 
 ### Option 1: Source Code Deployment (Recommended)
@@ -109,15 +115,16 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 # Copy the example configuration file
 cp .env.example .env
 
-# Edit the .env file and fill in the required API keys
+# Edit .env and fill in ZEP_API_KEY. LLM_API_KEY is optional when using local ChatGPT sign-in.
 ```
 
-**Required Environment Variables:**
+**Environment Variables:**
 
 ```env
 # LLM API Configuration (supports any LLM API with OpenAI SDK format)
 # Recommended: Alibaba Qwen-plus model via Bailian Platform: https://bailian.console.aliyun.com/
 # High consumption, try simulations with fewer than 40 rounds first
+# Optional if you connect ChatGPT locally in the app:
 LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus

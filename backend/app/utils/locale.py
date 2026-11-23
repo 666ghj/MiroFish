@@ -28,7 +28,8 @@ def set_locale(locale: str):
 def get_locale() -> str:
     if has_request_context():
         raw = request.headers.get('Accept-Language', 'zh')
-        return raw if raw in _translations else 'zh'
+        # Language instructions can exist without a complete UI translation.
+        return raw if raw in _languages else 'zh'
     return getattr(_thread_local, 'locale', 'zh')
 
 
