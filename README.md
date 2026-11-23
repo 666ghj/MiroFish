@@ -4,8 +4,6 @@
 
 <a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="666ghj%2FMiroFish | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
-简洁通用的群体智能引擎，预测万物
-</br>
 <em>A Simple and Universal Swarm Intelligence Engine, Predicting Anything</em>
 
 <a href="https://www.shanda.com/" target="_blank"><img src="./static/image/shanda_logo.png" alt="666ghj%2FMiroFish | Shanda" height="40"/></a>
@@ -20,7 +18,7 @@
 [![X](https://img.shields.io/badge/X-Follow-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/mirofish_ai)
 [![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?style=flat-square&logo=instagram&logoColor=white)](https://www.instagram.com/mirofish_ai/)
 
-[English](./README.md) | [中文文档](./README-ZH.md)
+[English](./README.md) | [Chinese documentation](./README-ZH.md)
 
 </div>
 
@@ -93,9 +91,9 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 
 ### Local ChatGPT connection
 
-In a local Windows source installation, open **Proveedor de IA** and select **Continuar con ChatGPT**. Authorize MiroFish in the browser, choose a model from the account's available models, then select **Usar ChatGPT en MiroFish**. This flow uses OpenAI's public-client OAuth sign-in and Responses API with your ChatGPT plan. It does not require Codex CLI or an OpenAI API key. Zep still requires `ZEP_API_KEY`.
+In a local Windows source installation, open the AI provider panel and select the ChatGPT sign-in option. Authorize MiroFish in the browser, choose a model from the account's available models, then activate ChatGPT as the provider. This flow uses OpenAI's public-client OAuth sign-in and Responses API with your ChatGPT plan. It does not require Codex CLI or an OpenAI API key. Zep still requires `ZEP_API_KEY`.
 
-The local backend stores the ChatGPT session encrypted with Windows DPAPI outside this repository, under `%LOCALAPPDATA%\MiroFish`. Only new tasks use the selected provider. **Volver a OpenRouter** restores the provider configured at backend startup. This is for local open-source use; a commercial hosted product needs its own approved integration or separately billed OpenAI API. Review simulation actions and generated reports before relying on them.
+The local backend stores the ChatGPT session encrypted with Windows DPAPI outside this repository, under `%LOCALAPPDATA%\MiroFish`. Only new tasks use the selected provider. The option to return to OpenRouter restores the provider configured at backend startup. This is for local open-source use; a commercial hosted product needs its own approved integration or separately billed OpenAI API. Review simulation actions and generated reports before relying on them.
 
 ## 🚀 Quick Start
 
