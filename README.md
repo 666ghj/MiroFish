@@ -127,6 +127,13 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+##### Upgrade from Zep SDK v3
+
+MiroFish stores Zep v4 graph UUIDs in `graph_id`. After the upgrade, set
+`ZEP_API_KEY` and run `python backend/scripts/backfill_zep_graph_uuids.py --apply`.
+The command will update saved project, simulation, and report data. Run the
+command without `--apply` to preview the changes.
+
 #### 2. Install Dependencies
 
 ```bash
