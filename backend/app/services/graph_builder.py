@@ -4,6 +4,7 @@
 """
 
 import hashlib
+import socket
 import uuid
 import time
 import threading
@@ -11,6 +12,7 @@ from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
 from zep_cloud import BatchAddItem, EntityEdgeSourceTarget, NotFoundError
+import httpx
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
@@ -230,33 +232,53 @@ class GraphBuilderService:
         if graph_id_callback:
             graph_id_callback(graph_id)
 
-        try:
-            self.client.graph.create(
-                graph_id=graph_id,
-                name=name,
-                description="MiroFish Social Simulation Graph"
-            )
-        except Exception as error:
-            if not is_retryable_zep_error(error):
-                raise
-            reconciliation_error = None
-            for attempt in range(3):
-                try:
-                    call_zep_read_with_retry(
-                        lambda: self.client.graph.get(graph_id),
-                        operation_name=f"reconcile graph create {graph_id}",
-                    )
-                    reconciliation_error = None
-                    break
-                except NotFoundError as not_found:
-                    reconciliation_error = not_found
-                    if attempt < 2:
-                        time.sleep(attempt + 1)
-                except Exception as read_error:
-                    reconciliation_error = read_error
-                    break
-            if reconciliation_error is not None:
-                raise error from reconciliation_error
+        for create_attempt in range(3):
+            try:
+                self.client.graph.create(
+                    graph_id=graph_id,
+                    name=name,
+                    description="MiroFish Social Simulation Graph"
+                )
+                break
+            except Exception as error:
+                # DNS resolution fails before the POST can be sent. A retry
+                # with the same durable ID is safe; a read timeout is not.
+                causes = [error]
+                while causes[-1].__cause__ is not None:
+                    causes.append(causes[-1].__cause__)
+                dns_failure = isinstance(error, httpx.ConnectError) and (
+                    any(isinstance(cause, socket.gaierror) for cause in causes)
+                    or "getaddrinfo failed" in str(error).lower()
+                )
+                if dns_failure:
+                    if create_attempt < 2:
+                        time.sleep(create_attempt + 1)
+                        continue
+                    raise RuntimeError(
+                        "No se pudo resolver api.getzep.com. Comprueba DNS o la conexión "
+                        "a Internet y vuelve a construir el grafo."
+                    ) from error
+                if not is_retryable_zep_error(error):
+                    raise
+                reconciliation_error = None
+                for attempt in range(3):
+                    try:
+                        call_zep_read_with_retry(
+                            lambda: self.client.graph.get(graph_id),
+                            operation_name=f"reconcile graph create {graph_id}",
+                        )
+                        reconciliation_error = None
+                        break
+                    except NotFoundError as not_found:
+                        reconciliation_error = not_found
+                        if attempt < 2:
+                            time.sleep(attempt + 1)
+                    except Exception as read_error:
+                        reconciliation_error = read_error
+                        break
+                if reconciliation_error is not None:
+                    raise error from reconciliation_error
+                break
 
         return graph_id
 

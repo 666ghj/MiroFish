@@ -1,9 +1,11 @@
 <template>
   <router-view />
+  <ProviderConnection />
 </template>
 
 <script setup>
 // 使用 Vue Router 来管理页面
+import ProviderConnection from './components/ProviderConnection.vue'
 </script>
 
 <style>
