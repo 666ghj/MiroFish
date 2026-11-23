@@ -85,12 +85,24 @@ def test_validation_cleanup_deletes_graph_after_confirmed_drain(monkeypatch):
     from scripts import validate_zep_cloud_integration as validation
 
     deleted_graphs = []
+    polled_tasks = []
+
+    def delete(graph_uuid):
+        deleted_graphs.append(graph_uuid)
+        return SimpleNamespace(task=SimpleNamespace(uuid_="task-1"))
+
     client = SimpleNamespace(
-        graph=SimpleNamespace(delete=lambda graph_id: deleted_graphs.append(graph_id))
+        graph=SimpleNamespace(delete=delete),
+        task=SimpleNamespace(
+            get=lambda task_uuid: (
+                polled_tasks.append(task_uuid)
+                or SimpleNamespace(status="succeeded")
+            )
+        ),
     )
     cleanup = validation._cleanup_graph(
         client,
-        "graph-id",
+        "00000000-0000-4000-8000-000000000001",
         created=True,
         keep_graph=False,
         updater_started=True,
@@ -102,4 +114,5 @@ def test_validation_cleanup_deletes_graph_after_confirmed_drain(monkeypatch):
         "graph_retained": False,
         "reason": "validation_cleanup",
     }
-    assert deleted_graphs == ["graph-id"]
+    assert deleted_graphs == ["00000000-0000-4000-8000-000000000001"]
+    assert polled_tasks == ["task-1"]

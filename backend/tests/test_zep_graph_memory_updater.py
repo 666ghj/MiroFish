@@ -11,6 +11,8 @@ from app.services.zep_graph_memory_updater import (
     ZepGraphMemoryUpdater,
 )
 
+GRAPH_UUID = "00000000-0000-4000-8000-000000000001"
+
 
 def _activity(index=1, content="hello"):
     return AgentActivity(
@@ -25,11 +27,17 @@ def _activity(index=1, content="hello"):
 
 
 def _client(add):
+    def add_episode(_graph_uuid, **kwargs):
+        result = add(**kwargs)
+        if hasattr(result, "episode"):
+            return result
+        return SimpleNamespace(episode=result)
+
     return SimpleNamespace(
         graph=SimpleNamespace(
-            add=add,
             episode=SimpleNamespace(
-                get=lambda **_kwargs: SimpleNamespace(processed=True)
+                add=add_episode,
+                get=lambda *_args: SimpleNamespace(processed=True),
             ),
         )
     )
@@ -39,7 +47,7 @@ def _updater(monkeypatch, add, simulation_id="sim-1"):
     client = _client(add)
     monkeypatch.setattr(updater_module, "get_zep_client", lambda _key: client)
     updater = ZepGraphMemoryUpdater(
-        "graph-1",
+        GRAPH_UUID,
         api_key="test-key",
         simulation_id=simulation_id,
     )
@@ -99,7 +107,7 @@ def test_activity_episode_has_provenance_time_and_a_safe_size(monkeypatch):
     assert len(writes) == 1
     write = writes[0]
     assert len(write["data"]) <= updater.MAX_EPISODE_CHARS
-    assert write["created_at"] == "2026-07-22T12:00:00+08:00"
+    assert write["reference_time"] == "2026-07-22T12:00:00+08:00"
     assert write["source_description"] == "MiroFish simulation activity batch"
     assert write["metadata"]["simulation_id"] == "sim-provenance"
     assert write["metadata"]["platform"] == "twitter"
@@ -183,7 +191,7 @@ def test_pending_episode_wait_has_a_deadline(monkeypatch):
         lambda **_kwargs: SimpleNamespace(uuid_="episode-1"),
     )
     updater._pending_episode_uuids = ["episode-1"]
-    updater.client.graph.episode.get = lambda **_kwargs: SimpleNamespace(
+    updater.client.graph.episode.get = lambda *_args: SimpleNamespace(
         processed=False
     )
     timestamps = iter([0.0, 2.0])
