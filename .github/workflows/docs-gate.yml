@@ -1,0 +1,88 @@
+name: docs-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # semanal, segunda 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  gate-pr:
+    name: Gate de docs no PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # audit --pr precisa do histórico completo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lint estrito
+        run: node scripts/specctl.mjs lint --strict
+      - name: Audit do PR (base do evento)
+        run: node scripts/specctl.mjs audit --pr --base "$PR_BASE_SHA"
+      - name: Audit de dependências (programas)
+        run: node scripts/specctl.mjs audit --deps
+      - name: Gate de main (docs/active/ vazio)
+        if: github.event.pull_request.base.ref == 'main'
+        run: node scripts/specctl.mjs audit --main-gate
+      - name: Index idempotente (regenera + diff)
+        run: |
+          node scripts/specctl.mjs index
+          git diff --exit-code -- docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md
+
+  regen-index:
+    name: Regenerar índices em main
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Regenerar INDEX/ARCHIVE-INDEX se docs mudou
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # range real do push; se a base não existe (branch nova/force), regenera sempre
+          if git rev-parse --verify --quiet "${BEFORE_SHA}^{commit}" >/dev/null; then
+            if git diff --quiet "$BEFORE_SHA" HEAD -- docs/; then
+              echo "docs/ sem mudanças — nada a regenerar"
+              exit 0
+            fi
+          fi
+          node scripts/specctl.mjs index
+          if git diff --quiet -- docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md; then
+            echo "índices já atualizados"
+            exit 0
+          fi
+          git config user.name "docs-gate[bot]"
+          git config user.email "docs-gate[bot]@users.noreply.github.com"
+          git add docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md
+          git commit -m "chore: regenera INDEX/ARCHIVE-INDEX/PROGRAMS/DEFERRED [skip ci]"
+          git push
+
+  audit-semanal:
+    name: Audit semanal
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Audit completo
+        run: node scripts/specctl.mjs audit

@@ -1,0 +1,16 @@
+{
+  "schema": "sdd-4.0",
+  "template_revision": "4.1.1",
+  "installed_at": "2026-11-23 16:04",
+  "policy": "standard",
+  "interop": "inline",
+  "team": "solo",
+  "product": null,
+  "commands": {
+    "test": "cd backend && uv run --frozen python -m pytest tests -q -p no:cacheprovider",
+    "typecheck": "",
+    "lint": "",
+    "dev": "FLASK_HOST=127.0.0.1 npx concurrently -k -n backend,frontend \"npm run backend\" \"cd frontend && npx vite --host 127.0.0.1\"",
+    "e2e": ""
+  }
+}

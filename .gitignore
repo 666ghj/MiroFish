@@ -43,7 +43,9 @@ htmlcov/
 
 # Cursor
 .cursor/
-.claude/
+# Claude Code: o kit SDD (.claude/skills, agents, commands, settings.json) é versionado; só o estado local fica fora
+.claude/settings.local.json
+.claude/projects/
 
 # 文档与测试程序
 mydoc/
@@ -58,3 +60,5 @@ backend/uploads/
 
 # Docker 数据
 data/
+docs/active/**/tmp/
+.scratch/
