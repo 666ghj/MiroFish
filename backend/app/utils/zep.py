@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import time
+import uuid
 from functools import lru_cache
 from typing import Any, Callable, TypeVar
 
@@ -18,16 +20,39 @@ logger = get_logger("mirofish.zep")
 
 T = TypeVar("T")
 
-ZEP_CLOUD_BASE_URL = "https://api.getzep.com/api/v2"
-# Keep request behavior aligned with the zep-cloud 3.25.0 SDK default that
-# MiroFish used before introducing the shared client. This is an internal
-# integration policy, not a deployment setting users need to tune.
+ZEP_CLOUD_BASE_URL = "https://api.getzep.com/api/v4"
+# Keep the 60-second request timeout of the zep-cloud 3.25.0 SDK default as
+# internal policy.
 ZEP_HTTP_REQUEST_TIMEOUT_SECONDS = 60.0
 # Zep ingestion is asynchronous and may take several minutes. Preserve the
 # original GraphBuilder deadline while keeping it separate from HTTP timeout.
 ZEP_INGESTION_WAIT_TIMEOUT_SECONDS = 600
 MAX_ZEP_SEARCH_QUERY_CHARS = 400
 MAX_ZEP_SEARCH_RESULTS = 50
+
+
+def ensure_zep_graph_uuid(graph_id: str) -> str:
+    """Reject graph IDs that do not use a Zep v4 UUID."""
+
+    try:
+        parsed = uuid.UUID(graph_id)
+    except (AttributeError, TypeError, ValueError):
+        parsed = None
+    if (
+        parsed is None
+        or parsed.version not in {4, 5}
+        or str(parsed) != graph_id.lower()
+    ):
+        raise ValueError(
+            f"Graph ID {graph_id!r} is a legacy Zep v3 ID. Run "
+            "python backend/scripts/backfill_zep_graph_uuids.py --apply."
+        )
+    return graph_id
+
+
+def deterministic_idempotency_key(*parts: str) -> str:
+    digest = hashlib.sha256("\0".join(parts).encode("utf-8")).digest()
+    return str(uuid.UUID(bytes=digest[:16], version=4))
 
 
 def normalize_zep_search_query(query: Any) -> str:
@@ -90,7 +115,7 @@ def clear_zep_client_cache() -> None:
 
 
 def is_retryable_zep_error(error: BaseException) -> bool:
-    """Return whether a failed *read* is safe and useful to retry."""
+    """Return whether a failed Zep request has a transient error."""
 
     if isinstance(error, (httpx.TimeoutException, httpx.TransportError)):
         return True

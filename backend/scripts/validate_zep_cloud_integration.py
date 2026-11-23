@@ -24,12 +24,20 @@ from typing import Any, Iterable
 # silently replace the account selected for this explicit validation process.
 _PROCESS_ZEP_API_KEY = os.environ.get("ZEP_API_KEY", "").strip()
 
-from zep_cloud import BatchAddItem
-from zep_cloud.types import SearchFilters
+from zep_cloud.types import (
+    BatchItemInput,
+    EdgeListFilters,
+    EdgeSearchFilters,
+    NodeSearchFilters,
+)
 
 from app.services.graph_builder import BatchSubmission, GraphBuilderService
 from app.services.zep_entity_reader import ZepEntityReader
 from app.services.zep_graph_memory_updater import AgentActivity, ZepGraphMemoryUpdater
+from app.utils.zep import (
+    ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
+    deterministic_idempotency_key,
+)
 from app.utils.zep_paging import fetch_all_edges, fetch_all_nodes
 
 # Keep later code that consults os.environ consistent with the captured value.
@@ -280,7 +288,21 @@ def _cleanup_graph(
             "reason": "updater_not_confirmed_drained",
         }
 
-    client.graph.delete(graph_id)
+    result = client.graph.delete(graph_id)
+    task_uuid = getattr(getattr(result, "task", None), "uuid_", None)
+    if not task_uuid:
+        raise RuntimeError("graph.delete returned no task UUID")
+    deadline = time.monotonic() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        task = client.task.get(task_uuid)
+        status = getattr(task, "status", None)
+        if status in {"succeeded", "partial", "failed"}:
+            if status == "failed":
+                raise RuntimeError(f"graph delete task {task_uuid} failed")
+            break
+        time.sleep(1)
+    else:
+        raise TimeoutError(f"graph delete task {task_uuid} did not finish")
     return {
         "graph_deleted": True,
         "graph_retained": False,
@@ -288,45 +310,62 @@ def _cleanup_graph(
     }
 
 
-def _wait_for_episode(client: Any, episode_uuid: str, timeout: int) -> Any:
+def _wait_for_episode(
+    client: Any,
+    graph_id: str,
+    episode_uuid: str,
+    timeout: int,
+) -> Any:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        episode = client.graph.episode.get(uuid_=episode_uuid)
+        episode = client.graph.episode.get(graph_id, episode_uuid)
         if getattr(episode, "processed", False):
             return episode
         time.sleep(3)
     raise TimeoutError(f"episode {episode_uuid} did not finish within {timeout}s")
 
 
-def _list_batch_items(client: Any, batch_id: str, page_size: int = 3) -> tuple[list[Any], int]:
+def _list_batch_items(
+    client: Any,
+    batch_id: str,
+    page_size: int = 3,
+) -> tuple[list[Any], int]:
     items: list[Any] = []
-    cursor: int | None = None
+    cursor: str | None = None
     pages = 0
+    seen_cursors: set[str] = set()
     while True:
-        response = client.batch.list_items(batch_id=batch_id, limit=page_size, cursor=cursor)
+        response = client.batch.list_items(
+            batch_id,
+            page_size=page_size,
+            cursor=cursor,
+        )
         pages += 1
         items.extend(response.items or [])
-        next_cursor = response.next_cursor
+        next_cursor = response.response.next_cursor
         if next_cursor is None:
             return items, pages
-        if next_cursor == cursor:
+        if next_cursor == cursor or next_cursor in seen_cursors:
             raise RuntimeError("batch item cursor did not advance")
+        seen_cursors.add(next_cursor)
         cursor = next_cursor
 
 
-def _raw_pages(api_call: Any, graph_id: str, page_size: int = 2) -> tuple[list[Any], int]:
+def _raw_pages(
+    api_call: Any,
+    graph_id: str,
+    page_size: int = 2,
+) -> tuple[list[Any], int]:
     items: list[Any] = []
     cursor: str | None = None
     pages = 0
     seen: set[str] = set()
     while True:
-        kwargs: dict[str, Any] = {"limit": page_size}
-        if cursor:
-            kwargs["cursor"] = cursor
+        kwargs: dict[str, Any] = {"page_size": page_size, "cursor": cursor}
         response = api_call(graph_id, **kwargs)
         pages += 1
-        items.extend(list(response.data or []))
-        next_cursor = response.headers.get("zep-next-cursor")
+        items.extend(list(response.items or []))
+        next_cursor = response.response.next_cursor
         if not next_cursor:
             return items, pages
         if next_cursor == cursor or next_cursor in seen:
@@ -360,24 +399,47 @@ def _node_view(node: Any) -> dict[str, Any]:
     }
 
 
-def _search_view(results: Any, node_names: dict[str, str]) -> dict[str, Any]:
+def _search_view(
+    results: Any,
+    node_names: dict[str, str],
+    *,
+    scope: str,
+) -> dict[str, Any]:
+    context_results = getattr(results, "results", None)
+    items = getattr(results, "items", None) or []
+    edges = items if scope == "edges" else (
+        getattr(context_results, "edges", None) or []
+    )
+    nodes = items if scope == "nodes" else (
+        getattr(context_results, "nodes", None) or []
+    )
+    episodes = getattr(context_results, "episodes", None) or []
+    observations = getattr(context_results, "observations", None) or []
+    thread_summaries = getattr(context_results, "thread_summaries", None) or []
+    if scope == "episodes":
+        episodes = items
+    context = getattr(results, "context", None) or ""
     return {
-        "context": (results.context or "")[:3000],
-        "edges": [_edge_view(edge, node_names) for edge in (results.edges or [])],
-        "nodes": [_node_view(node) for node in (results.nodes or [])],
-        "episode_count": len(results.episodes or []),
-        "observation_count": len(results.observations or []),
-        "thread_summary_count": len(results.thread_summaries or []),
+        "context": context[:3000],
+        "edges": [_edge_view(edge, node_names) for edge in edges],
+        "nodes": [_node_view(node) for node in nodes],
+        "episode_count": len(episodes),
+        "observation_count": len(observations),
+        "thread_summary_count": len(thread_summaries),
     }
 
 
-def _episode_to_batch_item(graph_id: str, item: SourceEpisode, index: int) -> BatchAddItem:
-    return BatchAddItem(
+def _episode_to_batch_item(
+    graph_id: str,
+    item: SourceEpisode,
+    index: int,
+) -> BatchItemInput:
+    return BatchItemInput(
         type="graph_episode",
-        graph_id=graph_id,
+        graph_uuid=graph_id,
         data=item.data,
         data_type=item.data_type,
-        created_at=item.created_at,
+        reference_time=item.created_at,
         source_description="MiroFish deep Zep Cloud validation corpus",
         metadata={
             "source": "mirofish_zep_deep_validation",
@@ -388,18 +450,19 @@ def _episode_to_batch_item(graph_id: str, item: SourceEpisode, index: int) -> Ba
 
 
 def _add_and_wait(client: Any, graph_id: str, item: SourceEpisode, timeout: int) -> str:
-    episode = client.graph.add(
-        graph_id=graph_id,
+    result = client.graph.episode.add(
+        graph_id,
         type=item.data_type,
         data=item.data,
-        created_at=item.created_at,
+        reference_time=item.created_at,
         source_description="MiroFish temporal Zep Cloud validation update",
         metadata={"source": "mirofish_zep_deep_validation", "phase": item.phase},
     )
+    episode = result.episode
     episode_uuid = _uuid(episode)
     if not episode_uuid:
-        raise RuntimeError("graph.add returned no episode UUID")
-    _wait_for_episode(client, episode_uuid, timeout)
+        raise RuntimeError("episode.add returned no episode UUID")
+    _wait_for_episode(client, graph_id, episode_uuid, timeout)
     return episode_uuid
 
 
@@ -468,9 +531,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     api_key = _require_process_api_key()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    graph_id = args.graph_id or f"mirofish_zep_deep_{stamp}"
     builder = GraphBuilderService(api_key=api_key)
     client = builder.client
+    graph_id: str | None = None
     created = False
     updater: ZepGraphMemoryUpdater | None = None
     updater_started = False
@@ -479,13 +542,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     result: dict[str, Any] = {
         "graph_id": graph_id,
         "graph_retained": args.keep_graph,
-        "sdk_flow": "zep-cloud 3.25 standalone graph + current Batch API",
+        "sdk_flow": "zep-cloud 4.1 standalone graph + Batch API",
     }
 
-    print(f"[zep-deep] graph_id={graph_id}", flush=True)
     try:
-        builder.create_graph("MiroFish Zep Cloud Deep Validation", graph_id=graph_id)
+        graph_id = builder.create_graph("MiroFish Zep Cloud Deep Validation")
+        result["graph_id"] = graph_id
         created = True
+        print(f"[zep-deep] graph_id={graph_id}", flush=True)
         print("[zep-deep] graph created", flush=True)
 
         # Production safety net: empty LLM attributes must become a valid
@@ -510,9 +574,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "mirofish_operation_id": operation_id,
                 "graph_id": graph_id,
                 "suite": "zep_deep_validation",
-            }
+            },
+            idempotency_key=deterministic_idempotency_key(
+                operation_id,
+                "create",
+            ),
         )
-        batch_id = batch.batch_id
+        batch_id = batch.uuid_
         if not batch_id:
             raise RuntimeError("batch.create returned no batch_id")
         result["batch_id"] = batch_id
@@ -523,10 +591,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             for index, item in enumerate(BASELINE_EPISODES)
         ]
         for start in range(0, len(batch_items), 4):
-            added_details.extend(
-                client.batch.add(batch_id=batch_id, items=batch_items[start : start + 4])
+            response = client.batch.add_items(
+                batch_id,
+                items=batch_items[start : start + 4],
+                idempotency_key=deterministic_idempotency_key(
+                    operation_id,
+                    "items",
+                    str(start),
+                ),
             )
-        client.batch.process(batch_id=batch_id)
+            if response.rejected_items:
+                raise RuntimeError(
+                    f"batch.add_items rejected {len(response.rejected_items)} items"
+                )
+            added_details.extend(response.items or [])
+        client.batch.process(
+            batch_id,
+            idempotency_key=deterministic_idempotency_key(
+                operation_id,
+                "process",
+            ),
+        )
         print(f"[zep-deep] batch submitted items={len(batch_items)}", flush=True)
 
         submission = BatchSubmission(
@@ -538,7 +623,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         baseline_episode_uuids = builder._wait_for_batch(submission, timeout=args.timeout)
         listed_items, batch_pages = _list_batch_items(client, batch_id, page_size=3)
         result["batch"] = {
-            "status": client.batch.get(batch_id=batch_id).status,
+            "status": client.batch.get(batch_id).status,
             "item_count": len(listed_items),
             "item_pages_at_size_3": batch_pages,
             "episode_uuids": baseline_episode_uuids,
@@ -548,10 +633,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         baseline_nodes = fetch_all_nodes(client, graph_id, page_size=2)
         baseline_edges = fetch_all_edges(client, graph_id, page_size=2)
         raw_nodes, node_pages = _raw_pages(
-            client.graph.node.with_raw_response.get_by_graph_id, graph_id, page_size=2
+            client.graph.node.list, graph_id, page_size=2
         )
         raw_edges, edge_pages = _raw_pages(
-            client.graph.edge.with_raw_response.get_by_graph_id, graph_id, page_size=2
+            client.graph.edge.list, graph_id, page_size=2
         )
         if {_uuid(item) for item in baseline_nodes} != {_uuid(item) for item in raw_nodes}:
             raise AssertionError("production node pagination did not match raw cursor traversal")
@@ -561,12 +646,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             raise AssertionError("the corpus did not produce enough artifacts to exercise pagination")
 
         baseline_names = {_uuid(node): node.name for node in baseline_nodes}
-        baseline_ceo = client.graph.search(
-            graph_id=graph_id,
+        baseline_ceo = client.graph.search_edges(
+            graph_id,
             query="截至2026年4月底，谁担任澜舟科技首席执行官？",
-            scope="edges",
             reranker="cross_encoder",
-            limit=10,
+            page_size=10,
         )
         result["baseline"] = {
             "node_count": len(baseline_nodes),
@@ -574,7 +658,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "node_pages_at_size_2": node_pages,
             "edge_pages_at_size_2": edge_pages,
             "invalidated_edge_count": sum(bool(edge.invalid_at) for edge in baseline_edges),
-            "ceo_search": _search_view(baseline_ceo, baseline_names),
+            "ceo_search": _search_view(
+                baseline_ceo,
+                baseline_names,
+                scope="edges",
+            ),
         }
         print(
             f"[zep-deep] baseline nodes={len(baseline_nodes)} edges={len(baseline_edges)}",
@@ -612,42 +700,36 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         invalidated = [edge for edge in final_edges if edge.invalid_at]
         expired = [edge for edge in final_edges if edge.expired_at]
 
-        edge_search = client.graph.search(
-            graph_id=graph_id,
+        edge_search = client.graph.search_edges(
+            graph_id,
             query="澜舟科技当前首席执行官、当前总部以及与海岳能源的当前合作关系是什么？",
-            scope="edges",
             reranker="cross_encoder",
-            limit=20,
+            page_size=20,
         )
-        node_search = client.graph.search(
-            graph_id=graph_id,
+        node_search = client.graph.search_nodes(
+            graph_id,
             query="澜舟科技管理层人物",
-            scope="nodes",
             reranker="rrf",
-            limit=10,
-            search_filters=SearchFilters(node_labels=["Person"]),
+            page_size=10,
+            filters=NodeSearchFilters(node_labels=["Person"]),
         )
-        typed_edge_search = client.graph.search(
-            graph_id=graph_id,
+        typed_edge_search = client.graph.search_edges(
+            graph_id,
             query="公司管理职位发生了什么变化？",
-            scope="edges",
             reranker="rrf",
-            limit=10,
-            search_filters=SearchFilters(edge_types=["HOLDS_ROLE_AT"]),
+            page_size=10,
+            filters=EdgeSearchFilters(edge_types=["HOLDS_ROLE_AT"]),
         )
-        auto_search = client.graph.search(
-            graph_id=graph_id,
+        auto_search = client.graph.get_context(
+            graph_id,
             query="总结澜舟科技最新的管理层、总部、产品与海岳能源关系。",
-            scope="auto",
             max_characters=3000,
-            return_raw_results=True,
         )
-        episode_search = client.graph.search(
-            graph_id=graph_id,
+        episode_search = client.graph.search_episodes(
+            graph_id,
             query="海岳能源为什么仍是客户但不再是联合部署伙伴？",
-            scope="episodes",
             reranker="rrf",
-            limit=10,
+            page_size=10,
         )
 
         selected_node = next(
@@ -665,7 +747,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 ),
             ),
         )
-        sdk_node_edges = client.graph.node.get_edges(node_uuid=_uuid(selected_node))
+        sdk_node_edges = fetch_all_edges(
+            client,
+            graph_id,
+            page_size=2,
+            filters=EdgeListFilters(
+                connected_node_uuids=[_uuid(selected_node)],
+            ),
+        )
         complete_node_edges = [
             edge
             for edge in final_edges
@@ -676,8 +765,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             graph_id,
             _uuid(selected_node),
         )
-        recent_episodes = client.graph.episode.get_by_graph_id(graph_id=graph_id, lastn=50)
-        episode_list = getattr(recent_episodes, "episodes", None) or []
+        recent_episodes = client.graph.episode.list(
+            graph_id,
+            page_size=50,
+            order_by="created_at",
+            order="desc",
+        )
+        episode_list = recent_episodes.items or []
 
         custom_labels = sorted(
             {label for node in final_nodes for label in (node.labels or []) if label != "Entity"}
@@ -706,11 +800,31 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "recent_episode_count": len(episode_list),
         }
         result["searches"] = {
-            "current_state_edges": _search_view(edge_search, final_names),
-            "person_nodes": _search_view(node_search, final_names),
-            "typed_role_edges": _search_view(typed_edge_search, final_names),
-            "auto_context": _search_view(auto_search, final_names),
-            "partnership_episodes": _search_view(episode_search, final_names),
+            "current_state_edges": _search_view(
+                edge_search,
+                final_names,
+                scope="edges",
+            ),
+            "person_nodes": _search_view(
+                node_search,
+                final_names,
+                scope="nodes",
+            ),
+            "typed_role_edges": _search_view(
+                typed_edge_search,
+                final_names,
+                scope="edges",
+            ),
+            "auto_context": _search_view(
+                auto_search,
+                final_names,
+                scope="context",
+            ),
+            "partnership_episodes": _search_view(
+                episode_search,
+                final_names,
+                scope="episodes",
+            ),
         }
 
         if len(entity_context.related_edges) != len(complete_node_edges):
@@ -731,10 +845,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             # The following values are observations only. Zep's extraction and
             # retrieval quality are not runtime acceptance criteria.
             "search_result_counts": {
-                "edges": len(edge_search.edges or []),
-                "nodes": len(node_search.nodes or []),
-                "typed_edges": len(typed_edge_search.edges or []),
-                "episodes": len(episode_search.episodes or []),
+                "edges": len(edge_search.items or []),
+                "nodes": len(node_search.items or []),
+                "typed_edges": len(typed_edge_search.items or []),
+                "episodes": len(episode_search.items or []),
             },
             "custom_entity_labels_observed": bool(custom_labels),
             "custom_edge_names_observed": bool(custom_edge_names),
@@ -868,7 +982,6 @@ def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--graph-id", help="Use an explicit standalone graph ID")
     parser.add_argument(
         "--keep-graph",
         action="store_true",

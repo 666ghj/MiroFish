@@ -1031,7 +1031,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "zep-cloud", specifier = "==3.25.0" },
+    { name = "zep-cloud", specifier = "==4.1.0" },
 ]
 provides-extras = ["dev"]
 
@@ -2777,16 +2777,15 @@ wheels = [
 
 [[package]]
 name = "zep-cloud"
-version = "3.25.0"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-core" },
-    { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/81/0d/7a866e1e1e5f0f1353eedf3d0e17df9b3cf362c494bccd41eb121b49c43f/zep_cloud-3.25.0.tar.gz", hash = "sha256:a77867e02c2a9036a20623e85d03415e237e76510b6e05ff2e9ab2cdced0aeb9", size = 94772, upload-time = "2026-07-16T00:46:43.918Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/21/6e64de11e57a5faf0712b0398596397d81bd75b9541c41fa7bf78abbf76e/zep_cloud-4.1.0.tar.gz", hash = "sha256:4c8bc9be2861c626363745d893625b6f16fd13aa8b66c2aa1909203958a3051b", size = 306785 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/fc/5ca2bdd20b83bd62bc2708580f756e704f69704709e0ed43e735aa590c1e/zep_cloud-3.25.0-py3-none-any.whl", hash = "sha256:94d9599038b154af9ad33cab4b4873ed9adb1bcaa48fc4c41cbd407c1a657ef5", size = 166438, upload-time = "2026-07-16T00:46:42.39Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/e4/3df889a72a1f17042a7dfef61468e5853e171f3898bdd22516248138a939/zep_cloud-4.1.0-py3-none-any.whl", hash = "sha256:066d3ace6b3ea59ca5b294c773d37fdcddd6851753886f0cf02b64a48d3039b5", size = 622623 },
 ]

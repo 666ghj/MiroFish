@@ -16,6 +16,7 @@ from ..utils.locale import get_locale, set_locale
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
     call_zep_read_with_retry,
+    ensure_zep_graph_uuid,
     get_zep_client,
 )
 
@@ -253,7 +254,7 @@ class ZepGraphMemoryUpdater:
             graph_id: Zep图谱ID
             api_key: Zep API Key（可选，默认从配置读取）
         """
-        self.graph_id = graph_id
+        self.graph_id = ensure_zep_graph_uuid(graph_id)
         self.simulation_id = simulation_id or "unknown"
         self.api_key = api_key or Config.ZEP_API_KEY
         
@@ -491,11 +492,11 @@ class ZepGraphMemoryUpdater:
             if deadline is not None and time.time() >= deadline:
                 raise _DrainDeadlineExceeded(processed_count)
             try:
-                episode = self.client.graph.add(
-                    graph_id=self.graph_id,
+                result = self.client.graph.episode.add(
+                    self.graph_id,
                     type="text",
                     data=combined_text,
-                    created_at=self._to_rfc3339(payload_activities[-1].timestamp),
+                    reference_time=self._to_rfc3339(payload_activities[-1].timestamp),
                     source_description="MiroFish simulation activity batch",
                     metadata={
                         "source": "mirofish_simulation",
@@ -516,12 +517,10 @@ class ZepGraphMemoryUpdater:
                     },
                 )
 
-                episode_uuid = (
-                    getattr(episode, "uuid_", None)
-                    or getattr(episode, "uuid", None)
-                )
+                episode = getattr(result, "episode", None)
+                episode_uuid = getattr(episode, "uuid_", None)
                 if not episode_uuid:
-                    raise RuntimeError("Zep graph.add returned no episode UUID")
+                    raise RuntimeError("Zep episode.add returned no episode UUID")
                 self._pending_episode_uuids.append(str(episode_uuid))
                 self._total_sent += 1
                 self._total_items_sent += len(payload_activities)
@@ -530,8 +529,8 @@ class ZepGraphMemoryUpdater:
                 logger.debug(f"批量内容预览: {combined_text[:200]}...")
 
             except Exception as e:
-                # graph.add has no idempotency key. Replaying an ambiguous
-                # response can duplicate extracted facts, so fail closed and
+                # This episode write has no idempotency key. Replaying an
+                # ambiguous response can duplicate facts, so fail closed and
                 # surface the incomplete batch to SimulationRunner.
                 logger.error(f"批量发送到Zep失败，未自动重放非幂等写入: {e}")
                 self._failed_count += 1
@@ -611,7 +610,10 @@ class ZepGraphMemoryUpdater:
                 )
             for episode_uuid in list(pending):
                 episode = call_zep_read_with_retry(
-                    lambda: self.client.graph.episode.get(uuid_=episode_uuid),
+                    lambda: self.client.graph.episode.get(
+                        self.graph_id,
+                        episode_uuid,
+                    ),
                     operation_name=f"poll simulation episode {episode_uuid}",
                 )
                 if getattr(episode, "processed", False):

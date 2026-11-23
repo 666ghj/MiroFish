@@ -6,11 +6,16 @@ Zep实体读取与过滤服务
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 from zep_cloud import NotFoundError
+from zep_cloud.types import EdgeListFilters
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
-from ..utils.zep import call_zep_read_with_retry, get_zep_client
+from ..utils.zep import (
+    call_zep_read_with_retry,
+    ensure_zep_graph_uuid,
+    get_zep_client,
+)
 
 logger = get_logger('mirofish.zep_entity_reader')
 
@@ -120,6 +125,7 @@ class ZepEntityReader:
         Returns:
             节点列表
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         logger.info(f"获取图谱 {graph_id} 的所有节点...")
 
         nodes = fetch_all_nodes(self.client, graph_id)
@@ -147,6 +153,7 @@ class ZepEntityReader:
         Returns:
             边列表
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         logger.info(f"获取图谱 {graph_id} 的所有边...")
 
         edges = fetch_all_edges(self.client, graph_id)
@@ -168,36 +175,26 @@ class ZepEntityReader:
     def get_node_edges(
         self,
         node_uuid: str,
-        *,
-        graph_id: Optional[str] = None,
+        graph_id: str,
     ) -> List[Dict[str, Any]]:
         """
         获取指定节点的相关边。
-
-        Zep Cloud 3.25 的 ``graph.node.get_edges`` 实测只返回节点作为
-        source 的边，尽管文档将其描述为“all edges”。需要完整上下文时必须
-        提供 graph_id，以全图分页后同时筛选 incoming 和 outgoing 边。
         
         Args:
             node_uuid: 节点UUID
-            graph_id: 图谱ID；提供时保证返回双向完整关系
+            graph_id: 图谱UUID
             
         Returns:
             边列表
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         try:
-            if graph_id:
-                return [
-                    edge
-                    for edge in self.get_all_edges(graph_id)
-                    if edge["source_node_uuid"] == node_uuid
-                    or edge["target_node_uuid"] == node_uuid
-                ]
-
-            # 使用重试机制调用Zep API
-            edges = self._call_with_retry(
-                func=lambda: self.client.graph.node.get_edges(node_uuid=node_uuid),
-                operation_name=f"获取节点边(node={node_uuid[:8]}...)"
+            edges = fetch_all_edges(
+                self.client,
+                graph_id,
+                filters=EdgeListFilters(
+                    connected_node_uuids=[node_uuid],
+                ),
             )
             
             edges_data = []
@@ -239,6 +236,7 @@ class ZepEntityReader:
         Returns:
             FilteredEntities: 过滤后的实体集合
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         logger.info(f"开始筛选图谱 {graph_id} 的实体...")
         
         # 获取所有节点
@@ -351,10 +349,11 @@ class ZepEntityReader:
         Returns:
             EntityNode或None
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         try:
             # 使用重试机制获取节点
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=entity_uuid),
+                func=lambda: self.client.graph.node.get(graph_id, entity_uuid),
                 operation_name=f"获取节点详情(uuid={entity_uuid[:8]}...)"
             )
             
@@ -438,6 +437,7 @@ class ZepEntityReader:
         Returns:
             实体列表
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         result = self.filter_defined_entities(
             graph_id=graph_id,
             defined_entity_types=[entity_type],
