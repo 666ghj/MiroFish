@@ -1,0 +1,63 @@
+PRUEBA DE ESTRATEGIA COMERCIAL PARA UN POS DE ESCRITORIO
+Fecha de preparación: 23 de noviembre de 2026
+
+OBJETIVO
+Evaluar qué estrategia podría conseguir más clientes para un sistema POS de escritorio desarrollado a partir del proyecto TiendaRefactorizadaMotos. La primera prueba supone un piloto comercial en Popayán y una posible expansión a otras ciudades de Colombia. La ubicación del piloto es una hipótesis para la simulación, no un mercado ya validado.
+
+PREGUNTA CENTRAL
+Para un piloto comercial de 90 días, ¿qué combinación de segmento inicial, propuesta de valor, producto mínimo vendible, canal de adquisición, precio y soporte conviene probar primero para conseguir clientes que sigan usando y pagando el sistema? Los 90 días son el horizonte de decisión comercial, no la duración simulada por cada ronda de MiroFish.
+
+PUNTO DE PARTIDA VERIFICADO EN EL PROYECTO
+- Aplicación de escritorio en Python/Tkinter, con servidor y base SQLite para uso local o en una red configurada.
+- Registro de productos e inventario; búsqueda, categorías y cargas de inventario con confirmación.
+- Ventas con precios normales y mayoristas, asociación a cliente, venta a cartera con abono y línea de servicio técnico. La línea de servicio técnico no equivale a un módulo completo de taller.
+- Descuento de inventario al vender, control de operaciones y protección frente a ventas duplicadas mediante una clave de idempotencia.
+- Caja por vendedor y por turno, cierres, resúmenes y alertas de auditoría.
+- Ticket local, seguimiento de intentos de impresión y posibilidad de reimpresión.
+- Devoluciones con reembolso y devoluciones físicas sin reembolso, con historial de precio e IVA de la venta original.
+- Usuarios, roles y activación por licencia.
+- Informes diarios, semanales y mensuales; opción de envío por WhatsApp si se configura el servicio externo.
+
+LÍMITES ACTUALES QUE AFECTAN LA VENTA
+- El flujo de venta no emite factura electrónica ni nota crédito DIAN. El ticket local no debe venderse como facturación electrónica. La DIAN también ofrece facturación gratuita, por lo que el cumplimiento fiscal, por sí solo, no constituye una diferenciación segura.
+- El transporte de red actual usa un token compartido y permite consultas SQL remotas. Antes de vender instalaciones en redes no confiables o varias sedes, se necesitan controles de autorización por operación, protección del canal y reducción de datos sensibles en logs.
+- Existe un campo de código de barras en el modelo de producto, pero no se verificó aquí un flujo completo de escáner en caja. No prometerlo sin una demostración.
+- El envío de informes por WhatsApp depende de configuración externa; no asumir automatización periódica operativa sin comprobarla.
+- La instalación, migración de datos, respaldo, actualizaciones y soporte al cliente deben validarse en un piloto real. La presencia de código o pruebas no demuestra facilidad de adopción.
+
+SEGMENTOS A COMPARAR
+A. Tiendas pequeñas de repuestos y accesorios para motos, con una caja y necesidad de inventario y ventas rápidas.
+B. Tiendas de repuestos con varios vendedores y necesidad de control de turnos, caja, devoluciones y auditoría.
+C. Talleres de motos que también venden repuestos: evaluar si el registro simple de servicio técnico alcanza; no atribuir al producto órdenes de trabajo ni seguimiento de reparaciones que no están implementados.
+D. Comercios minoristas no especializados: evaluar el costo de adaptar lenguaje, catálogo, procesos e instalación frente a la posibilidad de ampliar el mercado.
+
+ESTRATEGIAS A SIMULAR
+1. Nicho primero: comenzar con tiendas de repuestos de motos; vender rapidez en caja, inventario, precio mayorista, caja por vendedor y acompañamiento inicial. Captación mediante demostraciones presenciales, referidos y alianzas con técnicos que instalan equipos.
+2. Producto generalista: adaptar el POS para distintos comercios minoristas y promocionarlo por canales digitales. Evaluar si el mercado potencial mayor compensa el costo de soporte, personalización y competencia.
+3. Alianzas: distribuirlo mediante proveedores de hardware POS, contadores o implementadores locales. Evaluar margen compartido, confianza, capacitación y dependencia del aliado.
+4. Oferta por etapas: instalación y capacitación inicial, seguida de soporte y actualizaciones recurrentes. Comparar con licencia de pago único y con una prueba limitada. No asumir cifras de precio ni márgenes: pedir a los agentes que indiquen qué datos faltan para fijarlos.
+
+ACTORES DE LA SIMULACIÓN
+Dueño de tienda pequeña; dueño de tienda con varios vendedores; cajero; encargado de inventario; taller que vende repuestos; contador; instalador de hardware; competidor de software POS; cliente que compra en el comercio; responsable comercial y de soporte del producto. Cada actor debe tener incentivos y objeciones diferentes.
+
+FRICCIONES QUE DEBEN APARECER
+Tiempo para cargar el catálogo; migración desde cuaderno, Excel u otro POS; errores de inventario; curva de aprendizaje; confianza en respaldos y continuidad de ventas; calidad del ticket; necesidad de factura electrónica; costo de instalación y soporte; conectividad local; seguridad de datos; resistencia de vendedores; dependencia de un solo proveedor; valor real de los reportes para el dueño.
+
+EVENTOS E INTERVENCIONES
+- Una demostración muestra una venta, una devolución y un cierre de caja con datos de prueba.
+- Un comercio pregunta por facturación electrónica DIAN y debe recibir una respuesta honesta sobre el estado actual.
+- Un comercio tiene dos vendedores que operan a la vez y evalúa rapidez, errores y control de caja.
+- Un aliado ofrece instalar el POS, pero solicita comisión y soporte de segundo nivel.
+- Un cliente piloto descubre que cargar su inventario inicial toma más tiempo del previsto.
+- Un competidor ofrece una solución de facturación gratuita o de bajo precio, lo que obliga a justificar el valor adicional del POS.
+
+MÉTRICAS QUE DEBE MEDIR UN PILOTO REAL
+Interés inicial; porcentaje de demostraciones que pasan a piloto; pilotos que se convierten en clientes de pago; uso sostenido después de 90 días; tiempo de instalación; horas de soporte por cliente; problemas críticos de caja e inventario; referidos; margen después de instalación y soporte. La simulación puede anticipar objeciones y diseñar estas mediciones, pero no debe inventar cifras de conversión o ingresos observados.
+
+SALIDA ESPERADA DEL REPORTE
+1. Ordenar las estrategias según adopción probable, viabilidad técnica actual y costo de adquisición y soporte.
+2. Recomendar un segmento inicial y una propuesta de valor concreta para probar, explicando por qué.
+3. Separar funciones existentes de funciones que habría que construir antes de vender cada promesa.
+4. Proponer un piloto de 5 a 10 comercios con criterios de selección, entrevistas, demostraciones y métricas de éxito o abandono.
+5. Señalar señales que refutarían la estrategia recomendada y la siguiente decisión si el piloto fracasa.
+6. No presentar la simulación como prueba de demanda real. Las conclusiones deben convertirse en hipótesis verificables con clientes y datos de campo.

@@ -263,6 +263,48 @@ def test_graph_create_persists_identity_before_post_and_reconciles_timeout():
     ]
 
 
+def test_graph_create_retries_dns_before_post_without_duplicate_ids(monkeypatch):
+    events = []
+
+    class GraphApi:
+        def create(self, **kwargs):
+            events.append(("create", kwargs["graph_id"]))
+            if sum(kind == "create" for kind, _value in events) < 3:
+                raise httpx.ConnectError("[Errno 11001] getaddrinfo failed")
+
+        def get(self, _graph_id):
+            raise AssertionError("DNS failure must not be reconciled as a sent POST")
+
+    monkeypatch.setattr(graph_builder_module.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(graph=GraphApi())
+    assert builder.create_graph("Graph", graph_id="durable-id") == "durable-id"
+    assert events == [
+        ("create", "durable-id"), ("sleep", 1),
+        ("create", "durable-id"), ("sleep", 2),
+        ("create", "durable-id"),
+    ]
+
+
+def test_graph_create_dns_exhaustion_explains_recovery(monkeypatch):
+    calls = []
+
+    class GraphApi:
+        def create(self, **kwargs):
+            calls.append(kwargs["graph_id"])
+            raise httpx.ConnectError("[Errno 11001] getaddrinfo failed")
+
+        def get(self, _graph_id):
+            raise AssertionError("DNS failure must not trigger GET")
+
+    monkeypatch.setattr(graph_builder_module.time, "sleep", lambda _seconds: None)
+    builder = object.__new__(GraphBuilderService)
+    builder.client = SimpleNamespace(graph=GraphApi())
+    with pytest.raises(RuntimeError, match="Comprueba DNS"):
+        builder.create_graph("Graph", graph_id="durable-id")
+    assert calls == ["durable-id"] * 3
+
+
 def test_batch_create_timeout_is_reconciled_by_operation_metadata(monkeypatch):
     calls = []
     list_count = 0
