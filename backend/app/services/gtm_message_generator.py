@@ -16,7 +16,7 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.gtm_message_generator')
 
 _MOCK_PATH = os.path.join(
-    os.path.dirname(__file__), '../../../mock_data/gtm_messages.json'
+    os.path.dirname(__file__), '../../mock_data/gtm_messages.json'
 )
 
 ALL_ANGLES = ['pain_first', 'roi_first', 'curiosity_first', 'feature_first', 'social_proof_first']

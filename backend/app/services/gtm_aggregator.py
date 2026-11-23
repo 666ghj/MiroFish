@@ -4,7 +4,7 @@ No LLM calls. Takes messages + reactions → summaries + winner.
 """
 
 from collections import Counter
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 def _verdict(interest_score: float) -> str:
@@ -36,19 +36,28 @@ def _recommendation(summary: dict) -> str:
     return f"Weak signal for most personas. {_angle_label(angle)} messaging may need repositioning."
 
 
-def aggregate(messages: list, reactions: list) -> dict:
+def aggregate(messages: list, reactions: list, run_reactions: Optional[list] = None) -> dict:
     """
     Aggregate reactions per message and compute the winning angle.
 
     Args:
         messages: list of OutreachMessage dicts
-        reactions: list of BuyerReaction dicts
+        reactions: list of BuyerReaction dicts (scores already averaged across runs)
+        run_reactions: optional list of per-run reaction lists. When given, the winner
+            also reports how often it won across runs (win_rate / stability).
 
     Returns:
         dict with keys:
           summaries: list of MessageTestSummary dicts
           winner: WinnerResult dict
     """
+    summaries = _summarize(messages, reactions)
+    winner = _compute_winner(summaries)
+    _add_stability(winner, summaries, messages, run_reactions or [])
+    return {'summaries': summaries, 'winner': winner}
+
+
+def _summarize(messages: list, reactions: list) -> list:
     # Group reactions by message_id
     by_message: Dict[str, List[dict]] = {}
     for r in reactions:
@@ -100,9 +109,48 @@ def aggregate(messages: list, reactions: list) -> dict:
         summary['recommendation'] = _recommendation(summary)
         summaries.append(summary)
 
-    winner = _compute_winner(summaries)
+    return summaries
 
-    return {'summaries': summaries, 'winner': winner}
+
+def _add_stability(winner: dict, summaries: list, messages: list, run_reactions: list) -> None:
+    """Re-run the winner pick on each simulation run and record how often the overall
+    winner also won that run. A winner that flips between runs is not a real signal."""
+    run_winners = [
+        _compute_winner(_summarize(messages, run))['winner_message_id']
+        for run in run_reactions if run
+    ]
+    winner['runs'] = len(run_winners)
+    winner['run_winners'] = run_winners
+
+    # Per-message spread of the average interest score across runs.
+    for summary in summaries:
+        run_means = []
+        for run in run_reactions:
+            scores = [r.get('interest_score', 5) for r in run if r.get('message_id') == summary['message_id']]
+            if scores:
+                run_means.append(sum(scores) / len(scores))
+        summary['interest_score_range'] = (
+            [round(min(run_means), 2), round(max(run_means), 2)] if run_means else None
+        )
+
+    if len(run_winners) < 2 or not winner.get('winner_message_id'):
+        winner['win_rate'] = None
+        winner['stability'] = 'single_run'
+        return
+
+    wins = run_winners.count(winner['winner_message_id'])
+    winner['win_rate'] = round(wins / len(run_winners), 2)
+    if winner['win_rate'] >= 0.8:
+        winner['stability'] = 'stable'
+    elif winner['win_rate'] >= 0.6:
+        winner['stability'] = 'leaning'
+    else:
+        winner['stability'] = 'unstable'
+        winner['close_test'] = True
+        winner['note'] = (
+            f"Unstable result — this angle won only {wins} of {len(run_winners)} simulation runs. "
+            'Treat the angles as tied and validate both with real outbound.'
+        )
 
 
 def _compute_winner(summaries: list) -> dict:

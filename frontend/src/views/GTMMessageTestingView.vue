@@ -48,7 +48,9 @@
 
         <!-- Mock data warning -->
         <div v-if="isMockData" class="mt-mock-banner">
-          Demo mode — backend unreachable. Showing sample messages and reactions, not generated from your brief.
+          {{ mockReason
+            ? `Sample data, not your results — the simulation could not run (${mockReason}). These reactions were not generated from your brief.`
+            : 'Demo mode — backend unreachable. Showing sample messages and reactions, not generated from your brief.' }}
           <a href="https://github.com/sanketmuchhala/GTM-SImulator#quick-start" target="_blank" rel="noopener" class="mt-mock-link">Run locally →</a>
         </div>
 
@@ -69,6 +71,10 @@
             <span class="mt-neu">→ {{ winnerSummary.neutral_count }} neutral</span>
             <span class="mt-sep">·</span>
             <span class="mt-neg">{{ winnerSummary.negative_count }} objections</span>
+          </div>
+          <div v-if="winner.runs > 1" class="mt-stability" :class="`mt-stability--${winner.stability}`">
+            Won {{ winner.run_winners.filter(id => id === winner.winner_message_id).length }} of {{ winner.runs }} simulation runs
+            · {{ stabilityLabel(winner.stability) }}
           </div>
           <div v-if="winner.close_test" class="mt-close-test">
             {{ winner.note }}
@@ -233,6 +239,15 @@ const viewState = ref('loading')
 const errorMsg = ref('')
 const brief = ref(null)
 const isMockData = ref(false)
+const mockReason = ref(null)
+
+function stabilityLabel(stability) {
+  return {
+    stable: 'stable signal',
+    leaning: 'leaning, not conclusive',
+    unstable: 'unstable — treat as a tie',
+  }[stability] ?? ''
+}
 const messages = ref([])
 const reactions = ref([])
 const summaries = ref([])
@@ -408,6 +423,10 @@ function applyResults(msgs, rxnResult) {
   reactions.value = rxnResult.reactions ?? []
   summaries.value = rxnResult.summaries ?? []
   winner.value = rxnResult.winner ?? null
+  if (rxnResult.source === 'mock') {
+    isMockData.value = true
+    mockReason.value = rxnResult.mock_reason ?? 'LLM unavailable'
+  }
   // Default selected angle to winner's angle or first
   if (winner.value?.winner_angle) {
     selectedAngle.value = winner.value.winner_angle
@@ -562,6 +581,13 @@ loadAll()
   align-items: center;
   gap: 10px;
 }
+.mt-stability {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #8888aa;
+}
+.mt-stability--stable { color: var(--green, #4ade80); }
+.mt-stability--unstable { color: var(--red, #f87171); }
 .mt-mock-link {
   color: var(--red);
   font-weight: 700;

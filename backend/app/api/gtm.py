@@ -24,7 +24,7 @@ def _message_count(brief) -> int:
     return max(2, min(5, int(n or 3)))
 
 _MOCK_PREVIEW_PATH = os.path.join(
-    os.path.dirname(__file__), '../../../../mock_data/gtm_preview.json'
+    os.path.dirname(__file__), '../../mock_data/gtm_preview.json'
 )
 
 
@@ -269,6 +269,25 @@ def get_messages(brief_id: str):
 
 # ── Reaction simulation ───────────────────────────────────────────────────────
 
+def _simulate_reactions(messages: list, personas: list) -> dict:
+    """Run the multi-run reaction simulation and aggregate it into the stored result shape."""
+    from ..services.gtm_reaction_simulator import GTMReactionSimulator
+    from ..services.gtm_aggregator import aggregate
+
+    sim = GTMReactionSimulator().simulate(messages, personas)
+    agg = aggregate(messages, sim['reactions'], sim['run_reactions'])
+    return {
+        'reactions': sim['reactions'],
+        'summaries': agg['summaries'],
+        'winner': agg['winner'],
+        'source': sim['source'],            # 'llm' or 'mock' — the UI must label mock results
+        'mock_reason': sim['mock_reason'],
+        'runs_requested': sim['runs_requested'],
+        'runs_completed': sim['runs_completed'],
+        'coverage': sim['coverage'],
+    }
+
+
 @gtm_bp.route('/reactions/<brief_id>', methods=['POST'])
 def generate_reactions(brief_id: str):
     """
@@ -299,19 +318,12 @@ def generate_reactions(brief_id: str):
             messages = GTMMessageGenerator().generate(brief, personas, count=_message_count(brief))
             _save_json(_messages_path(brief_id), messages)
 
-        from ..services.gtm_reaction_simulator import GTMReactionSimulator
-        from ..services.gtm_aggregator import aggregate
-
-        reactions = GTMReactionSimulator().simulate_all(messages, personas)
-        agg = aggregate(messages, reactions)
-
-        result = {
-            'reactions': reactions,
-            'summaries': agg['summaries'],
-            'winner': agg['winner'],
-        }
+        result = _simulate_reactions(messages, personas)
         _save_json(_reactions_path(brief_id), result)
-        logger.info(f"Simulated {len(reactions)} reactions for brief {brief_id}")
+        logger.info(
+            f"Simulated {len(result['reactions'])} reactions for brief {brief_id} "
+            f"(source={result['source']}, runs={result['runs_completed']})"
+        )
         return jsonify({'success': True, 'data': result, 'cached': False})
     except Exception as e:
         logger.error(f"Reaction simulation failed: {e}")
@@ -373,11 +385,7 @@ def generate_report(brief_id: str):
 
         reactions_data = _load_json(_reactions_path(brief_id))
         if not reactions_data:
-            from ..services.gtm_reaction_simulator import GTMReactionSimulator
-            from ..services.gtm_aggregator import aggregate
-            reactions = GTMReactionSimulator().simulate_all(messages, personas)
-            agg = aggregate(messages, reactions)
-            reactions_data = {'reactions': reactions, 'summaries': agg['summaries'], 'winner': agg['winner']}
+            reactions_data = _simulate_reactions(messages, personas)
             _save_json(_reactions_path(brief_id), reactions_data)
 
         reactions = reactions_data.get('reactions', [])

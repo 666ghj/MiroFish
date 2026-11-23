@@ -15,7 +15,7 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.gtm_persona_generator')
 
 _MOCK_PATH = os.path.join(
-    os.path.dirname(__file__), '../../../mock_data/gtm_personas_full.json'
+    os.path.dirname(__file__), '../../mock_data/gtm_personas_full.json'
 )
 
 PERSONA_TYPES = [

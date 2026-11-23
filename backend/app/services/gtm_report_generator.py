@@ -18,7 +18,7 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.gtm_report_generator')
 
 _MOCK_PATH = os.path.join(
-    os.path.dirname(__file__), '../../../mock_data/gtm_report.json'
+    os.path.dirname(__file__), '../../mock_data/gtm_report.json'
 )
 
 REQUIRED_KEYS = [
