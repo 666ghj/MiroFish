@@ -118,7 +118,7 @@ def new_state(session_id: str = '') -> Dict[str, Any]:
             'competitors': [],
             'predecessors': [],
             'blockers': [],
-            'search': {'terms': [], 'providers': [], 'searched_at': None, 'unavailable': []},
+            'search': {'terms': [], 'providers': [], 'searched_at': None, 'unavailable': [], 'sweeps': 0},
         },
         'risky_assumptions': [],
         'open_questions': [],
@@ -298,6 +298,13 @@ def _normalize_claim(value: Any, turn: int, sources: Dict[str, Any]) -> Tuple[Di
     return claim, warnings
 
 
+# Review sites, publishers, and platforms that show up in search results but are not competitors
+NOT_COMPANIES = {
+    'gartner', 'gartner peer insights', 'g2', 'capterra', 'getapp', 'software advice', 'trustradius',
+    'forbes', 'techcrunch', 'techradar', 'pcmag', 'reddit', 'youtube', 'linkedin', 'wikipedia', 'medium',
+    'hacker news', 'github', 'product hunt', 'crunchbase', 'quora', 'substack', 'google', 'amazon',
+}
+
 _NUM = re.compile(r'\d[\d,.]*')
 
 
@@ -344,6 +351,8 @@ def _normalize_item(list_path: str, value: Any, turn: int, sources: Dict[str, An
             raise ValueError(f'"{name}" has no source; companies need a retrieved source')
         if not _name_in_sources(name, source_ids, sources):
             raise ValueError(f'"{name}" does not appear in its cited source')
+        if _norm(name) in NOT_COMPANIES:
+            raise ValueError(f'"{name}" is a review site or platform, not a competitor')
         item = {'name': name, 'source_ids': source_ids,
                 'url': sources[source_ids[0]].get('url', ''),
                 'note': _clean_text(value.get('note') or value.get('positioning') or '')[:200],
@@ -566,6 +575,7 @@ def add_sources(state: Dict[str, Any], results: List[Dict[str, Any]]) -> Dict[st
             new['sources'][sid] = {
                 'url': r['url'], 'title': _clean_text(r.get('title'))[:200],
                 'snippet': _clean_text(r.get('snippet'))[:MAX_TEXT], 'provider': r.get('provider', ''),
+                'purpose': r.get('purpose', ''),
                 'published_at': r.get('published_at'), 'retrieved_at': r.get('retrieved_at'),
             }
     return new
@@ -630,6 +640,7 @@ def validate_client_state(raw: Any, session_id: str = '') -> Dict[str, Any]:
             'providers': [p for p in (s.get('providers') or []) if isinstance(p, str)][:6],
             'searched_at': s.get('searched_at') if isinstance(s.get('searched_at'), str) else None,
             'unavailable': [p for p in (s.get('unavailable') or []) if isinstance(p, str)][:6],
+            'sweeps': max(0, min(10, int(s.get('sweeps') or 0))),
         }
     if isinstance(raw.get('history'), list):
         base['history'] = [h for h in raw['history'] if isinstance(h, dict)][-30:]

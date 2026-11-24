@@ -119,13 +119,15 @@ def idea_turn():
         return jsonify({'success': False, 'error': f'message is longer than {MAX_MESSAGE_CHARS} characters'}), 400
     messages = [m for m in (body.get('messages') or []) if isinstance(m, dict)][-20:]
     raw_state = body.get('state')
+    research, confidential = bool(body.get('research')), bool(body.get('confidential'))
 
-    from ..services import idea_studio
+    from ..services import idea_evidence, idea_studio
+    hook = idea_evidence.make_hook(requested=research, confidential=confidential)
 
     @stream_with_context
     def generate():
         try:
-            for event in idea_studio.run_turn(raw_state, messages, content):
+            for event in idea_studio.run_turn(raw_state, messages, content, evidence_hook=hook):
                 yield _sse(event)
         except Exception as e:   # never leave the client hanging mid-stream
             logger.error(f"Idea turn failed: {e}")
