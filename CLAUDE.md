@@ -79,6 +79,7 @@ GTM flow modules (backend/app):
 - `services/idea_state.py`: idea state, code-computed clarity, guarded JSON Patch validation
 - `services/idea_studio.py`: turn pipeline, question router, co-founder and analyst prompts, brief handoff
 - `services/idea_evidence.py`: Tavily, Exa, Hacker News, GitHub search and the research analyst pass
+- `services/idea_agents.py`: the specialist agent team (staged, parallel, fingerprint-skipped), `POST /api/idea/team`
 - `evals/idea_studio_eval.py`: real-model quality suite (run before changing Idea Studio prompts or models)
 - `models/gtm_brief.py`, `models/idea_session.py`: JSON-on-disk persistence
 - `utils/llm_client.py`: all LLM calls (`chat`, `chat_json`, `chat_stream`), OpenAI-compatible

@@ -44,6 +44,27 @@ Your idea is stored only in your browser (export and import as JSON). Confidenti
 
 ---
 
+### The agent team
+
+After each turn a team of AI agents works on the idea in parallel (Agents tab in the right panel):
+
+| Agent | Does |
+|---|---|
+| Co-founder, Analyst, Researcher | run inside the chat turn: ask the next question, update the live idea, search with sources |
+| Skeptic | the three strongest reasons it fails, each with what would defuse it |
+| Customer panel | three synthetic buyers react (labelled synthetic: objections, not proof of demand) |
+| Market sizer | bottom-up count × price; the multiplication is done in code |
+| Pitch writer | three one-liners, a 30-second pitch, a phrase to stop using |
+| GTM strategist | one channel, a hook, steps to the first 10 customers, this week's tasks |
+| Experiment designer | the cheapest tests with pass thresholds (reads the Skeptic) |
+| Chief of staff | reads the whole team, calls keep going / narrow it / rethink, gives 3 next moves |
+
+Agents wait until the fields they need exist, and re-run only when the parts of the idea they
+read change (fingerprints), so a turn about pricing does not re-run the Pitch writer. Stages run
+in order (specialists, then experiments, then the chief), agents within a stage run in parallel.
+`POST /api/idea/team` streams the run; `IDEA_AGENT_MODEL` picks the model; MOCK_MODE serves
+labelled samples.
+
 ## Quick start
 
 ### Prerequisites

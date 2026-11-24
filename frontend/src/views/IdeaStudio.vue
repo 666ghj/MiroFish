@@ -1,5 +1,5 @@
 <template>
-  <div class="studio" :data-busy="busy ? 'true' : 'false'">
+  <div class="studio" :data-busy="busy ? 'true' : 'false'" :data-team="teamRunning ? 'running' : 'idle'">
     <!-- Top bar -->
     <header class="bar">
       <router-link to="/" class="brand">
@@ -27,6 +27,7 @@
       <button role="tab" :aria-selected="tab === 'chat'" :class="{ on: tab === 'chat' }" @click="tab = 'chat'">Chat</button>
       <button role="tab" :aria-selected="tab === 'panel'" :class="{ on: tab === 'panel' }" @click="tab = 'panel'">
         Live idea <span class="tab-score">{{ state?.clarity?.score ?? 0 }}</span>
+        <span v-if="workingCount" class="tab-working">{{ workingCount }} agents</span>
         <span v-if="unseen" class="tab-dot" aria-label="updated"></span>
       </button>
     </div>
@@ -92,31 +93,76 @@
       </section>
 
       <!-- Live panel -->
-      <aside class="side" :class="{ hide: tab !== 'panel' }" aria-label="Live idea overview">
-        <IdeaDashboard
-          v-if="state"
-          :state="state"
-          :changed="changed"
-          :last-change="lastChange"
-          :updating="updating"
-          :busy="busy"
-          :confidential="confidential"
-          @open="openDetail"
-          @ask="draftAbout"
-          @research="research"
-          @send-brief="sendBrief"
-        />
+      <aside class="side" :class="{ hide: tab !== 'panel' }" aria-label="Live idea">
+        <div class="views" role="tablist" aria-label="Panel view">
+          <button role="tab" type="button" :aria-selected="view === 'overview'" :class="{ on: view === 'overview' }" @click="view = 'overview'">
+            Overview
+          </button>
+          <button role="tab" type="button" :aria-selected="view === 'team'" :class="{ on: view === 'team' }" @click="view = 'team'">
+            Agents
+            <span class="faces" aria-hidden="true">
+              <span v-for="a in FACES" :key="a.id" class="face" :class="{ busy: isWorking(a.id) }" :style="{ '--c': a.color }"></span>
+            </span>
+            <span v-if="workingCount" class="working-count">{{ workingCount }} working</span>
+          </button>
+          <span class="views-glider" :class="view" aria-hidden="true"></span>
+        </div>
+
+        <div v-if="state" class="view-body">
+          <transition name="view" mode="out-in">
+            <IdeaDashboard
+              v-if="view === 'overview'"
+              key="overview"
+              :state="state"
+              :changed="changed"
+              :last-change="lastChange"
+              :updating="updating"
+              :busy="busy"
+              :confidential="confidential"
+              :chief="team.chief?.output || null"
+              @open="openDetail"
+              @ask="draftAbout"
+              @research="research"
+              @send-brief="sendBrief"
+              @team="view = 'team'"
+            />
+            <AgentTeam
+              v-else
+              key="team"
+              :state="state"
+              :team="team"
+              :live="live"
+              :team-running="teamRunning"
+              :last-question="lastQuestion"
+              :last-change="lastChange"
+              @open="openAgent"
+              @run="runTeam({ force: true })"
+            />
+          </transition>
+        </div>
 
         <!-- Detail drawer: the full, editable picture, opened at the tile you clicked -->
         <transition name="drawer">
           <div v-if="drawerOpen && state" class="drawer" role="dialog" aria-label="Idea details" @keydown.esc="drawerOpen = false">
             <div class="drawer-head">
-              <span>Details</span>
-              <span class="drawer-hint">Edit or lock any field. Esc to close.</span>
+              <button v-if="drawerAgent" type="button" class="drawer-back" @click="drawerAgent = null; drawerOpen = false" aria-label="Back to the team">←</button>
+              <span>{{ drawerAgent ? 'Agent report' : 'Details' }}</span>
+              <span class="drawer-hint">{{ drawerAgent ? 'Esc to close.' : 'Edit or lock any field. Esc to close.' }}</span>
               <button ref="drawerClose" type="button" class="drawer-x" aria-label="Close details" @click="drawerOpen = false">✕</button>
             </div>
             <div ref="drawerBody" class="drawer-body">
+              <AgentDetail
+                v-if="drawerAgent"
+                :key="drawerAgent"
+                :id="drawerAgent"
+                :team="team"
+                :live="live"
+                @rerun="(id) => runTeam({ only: [id], force: true })"
+                @section="(sec) => { drawerAgent = null; openDetail(sec) }"
+                @switch="(id) => { drawerAgent = id }"
+              />
               <IdeaPanel
+                v-else
                 :state="state"
                 :changed="changed"
                 :last-change="lastChange"
@@ -143,7 +189,10 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import IdeaPanel from '../components/IdeaPanel.vue'
 import IdeaDashboard from '../components/IdeaDashboard.vue'
-import { newIdea, streamIdeaTurn, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
+import AgentTeam from '../components/AgentTeam.vue'
+import AgentDetail from '../components/AgentDetail.vue'
+import { AGENTS, SPECIALIST_IDS } from '../utils/agents'
+import { newIdea, streamIdeaTurn, streamIdeaTeam, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
 const STARTERS = [
@@ -181,6 +230,26 @@ const updating = ref(false)
 const drawerOpen = ref(false)
 const drawerBody = ref(null)
 const drawerClose = ref(null)
+const drawerAgent = ref(null)
+
+// ── Agent team state ────────────────────────────────────────────────────────
+const view = ref('overview')
+const team = ref({})              // persisted specialist outputs: {id: {output, fingerprint, source, turn}}
+const live = ref({})              // transient status per agent: {id: {status, missing, at}}
+const teamRunning = ref(false)
+let teamPending = false
+const FACES = AGENTS.slice(0, 10)
+const isWorking = (id) => ['running', 'queued'].includes(live.value[id]?.status)
+const workingCount = computed(() => AGENTS.filter(a => isWorking(a.id)).length)
+const lastQuestion = computed(() => {
+  const last = [...messages.value].reverse().find(m => m.role === 'assistant' && !m.streaming && m.content)
+  if (!last || messages.value.length <= 1) return ''
+  const bold = [...last.content.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1])
+  if (bold.length) return bold[bold.length - 1]
+  const q = last.content.split(/(?<=[.!?])\s+/).reverse().find(t => t.trim().endsWith('?'))
+  return (q || '').trim()
+})
+function setLive(id, patch) { live.value = { ...live.value, [id]: { ...(live.value[id] || {}), ...patch } } }
 const savedAt = ref('')
 const isFresh = computed(() => messages.value.length <= 1 && !busy.value)
 const tab = ref('chat')
@@ -195,7 +264,7 @@ let clearTimer = null
 function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
-      state: state.value, confidential: confidential.value,
+      state: state.value, confidential: confidential.value, team: team.value,
       messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice }) => ({ role, content, notice })),
     }))
     savedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -209,6 +278,7 @@ function load() {
       state.value = saved.state
       messages.value = saved.messages
       confidential.value = !!saved.confidential
+      team.value = saved.team && typeof saved.team === 'object' ? saved.team : {}
       return true
     }
   } catch (_) {}
@@ -224,6 +294,9 @@ async function startNew() {
     messages.value = [{ role: 'assistant', content: res.data.opening }]
     changed.value = []
     lastChange.value = null
+    team.value = {}
+    live.value = {}
+    view.value = 'overview'
     save()
   } catch (e) {
     error.value = 'Could not reach the server. Is the backend running on port 5001?'
@@ -232,7 +305,7 @@ async function startNew() {
 }
 
 function exportIdea() {
-  const blob = new Blob([JSON.stringify({ state: state.value, messages: messages.value }, null, 2)],
+  const blob = new Blob([JSON.stringify({ state: state.value, messages: messages.value, team: team.value }, null, 2)],
     { type: 'application/json' })
   const a = document.createElement('a')
   const name = (state.value?.one_liner?.text || 'idea').slice(0, 40).replace(/[^a-z0-9]+/gi, '-').toLowerCase()
@@ -252,6 +325,8 @@ async function importIdea(e) {
     // The server re-validates the state on the next turn; nothing imported is trusted.
     state.value = data.state
     messages.value = data.messages.map(({ role, content, notice }) => ({ role, content, notice }))
+    team.value = data.team && typeof data.team === 'object' ? data.team : {}
+    live.value = {}
     changed.value = []
     save()
   } catch (err) {
@@ -274,12 +349,15 @@ async function send(text, opts = {}) {
   const live = messages.value[messages.value.length - 1]
   status.value = ''
   scrollDown()
+  setLive('cofounder', { status: 'running' })
 
   lastPayload = { state: state.value, messages: history, content, research: !!opts.research,
                   confidential: confidential.value }
+  let ok = false
   try {
     await streamIdeaTurn(lastPayload, (ev) => onEvent(ev, live))
     if (live.streaming) throw new Error('The reply ended unexpectedly.')
+    ok = true
   } catch (e) {
     messages.value.splice(messages.value.indexOf(live), 1)
     messages.value.splice(messages.value.length - 1, 1)   // drop the unanswered user message
@@ -289,20 +367,67 @@ async function send(text, opts = {}) {
     busy.value = false
     updating.value = false
     status.value = ''
+    for (const id of ['cofounder', 'analyst', 'researcher']) {
+      if (isWorking(id)) setLive(id, { status: ok ? 'done' : 'idle', at: Date.now() })
+    }
     save()
     focusComposer()
   }
+  if (ok) runTeam()
+}
+
+// ── Agent team ──────────────────────────────────────────────────────────────
+async function runTeam(opts = {}) {
+  if (!state.value) return
+  if (teamRunning.value) { teamPending = true; return }
+  teamRunning.value = true
+  const only = opts.only || null
+  try {
+    await streamIdeaTeam({ state: state.value, team: team.value, only, force: !!opts.force }, (ev) => onTeamEvent(ev, only))
+  } catch (e) {
+    for (const id of SPECIALIST_IDS) if (isWorking(id)) setLive(id, { status: 'failed' })
+  } finally {
+    teamRunning.value = false
+    save()
+    if (teamPending) { teamPending = false; runTeam() }
+  }
+}
+
+function onTeamEvent(ev, only) {
+  if (ev.type === 'plan') {
+    for (const a of ev.agents) {
+      if (only && !only.includes(a.id) && a.status !== 'waiting') continue
+      setLive(a.id, { status: a.status, missing: a.missing || [] })
+    }
+  } else if (ev.type === 'agent') {
+    if (ev.status === 'done') {
+      team.value = { ...team.value, [ev.id]: { output: ev.output, fingerprint: ev.fingerprint, source: ev.source, turn: ev.turn } }
+      setLive(ev.id, { status: 'done', at: Date.now(), missing: [] })
+    } else {
+      setLive(ev.id, { status: ev.status, missing: ev.missing || [], error: ev.error || '' })
+    }
+  } else if (ev.type === 'error') {
+    throw new Error(ev.error)
+  }
+}
+
+function openAgent(id) {
+  drawerAgent.value = id
+  drawerOpen.value = true
+  nextTick(() => { if (drawerBody.value) drawerBody.value.scrollTop = 0; drawerClose.value?.focus() })
 }
 
 function onEvent(ev, live) {
   switch (ev.type) {
     case 'searching':
+      setLive('researcher', { status: 'running' })
       status.value = 'Researching who already does this (web, companies, Hacker News, GitHub)...'
       break
     case 'sources':
       status.value = `Found ${ev.count} results. Reading them...`
       break
     case 'research': {
+      setLive('researcher', { status: 'done', at: Date.now() })
       const n = ev.competitors?.length || 0
       status.value = n ? `Found ${n} ${n === 1 ? 'company' : 'companies'} already doing this. Thinking...` : 'Research done. Thinking...'
       break
@@ -321,9 +446,12 @@ function onEvent(ev, live) {
       if (ev.notice) live.notice = ev.notice
       status.value = ''
       updating.value = true
+      setLive('cofounder', { status: 'done', at: Date.now() })
+      setLive('analyst', { status: 'running' })
       break
     case 'state':
       updating.value = false
+      setLive('analyst', { status: 'done', at: Date.now() })
       state.value = ev.state
       flash(ev.applied || [])
       lastChange.value = {
@@ -350,6 +478,7 @@ function labelFor(path) {
 }
 
 function openDetail(sectionId) {
+  drawerAgent.value = null
   drawerOpen.value = true
   nextTick(() => {
     const target = drawerBody.value?.querySelector(`#${sectionId}`)
@@ -438,7 +567,7 @@ watch(tab, (t) => { if (t === 'panel') unseen.value = false })
 function onKey(e) {
   if (e.key !== 'Escape') return
   if (privacyOpen.value) privacyOpen.value = false
-  else if (drawerOpen.value) drawerOpen.value = false
+  else if (drawerOpen.value) { drawerOpen.value = false; drawerAgent.value = null }
 }
 function onDocClick() { privacyOpen.value = false }
 onUnmounted(() => {
@@ -575,7 +704,38 @@ onMounted(async () => {
 .privacy-card strong { color: #d4d4d4; }
 
 /* Panel */
-.side { position: relative; overflow: hidden; padding: 14px 16px; background: #050505; min-height: 0; }
+.side { position: relative; overflow: hidden; padding: 12px 16px 14px; background: #050505; min-height: 0;
+  display: flex; flex-direction: column; gap: 10px; }
+.view-body { flex: 1; min-height: 0; }
+.view-body > * { height: 100%; }
+.view-enter-active { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
+.view-leave-active { transition: opacity var(--dur-1) ease, transform var(--dur-1) ease; }
+.view-enter-from { opacity: 0; transform: translateY(6px); }
+.view-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* Overview / Agents switch with a sliding highlight */
+.views { position: relative; display: inline-grid; grid-template-columns: auto auto; align-self: flex-start;
+  padding: 3px; border-radius: 10px; background: #0d0d0d; border: 1px solid #1c1c1c; }
+.views button { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600;
+  padding: 6px 14px; border: none; background: transparent; color: var(--text-tertiary); border-radius: 7px; }
+.views button.on { color: var(--text-primary); }
+.views button:hover:not(.on) { color: var(--text-secondary); }
+.views-glider { position: absolute; top: 3px; bottom: 3px; left: 3px; border-radius: 7px; background: #1a1a1a;
+  border: 1px solid #2a2a2a; transition: transform var(--dur-2) var(--ease-out), width var(--dur-2) var(--ease-out); }
+.views-glider.overview { width: 88px; transform: translateX(0); }
+.views-glider.team { width: calc(100% - 94px); transform: translateX(88px); }
+.faces { display: inline-flex; }
+.face { width: 9px; height: 9px; border-radius: 50%; background: var(--c); border: 1.5px solid #0d0d0d; margin-left: -3px; opacity: 0.55;
+  transition: opacity var(--dur-2) ease, transform var(--dur-2) var(--ease-out); }
+.face:first-child { margin-left: 0; }
+.face.busy { opacity: 1; transform: translateY(-2px); animation: bob 1s ease-in-out infinite; }
+.face.busy:nth-child(2n) { animation-delay: 0.15s; }
+.face.busy:nth-child(3n) { animation-delay: 0.3s; }
+@keyframes bob { 50% { transform: translateY(0); } }
+.working-count { font-size: 11px; font-weight: 600; color: #93c5fd; animation: fade-in var(--dur-2) ease both; }
+
+.drawer-back { width: 28px; height: 28px; border-radius: 7px; border: 1px solid #262626; background: transparent; color: var(--text-secondary); }
+.drawer-back:hover { color: var(--text-primary); border-color: #3a3a3a; }
 .drawer {
   position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column;
   background: #050505; border-left: 1px solid #1f1f1f;
@@ -606,6 +766,7 @@ onMounted(async () => {
   }
   .tabs button.on { color: var(--text-primary); border-bottom-color: var(--accent); }
   .tab-score { font-size: 11px; color: #93c5fd; margin-left: 4px; }
+  .tab-working { font-size: 10.5px; color: #93c5fd; margin-left: 6px; }
   .tab-dot { position: absolute; top: 8px; right: 28%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
   .body { grid-template-columns: 1fr; }
   .chat { border-right: none; }

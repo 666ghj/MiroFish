@@ -139,6 +139,42 @@ def idea_turn():
     })
 
 
+@idea_bp.route('/team', methods=['GET'])
+def idea_team_roster():
+    """The specialist agents and what each one does."""
+    from ..services import idea_agents
+    return jsonify({'success': True, 'data': {'agents': idea_agents.roster()}})
+
+
+@idea_bp.route('/team', methods=['POST'])
+def idea_team():
+    """
+    POST /api/idea/team  {"state": {...}, "team": {agent_id: {output, fingerprint}}, "only": [ids], "force": bool}
+    Streams plan, agent (running/done/failed/fresh/waiting), done. Agents whose inputs did not
+    change are skipped unless forced.
+    """
+    from ..services import idea_agents
+    body = request.get_json(silent=True) or {}
+    prior = body.get('team') if isinstance(body.get('team'), dict) else {}
+    only = [x for x in (body.get('only') or []) if isinstance(x, str)] or None
+    force = bool(body.get('force'))
+    raw_state = body.get('state')
+
+    @stream_with_context
+    def generate():
+        try:
+            for event in idea_agents.run_team(raw_state, prior, only=only, force=force):
+                yield _sse(event)
+        except Exception as e:
+            logger.error(f"Idea team failed: {e}")
+            yield _sse({'type': 'error', 'error': 'The agent team could not run. Your idea is unchanged.'})
+
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+    })
+
+
 def _state_action(fn):
     from ..services import idea_state
     body = request.get_json(silent=True) or {}

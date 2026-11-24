@@ -131,6 +131,14 @@
           {{ state.open_objections.length === 1 ? 'concern' : 'concerns' }}</span>
       </button>
       <p class="next" :title="state.open_questions[0]?.question">{{ state.open_questions[0]?.question || 'Describe the idea to begin.' }}</p>
+      <button type="button" class="team-call" @click="$emit('team')" :title="chief ? chief.headline : 'See what your AI team is working on'">
+        <template v-if="chief">
+          <span class="call" :class="`call--${chief.verdict}`">{{ VERDICTS[chief.verdict] }}</span>
+          <span class="call-text">{{ chief.next_actions[0] }}</span>
+        </template>
+        <span v-else class="call-text">Your AI team</span>
+        <span aria-hidden="true">→</span>
+      </button>
     </section>
   </div>
 </template>
@@ -146,8 +154,10 @@ const props = defineProps({
   updating: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   confidential: { type: Boolean, default: false },
+  chief: { type: Object, default: null },
 })
-defineEmits(['open', 'ask', 'research', 'send-brief'])
+defineEmits(['open', 'ask', 'research', 'send-brief', 'team'])
+const VERDICTS = { keep_going: 'Keep going', narrow: 'Narrow it', rethink: 'Rethink' }
 
 const SECTIONS = ['Problem', 'Customer', 'Solution', 'Market', 'Business model', 'Risks and tests']
 const PROBLEM = [
@@ -322,7 +332,16 @@ function changedAny(prefixes) {
 .pairs li.bad::before { content: '!'; color: #fcd34d; }
 .pairs li.bad.sev--critical::before { color: #fca5a5; }
 
-/* Next up */
+/* Next up + the team's call */
+.team-call { margin-left: auto; flex-shrink: 1; min-width: 0; max-width: 48%; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-secondary); background: #111; border: 1px solid #262626; border-radius: 999px; padding: 4px 6px 4px 6px; }
+.team-call:hover { border-color: #3a3a3a; color: var(--text-primary); }
+.team-call > span:last-child { padding-right: 6px; color: var(--text-tertiary); }
+.call { font-size: 10.5px; font-weight: 650; padding: 2px 8px; border-radius: 999px; white-space: nowrap; animation: pop-in var(--dur-2) var(--ease-out) both; }
+.call--keep_going { color: #86efac; background: rgba(74, 222, 128, 0.1); }
+.call--narrow { color: #fcd34d; background: rgba(245, 158, 11, 0.1); }
+.call--rethink { color: #fca5a5; background: rgba(248, 113, 113, 0.1); }
+.call-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-left: 4px; }
 .next { font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 @media (max-width: 900px) {

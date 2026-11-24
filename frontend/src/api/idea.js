@@ -85,8 +85,17 @@ export const lockIdeaField = (state, path, locked) => service.post('/api/idea/lo
  * @param {(event: object) => void} onEvent
  * @param {AbortSignal} [signal]
  */
-export async function streamIdeaTurn(payload, onEvent, signal) {
-  const res = await fetch(`${BASE_URL}/api/idea/turn`, {
+export function streamIdeaTurn(payload, onEvent, signal) {
+  return streamSSE('/api/idea/turn', payload, onEvent, signal)
+}
+
+/** Run the specialist agent team; streams plan, agent, done events. */
+export function streamIdeaTeam(payload, onEvent, signal) {
+  return streamSSE('/api/idea/team', payload, onEvent, signal)
+}
+
+async function streamSSE(path, payload, onEvent, signal) {
+  const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify(payload),
