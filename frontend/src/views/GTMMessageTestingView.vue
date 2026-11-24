@@ -473,8 +473,8 @@ loadAll()
   align-items: center;
   justify-content: space-between;
   padding: 16px 32px;
-  border-bottom: 1px solid #1e1e2e;
-  background: #0d0d18;
+  border-bottom: 1px solid #1f1f1f;
+  background: #0a0a0a;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -505,7 +505,7 @@ loadAll()
   letter-spacing: 0.08em;
   color: var(--accent);
   background: var(--accent-dim);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(59, 130, 246, 0.25);
   padding: 4px 10px;
   border-radius: 4px;
 }
@@ -526,7 +526,7 @@ loadAll()
 .mt-loading-title {
   font-size: 22px;
   font-weight: 700;
-  color: #e8e8f0;
+  color: #ededed;
 }
 
 .mt-steps {
@@ -541,18 +541,18 @@ loadAll()
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: #5a5a7a;
+  color: #737373;
   transition: color 0.3s;
 }
 
 .mt-step.done { color: #4ade80; }
-.mt-step.active { color: #6366f1; }
+.mt-step.active { color: var(--accent); }
 
 .mt-step-dot { font-size: 10px; width: 14px; text-align: center; }
 
 .mt-loading-sub {
   font-size: 13px;
-  color: #5a5a7a;
+  color: #737373;
 }
 
 /* Error */
@@ -565,8 +565,8 @@ loadAll()
 }
 
 .mt-error-icon { font-size: 36px; }
-.mt-error-title { font-size: 18px; font-weight: 700; color: #e8e8f0; }
-.mt-error-msg { font-size: 14px; color: #8888aa; text-align: center; max-width: 400px; }
+.mt-error-title { font-size: 18px; font-weight: 700; color: #ededed; }
+.mt-error-msg { font-size: 14px; color: #a3a3a3; text-align: center; max-width: 400px; }
 
 /* Winner banner — refined, not overwhelming */
 .mt-mock-banner {
@@ -584,7 +584,7 @@ loadAll()
 .mt-stability {
   flex-basis: 100%;
   font-size: 12px;
-  color: #8888aa;
+  color: #a3a3a3;
 }
 .mt-stability--stable { color: var(--green, #4ade80); }
 .mt-stability--unstable { color: var(--red, #f87171); }
@@ -663,8 +663,8 @@ loadAll()
 }
 
 .mt-card {
-  background: #12121e;
-  border: 1px solid #1e1e2e;
+  background: #121212;
+  border: 1px solid #1f1f1f;
   border-radius: 10px;
   padding: 20px;
   cursor: pointer;
@@ -672,16 +672,17 @@ loadAll()
 }
 
 .mt-card:hover {
-  border-color: #3a3a6a;
+  border-color: #3d3d3d;
 }
 
 .mt-card--winner {
-  border: 2px solid #6366f1;
-  background: rgba(99, 102, 241, 0.06);
+  border: 2px solid var(--accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
 }
 
 .mt-card-winner-strip {
-  background: #6366f1;
+  background: var(--accent);
   color: #fff;
   font-size: 10px;
   font-weight: 800;
@@ -693,8 +694,8 @@ loadAll()
 }
 
 .mt-card--selected {
-  border-color: #6366f1;
-  outline: 1px solid rgba(99, 102, 241, 0.3);
+  border-color: var(--accent);
+  outline: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .mt-card-header {
@@ -710,7 +711,7 @@ loadAll()
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #6366f1;
+  color: var(--accent);
   text-transform: uppercase;
   flex: 1;
 }
@@ -718,19 +719,19 @@ loadAll()
 .mt-card-avg {
   font-size: 13px;
   font-weight: 600;
-  color: #e8e8f0;
+  color: #ededed;
 }
 
 .mt-card-subject {
   font-size: 13px;
   font-weight: 600;
-  color: #e8e8f0;
+  color: #ededed;
   margin-bottom: 8px;
 }
 
 .mt-card-body {
   font-size: 12px;
-  color: #8888aa;
+  color: #a3a3a3;
   line-height: 1.6;
   margin-bottom: 10px;
   white-space: pre-line;
@@ -738,7 +739,7 @@ loadAll()
 
 .mt-card-reasoning {
   font-size: 11px;
-  color: #5a5a7a;
+  color: #737373;
   font-style: italic;
   margin-bottom: 10px;
 }
@@ -753,8 +754,8 @@ loadAll()
 
 .mt-card-rec {
   font-size: 11px;
-  color: #6888aa;
-  border-top: 1px solid #1e1e2e;
+  color: #8a8a8a;
+  border-top: 1px solid #1f1f1f;
   padding-top: 8px;
 }
 
@@ -765,8 +766,8 @@ loadAll()
 
 /* Reactions section */
 .mt-reactions-section {
-  background: #12121e;
-  border: 1px solid #1e1e2e;
+  background: #121212;
+  border: 1px solid #1f1f1f;
   border-radius: 12px;
   padding: 24px;
 }
@@ -783,7 +784,7 @@ loadAll()
 .mt-reactions-title {
   font-size: 15px;
   font-weight: 700;
-  color: #e8e8f0;
+  color: #ededed;
 }
 
 .mt-angle-toggle {
@@ -793,8 +794,8 @@ loadAll()
 
 .mt-toggle-btn {
   background: transparent;
-  border: 1px solid #2e2e4e;
-  color: #8888aa;
+  border: 1px solid #2e2e2e;
+  color: #a3a3a3;
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
@@ -804,14 +805,14 @@ loadAll()
 }
 
 .mt-toggle-btn:hover {
-  border-color: #6366f1;
-  color: #e8e8f0;
+  border-color: var(--accent);
+  color: #ededed;
 }
 
 .mt-toggle-btn.active {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: #6366f1;
-  color: #e8e8f0;
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--accent);
+  color: #ededed;
 }
 
 /* Table */
@@ -832,13 +833,13 @@ loadAll()
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: #5a5a7a;
-  border-bottom: 1px solid #1e1e2e;
+  color: #737373;
+  border-bottom: 1px solid #1f1f1f;
 }
 
 .mt-table td {
   padding: 10px 12px;
-  border-bottom: 1px solid #1a1a2e;
+  border-bottom: 1px solid #1a1a1a;
   color: #c8c8e0;
   vertical-align: middle;
 }
@@ -852,8 +853,8 @@ loadAll()
 .mt-row--negative td:not(:first-child) { border-left: none; }
 
 .mt-td-persona { min-width: 150px; }
-.mt-persona-name { font-weight: 600; color: #e8e8f0; font-size: 13px; }
-.mt-persona-title { font-size: 11px; color: #6666aa; margin-top: 2px; }
+.mt-persona-name { font-weight: 600; color: #ededed; font-size: 13px; }
+.mt-persona-title { font-size: 11px; color: #8a8a8a; margin-top: 2px; }
 
 .mt-td-score {
   min-width: 80px;
@@ -883,7 +884,7 @@ loadAll()
 .mt-score-val {
   font-size: 13px;
   font-weight: 600;
-  color: #e8e8f0;
+  color: #ededed;
   vertical-align: middle;
 }
 
@@ -911,7 +912,7 @@ loadAll()
 
 .mt-td-reply {
   font-size: 12px;
-  color: #8888aa;
+  color: #a3a3a3;
   font-style: italic;
   min-width: 200px;
   max-width: 300px;
@@ -986,13 +987,13 @@ loadAll()
   align-items: center;
   justify-content: space-between;
   padding: 16px 32px;
-  border-top: 1px solid #1e1e2e;
-  background: #0d0d18;
+  border-top: 1px solid #1f1f1f;
+  background: #0a0a0a;
 }
 
 /* Buttons */
 .mt-btn-primary {
-  background: #6366f1;
+  background: var(--accent);
   color: #fff;
   border: none;
   font-size: 14px;
@@ -1009,8 +1010,8 @@ loadAll()
 
 .mt-btn-ghost {
   background: transparent;
-  color: #8888aa;
-  border: 1px solid #2e2e4e;
+  color: #a3a3a3;
+  border: 1px solid #2e2e2e;
   font-size: 14px;
   font-weight: 500;
   padding: 10px 18px;
@@ -1020,8 +1021,8 @@ loadAll()
 }
 
 .mt-btn-ghost:hover {
-  color: #e8e8f0;
-  border-color: #6366f1;
+  color: #ededed;
+  border-color: var(--accent);
 }
 
 /* Responsive */

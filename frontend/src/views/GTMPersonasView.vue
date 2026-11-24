@@ -337,7 +337,7 @@ onMounted(async () => {
   letter-spacing: 0.08em;
   color: var(--accent);
   background: var(--accent-dim);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(59, 130, 246, 0.25);
   padding: 4px 10px;
   border-radius: 4px;
 }

@@ -436,8 +436,8 @@ loadAll()
   align-items: center;
   justify-content: space-between;
   padding: 16px 32px;
-  border-bottom: 1px solid #1e1e2e;
-  background: #0d0d18;
+  border-bottom: 1px solid #1f1f1f;
+  background: #0a0a0a;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -465,9 +465,9 @@ loadAll()
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: #6366f1;
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
   padding: 4px 10px;
   border-radius: 4px;
 }
@@ -509,14 +509,14 @@ loadAll()
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: #5a5a7a;
+  color: #737373;
   transition: color 0.3s;
 }
 .gr-step.done { color: #4ade80; }
-.gr-step.active { color: #6366f1; }
+.gr-step.active { color: var(--accent); }
 .gr-step-dot { font-size: 10px; width: 14px; text-align: center; }
 
-.gr-loading-sub { font-size: 13px; color: #5a5a7a; }
+.gr-loading-sub { font-size: 13px; color: #737373; }
 
 /* Error */
 .gr-error {
@@ -528,7 +528,7 @@ loadAll()
 }
 .gr-error-icon { font-size: 36px; }
 .gr-error-title { font-size: 18px; font-weight: 700; }
-.gr-error-msg { font-size: 14px; color: #8888aa; text-align: center; max-width: 400px; }
+.gr-error-msg { font-size: 14px; color: #a3a3a3; text-align: center; max-width: 400px; }
 
 /* Content */
 .gr-mock-banner {
@@ -717,7 +717,7 @@ loadAll()
 
 /* Winning Message */
 .gr-winner-card {
-  border-color: rgba(99, 102, 241, 0.25);
+  border-color: rgba(59, 130, 246, 0.25);
   border-left: 3px solid var(--accent);
 }
 
@@ -795,7 +795,7 @@ loadAll()
 
 .gr-objection-response {
   font-size: 12px;
-  color: #8888aa;
+  color: #a3a3a3;
   line-height: 1.65;
   padding-left: 12px;
   border-left: 2px solid var(--border-muted);
@@ -872,7 +872,7 @@ loadAll()
   min-width: 22px;
   height: 22px;
   background: var(--accent-dim);
-  border: 1px solid rgba(99,102,241,0.3);
+  border: 1px solid rgba(59, 130, 246,0.3);
   border-radius: 50%;
   font-size: 11px;
   font-weight: 700;
@@ -974,8 +974,8 @@ loadAll()
 /* Disclaimer */
 /* Simulation note (replaces old disclaimer) */
 .gr-sim-note {
-  background: rgba(99, 102, 241, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.15);
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.15);
   border-radius: 8px;
   padding: 12px 16px;
   font-size: 13px;

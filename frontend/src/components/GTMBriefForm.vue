@@ -407,7 +407,7 @@ function handleSubmit() {
 
 .field-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246,0.15);
 }
 
 .field-input.error { border-color: var(--red); }
@@ -571,7 +571,7 @@ function handleSubmit() {
   transition: background 0.15s;
 }
 
-.submit-btn:hover:not(:disabled) { background: #4f46e5; }
+.submit-btn:hover:not(:disabled) { background: #2563eb; }
 .submit-btn:active:not(:disabled) { transform: translateY(1px); }
 .submit-btn:disabled { background: var(--border-muted); cursor: not-allowed; color: var(--text-tertiary); }
 </style>

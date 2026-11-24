@@ -278,7 +278,7 @@ const angleLabel = computed(() => {
 }
 
 .persona-card-full.dark:hover {
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1);
   border-color: var(--border-muted);
 }
 

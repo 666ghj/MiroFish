@@ -123,7 +123,7 @@ function rebuildGraph(count) {
   linkSel = linkGroup.selectAll('line')
     .data(links)
     .join('line')
-    .style('stroke', '#232340')
+    .style('stroke', '#262626')
     .style('stroke-width', 1)
     .style('opacity', 0.6)
 
@@ -155,7 +155,7 @@ function rebuildGraph(count) {
   // Update core
   entered.select('.node-core')
     .attr('r', d => d.r)
-    .style('fill', '#0e0e18')
+    .style('fill', '#101010')
     .style('stroke', d => COLOR[d.verdict])
     .style('stroke-width', 1.5)
 
@@ -164,7 +164,7 @@ function rebuildGraph(count) {
     .text(d => showLbl ? d.label : '')
     .attr('text-anchor', 'middle')
     .attr('dy', d => d.r + (n > 60 ? 0 : 13))
-    .style('fill', '#50507a')
+    .style('fill', '#737373')
     .style('font-family', "'Inter', sans-serif")
     .style('font-size', '9px')
     .style('font-weight', '600')

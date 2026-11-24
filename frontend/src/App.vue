@@ -14,22 +14,23 @@ import { Analytics } from '@vercel/analytics/vue'
 :root {
   /* Backgrounds */
   --bg-base:     #000000;
-  --bg-surface:  #080810;
-  --bg-card:     #0e0e18;
-  --bg-elevated: #151520;
+  --bg-surface:  #0a0a0a;
+  --bg-card:     #101010;
+  --bg-elevated: #171717;
 
   /* Borders */
-  --border-subtle: #17172a;
-  --border-muted:  #232338;
+  --border-subtle: #1c1c1c;
+  --border-muted:  #2a2a2a;
 
   /* Text */
-  --text-primary:   #e8e8f0;
-  --text-secondary: #8080a0;
-  --text-tertiary:  #50507a;
+  --text-primary:   #ededed;
+  --text-secondary: #a3a3a3;
+  --text-tertiary:  #737373;
 
   /* Accent — blue */
   --accent:     #3b82f6;
   --accent-dim: rgba(59, 130, 246, 0.12);
+  --accent-hover: #2563eb;
 
   /* Semantic */
   --green:  #4ade80;
@@ -46,6 +47,16 @@ import { Analytics } from '@vercel/analytics/vue'
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+html, body {
+  background: var(--bg-base);
+  color-scheme: dark;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: #fff;
 }
 
 #app {
@@ -65,8 +76,9 @@ import { Analytics } from '@vercel/analytics/vue'
 /* Scrollbar — dark for simulation views, light for home */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #555; }
+::-webkit-scrollbar-thumb { background: #262626; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #404040; }
+html { scrollbar-color: #262626 transparent; }
 
 button { font-family: inherit; cursor: pointer; }
 </style>
