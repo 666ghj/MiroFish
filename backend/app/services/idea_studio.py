@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..utils.text_style import strip_em_dashes
+from . import idea_brainstorm as brainstorm
 from . import idea_input
 from . import idea_state as st
 
@@ -383,10 +384,55 @@ def _llm(model_env: str) -> LLMClient:
     return LLMClient(model=model_for(model_env))
 
 
+def _brainstorm_turn(state, history, user_message, assistance, chat_llm):
+    workspace = state['brainstorm']
+    level = brainstorm.next_level(workspace['hint_level'], user_message, assistance)
+    workspace['hint_level'] = level
+    sparks = level == len(brainstorm.STEPS)
+    fallback, question = brainstorm.STEPS[min(level, len(brainstorm.STEPS) - 1)]
+    if sparks:
+        question = "Which hypothesis would you rewrite based on something you've seen firsthand?"
+    directive = {'field': '', 'question': question, 'reason': 'exploring possible problems'}
+    yield {'type': 'start', 'next_question': dict(directive)}
+    notice, source = None, 'llm'
+    try:
+        client = chat_llm or _llm('IDEA_CHAT_MODEL')
+        messages = [{'role': 'system', 'content': brainstorm.coach_prompt(level, question)}]
+        for entry in history[-CHAT_HISTORY:]:
+            if entry.get('role') in ('user', 'assistant') and entry.get('content'):
+                messages.append({'role': entry['role'], 'content': str(entry['content'])[:MAX_USER_CHARS]})
+        messages.append({'role': 'user', 'content': user_message})
+        body = ''.join(client.chat_stream(messages, temperature=0.6, max_tokens=350))
+        body = idea_input.plain_markup(strip_em_dashes(body)).strip()
+        lines = body.splitlines()
+        if level == 0 and lines and lines[-1].strip('* ').endswith('?'):
+            proposed = lines.pop().strip('* ')
+            if proposed.count('?') == 1 and len(proposed) <= 200 and '**' not in proposed:
+                question = proposed
+        body = '\n'.join(line for line in lines if '?' not in line).strip()
+        if not body and (level > 0 or question == directive['question']):
+            raise ValueError('empty brainstorm reply')
+        if sparks:
+            body = '**AI-suggested hypotheses**\n\n' + body
+    except Exception as e:
+        logger.warning(f'Idea brainstorm unavailable, using scripted prompt: {e}')
+        source = 'scripted'
+        notice = 'The AI co-founder is unavailable. Here is a guided prompt.'
+        body = fallback
+        question = brainstorm.STEPS[min(level, len(brainstorm.STEPS) - 1)][1]
+    directive['question'] = question
+    reply = '\n\n'.join(part for part in (body, f'**{question}**') if part)
+    yield {'type': 'reply', 'content': reply, 'source': source, 'notice': notice,
+           'ask': directive, 'brainstorm': True}
+    yield {'type': 'state', 'state': state, 'applied': [], 'rejected': 0, 'summary': '', 'brainstorm': True}
+    yield {'type': 'done'}
+
+
 def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
              chat_llm: Optional[LLMClient] = None, extract_llm: Optional[LLMClient] = None,
              evidence_hook: Optional[Callable[..., Iterator[Dict[str, Any]]]] = None,
              read_llm: Optional[LLMClient] = None,
+             assistance: str = '',
              ) -> Iterator[Dict[str, Any]]:
     """
     Run one turn. Yields events:
@@ -400,6 +446,11 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
     """
     user_message = (user_message or '').strip()[:MAX_USER_CHARS]
     state = st.validate_client_state(raw_state)
+    mode = state['brainstorm']['mode']
+    if mode == 'brainstorm':
+        yield from _brainstorm_turn(state, history, user_message, assistance, chat_llm)
+        return
+
     state['meta']['turn'] += 1
 
     # 0. Read the message: what does it ask the app to do? Act on it before replying.
@@ -415,6 +466,12 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
     candidates = pick_next_questions(state, asked)
     directive = candidates[0] if candidates else {
         'field': '', 'question': 'What would you like to dig into next?', 'reason': 'whatever matters most to you'}
+    if mode == 'stress-test':
+        questions = QUESTION_BANK['risky_assumptions']
+        previous = asked[-1] if asked else {}
+        index = 1 if previous.get('field') == 'risky_assumptions' else 0
+        directive = {'field': 'risky_assumptions', 'question': questions[index],
+                     'reason': 'a failure mode or a test that could rule it out'}
     yield {'type': 'start', 'next_question': directive}
 
     research: Optional[Dict[str, Any]] = None
@@ -437,7 +494,7 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
                 state['why_not_built']['search'] = event.get('search', state['why_not_built']['search'])
                 yield {'type': 'sources', 'count': len(event.get('results', [])),
                        'search': state['why_not_built']['search']}
-                if event.get('results'):
+                if event.get('results') and mode != 'stress-test':
                     directive = {'field': 'why_not_built', 'reason': 'how this compares to what already exists',
                                  'question': 'Why would the first customers pick this over the closest one?'}
             elif event.get('type') == 'research':
@@ -459,6 +516,13 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
         client = chat_llm or _llm('IDEA_CHAT_MODEL')
         parts = []
         guide = idea_input.guidance(reading, actions, research)
+        if mode == 'stress-test':
+            guide += (
+                '\nMode: Stress-test. State the strongest plausible objection to this specific idea. '
+                'Describe how a founder could check it with observable behavior. Separate hypotheses '
+                'from evidence and treat locked decisions as constraints. If no idea is in the record '
+                'or the latest message, ask the founder for one.'
+            )
         for text in client.chat_stream(_chat_messages(state, history, user_message, directive, guide),
                                        temperature=0.6, max_tokens=400):
             parts.append(text)
@@ -519,13 +583,16 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
         ops = form_to_ops(result, state)
         summary = strip_em_dashes(str(result.get('change_summary') or ''))[:200]
     except Exception as e:
-        logger.warning(f"Idea extraction failed, capturing founder text as written: {e}")
+        logger.warning(f'Idea extraction failed: {e}')
         path = '/' + (directive.get('field') or 'problem.statement').replace('.', '/')
         if path not in st.CLAIM_PATHS or not state['problem']['statement']['text']:
             path = '/problem/statement'
         ops = [{'op': 'replace', 'path': path,
                 'value': {'text': user_message[:st.MAX_TEXT], 'status': 'founder_stated'}}]
         panel_notice = 'Captured as you wrote it (not analysed): the analyst model is unavailable.'
+        if mode == 'stress-test':
+            ops = []
+            panel_notice = 'The analyst is unavailable. Your stress-test reply is in the conversation.'
 
     new_state, applied, rejected = st.apply_patch(state, ops, reason=summary)
     if rejected:

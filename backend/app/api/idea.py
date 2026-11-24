@@ -127,7 +127,8 @@ def idea_turn():
     @stream_with_context
     def generate():
         try:
-            for event in idea_studio.run_turn(raw_state, messages, content, evidence_hook=hook):
+            for event in idea_studio.run_turn(raw_state, messages, content, evidence_hook=hook,
+                                              assistance=body.get('assistance')):
                 yield _sse(event)
         except Exception as e:   # never leave the client hanging mid-stream
             logger.error(f"Idea turn failed: {e}")
