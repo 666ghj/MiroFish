@@ -35,20 +35,13 @@
       </div>
     </div>
 
-    <!-- Role mix: exact blend of the three buying roles, shown as color and numbers -->
+    <!-- Role mix: one blended color plus the exact numbers -->
     <div class="pcf-mix" :title="mixTitle">
       <div class="pcf-mix-head">
         <span class="pcf-mix-dot" :style="{ background: blended }"></span>
         <span class="pcf-mix-text">
           <template v-for="(a, i) in mixParts" :key="a.id"><span v-if="i" class="pcf-mix-sep"> · </span><strong>{{ a.value }}%</strong> {{ a.label }}</template>
         </span>
-      </div>
-      <div class="pcf-mix-bar" aria-hidden="true">
-        <span
-          v-for="a in mixBar"
-          :key="a.id"
-          :style="{ flexGrow: a.value, background: a.color }"
-        ></span>
       </div>
     </div>
 
@@ -121,10 +114,6 @@ const mixParts = computed(() =>
     .filter(a => a.value > 0)
     .sort((x, y) => y.value - x.value)
 )
-// Bar keeps a fixed archetype order so cards can be compared at a glance
-const mixBar = computed(() => ARCHETYPES
-  .map(a => ({ id: a.id, value: weights.value[a.id] || 0, color: roleColors.value[a.id] }))
-  .filter(a => a.value > 0))
 const mixTitle = computed(() => mixParts.value.map(a => `${a.label} ${a.value}%`).join(', '))
 const regionName = computed(() => regionLabel(props.persona.region))
 
@@ -352,8 +341,7 @@ const angleLabel = computed(() => {
 .pcf-mix-text { font-size: 11px; color: var(--text-tertiary); line-height: 1.4; }
 .pcf-mix-text strong { color: var(--text-primary); font-weight: 600; }
 .pcf-mix-sep { color: #3a3a3a; }
-.pcf-mix-bar { display: flex; gap: 2px; height: 4px; border-radius: 999px; overflow: hidden; }
-.pcf-mix-bar span { display: block; min-width: 2px; }
+
 
 .persona-card-full.dark .pcf-objection-chip {
   background: rgba(248,113,113,0.1);

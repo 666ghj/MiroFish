@@ -14,14 +14,6 @@
         <span class="tip-role">{{ hover.role }}</span>
       </div>
       <div class="tip-sub">{{ regionLabel(hover.region) }} · {{ hover.size }} employees</div>
-      <div class="tip-bar" aria-hidden="true">
-        <span
-          v-for="a in ARCHETYPES"
-          :key="a.id"
-          v-show="hover.weights[a.id] > 0"
-          :style="{ flexGrow: hover.weights[a.id], background: colors[a.id] }"
-        ></span>
-      </div>
       <div class="tip-rows">
         <div class="tip-row" v-for="a in ARCHETYPES" :key="a.id">
           <span class="tip-swatch" :style="{ background: colors[a.id] }"></span>
@@ -45,7 +37,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import * as d3 from 'd3'
 import {
-  ARCHETYPES, ARCHETYPE_IDS, defaultAudience, generateAudienceNodes,
+  ARCHETYPES, defaultAudience, generateAudienceNodes,
   blendColor, regionLabel,
 } from '../utils/audience.js'
 
@@ -123,7 +115,8 @@ function riskWord(r) {
 const tipStyle = computed(() => {
   if (!hover.value) return {}
   const x = hover.value.x, y = hover.value.y
-  const left = x > W - 230 ? x - 222 : x + 18
+  const preferred = x > W - 230 ? x - 228 : x + 18
+  const left = Math.min(Math.max(6, preferred), Math.max(6, W - 216))
   const top = Math.min(Math.max(8, y - 60), Math.max(8, H - 210))
   return { left: `${left}px`, top: `${top}px` }
 })
@@ -149,16 +142,9 @@ function syncNodes(count) {
   })
 }
 
-const pie = d3.pie().sort(null).value(d => d.value).padAngle(0.07)
-
-function ringData(d) {
-  return pie(ARCHETYPE_IDS.map(id => ({ id, value: d.weights[id] || 0 })).filter(s => s.value > 0))
-}
-
 function paint(n) {
   const showLbl = showLabels(n)
-  const ringOn = nodeRadius(n) >= 8
-  const arc = d3.arc()
+  const haloOn = nodeRadius(n) >= 8
 
   const joined = nodeGroup.selectAll('g.node')
     .data(nodes, d => d.id)
@@ -166,7 +152,7 @@ function paint(n) {
       enter => {
         const g = enter.append('g').attr('class', 'node')
         g.append('circle').attr('class', 'node-hit')
-        g.append('g').attr('class', 'node-ring')
+        g.append('circle').attr('class', 'node-halo')
         g.append('circle').attr('class', 'node-core')
         g.append('text').attr('class', 'node-label')
         g.style('opacity', 0).transition().duration(300).style('opacity', 1)
@@ -183,29 +169,28 @@ function paint(n) {
     .on('mouseenter', (_, d) => { if (props.interactive) hover.value = { ...d } })
     .on('mouseleave', () => { hover.value = null })
 
-  // Composition ring: one arc per archetype, sized by the exact weight
-  joined.select('.node-ring')
-    .style('display', ringOn ? null : 'none')
+  // One solid color per buyer: the exact blend of their role weights
+  joined.select('.node-halo')
+    .attr('r', d => d.r + 5)
+    .style('display', haloOn ? null : 'none')
     .style('pointer-events', 'none')
-    .selectAll('path')
-    .data(d => ringData(d).map(s => ({ ...s, r: d.r })))
-    .join('path')
-    .attr('d', s => arc.innerRadius(s.r + 3).outerRadius(s.r + 5.5)(s))
-    .style('fill', s => colors.value[s.data.id])
-    .style('opacity', 0.95)
+    .style('fill', 'none')
+    .style('stroke', d => d.color)
+    .style('stroke-width', 1)
+    .style('opacity', 0.3)
 
   joined.select('.node-core')
     .attr('r', d => d.r)
     .style('pointer-events', 'none')
     .style('fill', d => d.color)
-    .style('fill-opacity', 0.62)
+    .style('fill-opacity', 0.88)
     .style('stroke', d => d.color)
-    .style('stroke-width', 1.75)
+    .style('stroke-width', 1.5)
 
   joined.select('.node-label')
     .text(d => showLbl ? d.role : '')
     .attr('text-anchor', 'middle')
-    .attr('dy', d => d.r + (ringOn ? 17 : 12))
+    .attr('dy', d => d.r + (haloOn ? 16 : 12))
     .style('fill', '#8a8a8a')
     .style('font-family', "'Inter', sans-serif")
     .style('font-size', '9px')
@@ -329,8 +314,8 @@ onMounted(() => {
       .on('end', () => {
         ball.remove()
         nodeSel?.filter(d => d.id === tgt.id).select('.node-core')
-          .transition().duration(150).style('fill-opacity', 0.95).style('stroke-width', 2.5)
-          .transition().duration(600).style('fill-opacity', 0.62).style('stroke-width', 1.75)
+          .transition().duration(150).style('fill-opacity', 1).style('stroke-width', 3)
+          .transition().duration(600).style('fill-opacity', 0.88).style('stroke-width', 1.5)
       })
 
     pulseTimer = setTimeout(firePulse, 400 + Math.random() * 600)
@@ -386,15 +371,6 @@ onUnmounted(() => {
 .tip-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .tip-role { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .tip-sub { font-size: 11px; color: var(--text-tertiary); margin: 3px 0 10px 18px; }
-.tip-bar {
-  display: flex;
-  gap: 2px;
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  margin-bottom: 10px;
-}
-.tip-bar span { display: block; min-width: 2px; }
 .tip-rows { display: flex; flex-direction: column; gap: 5px; }
 .tip-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .tip-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }

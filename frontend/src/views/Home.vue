@@ -361,7 +361,6 @@
           <a href="#how">How it works</a>
           <a href="#faq">FAQ</a>
           <a href="https://github.com/sanketmuchhala/GTM-SImulator" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://github.com/666ghj/MiroFish" target="_blank" rel="noopener">Built on MiroFish</a>
         </div>
       </div>
     </footer>
