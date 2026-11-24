@@ -44,6 +44,20 @@ Your idea is stored only in your browser (export and import as JSON). Confidenti
 
 ---
 
+### It acts on what you say, not just answers it
+
+Before replying, each message is read for what it asks the app to do, and the app does it in code:
+
+- "park this", "mark that as pending, top priority": saved to a Parked list (overview bottom bar and details), never asked again until you bring it back
+- your idea changed: the one-liner, problem, and solution are updated before anything else, so research searches the current idea
+- "who else does this?": runs research, same as the button. The reply opens with exactly what was searched and found, written by code
+- "idk": a smaller question or a way to find out, never the answer for you
+- a question to the AI: answered first. "help me come up with...": angles to think from, not finished ideas
+
+Each reply shows chips for what was actually done. The co-founder is never allowed to claim an action the app did not take,
+and any sentence naming a company or product that appears nowhere in the sources or your own words is removed.
+If the reply drifts from the question the router picked, the router's question is put back.
+
 ### The agent team
 
 After each turn a team of AI agents works on the idea in parallel (Agents tab in the right panel):

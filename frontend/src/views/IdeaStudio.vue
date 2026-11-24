@@ -42,6 +42,15 @@
               <div class="bubble-text" v-html="render(m.content)" :aria-live="m.streaming ? 'off' : null"></div>
               <span v-if="m.streaming && !m.content" class="typing" aria-hidden="true"><i></i><i></i><i></i></span>
               <div v-if="m.notice" class="notice">{{ m.notice }}</div>
+              <div v-if="m.actions?.length" class="acts" aria-label="What the app did">
+                <span v-for="(a, j) in m.actions" :key="j" class="act" :class="`act--${a.kind}`" :style="{ '--j': j }"
+                      @click="actOpen(a)" :role="ACT_SECTION[a.kind] ? 'button' : null" :tabindex="ACT_SECTION[a.kind] ? 0 : null">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path :d="ACT_ICON[a.kind] || ACT_ICON.parked" /></svg>
+                  <span class="act-label">{{ ACT_LABEL[a.kind] }}</span>
+                  <span v-if="a.priority === 'top'" class="act-top">top priority</span>
+                  <span class="act-text">{{ a.kind === 'researched' && a.query ? `"${a.query}" · ${a.text}` : a.text }}</span>
+                </span>
+              </div>
             </div>
           </div>
           <div v-if="isFresh" class="starters" aria-label="Ways to start">
@@ -172,6 +181,7 @@
                 @lock="onLock"
                 @research="research"
                 @send-brief="sendBrief"
+                @unpark="unparkItem"
                 @ask="(t) => { drawerOpen = false; draftAbout(t) }"
               />
             </div>
@@ -265,7 +275,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       state: state.value, confidential: confidential.value, team: team.value,
-      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice }) => ({ role, content, notice })),
+      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions }) => ({ role, content, notice, actions })),
     }))
     savedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   } catch (_) {}
@@ -324,7 +334,7 @@ async function importIdea(e) {
     if (!data?.state || !Array.isArray(data.messages)) throw new Error('not an Idea Studio export')
     // The server re-validates the state on the next turn; nothing imported is trusted.
     state.value = data.state
-    messages.value = data.messages.map(({ role, content, notice }) => ({ role, content, notice }))
+    messages.value = data.messages.map(({ role, content, notice, actions }) => ({ role, content, notice, actions: Array.isArray(actions) ? actions : [] }))
     team.value = data.team && typeof data.team === 'object' ? data.team : {}
     live.value = {}
     changed.value = []
@@ -411,6 +421,24 @@ function onTeamEvent(ev, only) {
   }
 }
 
+// ── What the app did with a message (chips under the reply) ────────────────
+const ACT_LABEL = { parked: 'Parked', already_parked: 'Already parked', unparked: 'Brought back', idea_updated: 'Idea updated',
+  researched: 'Searched', research_skipped: 'Search skipped' }
+const ACT_SECTION = { parked: 'sec-parked', already_parked: 'sec-parked', unparked: 'sec-parked', idea_updated: 'sec-idea',
+  researched: 'sec-wnb' }
+const ACT_ICON = {
+  parked: 'M4 2.5h8v11l-4-2.8-4 2.8z', already_parked: 'M4 2.5h8v11l-4-2.8-4 2.8z', unparked: 'M3 8h10M8.5 3.5L13 8l-4.5 4.5',
+  idea_updated: 'M3 13l1-3.5L10.5 3 13 5.5 6.5 12z', researched: 'M7 3a4 4 0 100 8 4 4 0 000-8zM10 10l3.5 3.5',
+  research_skipped: 'M8 3v6M8 11.5v.5',
+}
+function actOpen(a) { if (ACT_SECTION[a.kind]) { tab.value = 'panel'; openDetail(ACT_SECTION[a.kind]) } }
+
+function unparkItem(id) {
+  if (!state.value) return
+  state.value = { ...state.value, parked: (state.value.parked || []).filter(p => p.id !== id) }
+  save()
+}
+
 function openAgent(id) {
   drawerAgent.value = id
   drawerOpen.value = true
@@ -419,6 +447,10 @@ function openAgent(id) {
 
 function onEvent(ev, live) {
   switch (ev.type) {
+    case 'actions':
+      live.actions = ev.items || []
+      if ((ev.items || []).some(a => a.kind === 'idea_updated')) flash((ev.items.find(a => a.kind === 'idea_updated').paths) || [])
+      break
     case 'searching':
       setLive('researcher', { status: 'running' })
       status.value = 'Researching who already does this (web, companies, Hacker News, GitHub)...'
@@ -444,6 +476,7 @@ function onEvent(ev, live) {
       live.content = ev.content
       live.streaming = false
       if (ev.notice) live.notice = ev.notice
+      if (Array.isArray(ev.actions)) live.actions = ev.actions
       status.value = ''
       updating.value = true
       setLive('cofounder', { status: 'done', at: Date.now() })
@@ -686,6 +719,23 @@ onMounted(async () => {
 .send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .fine { font-size: 11px; line-height: 1.45; color: #555; padding: 8px 18px 12px; }
 .fine { position: relative; }
+/* Action chips: what the app actually did with the message */
+.acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.act { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 11.5px; line-height: 1.3; padding: 4px 10px 4px 8px;
+  border-radius: 999px; border: 1px solid #262626; background: #0d0d0d; color: var(--text-secondary);
+  animation: pop-in var(--dur-2) var(--ease-out) both; animation-delay: calc(var(--j, 0) * 60ms + 80ms); }
+.act[role="button"] { cursor: pointer; }
+.act[role="button"]:hover { border-color: #3a3a3a; color: var(--text-primary); }
+.act svg { width: 12px; height: 12px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.act-label { font-weight: 650; color: var(--text-primary); flex-shrink: 0; }
+.act-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.act-top { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #fcd34d; flex-shrink: 0; }
+.act--parked, .act--already_parked { border-color: rgba(245, 158, 11, 0.3); }
+.act--parked svg, .act--already_parked svg { color: #fcd34d; }
+.act--idea_updated { border-color: rgba(59, 130, 246, 0.35); }
+.act--idea_updated svg { color: #93c5fd; }
+.act--researched svg { color: #2dd4bf; }
+.act--research_skipped { color: #fca5a5; border-color: rgba(248, 113, 113, 0.3); }
 .privacy-link {
   background: none; border: none; padding: 0; margin-left: 4px; font-size: 11px;
   color: #8a8a8a; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;

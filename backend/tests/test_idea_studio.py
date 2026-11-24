@@ -10,7 +10,7 @@ from app.services import idea_studio as studio
 
 
 class FakeChat:
-    def __init__(self, chunks=('Got it. ', 'Who **pays**?'), fail=False):
+    def __init__(self, chunks=('Got it. ', '**What can they not do well today?**'), fail=False):
         self.chunks, self.fail, self.messages = chunks, fail, None
 
     def chat_stream(self, messages, **kw):
@@ -72,7 +72,7 @@ def test_full_turn_streams_reply_and_applies_validated_patch():
     types = [e['type'] for e in ev]
     assert types == ['start', 'delta', 'delta', 'reply', 'state', 'done']
     reply = next(e for e in ev if e['type'] == 'reply')
-    assert reply['source'] == 'llm' and reply['content'] == 'Got it. Who **pays**?'
+    assert reply['source'] == 'llm' and reply['content'] == 'Got it. **What can they not do well today?**'
     state_ev = next(e for e in ev if e['type'] == 'state')
     s = state_ev['state']
     assert s['problem']['statement']['status'] == 'founder_stated'
@@ -86,7 +86,7 @@ def test_extractor_is_third_person_and_sees_the_reply():
     chat, extract = FakeChat(), FakeExtract([{'founder_facts': {}}])
     events(studio.run_turn(new(), [], 'my idea', chat, extract))
     system = extract.messages[0]['content']
-    assert system.startswith('An analyst is reviewing') and 'Advisor: Got it. Who **pays**?' in extract.messages[1]['content']
+    assert system.startswith('An analyst is reviewing') and 'Advisor: Got it. **What can they not do well today?**' in extract.messages[1]['content']
     assert 'NEXT QUESTION' in chat.messages[1]['content']
 
 
@@ -142,7 +142,8 @@ def test_history_is_trimmed_to_recent_messages():
 def client(monkeypatch):
     from app import create_app
     fakes = {'IDEA_CHAT_MODEL': FakeChat(),
-             'IDEA_EXTRACT_MODEL': FakeExtract([{'founder_facts': {'problem': 'Dentists lose time'}}])}
+             'IDEA_EXTRACT_MODEL': FakeExtract([{'founder_facts': {'problem': 'Dentists lose time'}}]),
+             'IDEA_READ_MODEL': FakeExtract([{'kinds': ['answer']}] * 5)}
     monkeypatch.setattr(studio, '_llm', lambda env: fakes[env])
     return create_app().test_client()
 

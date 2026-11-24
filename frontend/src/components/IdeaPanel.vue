@@ -212,6 +212,23 @@
       </div>
     </section>
 
+    <!-- Parked by the founder -->
+    <section id="sec-parked" class="card">
+      <h3>Parked <span class="parked-count" v-if="(state.parked || []).length">{{ state.parked.length }}</span></h3>
+      <p v-if="!(state.parked || []).length" class="parked-empty">
+        Nothing parked. Say "park this" or "mark that as pending" in the chat and it lands here, so it is not lost and not asked again.
+      </p>
+      <ul v-else class="parked">
+        <li v-for="p in sortedParked" :key="p.id" class="parked-item">
+          <span v-if="p.priority === 'top'" class="prio">Top</span>
+          <span class="parked-text">{{ p.text }}</span>
+          <span class="parked-turn">turn {{ p.turn }}</span>
+          <button type="button" class="parked-btn" @click="$emit('ask', `Let's come back to this now: ${p.text}. `)">Bring back</button>
+          <button type="button" class="parked-x" :aria-label="`Remove ${p.text}`" @click="$emit('unpark', p.id)">✕</button>
+        </li>
+      </ul>
+    </section>
+
     <!-- Sources + legend -->
     <details v-if="sourceList.length" class="card sources">
       <summary>Sources ({{ sourceList.length }})</summary>
@@ -240,7 +257,8 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   confidential: { type: Boolean, default: false },
 })
-const emit = defineEmits(['edit', 'lock', 'research', 'send-brief', 'ask'])
+const emit = defineEmits(['edit', 'lock', 'research', 'send-brief', 'ask', 'unpark'])
+const sortedParked = computed(() => [...(props.state.parked || [])].sort((a, b) => (b.priority === 'top') - (a.priority === 'top')))
 
 const PROBLEM_FIELDS = [
   { path: '/problem/statement', label: 'Problem', key: ['problem', 'statement'], starter: 'The core problem is ' },
@@ -427,4 +445,17 @@ function providerName(p) {
 
 @media (max-width: 1100px) { .card--split { grid-template-columns: 1fr; } .checklist { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .card, .check-fill { transition: none; } }
+.parked-count { font-size: 11px; font-weight: 600; color: var(--text-tertiary); background: #161616; border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+.parked-empty { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.5; }
+.parked { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.parked-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid #1f1f1f; background: #0a0a0a;
+  animation: rise-in var(--dur-2) var(--ease-out) both; }
+.prio { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 4px;
+  color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); flex-shrink: 0; }
+.parked-text { flex: 1; font-size: 13px; color: var(--text-primary); line-height: 1.4; }
+.parked-turn { font-size: 11px; color: #555; flex-shrink: 0; }
+.parked-btn { font-size: 11.5px; padding: 3px 9px; border-radius: 6px; border: 1px solid #2a2a2a; background: transparent; color: var(--text-secondary); flex-shrink: 0; }
+.parked-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+.parked-x { width: 22px; height: 22px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: #555; font-size: 10px; flex-shrink: 0; }
+.parked-x:hover { color: #fca5a5; border-color: rgba(248, 113, 113, 0.4); }
 </style>

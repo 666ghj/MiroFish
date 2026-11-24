@@ -35,7 +35,7 @@ RESULTS_DIR = os.path.join(os.path.dirname(__file__), 'results')
 
 def run(state: Dict[str, Any], history: List[Dict[str, str]], message: str, research: bool = False
         ) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
-    hook = ev.make_hook(requested=research) if research else (lambda s, m: iter(()))
+    hook = ev.make_hook(requested=research) if research else (lambda s, m, **kw: iter(()))
     reply, info = '', {}
     for e in studio.run_turn(state, history, message, evidence_hook=hook):
         if e['type'] == 'reply':
@@ -151,7 +151,54 @@ def hype():
         'risks': [a['text'] for a in s['risky_assumptions']], 'reply': reply}
 
 
-SCENARIOS = {'golden': golden, 'pushback': pushback, 'resolve': resolve, 'fiction': fiction, 'hype': hype}
+# ── Founder inputs that are not answers (from a real session that went wrong) ─
+
+def _ai_habits():
+    s = fresh()
+    s, _, _ = st.apply_patch(s, [
+        {'op': 'replace', 'path': '/one_liner', 'value': {'text': 'An app where AI assists idea creation but the idea comes from you', 'status': 'founder_stated'}},
+        {'op': 'replace', 'path': '/problem/statement', 'value': {'text': 'People lean on AI so much they stop thinking for themselves', 'status': 'founder_stated'}}])
+    history = [
+        {'role': 'user', 'content': 'a lot of people know AI overuse is bad but ignore it, like smoking'},
+        {'role': 'assistant', 'content': 'Awareness rarely changes behavior on its own.\n\n**What features would help people cut back gradually?**'}]
+    return s, history
+
+
+def park():
+    s, h = _ai_habits()
+    s, reply, info = run(s, h, 'mark that as pending, top priority. and controlling it across chatgpt, gemini and claude is another challenge, park that too')
+    texts = ' '.join(p['text'].lower() for p in s['parked'])
+    return {'both topics parked': len(s['parked']) >= 2,
+            'top priority kept': any(p['priority'] == 'top' for p in s['parked']),
+            'cross-app topic named': any(w in texts for w in ('chatgpt', 'platform', 'apps', 'across')),
+            'one question per reply': one_question(reply)}, {'parked': s['parked'], 'reply': reply}
+
+
+def pivot():
+    s, h = _ai_habits()
+    s, reply, info = run(s, h, 'ok forget the idea-generation app. what i actually want to build is a browser and phone extension '
+                               'that tracks how much people lean on chatgpt, gemini and claude and helps them cut back gradually.')
+    one = s['one_liner']['text'].lower()
+    return {'one-liner follows the pivot': 'extension' in one or 'cut back' in one or 'reduce' in one or 'track' in one,
+            'nothing parked without being asked': not s['parked']}, {'one_liner': s['one_liner']['text'], 'reply': reply}
+
+
+def help_me():
+    s, h = _ai_habits()
+    s, reply, info = run(s, h, 'can you help me come up with what the first version should be?')
+    return {'angles, not a finished spec (no list)': not re.search(r'^\s*(\d+[.)]|[-*])\s', reply, re.M),
+            'ends by asking which to explore': reply.strip().endswith('?')}, {'reply': reply}
+
+
+def idk():
+    s, h = _ai_habits()
+    s, reply, info = run(s, h, 'idk honestly')
+    return {'one question per reply': one_question(reply),
+            'offers a smaller step or a way to find out': bool(re.search(r'\b(smaller|start|one|first|find out|try|look at|ask|talk|week|day)\b', reply.lower()))}, {'reply': reply}
+
+
+SCENARIOS = {'golden': golden, 'pushback': pushback, 'resolve': resolve, 'fiction': fiction, 'hype': hype,
+             'park': park, 'pivot': pivot, 'help_me': help_me, 'idk': idk}
 
 
 def main():

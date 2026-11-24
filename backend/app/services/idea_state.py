@@ -123,6 +123,7 @@ def new_state(session_id: str = '') -> Dict[str, Any]:
         'risky_assumptions': [],
         'open_questions': [],
         'open_objections': [],
+        'parked': [],              # topics the founder set aside: [{id, text, priority, field, turn}]
         'sources': {},
         'clarity': {'score': 0, 'by_section': {}, 'top_missing': [], 'computed_by': 'code'},
         'history': [],
@@ -644,4 +645,56 @@ def validate_client_state(raw: Any, session_id: str = '') -> Dict[str, Any]:
         }
     if isinstance(raw.get('history'), list):
         base['history'] = [h for h in raw['history'] if isinstance(h, dict)][-30:]
+    base['parked'] = clean_parked(raw.get('parked'))
     return refresh(base)
+
+
+# ── Parked topics (the founder's "come back to this later" list) ─────────────
+
+MAX_PARKED = 12
+PARK_FIELDS = {'problem.statement', 'problem.who', 'problem.workaround', 'problem.frequency', 'problem.severity',
+               'customer.early_adopters', 'solution.core', 'why_not_built', 'why_now', 'business_model',
+               'risky_assumptions'}
+
+
+def clean_parked(items: Any) -> List[Dict[str, Any]]:
+    out, seen = [], set()
+    for it in (items if isinstance(items, list) else []):
+        if not isinstance(it, dict):
+            continue
+        text = _clean_text(it.get('text'))[:160]
+        if not text or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        field = it.get('field') if it.get('field') in PARK_FIELDS else ''
+        pid = str(it.get('id') or '')
+        out.append({'id': pid if re.fullmatch(r'[a-z0-9]{1,16}', pid) else f'p{len(out) + 1}',
+                    'text': text, 'priority': 'top' if it.get('priority') == 'top' else 'normal',
+                    'field': field, 'turn': max(0, int(it.get('turn') or 0))})
+    return out[-MAX_PARKED:]
+
+
+def park(state: Dict[str, Any], text: str, priority: str = 'normal', field: str = '') -> Optional[Dict[str, Any]]:
+    """Add a parked topic (deduplicated). Returns the item, or None if it was empty or already parked."""
+    text = _clean_text(text)[:160]
+    if not text:
+        return None
+    for it in state['parked']:
+        if it['text'].lower() == text.lower():
+            if priority == 'top':
+                it['priority'] = 'top'
+            return None
+    used = {it['id'] for it in state['parked']}
+    n = 1
+    while f'p{n}' in used:
+        n += 1
+    item = {'id': f'p{n}', 'text': text, 'priority': 'top' if priority == 'top' else 'normal',
+            'field': field if field in PARK_FIELDS else '', 'turn': state['meta']['turn']}
+    state['parked'] = (state['parked'] + [item])[-MAX_PARKED:]
+    return item
+
+
+def unpark(state: Dict[str, Any], ids: List[str]) -> List[Dict[str, Any]]:
+    gone = [it for it in state['parked'] if it['id'] in ids]
+    state['parked'] = [it for it in state['parked'] if it['id'] not in ids]
+    return gone

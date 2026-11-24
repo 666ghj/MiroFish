@@ -185,22 +185,24 @@ def github(query: str, limit: int = 3) -> List[Dict[str, Any]]:
 QUERY_PROMPT = """Turn a startup idea into short, neutral web search phrases. Use plain category words a buyer
 would search for. Never include personal names, company names, numbers, or private details.
 Return ONLY JSON: {"category": "2 to 5 words naming the product category",
-"buyer": "2 to 4 words naming the customer", "job": "3 to 7 words: the job the product does"}"""
+"buyer": "2 to 4 words naming the customer", "job": "3 to 7 words: the job the product does",
+"focus_job": "3 to 7 words: the job named in RECENT FOCUS if it differs from the idea, else empty"}"""
 
 
-def plan_queries(state: Dict[str, Any], llm: Any = None) -> Dict[str, str]:
+def plan_queries(state: Dict[str, Any], llm: Any = None, recent: str = '') -> Dict[str, str]:
     """Neutral search phrases for the idea. Uses one cheap LLM call, with a keyword fallback."""
     idea = ' | '.join(t for t in (state['one_liner']['text'], state['solution']['core']['text'],
                                   state['problem']['statement']['text'], state['problem']['who']['text']) if t)
-    cat = buyer = job = ''
+    cat = buyer = job = focus = ''
+    prompt = idea[:600] + (f"\nRECENT FOCUS of the conversation: {recent[-600:]}" if recent.strip() else '')
     try:
         if llm is None:
             from ..utils.llm_client import LLMClient
             llm = LLMClient(model=os.environ.get('IDEA_CHAT_MODEL') or None)
         out = llm.chat_json([{'role': 'system', 'content': QUERY_PROMPT},
-                             {'role': 'user', 'content': idea[:600]}], temperature=0.0, max_tokens=120)
+                             {'role': 'user', 'content': prompt}], temperature=0.0, max_tokens=140)
         if isinstance(out, dict):
-            cat, buyer, job = (_clean(out.get(k), 60) for k in ('category', 'buyer', 'job'))
+            cat, buyer, job, focus = (_clean(out.get(k), 60) for k in ('category', 'buyer', 'job', 'focus_job'))
     except Exception as e:
         logger.warning(f"Query planning fell back to keywords: {e}")
     if not cat:
@@ -212,7 +214,8 @@ def plan_queries(state: Dict[str, Any], llm: Any = None) -> Dict[str, str]:
     return {
         'competitors': f'{product} for {buyer}' if buyer else product,
         'graveyard': f'{cat} startup shut down OR postmortem OR "why we failed"',
-        'semantic': f'a company that {job or cat}' + (f' for {buyer}' if buyer else ''),
+        # the semantic (Exa) query follows where the conversation went, when that differs from the record
+        'semantic': f'a company that {focus}' if focus else (f'a company that {job or cat}' + (f' for {buyer}' if buyer else '')),
         'hn': cat,
         'oss': cat,
     }
@@ -296,21 +299,38 @@ Return ONLY JSON:
  "summary": "two plain sentences on why this may not exist yet, or why it already does"}
 
 Rules:
+- RELEVANCE FIRST: only list a company or product that does the same job for similar users as the IDEA. Search results
+  often include unrelated companies (an app builder, a shipping startup, a general chatbot); leave those out entirely.
+  A general-purpose tool is a competitor only if the IDEA's users would use it for this exact job today.
 - A competitor is a specific company or product whose name appears in its result's title or snippet. List up to 6, closest first.
 - Review sites, "best X software" lists, and market reports are NOT companies. Do not list them, but treat them as a sign the market is established.
-- A predecessor needs shutdown, closure, or postmortem wording in its result. Otherwise do not list it.
+- A predecessor needs shutdown, closure, or postmortem wording in its result AND must have tried this same idea. A failed
+  startup from another category is not a predecessor.
 - classification: crowded_funded if established vendors or category review pages exist; exists_unknown if only a few small or obscure players appear;
   tried_and_failed if 2 or more predecessors have shutdown evidence; nobody_tried only if no relevant companies appear at all.
 - Never name a company that is not in RESULTS. Never state funding or revenue unless the snippet says it.
 - Plain language, no em dashes."""
 
 
-def synthesize(state: Dict[str, Any], results: List[Dict[str, Any]], llm: Any = None) -> Dict[str, Any]:
+GENERIC_WORDS = set('''app apps application startup startups company companies software platform tool tools service
+services product products business shut down shutdown postmortem failed fail failure failures closed closing why we our
+the and for with that this from your their about using based online digital new best top help helps people users user
+idea ideas where not how what when who all can are was has had its into than then them they you will just more most
+some such very also out die died dead dying list lessons graveyard year years story stories learned learn advice reasons
+one two three ten twelve guide ways things thing make makes made get way inc ltd''' .split())
+
+
+def _topic_words(text: str) -> set:
+    return {w for w in re.findall(r'[a-z]{3,}', (text or '').lower()) if w not in GENERIC_WORDS}
+
+
+def synthesize(state: Dict[str, Any], results: List[Dict[str, Any]], llm: Any = None,
+               terms: Optional[List[str]] = None) -> Dict[str, Any]:
     """One analyst pass over fresh search results. Returns the analysis part of the analyst form."""
     if not results:
         return {}
     idea = ' | '.join(t for t in (state['one_liner']['text'], state['problem']['statement']['text'],
-                                  state['problem']['who']['text']) if t)
+                                  state['solution']['core']['text'], state['problem']['who']['text']) if t)
     listing = '\n'.join(f"{r['id']} [{r.get('provider')}/{r.get('purpose')}] {r.get('title')}: {r.get('snippet', '')[:220]}"
                          for r in results)
     try:
@@ -326,9 +346,25 @@ def synthesize(state: Dict[str, Any], results: List[Dict[str, Any]], llm: Any = 
         return {}
     if not isinstance(out, dict):
         return {}
+    by_id = {r['id']: r for r in results}
+    topic = _topic_words(idea + ' ' + ' '.join(terms or []))
+
+    def relevant(items):
+        keep = []
+        for it in (items if isinstance(items, list) else []):
+            src = by_id.get(str((it or {}).get('source_id') or ''))
+            if not src:
+                keep.append(it)          # unknown source: idea_state's validator rejects it anyway
+                continue
+            text = f"{src.get('title', '')} {src.get('snippet', '')} {(it or {}).get('note', '')} {(it or {}).get('failure_reason', '')}"
+            if _topic_words(text) & topic:
+                keep.append(it)
+            else:
+                logger.info(f"Dropped unrelated research hit: {(it or {}).get('name')}")
+        return keep
     return {
-        'competitors': out.get('competitors') or [],
-        'predecessors': out.get('predecessors') or [],
+        'competitors': relevant(out.get('competitors')),
+        'predecessors': relevant(out.get('predecessors')),
         'blockers': out.get('blockers') or [],
         'classification': out.get('classification'),
         'why_not_built_summary': out.get('summary'),
@@ -341,7 +377,10 @@ def make_hook(requested: bool = False, confidential: bool = False,
     """Build the evidence hook that run_turn calls before the co-founder replies."""
     sweep_fn = sweep_fn or sweep
 
-    def hook(state: Dict[str, Any], user_message: str) -> Iterator[Dict[str, Any]]:
+    button = requested
+
+    def hook(state: Dict[str, Any], user_message: str, force: bool = False, recent: str = '') -> Iterator[Dict[str, Any]]:
+        requested = button or force     # the Research button, or the founder asked in words
         if confidential:
             if requested:
                 yield {'type': 'evidence_skipped', 'reason': 'Confidential mode is on, so nothing was searched.'}
@@ -351,7 +390,7 @@ def make_hook(requested: bool = False, confidential: bool = False,
             if requested:
                 yield {'type': 'evidence_skipped', 'reason': f'Research limit reached ({MAX_SWEEPS} per idea).'}
             return
-        queries = plan_queries(state, planner_llm)
+        queries = plan_queries(state, planner_llm, recent)
         terms = [queries['competitors'], queries['graveyard'], queries['semantic']]
         yield {'type': 'searching', 'terms': terms, 'reason': why}
         found = sweep_fn(queries)
@@ -364,7 +403,8 @@ def make_hook(requested: bool = False, confidential: bool = False,
             'sweeps': int(search.get('sweeps') or 0) + 1,
         })
         yield {'type': 'sources', 'results': found['results'], 'search': search}
-        analysis = synthesize(state, found['results'], synth_llm)
+        analysis = synthesize(state, found['results'], synth_llm, terms=[queries.get('hn', ''), queries.get('semantic', '')])
         if analysis:
             yield {'type': 'research', 'analysis': analysis}
+    hook.requested = requested
     return hook

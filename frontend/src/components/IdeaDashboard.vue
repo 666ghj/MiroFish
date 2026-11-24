@@ -131,6 +131,11 @@
           {{ state.open_objections.length === 1 ? 'concern' : 'concerns' }}</span>
       </button>
       <p class="next" :title="state.open_questions[0]?.question">{{ state.open_questions[0]?.question || 'Describe the idea to begin.' }}</p>
+      <button v-if="(state.parked || []).length" type="button" class="parked-pill" @click="$emit('open', 'sec-parked')"
+              :title="state.parked.map(p => p.text).join(' · ')">
+        Parked {{ state.parked.length }}
+        <span v-if="state.parked.some(p => p.priority === 'top')" class="pp-top" aria-label="has top priority items"></span>
+      </button>
       <button type="button" class="team-call" @click="$emit('team')" :title="chief ? chief.headline : 'See what your AI team is working on'">
         <template v-if="chief">
           <span class="call" :class="`call--${chief.verdict}`">{{ VERDICTS[chief.verdict] }}</span>
@@ -333,7 +338,12 @@ function changedAny(prefixes) {
 .pairs li.bad.sev--critical::before { color: #fca5a5; }
 
 /* Next up + the team's call */
-.team-call { margin-left: auto; flex-shrink: 1; min-width: 0; max-width: 48%; display: inline-flex; align-items: center; gap: 8px;
+.parked-pill { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+  color: #fcd34d; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 999px; padding: 3px 10px;
+  animation: pop-in var(--dur-2) var(--ease-out) both; }
+.parked-pill:hover { border-color: rgba(245, 158, 11, 0.6); }
+.pp-top { width: 6px; height: 6px; border-radius: 50%; background: #fcd34d; }
+.team-call { margin-left: 8px; flex-shrink: 1; min-width: 0; max-width: 48%; display: inline-flex; align-items: center; gap: 8px;
   font-size: 12px; color: var(--text-secondary); background: #111; border: 1px solid #262626; border-radius: 999px; padding: 4px 6px 4px 6px; }
 .team-call:hover { border-color: #3a3a3a; color: var(--text-primary); }
 .team-call > span:last-child { padding-right: 6px; color: var(--text-tertiary); }
@@ -342,7 +352,7 @@ function changedAny(prefixes) {
 .call--narrow { color: #fcd34d; background: rgba(245, 158, 11, 0.1); }
 .call--rethink { color: #fca5a5; background: rgba(248, 113, 113, 0.1); }
 .call-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-left: 4px; }
-.next { font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.next { flex: 1; font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 @media (max-width: 900px) {
   .dash { height: auto; grid-template-columns: 1fr; grid-template-rows: none;
