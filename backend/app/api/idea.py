@@ -92,3 +92,68 @@ def post_message(session_id: str):
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no',   # stop proxies from buffering the stream
     })
+
+
+# ── Stateless Idea Studio turn API (the browser owns the state) ─────────────
+
+@idea_bp.route('/new', methods=['GET'])
+def new_idea():
+    """A fresh idea state and the opening message. Nothing is stored server-side."""
+    import uuid
+    from ..services import idea_state, idea_studio
+    state = idea_state.refresh(idea_state.new_state(str(uuid.uuid4())))
+    return jsonify({'success': True, 'data': {'state': state, 'opening': idea_studio.opening_message()}})
+
+
+@idea_bp.route('/turn', methods=['POST'])
+def idea_turn():
+    """
+    POST /api/idea/turn  {"state": {...}, "messages": [{role, content}], "content": "..."}
+    Streams: start, sources/evidence (step 3), delta..., reply, state, done; or error.
+    """
+    body = request.get_json(silent=True) or {}
+    content = (body.get('content') or '').strip()
+    if not content:
+        return jsonify({'success': False, 'error': 'content is required'}), 400
+    if len(content) > MAX_MESSAGE_CHARS:
+        return jsonify({'success': False, 'error': f'message is longer than {MAX_MESSAGE_CHARS} characters'}), 400
+    messages = [m for m in (body.get('messages') or []) if isinstance(m, dict)][-20:]
+    raw_state = body.get('state')
+
+    from ..services import idea_studio
+
+    @stream_with_context
+    def generate():
+        try:
+            for event in idea_studio.run_turn(raw_state, messages, content):
+                yield _sse(event)
+        except Exception as e:   # never leave the client hanging mid-stream
+            logger.error(f"Idea turn failed: {e}")
+            yield _sse({'type': 'error', 'error': 'Something went wrong on this turn. Your idea is unchanged.'})
+
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+    })
+
+
+def _state_action(fn):
+    from ..services import idea_state
+    body = request.get_json(silent=True) or {}
+    state = idea_state.validate_client_state(body.get('state'))
+    try:
+        return jsonify({'success': True, 'data': {'state': fn(idea_state, state, body)}})
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        return jsonify({'success': False, 'error': f'Cannot change that field: {e}'}), 400
+
+
+@idea_bp.route('/edit', methods=['POST'])
+def idea_edit():
+    """The founder rewrites a field: it becomes founder-stated and locked."""
+    return _state_action(lambda m, s, b: m.founder_edit(s, str(b.get('path', '')), str(b.get('text', ''))[:400]))
+
+
+@idea_bp.route('/lock', methods=['POST'])
+def idea_lock():
+    """Lock or unlock a field so the analyst cannot change it."""
+    return _state_action(lambda m, s, b: m.refresh(m.set_locked(s, str(b.get('path', '')), bool(b.get('locked')))))

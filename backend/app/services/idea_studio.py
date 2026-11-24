@@ -1,0 +1,489 @@
+"""
+Idea Studio turn pipeline.
+
+Each founder message runs two model calls (deep research consensus):
+1. A warm co-founder reply, streamed, asking ONE question chosen by code.
+2. A separate third-person analyst pass that proposes small JSON Patch edits to the
+   idea state. Third-person framing reduces sycophancy (SYCON-Bench), and keeping the
+   panel edits out of the conversational call shields them from social pressure.
+
+The server is stateless: the browser sends the idea state and recent messages every
+turn, and receives the reply plus the validated patch. Nothing here touches disk.
+"""
+
+import json
+import os
+import re
+from typing import Any, Callable, Dict, Iterator, List, Optional
+
+from ..utils.llm_client import LLMClient
+from ..utils.logger import get_logger
+from ..utils.text_style import strip_em_dashes
+from . import idea_state as st
+
+logger = get_logger('mirofish.idea_studio')
+
+CHAT_HISTORY = 8          # recent messages the co-founder sees
+MAX_USER_CHARS = 4000
+
+# ── Question bank (Mom Test style; from the three research reports) ─────────
+QUESTION_BANK: Dict[str, List[str]] = {
+    'problem.statement': [
+        "In one sentence, what can someone not do well today that your idea fixes?",
+        "Forget the product for a second: who is the exact person having a bad afternoon that makes them wish this existed?",
+        "Where did this idea come from: something you lived, saw at work, or read about?",
+    ],
+    'problem.who': [
+        "Who was the last specific person you saw struggle with this, and what were they doing?",
+        "What is their job title and what kind of company do they work at?",
+    ],
+    'problem.workaround': [
+        "Right now, without your product, how do they get around this: spreadsheets, an assistant, an agency, or do they just live with it?",
+        "Tell me about the last time it happened. What did they actually do?",
+    ],
+    'problem.frequency': [
+        "How often does this hit them: daily, weekly, or a few times a year?",
+    ],
+    'problem.severity': [
+        "What did it cost the last time it happened, in hours, money, or a lost customer?",
+        "If they do nothing for six months, what breaks?",
+    ],
+    'customer.early_adopters': [
+        "Which small group feels this five times worse than everyone else and would forgive an ugly first version?",
+        "If you had to email 25 of these buyers tonight without spending on ads, where would you find their names?",
+    ],
+    'solution.core': [
+        "What is the smallest version that removes the worst part of the pain?",
+        "After using it for a week, what is different for them?",
+    ],
+    'why_not_built': [
+        "Do you know anyone already trying to solve this, even badly?",
+        "Why would a buyer switch from what they use today to you?",
+    ],
+    'why_now': [
+        "Without saying 'AI is better': what changed in the last two years that makes this possible now?",
+    ],
+    'business_model': [
+        "Who pays, and is that the same person who uses it?",
+        "What do they spend on the workaround today, per month?",
+        "What price would feel like a no-brainer next to what they spend now?",
+    ],
+    'risky_assumptions': [
+        "If this fails a year from now, what is the most likely reason?",
+        "What is the cheapest test you could run in 48 hours that could prove your riskiest assumption wrong?",
+    ],
+}
+FIELD_STAGE = {
+    'problem.statement': 0, 'problem.who': 1, 'problem.workaround': 1, 'problem.frequency': 1,
+    'problem.severity': 1, 'customer.early_adopters': 2, 'solution.core': 3, 'why_not_built': 3,
+    'why_now': 3, 'business_model': 4, 'risky_assumptions': 4,
+}
+STAGE_INDEX = {s: i for i, s in enumerate(st.STAGES)}
+
+
+def pick_next_questions(state: Dict[str, Any], asked: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """
+    priority = weight x (1 - value) x stage_gate x risk_multiplier x recency_penalty
+    Overrides: an unresolved contradiction is asked first.
+    `asked` is [{field, turn}] for recent turns (kept in state history by the client).
+    """
+    asked = asked or []
+    turn = state['meta']['turn']
+    values = state['clarity'].get('field_values') or st.compute_clarity(state)['field_values']
+    current_stage = STAGE_INDEX.get(state['meta']['stage'], 0)
+
+    contradictions = [p for p, c in st.iter_claims(state) if c.get('status') == 'contradiction']
+    out: List[Dict[str, Any]] = []
+    if contradictions:
+        out.append({'field': contradictions[0].strip('/').replace('/', '.'),
+                    'question': 'Earlier you said something different about this. Which version is right?',
+                    'priority': 999.0, 'reason': 'contradiction'})
+
+    risky_text = ' '.join((a.get('text') or '').lower() for a in state['risky_assumptions'][:3])
+    scored = []
+    for field, weight in st.CLARITY_WEIGHTS.items():
+        value = values.get(field, 0.0)
+        if value >= 0.7:
+            continue
+        stage_gate = 1.0 if FIELD_STAGE[field] <= max(current_stage, 1) else 0.3
+        risk = 1.5 if field.split('.')[-1] in risky_text else 1.0
+        recent = [a for a in asked if a.get('field') == field and turn - int(a.get('turn', 0)) <= 2]
+        recency = 0.5 if recent else 1.0
+        if len([a for a in asked if a.get('field') == field]) >= 2 and value < 0.4:
+            recency = 0.2     # dodged twice: move on (it is recorded as a gap by the analyst)
+        scored.append((weight * (1 - value) * stage_gate * risk * recency, field))
+    scored.sort(key=lambda x: (-x[0], FIELD_STAGE[x[1]]))   # ties go to the earlier stage
+    for priority, field in scored:
+        bank = QUESTION_BANK[field]
+        times_asked = len([a for a in asked if a.get('field') == field])
+        out.append({'field': field, 'question': bank[times_asked % len(bank)],
+                    'priority': round(priority, 2), 'reason': st.FIELD_LABELS[field]})
+        if len(out) >= 3:
+            break
+    return out
+
+
+# Founder-fact slots in the analyst's form -> idea state paths
+FACT_PATHS = {
+    'one_liner': '/one_liner',
+    'problem': '/problem/statement',
+    'who': '/problem/who',
+    'workaround': '/problem/workaround',
+    'frequency': '/problem/frequency',
+    'severity': '/problem/severity',
+    'buyer': '/customer/buyer',
+    'early_adopters': '/customer/early_adopters',
+    'where_they_gather': '/customer/where_they_gather',
+    'solution': '/solution/core',
+    'smallest_version': '/solution/smallest_version',
+    'who_pays': '/business_model/who_pays',
+    'price_anchor': '/business_model/price_anchor',
+}
+CHALLENGE_ALIASES = {'gtm': 'go_to_market', 'go-to-market': 'go_to_market', 'market': 'go_to_market',
+                     'tech': 'technical', 'legal': 'regulatory', 'funding': 'capital', 'people': 'team'}
+
+
+def _txt(v: Any) -> str:
+    return v.strip() if isinstance(v, str) else ''
+
+
+def form_to_ops(form: Any, state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Turn the analyst's fixed-shape form into RFC 6902 ops. Code decides every status:
+    founder facts are founder_stated, analysis is ai_inference, sourced items cite S-ids.
+    The ops still go through idea_state.apply_patch, which validates everything.
+    """
+    if not isinstance(form, dict):
+        return []
+    ops: List[Dict[str, Any]] = []
+    facts = form.get('founder_facts') if isinstance(form.get('founder_facts'), dict) else {}
+    specific = {f for f in (form.get('specific_fields') or []) if isinstance(f, str)}
+    contradictions = {f for f in (form.get('contradictions') or []) if isinstance(f, str)}
+    for key, path in FACT_PATHS.items():
+        text = _txt(facts.get(key))
+        if not text:
+            continue
+        status = 'contradiction' if key in contradictions else 'founder_stated'
+        ops.append({'op': 'replace', 'path': path, 'value': {
+            'text': text, 'status': status, 'specific': key in specific, 'confidence': 'high'}})
+    if _txt(facts.get('why_now')):
+        ops.append({'op': 'add', 'path': '/why_now/-', 'value': {
+            'text': _txt(facts['why_now']), 'status': 'founder_stated', 'specific': 'why_now' in specific}})
+
+    a = form.get('analysis') if isinstance(form.get('analysis'), dict) else {}
+    if _txt(a.get('one_liner')) and not _txt(facts.get('one_liner')) and not state['one_liner']['text']:
+        ops.append({'op': 'replace', 'path': '/one_liner',
+                    'value': {'text': _txt(a['one_liner']), 'status': 'ai_inference', 'confidence': 'medium'}})
+    for t in a.get('could_work') or []:
+        if _txt(t):
+            ops.append({'op': 'add', 'path': '/what_could_work/-', 'value': {'text': _txt(t), 'status': 'ai_inference'}})
+    for w in a.get('wont_work') or []:
+        w = w if isinstance(w, dict) else {'text': w}
+        if _txt(w.get('text')):
+            ops.append({'op': 'add', 'path': '/what_wont_work/-', 'value': {
+                'text': _txt(w['text']), 'status': 'ai_inference', 'severity': w.get('severity')}})
+    for c in a.get('challenges') or []:
+        if isinstance(c, dict) and _txt(c.get('text')):
+            kind = str(c.get('kind') or '').lower().strip()
+            kind = CHALLENGE_ALIASES.get(kind, kind)
+            if kind in st.CHALLENGE_KINDS:
+                ops.append({'op': 'add', 'path': f'/challenges/{kind}/-',
+                            'value': {'text': _txt(c['text']), 'status': 'ai_inference'}})
+    for t in a.get('why_now') or []:
+        if _txt(t):
+            ops.append({'op': 'add', 'path': '/why_now/-', 'value': {'text': _txt(t), 'status': 'ai_inference'}})
+    for r in a.get('risky_assumptions') or []:
+        if isinstance(r, dict) and _txt(r.get('text')):
+            ops.append({'op': 'add', 'path': '/risky_assumptions/-', 'value': {
+                'text': _txt(r['text']), 'status': 'ai_inference', 'impact': r.get('impact'),
+                'test': r.get('test') if isinstance(r.get('test'), dict) else {}}})
+    # Objections: resolve only with a new fact; remove from the highest index down
+    resolved = []
+    for r in a.get('resolved_objections') or []:
+        if isinstance(r, dict) and _txt(r.get('new_fact')) and isinstance(r.get('index'), int):
+            if 0 <= r['index'] < len(state['open_objections']):
+                resolved.append(r['index'])
+    for i in sorted(set(resolved), reverse=True):
+        ops.append({'op': 'remove', 'path': f'/open_objections/{i}'})
+    for t in a.get('new_objections') or []:
+        if _txt(t):
+            ops.append({'op': 'add', 'path': '/open_objections/-', 'value': _txt(t)})
+    # Sourced research (validated against the source registry by apply_patch)
+    for kind in ('competitors', 'predecessors'):
+        for c in a.get(kind) or []:
+            if isinstance(c, dict) and _txt(c.get('name')):
+                sid = c.get('source_id') or (c.get('source_ids') or [None])[0]
+                ops.append({'op': 'add', 'path': f'/why_not_built/{kind}/-', 'value': {
+                    'name': _txt(c['name']), 'source_ids': [sid] if sid else [], 'status': c.get('status'),
+                    'note': c.get('note'), 'failure_reason': c.get('failure_reason')}})
+    for b in a.get('blockers') or []:
+        if isinstance(b, dict) and _txt(b.get('text')):
+            sids = [x for x in ([b.get('source_id')] + list(b.get('source_ids') or [])) if x]
+            ops.append({'op': 'add', 'path': '/why_not_built/blockers/-', 'value': {
+                'text': _txt(b['text']), 'type': b.get('type'), 'state': b.get('state'),
+                'status': 'evidence' if sids else 'ai_inference', 'source_ids': sids}})
+    if a.get('classification') in st.WNB_CLASSES and a.get('classification') != 'unknown':
+        ops.append({'op': 'replace', 'path': '/why_not_built/classification', 'value': a['classification']})
+    if _txt(a.get('why_not_built_summary')) and state['sources']:     # research-only field
+        ops.append({'op': 'replace', 'path': '/why_not_built/summary',
+                    'value': {'text': _txt(a['why_not_built_summary']), 'status': 'ai_inference'}})
+    return ops
+
+
+# ── Prompts ──────────────────────────────────────────────────────────────────
+
+CHAT_SYSTEM = """You are an experienced startup co-founder helping a founder sharpen an early idea.
+
+How you talk:
+- Warm, direct, and brief: at most 90 words.
+- Write one or two sentences with NO questions: reflect what just became clearer and, if useful, one point of tension or evidence.
+- Then write exactly ONE question on its own line, wrapped in double asterisks like **this?** It is the only question mark in your reply. Never ask whether your feedback is helpful.
+- Ask about past behavior, not opinions or the future ("What happened the last time...", never "Would they use this?").
+- Encourage behavior and evidence ("talking to 12 office managers is real signal"), never the idea itself. Never call the idea promising, compelling, a clear opportunity, or a no-brainer.
+- Separate the person from the idea: "the idea as stated has a distribution problem", not "you are wrong".
+
+Honesty rules:
+- Treat everything in the idea state as the founder's hypotheses, not facts, unless it is marked evidence.
+- Never invent companies, numbers, studies, or funding. Only name a company if it appears in EVIDENCE below. If there is no evidence, say you have not checked yet.
+- Do not drop an open objection because the founder pushes back. Only new facts resolve it. If they disagree without new facts, acknowledge it, keep the concern, and turn it into a cheap test.
+- Never use em dashes."""
+
+EXTRACT_SYSTEM = """An analyst is reviewing a conversation between a founder and an advisor, and keeps a structured record of the founder's idea. Read the latest exchange and fill in this form. Return ONLY the JSON object.
+
+{
+  "founder_facts": {
+    "one_liner": "", "problem": "", "who": "", "workaround": "", "frequency": "", "severity": "",
+    "buyer": "", "early_adopters": "", "where_they_gather": "", "solution": "", "smallest_version": "",
+    "who_pays": "", "price_anchor": "", "why_now": ""
+  },
+  "specific_fields": [],
+  "contradictions": [],
+  "analysis": {
+    "one_liner": "",
+    "could_work": [],
+    "wont_work": [{"text": "", "severity": "medium|high|critical"}],
+    "challenges": [{"kind": "technical|regulatory|go_to_market|capital|team", "text": ""}],
+    "why_now": [],
+    "risky_assumptions": [{"text": "", "impact": "fatal|major|minor", "test": {"method": "", "cost_usd": 0, "days": 0, "pass_criterion": ""}}],
+    "new_objections": [],
+    "resolved_objections": [{"index": 0, "new_fact": ""}],
+    "competitors": [{"name": "", "source_id": "S1", "status": "active|dead|unknown", "note": ""}],
+    "predecessors": [{"name": "", "source_id": "S1", "failure_reason": ""}],
+    "blockers": [{"type": "regulation|distribution|unit_economics|tech_limits|incumbents|timing|capital|cold_start|trust_liability", "state": "present|changed_recently|not_applicable|unknown", "text": "", "source_id": ""}],
+    "classification": "",
+    "why_not_built_summary": ""
+  },
+  "change_summary": ""
+}
+
+founder_facts: ONLY what the founder said in their latest message, in short plain words. Leave a slot "" if this message does not answer it. Slots:
+- one_liner: the idea in one sentence. problem: the problem in one sentence.
+- who: who has the problem (role, company type, size, location).
+- workaround: what they do today instead, and who does it.
+- frequency: how often the problem happens (per invoice, daily, every month...).
+- severity: what it costs in time or money.
+- buyer, early_adopters, where_they_gather, solution, smallest_version, who_pays, price_anchor, why_now.
+Copy every number exactly as the founder said it, with its unit and time period ("$18,000 in one quarter", never "$18,000 monthly"). Never do arithmetic on the founder's numbers.
+specific_fields: names of founder_facts slots that contain a concrete segment, number, or past event.
+contradictions: names of slots where the founder now says something that conflicts with the CURRENT RECORD.
+analysis: the analyst's own reasoning, never the founder's words.
+- one_liner: the best one-sentence description so far, only if the record has none.
+- wont_work: red flags. risky_assumptions: what must be true, each with a cheap test that could disprove it.
+- new_objections: concerns the founder has not addressed. If the founder makes a claim without evidence ("everyone will want this", "it's a no-brainer"), add an objection naming the missing evidence and a risky assumption with a test.
+- resolved_objections: an open objection index from the record, ONLY if this message gives a new fact that answers it.
+- competitors, predecessors, blockers with source_id, classification, why_not_built_summary: ONLY from SOURCES. Never name a company from memory. Leave them empty when there are no sources.
+Use empty strings and empty lists for anything this exchange did not change. Under 30 words per text. Never use em dashes."""
+
+
+def render_state(state: Dict[str, Any]) -> str:
+    """Compact, labelled view of the idea state for prompts."""
+    lines = []
+    for path, c in st.iter_claims(state):
+        if (c.get('text') or '').strip():
+            lines.append(f"{path} [{c['status']}{', locked' if c.get('locked') else ''}]: {c['text']}")
+    wnb = state['why_not_built']
+    lines.append(f"/why_not_built/classification: {wnb['classification']}")
+    for c in wnb['competitors']:
+        lines.append(f"competitor: {c['name']} ({c.get('status')}) {c.get('source_ids')}")
+    for c in wnb['predecessors']:
+        lines.append(f"predecessor: {c['name']} ({c.get('status')}) {c.get('source_ids')}")
+    for i, a in enumerate(state['risky_assumptions']):
+        lines.append(f"/risky_assumptions/{i} [{a.get('impact')}]: {a.get('text')} | test: {(a.get('test') or {}).get('method')}")
+    for i, o in enumerate(state['open_objections']):
+        lines.append(f"/open_objections/{i}: {o.get('text')}")
+    lines.append(f"stage: {state['meta']['stage']}, clarity: {state['clarity']['score']}")
+    return '\n'.join(lines) if lines else '(empty: the founder has not described the idea yet)'
+
+
+def render_sources(state: Dict[str, Any], limit: int = 12) -> str:
+    items = list(state['sources'].items())[-limit:]
+    if not items:
+        return '(none yet)'
+    return '\n'.join(f"{sid} [{s.get('provider')}] {s.get('title')}: {s.get('snippet', '')[:220]} ({s.get('url')})"
+                     for sid, s in items)
+
+
+def _chat_messages(state, history, user_message, directive) -> List[Dict[str, str]]:
+    context = (f"IDEA STATE:\n{render_state(state)}\n\nEVIDENCE:\n{render_sources(state)}\n\n"
+               f"NEXT QUESTION (asked by code; ask this one, in your own words): {directive['question']}\n"
+               f"Why this question: it fills in {directive['reason']}.")
+    if state['meta']['turn'] >= 3 and state['open_objections']:
+        context += f"\nOpen concern still unresolved: {state['open_objections'][0]['text']}"
+    msgs = [{'role': 'system', 'content': CHAT_SYSTEM}, {'role': 'system', 'content': context}]
+    for m in history[-CHAT_HISTORY:]:
+        if m.get('role') in ('user', 'assistant') and m.get('content'):
+            msgs.append({'role': m['role'], 'content': str(m['content'])[:MAX_USER_CHARS]})
+    msgs.append({'role': 'user', 'content': user_message})
+    return msgs
+
+
+def _extract_messages(state, user_message, reply) -> List[Dict[str, str]]:
+    return [
+        {'role': 'system', 'content': EXTRACT_SYSTEM},
+        {'role': 'user', 'content': (
+            f"CURRENT RECORD:\n{render_state(state)}\n\nSOURCES:\n{render_sources(state)}\n\n"
+            f"LATEST EXCHANGE:\nFounder: {user_message}\nAdvisor: {reply}\n\n"
+            "Return the JSON object now.")},
+    ]
+
+
+# ── Turn ─────────────────────────────────────────────────────────────────────
+
+def _llm(model_env: str) -> LLMClient:
+    model = os.environ.get(model_env) or None
+    return LLMClient(model=model)
+
+
+def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
+             chat_llm: Optional[LLMClient] = None, extract_llm: Optional[LLMClient] = None,
+             evidence_hook: Optional[Callable[[Dict[str, Any], str], Iterator[Dict[str, Any]]]] = None,
+             ) -> Iterator[Dict[str, Any]]:
+    """
+    Run one turn. Yields events:
+      {"type": "start", "next_question": {...}}
+      {"type": "evidence", ...}                       (from evidence_hook, step 3)
+      {"type": "delta", "text": "..."}
+      {"type": "reply", "content": "...", "source": "llm"|"scripted", "notice": str|None}
+      {"type": "state", "state": {...}, "applied": [...], "rejected": n, "summary": str, "notice": str|None}
+      {"type": "done"}
+    """
+    user_message = (user_message or '').strip()[:MAX_USER_CHARS]
+    state = st.validate_client_state(raw_state)
+    state['meta']['turn'] += 1
+    asked = [h.get('asked') for h in state.get('history', []) if isinstance(h.get('asked'), dict)]
+    candidates = pick_next_questions(state, asked)
+    directive = candidates[0] if candidates else {
+        'field': '', 'question': 'What would you like to dig into next?', 'reason': 'whatever matters most to you'}
+    yield {'type': 'start', 'next_question': directive}
+
+    if evidence_hook:
+        for event in evidence_hook(state, user_message) or []:
+            if event.get('type') == 'sources':
+                state = st.add_sources(state, event.get('results', []))
+                state['why_not_built']['search'] = event.get('search', state['why_not_built']['search'])
+                yield {'type': 'sources', 'count': len(event.get('results', [])),
+                       'search': state['why_not_built']['search']}
+            else:
+                yield event
+
+    # 1. Co-founder reply (streamed)
+    reply, notice, source = '', None, 'llm'
+    try:
+        client = chat_llm or _llm('IDEA_CHAT_MODEL')
+        parts = []
+        for text in client.chat_stream(_chat_messages(state, history, user_message, directive),
+                                       temperature=0.6, max_tokens=400):
+            parts.append(text)
+            yield {'type': 'delta', 'text': text}
+        reply = tidy_reply(strip_em_dashes(''.join(parts)))
+        if not reply:
+            raise ValueError('empty reply')
+    except Exception as e:
+        logger.warning(f"Idea chat failed, using scripted question: {e}")
+        reply = f"**{directive['question']}**"
+        source, notice = 'scripted', 'The AI co-founder is unavailable, so this is a scripted question from the question bank.'
+    yield {'type': 'reply', 'content': reply, 'source': source, 'notice': notice}
+
+    # 2. Analyst pass (separate, third person) -> validated patch
+    ops, summary, panel_notice, asked_field = [], '', None, directive.get('field', '')
+    try:
+        client = extract_llm or _llm('IDEA_EXTRACT_MODEL')
+        result = None
+        for attempt in range(2):
+            try:
+                result = client.chat_json(_extract_messages(state, user_message, reply),
+                                          temperature=0.0, max_tokens=1500)
+                if isinstance(result, dict) and isinstance(result.get('founder_facts'), dict):
+                    break
+                raise ValueError('missing founder_facts')
+            except Exception as e:
+                if attempt == 1:
+                    raise
+                logger.warning(f"Idea extraction retry: {e}")
+        ops = form_to_ops(result, state)
+        summary = strip_em_dashes(str(result.get('change_summary') or ''))[:200]
+    except Exception as e:
+        logger.warning(f"Idea extraction failed, capturing founder text as written: {e}")
+        path = '/' + (directive.get('field') or 'problem.statement').replace('.', '/')
+        if path not in st.CLAIM_PATHS or not state['problem']['statement']['text']:
+            path = '/problem/statement'
+        ops = [{'op': 'replace', 'path': path,
+                'value': {'text': user_message[:st.MAX_TEXT], 'status': 'founder_stated'}}]
+        panel_notice = 'Captured as you wrote it (not analysed): the analyst model is unavailable.'
+
+    new_state, applied, rejected = st.apply_patch(state, ops, reason=summary)
+    if rejected:
+        logger.info(f"Rejected {len(rejected)} idea ops: {[r['reason'] for r in rejected][:3]}")
+    turn_no = new_state['meta']['turn']
+    asked_now = {'field': directive.get('field') or asked_field, 'turn': turn_no}
+    if new_state['history'] and new_state['history'][-1].get('turn') == turn_no:
+        new_state['history'][-1]['asked'] = asked_now
+    else:
+        new_state['history'] = (new_state['history'] + [{
+            'turn': turn_no, 'version': new_state['meta']['version'], 'paths': [], 'reason': '',
+            'asked': asked_now}])[-30:]
+    new_state['open_questions'] = [{'field': c['field'], 'question': c['question']}
+                                   for c in pick_next_questions(new_state, asked + [{
+                                       'field': directive.get('field'), 'turn': new_state['meta']['turn']}])][:3]
+    yield {'type': 'state', 'state': new_state, 'applied': [a['path'] for a in applied],
+           'rejected': len(rejected), 'summary': summary, 'notice': panel_notice}
+    yield {'type': 'done'}
+
+
+_SENTENCE = re.compile(r'[^.!?\n]*\?')
+
+
+def tidy_reply(text: str) -> str:
+    """
+    Enforce one question per reply and repair formatting:
+    - drop dangling bold markers
+    - keep a single question: the bolded one if present, otherwise the last one
+    """
+    text = text.strip()
+    if text.count('**') % 2:
+        text = text[:-2].rstrip() if text.endswith('**') else text.replace('**', '', 1)
+    text = text.replace('****', '').strip()
+    bold = re.findall(r'\*\*([^*]+\?)\*\*', text)
+    questions = _SENTENCE.findall(re.sub(r'\*\*[^*]+\*\*', '', text))
+    if bold and questions:
+        # a plain question plus a bolded one: keep the plain one in bold, drop the extra
+        body = re.sub(r'\*\*[^*]+\*\*', '', text)
+        for q in questions[:-1]:
+            body = body.replace(q, '', 1)
+        last = questions[-1].strip()
+        body = body.replace(questions[-1], '', 1)
+        text = (re.sub(r'\n{3,}', '\n\n', body).strip() + '\n\n**' + last + '**').strip()
+    elif len(bold) > 1:
+        for extra in bold[1:]:
+            text = text.replace(f'**{extra}**', '', 1)
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    elif not bold and len(questions) > 1:
+        for q in questions[:-1]:
+            text = text.replace(q, '', 1)
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return text
+
+
+def opening_message() -> str:
+    return ("Tell me the idea in a sentence or two, however rough. I'll ask one question at a time, "
+            "keep a live picture of it on the right, and mark what's your word, what's my guess, and what's backed by evidence.")

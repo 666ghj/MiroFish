@@ -576,6 +576,9 @@ def validate_client_state(raw: Any, session_id: str = '') -> Dict[str, Any]:
     The browser stores the state and sends it back every turn. Rebuild it on the known
     schema so a tampered or stale state cannot inject unknown keys or fake scores.
     """
+    if not session_id and isinstance(raw, dict) and isinstance(raw.get('meta'), dict):
+        sid = str(raw['meta'].get('session_id') or '')
+        session_id = sid if re.fullmatch(r'[0-9a-fA-F-]{8,64}', sid) else ''
     base = new_state(session_id)
     if not isinstance(raw, dict):
         return refresh(base)
