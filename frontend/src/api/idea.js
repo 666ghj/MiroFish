@@ -65,3 +65,51 @@ export async function streamIdeaMessage(sessionId, content, { onDelta, signal } 
   if (!final) throw new Error('The reply ended unexpectedly.')
   return final
 }
+
+// ── Stateless Idea Studio API (the browser owns the idea state) ─────────────
+
+/** A fresh idea state and the co-founder's opening message. */
+export const newIdea = () => service.get('/api/idea/new')
+
+/** The founder rewrites a field; it becomes "You said" and locked. */
+export const editIdeaField = (state, path, text) => service.post('/api/idea/edit', { state, path, text })
+
+/** Lock or unlock a field so the analyst cannot change it. */
+export const lockIdeaField = (state, path, locked) => service.post('/api/idea/lock', { state, path, locked })
+
+/**
+ * Run one Idea Studio turn and stream its events.
+ * Events: start, searching, sources, research, evidence_skipped, delta, reply, state, done, error.
+ *
+ * @param {object} payload  { state, messages, content, research?, confidential? }
+ * @param {(event: object) => void} onEvent
+ * @param {AbortSignal} [signal]
+ */
+export async function streamIdeaTurn(payload, onEvent, signal) {
+  const res = await fetch(`${BASE_URL}/api/idea/turn`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(payload),
+    signal,
+  })
+  if (!res.ok) {
+    let msg = `Request failed (${res.status})`
+    try { msg = (await res.json()).error || msg } catch (_) {}
+    throw new Error(msg)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let sep
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, sep)
+      buffer = buffer.slice(sep + 2)
+      const line = raw.split('\n').find(l => l.startsWith('data: '))
+      if (line) onEvent(JSON.parse(line.slice(6)))
+    }
+  }
+}
