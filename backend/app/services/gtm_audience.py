@@ -51,7 +51,27 @@ REGIONS = {
 COMPANY_SIZES = ['1-10', '11-50', '51-200', '201-1000', '1000+']
 
 TRAIT_LEVELS = ['very low', 'low', 'moderate', 'high', 'very high']
-TRAITS = ('risk_appetite', 'budget_sensitivity', 'skepticism', 'decision_speed')
+TRAITS = ('risk_appetite', 'budget_sensitivity', 'skepticism', 'decision_speed', 'tech_maturity')
+
+INDUSTRIES = {
+    'saas': 'SaaS and software',
+    'fintech': 'Fintech and financial services',
+    'healthcare': 'Healthcare and life sciences',
+    'ecommerce': 'E-commerce and retail',
+    'manufacturing': 'Manufacturing and industrial',
+    'services': 'Professional services and agencies',
+    'logistics': 'Logistics and supply chain',
+    'education': 'Education',
+    'public': 'Public sector',
+    'media': 'Media and marketing',
+}
+
+CURRENT_SOLUTIONS = {
+    'manual': 'manual work and spreadsheets',
+    'competitor': 'an established competitor tool',
+    'in_house': 'a tool they built in-house',
+    'nothing': 'nothing yet (greenfield)',
+}
 
 # Base blend for each persona_type, used when the model omits archetype_mix (and for mock data).
 PERSONA_TYPE_MIX = {
@@ -114,12 +134,19 @@ def normalize_audience(raw: Any) -> Optional[Dict[str, Any]]:
     traits_in = raw.get('traits') if isinstance(raw.get('traits'), dict) else {}
     traits = {t: _int(traits_in.get(t), 1, 5, 3) for t in TRAITS}
 
+    def pick(key, allowed):
+        vals = raw.get(key)
+        return list(dict.fromkeys(v for v in vals if v in allowed)) if isinstance(vals, list) else []
+
     return {
         'mix': mix,
         'colors': colors,
         'regions': list(dict.fromkeys(regions)),
         'company_sizes': list(dict.fromkeys(sizes)),
         'traits': traits,
+        'industries': pick('industries', INDUSTRIES),
+        'current_solutions': pick('current_solutions', CURRENT_SOLUTIONS),
+        'live_market': raw.get('live_market', True) is not False,
         'seed': _int(raw.get('seed'), 0, 2**31 - 1, 7),
     }
 
@@ -144,6 +171,12 @@ def audience_prompt(audience: Optional[Dict[str, Any]], count: int) -> str:
             f'- Regions: spread personas evenly across {names}. Set "region" to one of: {ids}. '
             'Make names, company context, regulations, and communication style fit each region.'
         )
+    if audience.get('industries'):
+        lines.append('- Industries: ' + ', '.join(INDUSTRIES[i] for i in audience['industries'])
+                     + '. Use realistic company names, regulations, and pains for these industries.')
+    if audience.get('current_solutions'):
+        lines.append('- Today they rely on: ' + '; '.join(CURRENT_SOLUTIONS[c] for c in audience['current_solutions'])
+                     + '. Let switching costs and status-quo bias shape objections accordingly.')
     if audience['company_sizes']:
         lines.append(f"- Company size: {', '.join(audience['company_sizes'])} employees.")
     lines += [
@@ -155,6 +188,8 @@ def audience_prompt(audience: Optional[Dict[str, Any]], count: int) -> str:
         f"Center skepticism_level around {t['skepticism']}, varying by about one point.",
         f"- Decision speed: {TRAIT_LEVELS[t['decision_speed'] - 1]} ({t['decision_speed']}/5). "
         'Low means committee-led and slow; high means one person decides quickly. Reflect it in communication_style.',
+        f"- Tech maturity: {TRAIT_LEVELS[t['tech_maturity'] - 1]} ({t['tech_maturity']}/5). "
+        'Low means late adopters on legacy tools; high means modern stacks and appetite for automation.',
     ]
     return '\n'.join(lines)
 
@@ -188,3 +223,14 @@ def enrich_personas(personas: List[Dict[str, Any]], audience: Optional[Dict[str,
         elif p.get('region') not in REGIONS:
             p.pop('region', None)
     return personas
+
+
+def market_context(audience: Optional[Dict[str, Any]]) -> str:
+    """Live market prompt section for the audience's regions (empty if off or unavailable)."""
+    if not audience or not audience.get('regions') or not audience.get('live_market', True):
+        return ''
+    try:
+        from .gtm_market import market_intel, market_prompt
+        return market_prompt(market_intel(audience['regions']))
+    except Exception:  # market data must never block a simulation
+        return ''

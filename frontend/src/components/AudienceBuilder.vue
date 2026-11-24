@@ -103,6 +103,44 @@
       </div>
     </section>
 
+    <!-- Industries -->
+    <section class="ab-block">
+      <div class="ab-label-row">
+        <span class="ab-label">Industries</span>
+        <span class="ab-meta">{{ model.industries.length }} selected</span>
+      </div>
+      <div class="chips">
+        <button
+          v-for="i in INDUSTRIES"
+          :key="i.id"
+          type="button"
+          class="chip"
+          :class="{ on: model.industries.includes(i.id) }"
+          :aria-pressed="model.industries.includes(i.id)"
+          @click="toggle('industries', i.id)"
+        >{{ i.label }}</button>
+      </div>
+    </section>
+
+    <!-- Current solution -->
+    <section class="ab-block">
+      <div class="ab-label-row">
+        <span class="ab-label">What they use today</span>
+        <span class="ab-meta">shapes switching objections</span>
+      </div>
+      <div class="chips">
+        <button
+          v-for="c in CURRENT_SOLUTIONS"
+          :key="c.id"
+          type="button"
+          class="chip"
+          :class="{ on: model.current_solutions.includes(c.id) }"
+          :aria-pressed="model.current_solutions.includes(c.id)"
+          @click="toggle('current_solutions', c.id)"
+        >{{ c.label }}</button>
+      </div>
+    </section>
+
     <!-- Traits -->
     <section class="ab-block">
       <div class="ab-label-row">
@@ -129,13 +167,22 @@
         </div>
       </div>
     </section>
+    <!-- Live market toggle -->
+    <label class="live-toggle">
+      <input type="checkbox" :checked="model.live_market !== false" @change="update({ live_market: $event.target.checked })" />
+      <span class="switch" aria-hidden="true"></span>
+      <span>
+        <span class="live-title">Use live market signals</span>
+        <span class="live-desc">Holidays, economic data, outreach rules, and this week's headlines for each region feed the personas and the plan.</span>
+      </span>
+    </label>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import {
-  ARCHETYPES, ARCHETYPE_IDS, REGIONS, COMPANY_SIZES, TRAITS, TRAIT_LEVELS,
+  ARCHETYPES, ARCHETYPE_IDS, REGIONS, COMPANY_SIZES, TRAITS, TRAIT_LEVELS, INDUSTRIES, CURRENT_SOLUTIONS,
   defaultAudience, randomAudience, mixPercents, apportion,
 } from '../utils/audience.js'
 
@@ -187,7 +234,7 @@ function setTrait(id, value) {
 }
 
 function toggle(key, id) {
-  const list = model.value[key]
+  const list = model.value[key] || []
   const next = list.includes(id) ? list.filter(x => x !== id) : [...list, id]
   if (!next.length) return // at least one must stay selected
   update({ [key]: next })
@@ -342,6 +389,43 @@ function reset() {
 .trait-top { display: flex; justify-content: space-between; margin-bottom: 7px; }
 .trait-name { font-size: 12px; color: var(--text-primary); font-weight: 500; }
 .trait-val { font-size: 12px; color: var(--text-secondary); }
+.live-toggle {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.live-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch {
+  flex-shrink: 0;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: #2a2a2a;
+  position: relative;
+  margin-top: 1px;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.live-toggle input:checked + .switch { background: var(--accent); }
+.live-toggle input:checked + .switch::after { transform: translateX(12px); }
+.live-toggle input:focus-visible + .switch { box-shadow: 0 0 0 2px var(--accent); }
+.live-title { display: block; font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.live-desc { display: block; font-size: 11px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.45; }
+
 .trait-ends {
   display: flex;
   justify-content: space-between;

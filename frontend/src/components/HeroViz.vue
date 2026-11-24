@@ -214,6 +214,9 @@ function rebuildGraph(count) {
   simulation.force('charge', d3.forceManyBody().strength(charge).distanceMax(W * 0.6))
   simulation.force('collision', d3.forceCollide(r + (showLabels(n) ? 14 : 8)))
   simulation.force('center', d3.forceCenter(W / 2, H / 2).strength(0.02))
+  // gentle pull toward the middle so no buyer gets stranded in a corner or behind the legend
+  simulation.force('x', d3.forceX(W / 2).strength(0.03))
+  simulation.force('y', d3.forceY((H - (props.legend ? 22 : 0)) / 2).strength(0.04))
   simulation.alpha(0.5).restart()
 
   linkSel = linkGroup.selectAll('line')

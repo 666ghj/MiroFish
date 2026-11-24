@@ -414,3 +414,23 @@ def get_report(brief_id: str):
         return jsonify({'success': True, 'data': cached, 'cached': True})
 
     return generate_report(brief_id)
+
+
+@gtm_bp.route('/market', methods=['GET'])
+def market():
+    """
+    GET /api/gtm/market?regions=dach,india[&live=0]
+
+    Region profiles (outreach rules, culture, channels, fiscal years) plus live signals:
+    local time, holidays, World Bank indicators, and recent headlines.
+    """
+    from ..services.gtm_market import market_intel
+    regions = [r.strip() for r in (request.args.get('regions') or '').split(',') if r.strip()]
+    if not regions:
+        return jsonify({'success': False, 'error': 'regions is required'}), 400
+    live = request.args.get('live', '1') != '0'
+    try:
+        return jsonify({'success': True, 'data': market_intel(regions, live=live)})
+    except Exception as e:
+        logger.error(f"Market intel failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500

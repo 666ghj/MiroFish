@@ -110,3 +110,12 @@ export const generateReport = (briefId) =>
  */
 export const getReport = (briefId) =>
   service.get(`/api/gtm/report/${briefId}`)
+
+/**
+ * Market intelligence for regions: outreach rules, culture, fiscal timing, holidays,
+ * World Bank indicators, and recent headlines.
+ * @param {string[]} regions
+ * @param {boolean} live  false skips the live sources
+ */
+export const getMarketIntel = (regions, live = true) =>
+  service.get('/api/gtm/market', { params: { regions: regions.join(','), live: live ? 1 : 0 } })

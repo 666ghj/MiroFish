@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
-from .gtm_audience import audience_prompt, enrich_personas
+from .gtm_audience import audience_prompt, enrich_personas, market_context
 
 logger = get_logger('mirofish.gtm_persona_generator')
 
@@ -87,6 +87,11 @@ Team Size: {brief.team_size or 'Not specified'}
 Existing Problems: {brief.existing_problems or 'Not specified'}
 
 {audience_prompt(getattr(brief, 'audience', None), count)}
+
+{market_context(getattr(brief, 'audience', None))}
+If live market context is given, let it shape each persona: economic conditions drive budget pressure and urgency,
+local outreach rules and culture shape how they react to cold outreach, and upcoming holidays or fiscal year-ends
+affect timing objections.
 
 Generate exactly {count} distinct buyer personas as a JSON array.
 Use a different persona_type for each persona where possible ({', '.join(PERSONA_TYPES)});

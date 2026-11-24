@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
+from .gtm_audience import market_context
 
 logger = get_logger('mirofish.gtm_report_generator')
 
@@ -39,6 +40,9 @@ Rules:
 - seven_day_experiment must have exactly 7 entries (day 1 through 7)
 - risk_signals: identify 2-4 risks from the common risk_signal themes in the reactions
 - recommended_workflow.steps: 6-8 agentic steps (discover → enrich → send → follow up → log → route → update)
+- If live market context is provided, the plan must respect it: never recommend cold email where prior
+  consent is required (use LinkedIn, warm intros, events, or partners there), avoid scheduling sends on
+  listed holidays, and use the local buying culture and channels
 - Never use em dashes. Use commas, periods, colons, or parentheses instead.
 - Return ONLY a valid JSON object, no markdown, no wrapper keys
 
@@ -117,7 +121,7 @@ Competitors: {competitors}
 Company Stage: {brief.company_stage or 'not specified'}
 Team Size: {brief.team_size or 'not specified'}
 
-Simulation Results ({len(personas)} buyer personas × 3 message angles):
+Simulation Results ({len(personas)} buyer personas × {len(summaries)} message angles):
 {scores_text}
 
 Winning Angle: {winner.get('winner_angle', 'unknown')}
@@ -131,6 +135,8 @@ Top Objections Raised:
 
 Best-fit personas: {', '.join(best_names) or 'N/A'}
 Worst-fit personas: {', '.join(worst_names) or 'N/A'}
+
+{market_context(getattr(brief, 'audience', None))}
 
 Generate the GTM report JSON now. Be specific to this product and simulation data."""
 

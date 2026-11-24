@@ -103,6 +103,11 @@
           <AudienceBuilder v-model="audience" :count="numPersonas" />
         </div>
 
+        <!-- Market intelligence for the selected regions -->
+        <div class="sim-audience">
+          <MarketIntel :regions="audience.regions" :live="audience.live_market !== false" />
+        </div>
+
         <!-- Reaction math -->
         <div class="sim-math-strip">
           <div class="sim-math-item">
@@ -139,6 +144,7 @@ import { useRouter } from 'vue-router'
 import GTMBriefForm from '../components/GTMBriefForm.vue'
 import HeroViz from '../components/HeroViz.vue'
 import AudienceBuilder from '../components/AudienceBuilder.vue'
+import MarketIntel from '../components/MarketIntel.vue'
 import { defaultAudience } from '../utils/audience.js'
 import { submitGTMBrief, getGTMPreview } from '../api/gtm.js'
 import { setGTMBrief, setSimulationPreview } from '../store/gtmSimulation.js'
@@ -159,7 +165,10 @@ const AUDIENCE_KEY = 'gtm.audience.v1'
 function loadAudience() {
   try {
     const saved = JSON.parse(localStorage.getItem(AUDIENCE_KEY) || 'null')
-    if (saved && saved.mix && saved.colors) return { ...defaultAudience(), ...saved }
+    if (saved && saved.mix && saved.colors) {
+      const base = defaultAudience()
+      return { ...base, ...saved, traits: { ...base.traits, ...(saved.traits || {}) } }
+    }
   } catch (_) {}
   return defaultAudience()
 }

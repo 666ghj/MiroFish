@@ -101,6 +101,27 @@ export const TRAITS = [
   { id: 'budget_sensitivity', label: 'Budget sensitivity', low: 'Budget-flexible', high: 'Price-sensitive' },
   { id: 'skepticism', label: 'Skepticism', low: 'Trusting', high: 'Skeptical' },
   { id: 'decision_speed', label: 'Decision speed', low: 'Committee-led', high: 'One fast decider' },
+  { id: 'tech_maturity', label: 'Tech maturity', low: 'Legacy tools', high: 'Modern stack' },
+]
+
+export const INDUSTRIES = [
+  { id: 'saas', label: 'SaaS' },
+  { id: 'fintech', label: 'Fintech' },
+  { id: 'healthcare', label: 'Healthcare' },
+  { id: 'ecommerce', label: 'E-commerce' },
+  { id: 'manufacturing', label: 'Manufacturing' },
+  { id: 'services', label: 'Services' },
+  { id: 'logistics', label: 'Logistics' },
+  { id: 'education', label: 'Education' },
+  { id: 'public', label: 'Public sector' },
+  { id: 'media', label: 'Media' },
+]
+
+export const CURRENT_SOLUTIONS = [
+  { id: 'manual', label: 'Spreadsheets' },
+  { id: 'competitor', label: 'A competitor' },
+  { id: 'in_house', label: 'In-house tool' },
+  { id: 'nothing', label: 'Nothing yet' },
 ]
 
 export const TRAIT_LEVELS = ['Very low', 'Low', 'Moderate', 'High', 'Very high']
@@ -111,7 +132,10 @@ export function defaultAudience() {
     colors: Object.fromEntries(ARCHETYPES.map(a => [a.id, a.color])),
     regions: ['north_america'],
     company_sizes: ['11-50', '51-200'],
-    traits: { risk_appetite: 3, budget_sensitivity: 3, skepticism: 3, decision_speed: 3 },
+    traits: { risk_appetite: 3, budget_sensitivity: 3, skepticism: 3, decision_speed: 3, tech_maturity: 3 },
+    industries: ['saas'],
+    current_solutions: ['manual'],
+    live_market: true,
     seed: 7,
   }
 }
@@ -174,6 +198,8 @@ export function randomAudience(base = defaultAudience()) {
     regions,
     company_sizes: sizes,
     traits: Object.fromEntries(TRAITS.map(t => [t.id, 1 + Math.floor(rand() * 5)])),
+    industries: shuffle(rand, INDUSTRIES.map(i => i.id)).slice(0, 1 + Math.floor(rand() * 2)),
+    current_solutions: shuffle(rand, CURRENT_SOLUTIONS.map(c => c.id)).slice(0, 1 + Math.floor(rand() * 2)),
     seed,
   }
 }
