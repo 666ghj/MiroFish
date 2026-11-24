@@ -354,9 +354,24 @@ def _extract_messages(state, user_message, reply) -> List[Dict[str, str]]:
 
 # ── Turn ─────────────────────────────────────────────────────────────────────
 
+# The analyst passes (panel updates, research synthesis) record founder facts more completely
+# on gpt-4.1-mini: 15/15 vs 14/15 eval checks and clarity 45+ vs 29 on the golden transcript
+# (evals/idea_studio_eval.py). Used by default on OpenRouter; IDEA_EXTRACT_MODEL overrides.
+OPENROUTER_ANALYST_DEFAULT = 'openai/gpt-4.1-mini'
+
+
+def model_for(model_env: str) -> Optional[str]:
+    explicit = os.environ.get(model_env)
+    if explicit:
+        return explicit
+    base = os.environ.get('LLM_BASE_URL', '')
+    if model_env == 'IDEA_EXTRACT_MODEL' and 'openrouter.ai' in base:
+        return OPENROUTER_ANALYST_DEFAULT
+    return None     # LLMClient falls back to LLM_MODEL_NAME
+
+
 def _llm(model_env: str) -> LLMClient:
-    model = os.environ.get(model_env) or None
-    return LLMClient(model=model)
+    return LLMClient(model=model_for(model_env))
 
 
 def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,

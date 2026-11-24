@@ -273,3 +273,16 @@ def test_suggest_name_cleans_and_falls_back():
             raise RuntimeError('down')
     assert studio.suggest_name(s, Namer()) == 'FreightGuard'
     assert studio.suggest_name(s, Broken()) == ''
+
+
+def test_analyst_model_defaults(monkeypatch):
+    monkeypatch.delenv('IDEA_EXTRACT_MODEL', raising=False)
+    monkeypatch.delenv('IDEA_CHAT_MODEL', raising=False)
+    monkeypatch.setenv('LLM_BASE_URL', 'https://openrouter.ai/api/v1')
+    assert studio.model_for('IDEA_EXTRACT_MODEL') == 'openai/gpt-4.1-mini'
+    assert studio.model_for('IDEA_CHAT_MODEL') is None
+    monkeypatch.setenv('IDEA_EXTRACT_MODEL', 'openai/gpt-4o-mini')
+    assert studio.model_for('IDEA_EXTRACT_MODEL') == 'openai/gpt-4o-mini'
+    monkeypatch.delenv('IDEA_EXTRACT_MODEL')
+    monkeypatch.setenv('LLM_BASE_URL', 'https://api.openai.com/v1')
+    assert studio.model_for('IDEA_EXTRACT_MODEL') is None

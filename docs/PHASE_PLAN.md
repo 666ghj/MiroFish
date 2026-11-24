@@ -152,7 +152,7 @@
 
 ---
 
-## Phase 9: Idea Studio (next, waiting for research)
+## Phase 9: Idea Studio (MVP done)
 
 **Goal:** An early founder talks an idea through with an AI co-founder. A live panel sharpens the idea every turn: clear one-line idea, problem and customer, what could work and what won't, "why hasn't this been built yet" with evidence, challenges, why now, riskiest assumptions and cheapest tests. One click turns a clear idea into a GTM brief.
 
@@ -160,7 +160,18 @@
 
 **Already in place (8.9):** `/api/idea` sessions, streamed replies, `chat_stream()`, `frontend/src/api/idea.js`.
 
-**Do not:** start the panel, clarity score, or evidence logic before the research is reviewed; add a database or accounts.
+| Sub | What shipped |
+|-----|--------------|
+| 9.1 | Idea state, code-computed clarity, guarded patches |
+| 9.2 | Turn pipeline: streamed co-founder + third-person analyst filling a fixed form |
+| 9.3 | Evidence: Tavily, Exa, Hacker News, GitHub; research analyst pass; sourced competitors only |
+| 9.4 | /studio page: chat, live panel, labels, edit and lock, browser storage |
+| 9.5 | Handoff to the GTM simulation, entry points, privacy notes |
+| 9.6 | Real-model quality suite (`backend/evals/idea_studio_eval.py`): 15/15 with gpt-4.1-mini analyst |
+
+**Next candidates (from the research v2 lists):** promise assessment bands unlocked at clarity 60, turn-by-turn history scrubber, founder-uploaded interview notes as evidence, SEC EDGAR / Companies House checks, simulation results flowing back into what could and won't work.
+
+**Do not:** add a database or accounts.
 
 ---
 

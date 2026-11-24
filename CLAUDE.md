@@ -58,8 +58,8 @@ After completing each phase:
 3. Commit with the format below
 4. Stop and wait for the next phase instruction
 
-**Last completed phase: Phase 8.10 (docs and project notes refresh)**
-**Current phase: Phase 9 (Idea Studio), waiting for the deep research in `../deep_researchs/` (outside the repo)**
+**Last completed phase: Phase 9.6 (Idea Studio MVP and its quality suite)**
+**Current phase: awaiting instruction. Focus is local quality; deployment is deferred.**
 
 ---
 
@@ -74,7 +74,10 @@ GTM flow modules (backend/app):
 - `services/gtm_reaction_simulator.py` + `gtm_aggregator.py`: 3 shuffled runs, win rate, stability
 - `services/gtm_audience.py`: audience validation, prompt section, archetype_mix enrichment
 - `services/gtm_market.py`: region profiles + live signals (World Bank, Nager.Date, Google News)
-- `services/idea_chat.py`: Idea Studio prompt (provisional until the research lands)
+- `services/idea_state.py`: idea state, code-computed clarity, guarded JSON Patch validation
+- `services/idea_studio.py`: turn pipeline, question router, co-founder and analyst prompts, brief handoff
+- `services/idea_evidence.py`: Tavily, Exa, Hacker News, GitHub search and the research analyst pass
+- `evals/idea_studio_eval.py`: real-model quality suite (run before changing Idea Studio prompts or models)
 - `models/gtm_brief.py`, `models/idea_session.py`: JSON-on-disk persistence
 - `utils/llm_client.py`: all LLM calls (`chat`, `chat_json`, `chat_stream`), OpenAI-compatible
 - `utils/text_style.py`: strips em dashes from generated text

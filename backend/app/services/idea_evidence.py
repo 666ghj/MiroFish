@@ -316,7 +316,8 @@ def synthesize(state: Dict[str, Any], results: List[Dict[str, Any]], llm: Any = 
     try:
         if llm is None:
             from ..utils.llm_client import LLMClient
-            llm = LLMClient(model=os.environ.get('IDEA_EXTRACT_MODEL') or None)
+            from .idea_studio import model_for
+            llm = LLMClient(model=model_for('IDEA_EXTRACT_MODEL'))
         out = llm.chat_json([{'role': 'system', 'content': SYNTHESIS_PROMPT},
                              {'role': 'user', 'content': f'IDEA: {idea[:500]}\n\nRESULTS:\n{listing}'}],
                             temperature=0.0, max_tokens=1200)

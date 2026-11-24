@@ -27,6 +27,21 @@ An open-source simulator for B2B founders. Describe your product and buyer, shap
 
 ---
 
+## Idea Studio
+
+Not sure what to simulate yet? Open **Idea Studio** (`/studio`) and talk an early idea through with an AI co-founder. A live panel sharpens with every message:
+
+- **One question at a time**, chosen in code from what is still unknown (Mom Test style: past behavior, not opinions).
+- **Every field is labelled**: what you said, what the AI guessed, what is backed by evidence (with links), and contradictions. You can edit or lock any field.
+- **Clarity (0 to 100)** is computed in code from how complete and specific the idea is. It measures clarity, not quality.
+- **Why hasn't this been built yet?** comes from real searches only (Tavily, Exa, Hacker News, GitHub). Competitors must appear in a retrieved source; review sites are not counted; "not found" never means "does not exist".
+- **Riskiest assumptions** each come with the cheapest test that could disprove them, and open concerns stay open until you bring new facts.
+- At clarity 60, **Test it with buyer personas** opens the GTM simulation with the idea filled in.
+
+Your idea is stored only in your browser (export and import as JSON). Confidential mode turns search off. A session costs roughly $0.02 to $0.06 including searches.
+
+---
+
 ## Quick start
 
 ### Prerequisites
@@ -77,6 +92,9 @@ Every step serves pre-generated sample data from `backend/mock_data/`, labelled 
 | `LLM_MODEL_NAME` | Model, e.g. `openai/gpt-4o-mini` |
 | `MOCK_MODE` | `true` serves labelled sample data and lets the server start without a key |
 | `VITE_API_BASE_URL` | Frontend only: backend URL when deployed (e.g. Vercel to Render) |
+| `TAVILY_API_KEY`, `EXA_API_KEY` | Idea Studio web and company search (optional; Hacker News and GitHub need no key) |
+| `GITHUB_TOKEN` | Optional, raises GitHub search limits |
+| `IDEA_CHAT_MODEL`, `IDEA_EXTRACT_MODEL` | Optional model overrides for Idea Studio (the analyst defaults to `openai/gpt-4.1-mini` on OpenRouter) |
 | `ZEP_API_KEY` | Optional, only for the legacy social-simulation flow |
 
 A default run (12 personas, 3 angles) makes 22 LLM calls (2 persona batches, 1 for messages, 18 for reactions, 1 for the report) and costs roughly $0.03 on gpt-4o-mini.
@@ -146,7 +164,7 @@ backend/tests/  pytest suite (no network, stubbed LLM)
 backend/mock_data/
 ```
 
-Run the tests with `cd backend && python -m pytest -q`.
+Run the tests with `cd backend && python -m pytest -q` (no network). Run the Idea Studio quality suite against the real models with `cd backend && python -m evals.idea_studio_eval` (costs a few cents; checks fact capture, one question per reply, no caving under pushback, no invented competitors).
 
 ---
 
@@ -170,7 +188,7 @@ Yes. The report page opens a print-ready version with every section and the 7-da
 - [x] Audience builder with blended buyer-role colors
 - [x] Live market intelligence per region
 - [x] Batched persona generation for large audiences
-- [ ] Idea Studio: talk through an early idea with an AI co-founder and watch it sharpen live
+- [x] Idea Studio: talk through an early idea with an AI co-founder and watch it sharpen live
 - [ ] History of past simulations
 - [ ] Real reply ingestion to calibrate the simulation
 
