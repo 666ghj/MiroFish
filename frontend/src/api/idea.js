@@ -113,3 +113,6 @@ export async function streamIdeaTurn(payload, onEvent, signal) {
     }
   }
 }
+
+/** Turn the idea into a pre-filled GTM brief: {brief, ready, clarity, missing, ready_at}. */
+export const ideaToBrief = (state) => service.post('/api/idea/brief', { state })

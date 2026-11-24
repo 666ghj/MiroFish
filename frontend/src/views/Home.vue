@@ -9,6 +9,7 @@
           <span>GTM Simulation Lab</span>
         </router-link>
         <nav class="nav-links" aria-label="Sections">
+          <router-link to="/studio">Idea Studio</router-link>
           <a href="#how">How it works</a>
           <a href="#results">Results</a>
           <a href="#example">Example</a>
@@ -45,6 +46,9 @@
               <router-link to="/simulate" class="btn btn-primary btn-lg">Run a simulation <span aria-hidden="true">→</span></router-link>
               <a href="#example" class="btn btn-ghost btn-lg">See an example</a>
             </div>
+            <router-link to="/studio" class="studio-pill">
+              <span class="new">New</span> Not sure yet? Talk your idea through with an AI co-founder <span aria-hidden="true">→</span>
+            </router-link>
             <ul class="hero-meta">
               <li>No signup</li>
               <li>Any OpenAI-compatible model</li>
@@ -596,6 +600,15 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 36px;
 }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.studio-pill {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; font-size: 13px;
+  color: var(--text-secondary); padding: 6px 12px 6px 6px; border: 1px solid var(--line-strong);
+  border-radius: 999px; transition: border-color 0.15s, color 0.15s;
+}
+.studio-pill:hover { color: var(--text-primary); border-color: #4a4a4a; }
+.studio-pill .new {
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 999px; padding: 2px 8px;
+}
 .hero-meta {
   list-style: none;
   display: flex;

@@ -159,3 +159,13 @@ def idea_edit():
 def idea_lock():
     """Lock or unlock a field so the analyst cannot change it."""
     return _state_action(lambda m, s, b: m.refresh(m.set_locked(s, str(b.get('path', '')), bool(b.get('locked')))))
+
+
+@idea_bp.route('/brief', methods=['POST'])
+def idea_brief():
+    """Turn the idea into a pre-filled GTM brief (the founder reviews it before running)."""
+    from ..services import idea_state, idea_studio
+    body = request.get_json(silent=True) or {}
+    state = idea_state.validate_client_state(body.get('state'))
+    name = idea_studio.suggest_name(state) if body.get('suggest_name', True) else ''
+    return jsonify({'success': True, 'data': idea_studio.state_to_brief(state, name)})

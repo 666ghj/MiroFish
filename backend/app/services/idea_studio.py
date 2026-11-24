@@ -504,3 +504,63 @@ def tidy_reply(text: str) -> str:
 def opening_message() -> str:
     return ("Tell me the idea in a sentence or two, however rough. I'll ask one question at a time, "
             "keep a live picture of it on the right, and mark what's your word, what's my guess, and what's backed by evidence.")
+
+
+# ── Handoff to the GTM simulation ───────────────────────────────────────────
+
+READY_AT = 60
+_CHANNEL_WORDS = [('linkedin', 'linkedin'), ('cold call', 'cold_call'), ('phone', 'cold_call'),
+                  ('partner', 'partnerships'), ('reseller', 'partnerships'), ('broker', 'partnerships'), ('channel', 'partnerships'), ('content', 'inbound'),
+                  ('seo', 'inbound'), ('self-serve', 'plg'), ('free trial', 'plg'), ('email', 'outbound_email')]
+
+
+def _join(*parts: str, sep: str = '. ') -> str:
+    seen, out = set(), []
+    for p in parts:
+        p = (p or '').strip().rstrip('.')
+        if p and p.lower() not in seen:
+            seen.add(p.lower())
+            out.append(p)
+    return (sep.join(out) + '.') if out else ''
+
+
+def suggest_name(state: Dict[str, Any], llm: Optional[LLMClient] = None) -> str:
+    """A 1-3 word working title for the product. Empty if the model is unavailable."""
+    idea = state['one_liner']['text'] or state['solution']['core']['text']
+    if not idea:
+        return ''
+    try:
+        client = llm or _llm('IDEA_CHAT_MODEL')
+        out = client.chat_json([
+            {'role': 'system', 'content': 'Suggest a short working product name (1 to 3 words, no quotes, '
+                                          'no punctuation) for this idea. Return JSON {"name": ""}.'},
+            {'role': 'user', 'content': idea[:300]}], temperature=0.4, max_tokens=30)
+        name = re.sub(r'[^A-Za-z0-9 &+-]', '', str((out or {}).get('name', ''))).strip()
+        return name[:40]
+    except Exception as e:
+        logger.warning(f"Name suggestion failed: {e}")
+        return ''
+
+
+def state_to_brief(state: Dict[str, Any], name: str = '') -> Dict[str, Any]:
+    """Map the idea state onto the GTM brief form (same keys as the form's initial data)."""
+    p, c, s, b, w = state['problem'], state['customer'], state['solution'], state['business_model'], state['why_not_built']
+    where = ' '.join([c['where_they_gather']['text']] + [x['text'] for x in state['what_could_work']]).lower()
+    channel = next((v for k, v in _CHANNEL_WORDS if k in where), 'outbound_email')
+    risks = [x['text'] for x in state['what_wont_work'][:3]] + [o['text'] for o in state['open_objections'][:2]]
+    brief = {
+        'productName': name,
+        'productDescription': _join(state['one_liner']['text'], s['core']['text']),
+        'pricingModel': _join(b['price_anchor']['text'], b['who_pays']['text'], sep='; ').rstrip('.'),
+        'icp': _join(p['who']['text'], c['early_adopters']['text'], c['buyer']['text']),
+        'targetMarket': (p['who']['text'] or c['early_adopters']['text']).strip(),
+        'salesChannel': channel,
+        'gtmGoal': 'first_10_customers',
+        'painPoint': _join(p['statement']['text'], p['severity']['text'], p['workaround']['text']),
+        'competitors': ', '.join(x['name'] for x in w['competitors'][:5]),
+        'existingProblems': _join(*risks),
+        'outreachStrategy': _join(*[x['text'] for x in state['what_could_work'][:3]]),
+    }
+    score = state['clarity']['score']
+    return {'brief': brief, 'ready': score >= READY_AT, 'clarity': score,
+            'missing': state['clarity'].get('top_missing', []), 'ready_at': READY_AT}

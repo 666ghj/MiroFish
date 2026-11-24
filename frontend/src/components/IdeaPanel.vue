@@ -34,6 +34,16 @@
         <strong>To sharpen it:</strong> {{ clarity.top_missing.join(' · ') }}
       </p>
       <p class="caption">Clarity measures how complete and specific the idea is, not whether it is good.</p>
+      <div class="handoff">
+        <button type="button" class="btn-send" :disabled="busy || clarity.score < 60" @click="$emit('send-brief')">
+          Test it with buyer personas <span aria-hidden="true">→</span>
+        </button>
+        <span class="handoff-note">
+          {{ clarity.score >= 60
+            ? 'Opens the GTM simulation with your idea filled in.'
+            : `Unlocks at clarity 60 (now ${clarity.score}).` }}
+        </span>
+      </div>
     </section>
 
     <!-- Problem and customer -->
@@ -203,7 +213,7 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   confidential: { type: Boolean, default: false },
 })
-const emit = defineEmits(['edit', 'lock', 'research'])
+const emit = defineEmits(['edit', 'lock', 'research', 'send-brief'])
 
 const PROBLEM_FIELDS = [
   { path: '/problem/statement', label: 'Problem', key: ['problem', 'statement'] },
@@ -302,6 +312,14 @@ function providerName(p) {
 .missing strong { color: var(--text-primary); }
 .drop-note { font-size: 12px; color: #fcd34d; margin: 8px 12px 0; }
 .caption { font-size: 11px; color: #5a5a5a; margin: 6px 12px 0; }
+.handoff { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 12px 4px; }
+.btn-send {
+  font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: none;
+  background: var(--accent); color: #fff;
+}
+.btn-send:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-send:disabled { background: #1a1a1a; color: #555; cursor: not-allowed; }
+.handoff-note { font-size: 11.5px; color: var(--text-tertiary); }
 
 .sev-wrap { position: relative; }
 .sev, .impact {

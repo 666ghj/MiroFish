@@ -14,6 +14,7 @@
         <span class="sim-nav-step-item">4. Report</span>
       </div>
       <div class="sim-nav-right">
+        <router-link to="/studio" class="sim-nav-studio">Idea Studio</router-link>
         <button class="sim-nav-demo" @click="loadDemo" type="button">Load example</button>
       </div>
     </nav>
@@ -26,6 +27,9 @@
         <div class="sim-left-top">
           <h1 class="sim-title">New GTM Simulation</h1>
           <p class="sim-subtitle">Describe your product and target buyer. The AI generates personas, tests outreach angles, simulates reactions, and produces a GTM strategy report.</p>
+        </div>
+        <div v-if="fromStudio" class="sim-prefill" role="status">
+          Filled in from Idea Studio. Review every field, add a product name if it is missing, then run the simulation.
         </div>
         <GTMBriefForm
           :loading="loading"
@@ -139,7 +143,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import GTMBriefForm from '../components/GTMBriefForm.vue'
 import HeroViz from '../components/HeroViz.vue'
@@ -182,6 +186,18 @@ const angleNames = { 2: 'Pain · ROI', 3: '+Curiosity', 4: '+Feature', 5: '+Soci
 const estimate = computed(() => estimateRun(numPersonas.value, numMessages.value))
 const timeEstimate = computed(() => estimate.value.time)
 const costEstimate = computed(() => estimate.value.cost)
+
+const fromStudio = ref(false)
+onMounted(() => {
+  try {
+    const prefill = JSON.parse(localStorage.getItem('gtm.prefill.v1') || 'null')
+    if (prefill) {
+      demoData.value = prefill
+      fromStudio.value = true
+      localStorage.removeItem('gtm.prefill.v1')
+    }
+  } catch (_) {}
+})
 
 function loadDemo() {
   demoData.value = { ...DEMO_BRIEF }
@@ -232,6 +248,12 @@ async function handleSubmit(payload) {
 }
 
 /* ── Navbar ─────────────────────────────────────────────── */
+.sim-nav-studio { font-size: 12px; color: var(--text-secondary); text-decoration: none; margin-right: 12px; }
+.sim-nav-studio:hover { color: var(--text-primary); }
+.sim-prefill {
+  font-size: 12.5px; line-height: 1.5; color: #93c5fd; background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+}
 .sim-nav {
   height: 52px;
   flex-shrink: 0;

@@ -231,3 +231,45 @@ def test_tidy_reply_keeps_exactly_one_question(raw, expected):
 def test_why_not_built_summary_needs_sources():
     state = st.refresh(st.new_state('x'))
     assert studio.form_to_ops({'founder_facts': {}, 'analysis': {'why_not_built_summary': 'Guess'}}, state) == []
+
+
+def test_state_to_brief_maps_fields_and_readiness():
+    s = st.refresh(st.new_state('x'))
+    s = st.add_sources(s, [{'id': 'S1', 'url': 'https://freightpop.com', 'title': 'FreightPOP freight audit'}])
+    spec = lambda t: {'text': t, 'status': 'founder_stated', 'specific': True}
+    s, _, rejected = st.apply_patch(s, [
+        {'op': 'replace', 'path': '/one_liner', 'value': spec('Freight invoice audits for small 3PLs')},
+        {'op': 'replace', 'path': '/problem/statement', 'value': spec('Carriers overbill small 3PLs on freight invoices')},
+        {'op': 'replace', 'path': '/problem/who', 'value': spec('AP clerks at 3PLs with 20 to 100 people')},
+        {'op': 'replace', 'path': '/problem/severity', 'value': spec('About $18,000 overbilled in one quarter')},
+        {'op': 'replace', 'path': '/problem/workaround', 'value': spec('An AP clerk checks 10 percent of invoices by hand')},
+        {'op': 'replace', 'path': '/business_model/price_anchor', 'value': spec('20 percent of recovered overcharges')},
+        {'op': 'add', 'path': '/what_could_work/-', 'value': 'Partner with freight brokers who already serve 3PLs'},
+        {'op': 'add', 'path': '/what_wont_work/-', 'value': {'text': 'Carriers may dispute audit findings', 'severity': 'high'}},
+        {'op': 'add', 'path': '/why_not_built/competitors/-', 'value': {'name': 'FreightPOP', 'source_ids': ['S1']}},
+    ])
+    assert not rejected
+    out = studio.state_to_brief(s, 'FreightGuard')
+    b = out['brief']
+    assert b['productName'] == 'FreightGuard'
+    assert b['painPoint'].startswith('Carriers overbill small 3PLs') and '$18,000' in b['painPoint']
+    assert b['icp'] == 'AP clerks at 3PLs with 20 to 100 people.'
+    assert b['competitors'] == 'FreightPOP' and b['salesChannel'] == 'partnerships'
+    assert b['pricingModel'] == '20 percent of recovered overcharges'
+    assert 'Carriers may dispute' in b['existingProblems']
+    assert out['ready'] is False and out['ready_at'] == 60 and out['missing']
+
+
+def test_suggest_name_cleans_and_falls_back():
+    s = st.refresh(st.new_state('x'))
+    s['one_liner']['text'] = 'Freight audits for small 3PLs'
+
+    class Namer:
+        def chat_json(self, m, **kw):
+            return {'name': '"FreightGuard!"'}
+
+    class Broken:
+        def chat_json(self, m, **kw):
+            raise RuntimeError('down')
+    assert studio.suggest_name(s, Namer()) == 'FreightGuard'
+    assert studio.suggest_name(s, Broken()) == ''

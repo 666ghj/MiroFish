@@ -65,10 +65,18 @@
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5" /></svg>
           </button>
         </form>
-        <p class="fine">
-          A thinking tool, not investment, legal, or financial advice. Your idea is saved only in this browser.
-          Messages go to the AI provider; only short search phrases go to search engines.
-        </p>
+        <div class="fine">
+          A thinking tool, not investment, legal, or financial advice.
+          <details class="privacy">
+            <summary>How your idea is handled</summary>
+            <ul>
+              <li><strong>Stored:</strong> only in this browser. There is no account and no server copy. "New idea" clears it; Export saves a file.</li>
+              <li><strong>AI:</strong> each message is sent through OpenRouter to the model provider. API providers say they do not train on it, but some keep requests briefly for abuse monitoring. We do not promise zero retention.</li>
+              <li><strong>Search:</strong> only short category phrases are sent to Tavily, Exa, Hacker News, and GitHub, never your full description. The exact phrases are listed under "Why hasn't this been built yet?".</li>
+              <li><strong>Confidential mode</strong> turns search off. For a stealth idea, run this open-source app yourself with your own API key.</li>
+            </ul>
+          </details>
+        </div>
       </section>
 
       <!-- Live panel -->
@@ -82,6 +90,7 @@
           @edit="onEdit"
           @lock="onLock"
           @research="research"
+          @send-brief="sendBrief"
         />
       </aside>
     </div>
@@ -92,10 +101,13 @@
 
 <script setup>
 import { ref, nextTick, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import IdeaPanel from '../components/IdeaPanel.vue'
-import { newIdea, streamIdeaTurn, editIdeaField, lockIdeaField } from '../api/idea.js'
+import { newIdea, streamIdeaTurn, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
+const PREFILL_KEY = 'gtm.prefill.v1'
+const router = useRouter()
 const HISTORY_SENT = 12
 
 const state = ref(null)
@@ -268,6 +280,18 @@ function flash(paths) {
   clearTimer = setTimeout(() => { changed.value = [] }, 2200)
 }
 
+// ── Handoff to the GTM simulation ──────────────────────────────────────────
+async function sendBrief() {
+  error.value = ''
+  try {
+    const res = await ideaToBrief(state.value)
+    try { localStorage.setItem(PREFILL_KEY, JSON.stringify(res.data.brief)) } catch (_) {}
+    router.push({ name: 'Simulate', query: { from: 'studio' } })
+  } catch (e) {
+    error.value = 'Could not build the brief. ' + (e.message || '')
+  }
+}
+
 // ── Founder edits ───────────────────────────────────────────────────────────
 async function onEdit(path, text) {
   try {
@@ -401,6 +425,10 @@ onMounted(async () => {
 .send:disabled { background: #1f1f1f; color: #555; }
 .send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .fine { font-size: 11px; line-height: 1.45; color: #555; padding: 8px 18px 12px; }
+.privacy summary { cursor: pointer; color: #8a8a8a; display: inline; margin-left: 4px; }
+.privacy summary:hover { color: var(--text-primary); }
+.privacy ul { margin: 8px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; color: #8a8a8a; }
+.privacy strong { color: #c4c4c4; }
 
 /* Panel */
 .side { overflow-y: auto; padding: 20px 22px 40px; background: #050505; }
