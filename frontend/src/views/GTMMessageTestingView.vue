@@ -3,7 +3,7 @@
 
     <!-- Header -->
     <header class="mt-header">
-      <div class="mt-brand" @click="goHome">GTM SIM LAB</div>
+      <div class="mt-brand" @click="goHome">{{ $brand.name }}</div>
 
       <div v-if="brief" class="mt-brief-summary">
         <span class="mt-brief-product">{{ brief.product_name }}</span>

@@ -1,5 +1,5 @@
 """
-GTM Simulation Lab backend - Flask Application Factory
+Backend Flask application factory
 """
 
 import os
@@ -36,7 +36,7 @@ def create_app(config_class=Config):
 
     if should_log_startup:
         logger.info("=" * 50)
-        logger.info("GTM Simulation Lab backend starting...")
+        logger.info(f"{Config.APP_NAME} backend starting...")
         logger.info("=" * 50)
 
     # Enable CORS
@@ -73,9 +73,9 @@ def create_app(config_class=Config):
     # Health check
     @app.route('/health')
     def health():
-        return {'status': 'ok', 'service': 'GTM Simulation Lab backend'}
+        return {'status': 'ok', 'service': f'{Config.APP_NAME} backend'}
 
     if should_log_startup:
-        logger.info("GTM Simulation Lab backend started successfully")
+        logger.info(f"{Config.APP_NAME} backend started successfully")
 
     return app

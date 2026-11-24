@@ -108,7 +108,7 @@ class LLMClient:
         if self.base_url and "openrouter.ai" in self.base_url:
             extra_headers = {
                 "HTTP-Referer": "https://github.com/666ghj/MiroFish",
-                "X-Title": "GTM Simulation Lab",
+                "X-Title": Config.APP_NAME,
             }
 
         self.client = OpenAI(

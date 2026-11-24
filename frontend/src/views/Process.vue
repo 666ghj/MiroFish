@@ -2,7 +2,7 @@
   <div class="process-page">
     <!-- Top navigation bar -->
     <nav class="navbar">
-      <div class="nav-brand" @click="goHome">GTM SIM LAB</div>
+      <div class="nav-brand" @click="goHome">{{ $brand.name }}</div>
 
       <!-- Center step indicator -->
       <div class="nav-center">

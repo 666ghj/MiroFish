@@ -1,3 +1,4 @@
+import { BRAND } from '../brand'
 /**
  * Builds a full multi-section GTM simulation PDF.
  * Opens a styled HTML page and triggers the browser print dialog (Save as PDF).
@@ -89,7 +90,7 @@ function buildCover(brief, report, date) {
   <div class="cover-section">
     <div class="doc-header">
       <div>
-        <div class="doc-brand">GTM SIMULATION LAB</div>
+        <div class="doc-brand">${BRAND.name.toUpperCase()}</div>
         <div class="doc-title">${name}</div>
         <div class="doc-sub">GTM Simulation Report</div>
       </div>
@@ -663,7 +664,7 @@ function buildHTML({ report, brief, personas, messages, reactions, summaries, wi
   ${msgSection}
   ${reportSection}
   <div class="doc-footer">
-    <span>GTM Simulation Lab · synthetic buyer data, not real responses</span>
+    <span>${BRAND.name} · synthetic buyer data, not real responses</span>
     <span>${esc(date)}</span>
   </div>
 </div>

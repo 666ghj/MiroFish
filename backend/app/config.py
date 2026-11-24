@@ -18,6 +18,9 @@ else:
 
 
 class Config:
+    # Product name (temporary); the frontend's src/brand.js mirrors it
+    APP_NAME = os.environ.get('APP_NAME', 'Preflight')
+
     """Flask configuration class"""
 
     # Flask settings

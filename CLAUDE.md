@@ -1,18 +1,19 @@
-# CLAUDE.md - GTM Simulation Lab
+# CLAUDE.md - Preflight (formerly GTM Simulation Lab)
 
 ## Project Purpose
-This is a fork of MiroFish adapted into a **GTM Simulation Lab**.
+This is a fork of MiroFish adapted into **Preflight** (temporary name), a GTM simulation product.
 It helps founders and GTM teams simulate buyer reactions and outbound messaging
 before launching real outreach.
 
-**Working name:** GTM Simulation Lab
-**Pitch:** *"Simulate your GTM before launching outreach."*
+**Working name:** Preflight (temporary; change `frontend/src/brand.js` and `APP_NAME`)
+**Pitch:** *"Test your go-to-market before takeoff."*
 
 ---
 
 ## Branding Rules
-- Product name: **GTM Simulation Lab**
-- Tagline: *"Simulate your GTM before launching outreach."*
+- Product name: **Preflight** (temporary). Never hardcode it: use `$brand.name` in templates, `BRAND` in JS, `Config.APP_NAME` in Python
+- Tagline: *"Test your go-to-market before takeoff."*
+- The idea-chat feature is called **Idea Studio**
 - Do not imply external brand affiliations or endorsements
 - Replace all MiroFish, "swarm intelligence", and "parallel digital world" copy with GTM-focused language
 - Do not show "Built on MiroFish" or similar credits in the UI (the LICENSE file stays)

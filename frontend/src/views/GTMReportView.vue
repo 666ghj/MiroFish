@@ -3,7 +3,7 @@
 
     <!-- Header -->
     <header class="gr-header">
-      <div class="gr-brand" @click="goHome">GTM SIM LAB</div>
+      <div class="gr-brand" @click="goHome">{{ $brand.name }}</div>
 
       <div v-if="brief" class="gr-brief-summary">
         <span class="gr-brief-product">{{ brief.product_name }}</span>

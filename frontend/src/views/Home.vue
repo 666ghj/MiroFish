@@ -6,10 +6,10 @@
       <div class="container nav-inner">
         <router-link to="/" class="brand">
           <img src="/favicon.svg" alt="" class="brand-mark" width="24" height="24" />
-          <span>GTM Simulation Lab</span>
+          <span>{{ $brand.name }}</span>
         </router-link>
         <nav class="nav-links" aria-label="Sections">
-          <router-link to="/studio">Napkin</router-link>
+          <router-link to="/studio">{{ $brand.idea }}</router-link>
           <a href="#how">How it works</a>
           <a href="#results">Results</a>
           <a href="#example">Example</a>
@@ -47,7 +47,7 @@
               <a href="#example" class="btn btn-ghost btn-lg">See an example</a>
             </div>
             <router-link to="/studio" class="studio-pill">
-              <span class="new">New</span> Napkin: talk your idea through with an AI co-founder <span aria-hidden="true">→</span>
+              <span class="new">New</span> {{ $brand.idea }}: talk your idea through with an AI co-founder <span aria-hidden="true">→</span>
             </router-link>
             <ul class="hero-meta">
               <li>No signup</li>
@@ -92,7 +92,7 @@
               weakest message.
             </p>
             <p>
-              GTM Simulation Lab gives you a first read before you send. It won't replace real
+              {{ $brand.name }} gives you a first read before you send. It won't replace real
               reply data, but it tells you which angle to lead with, which buyers to start with,
               and which objections to answer up front, so your first real test is a sharper one.
             </p>
@@ -356,7 +356,7 @@
         <div class="footer-brand">
           <router-link to="/" class="brand">
             <img src="/favicon.svg" alt="" class="brand-mark" width="20" height="20" />
-            <span>GTM Simulation Lab</span>
+            <span>{{ $brand.name }}</span>
           </router-link>
           <p>Simulate your GTM before launching outreach.</p>
         </div>

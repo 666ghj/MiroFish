@@ -3,7 +3,7 @@
 
     <!-- Header -->
     <header class="pg-header">
-      <div class="pg-brand" @click="goHome">GTM SIM LAB</div>
+      <div class="pg-brand" @click="goHome">{{ $brand.name }}</div>
 
       <div v-if="brief" class="pg-brief-summary">
         <span class="pg-brief-product">{{ brief.product_name }}</span>

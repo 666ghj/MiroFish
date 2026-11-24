@@ -1,5 +1,5 @@
 """
-GTM Simulation Lab - API endpoints for GTM brief submission, preview, and persona generation.
+GTM API endpoints for GTM brief submission, preview, and persona generation.
 """
 
 import os

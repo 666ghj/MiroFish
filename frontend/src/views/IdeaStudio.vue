@@ -4,9 +4,9 @@
     <header class="bar">
       <router-link to="/" class="brand">
         <img src="/favicon.svg" alt="" width="22" height="22" />
-        <span>GTM Simulation Lab</span>
+        <span>{{ $brand.name }}</span>
       </router-link>
-      <span class="bar-title"><strong>Napkin</strong> <span class="bar-sub">talk an idea through</span></span>
+      <span class="bar-title"><strong>{{ $brand.idea }}</strong> <span class="bar-sub">talk an idea through</span></span>
       <span class="bar-spacer"></span>
       <span v-if="savedAt" class="saved" :title="'Saved in this browser at ' + savedAt">Saved in this browser</span>
       <label class="conf" :title="'Confidential mode: nothing is searched on the web'">

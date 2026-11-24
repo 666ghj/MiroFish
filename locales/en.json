@@ -26,8 +26,8 @@
     "files": "files"
   },
   "meta": {
-    "title": "GTM Simulation Lab",
-    "description": "GTM Simulation Lab: simulate your GTM before launching outreach"
+    "title": "Preflight",
+    "description": "Preflight: test your go-to-market before takeoff"
   },
   "nav": {
     "visitGithub": "View on GitHub"
@@ -38,7 +38,7 @@
     "heroTitle1": "Validate Your GTM,",
     "heroTitle2": "Before You Launch",
     "heroDesc": "From a single product brief, {brand} generates {agentScale}, tests your outreach messaging, and surfaces likely objections, so you can find the {optimalSolution} before spending a dollar on outreach.",
-    "heroDescBrand": "GTM Simulation Lab",
+    "heroDescBrand": "Preflight",
     "heroDescAgentScale": "12 AI buyer personas",
     "heroDescOptimalSolution": "best first outbound experiment",
     "slogan": "Simulate buyer reactions. Surface objections. Find your best first outbound experiment.",
@@ -67,7 +67,7 @@
     "inputParams": "GTM Parameters",
     "simulationPrompt": ">_ 02 / GTM Brief",
     "promptPlaceholder": "// Describe your product, ICP, pricing, target market, and GTM goal in natural language",
-    "engineBadge": "Engine: GTM Sim Lab v1.0",
+    "engineBadge": "Engine: Preflight v1.0",
     "startEngine": "Simulate GTM",
     "initializing": "Initializing..."
   },
@@ -145,7 +145,7 @@
     "setupComplete": "Setup Complete",
     "setupCompleteDesc": "GTM simulation environment is ready. You can now start message testing.",
     "roundsConfig": "Simulation Rounds Configuration",
-    "roundsConfigDesc": "GTM Sim Lab plans to simulate {hours} hours of buyer interactions, each round representing {minutesPerRound} minutes of elapsed time",
+    "roundsConfigDesc": "Preflight plans to simulate {hours} hours of buyer interactions, each round representing {minutesPerRound} minutes of elapsed time",
     "customToggle": "Custom",
     "roundsUnit": "rounds",
     "estimatedDuration": "For 12 personas: est. ~{minutes} minutes",

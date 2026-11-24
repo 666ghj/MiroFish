@@ -1,6 +1,8 @@
-# GTM Simulation Lab
+# Preflight
 
-> **Simulate your GTM before launching outreach.**
+> **Test your go-to-market before takeoff.**
+
+*Preflight is a temporary name (set in `frontend/src/brand.js` and `APP_NAME`).*
 
 An open-source simulator for B2B founders. Describe your product and buyer, shape the audience, and get AI buyer personas, scored reactions to several cold-email angles, the objections to prepare for, and a 7-day outbound plan that respects local outreach law. All before you send a single real email.
 
@@ -27,9 +29,9 @@ An open-source simulator for B2B founders. Describe your product and buyer, shap
 
 ---
 
-## Napkin (Idea Studio)
+## Idea Studio
 
-Not sure what to simulate yet? Open **Napkin** (`/studio`) and talk an early idea through with an AI co-founder. A live panel sharpens with every message:
+Not sure what to simulate yet? Open **Idea Studio** (`/studio`) and talk an early idea through with an AI co-founder. A live panel sharpens with every message:
 
 - **One question at a time**, chosen in code from what is still unknown (Mom Test style: past behavior, not opinions).
 - **Every field is labelled**: what you said, what the AI guessed, what is backed by evidence (with links), and contradictions. You can edit or lock any field.
