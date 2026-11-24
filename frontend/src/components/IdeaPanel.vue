@@ -1,6 +1,6 @@
 <template>
   <div class="panel">
-    <!-- Idea + clarity -->
+    <!-- The idea + completeness -->
     <section class="card card--hero" :class="{ flash: isChanged('/one_liner') }">
       <div class="hero-row">
         <div class="hero-text">
@@ -10,56 +10,75 @@
             path="/one_liner"
             :sources="state.sources"
             :changed="isChanged('/one_liner')"
-            placeholder="Describe your idea in the chat. A one-line summary will appear here."
+            placeholder="Your idea in one line will appear here once you describe it."
             @edit="fwdEdit" @lock="fwdLock"
           />
         </div>
-        <div class="ring" role="img" :aria-label="`Idea clarity ${clarity.score} out of 100`">
-          <svg viewBox="0 0 64 64" aria-hidden="true">
-            <circle cx="32" cy="32" r="27" class="ring-track" />
-            <circle cx="32" cy="32" r="27" class="ring-fill" :style="{ strokeDashoffset: ringOffset }" />
-          </svg>
-          <div class="ring-num">{{ clarity.score }}</div>
-          <div class="ring-label">Clarity</div>
+        <div class="score" role="img" :aria-label="`Completeness ${clarity.score} out of 100`">
+          <div class="score-num">{{ clarity.score }}</div>
+          <div class="score-label">Completeness</div>
         </div>
       </div>
-      <div class="sections">
-        <div v-for="name in SECTION_ORDER" :key="name" class="sec">
-          <div class="sec-top"><span>{{ name }}</span><span>{{ v(name) }}</span></div>
-          <div class="sec-track"><div class="sec-fill" :style="{ width: v(name) + '%' }"></div></div>
+
+      <div class="checklist" aria-label="Completeness by part">
+        <div v-for="name in SECTION_ORDER" :key="name" class="check">
+          <span class="check-name">{{ name }}</span>
+          <span class="check-track"><span class="check-fill" :style="{ width: v(name) + '%' }"></span></span>
+          <span class="check-val">{{ v(name) }}</span>
         </div>
       </div>
       <p v-if="clarity.last_change_reason" class="drop-note">{{ clarity.last_change_reason }}</p>
-      <p v-if="clarity.top_missing?.length" class="missing">
-        <strong>To sharpen it:</strong> {{ clarity.top_missing.join(' · ') }}
+      <p class="caption">
+        How much of the idea is pinned down, with your own specifics counting most. It is not a verdict on whether the idea is good.
       </p>
-      <p class="caption">Clarity measures how complete and specific the idea is, not whether it is good.</p>
+
       <div class="handoff">
         <button type="button" class="btn-send" :disabled="busy || clarity.score < 60" @click="$emit('send-brief')">
           Test it with buyer personas <span aria-hidden="true">→</span>
         </button>
         <span class="handoff-note">
-          {{ clarity.score >= 60
-            ? 'Opens the GTM simulation with your idea filled in.'
-            : `Unlocks at clarity 60 (now ${clarity.score}).` }}
+          {{ clarity.score >= 60 ? 'Opens the GTM simulation with your idea filled in.' : `Unlocks at 60 (now ${clarity.score}).` }}
         </span>
       </div>
     </section>
 
+    <!-- What changed on the last turn -->
+    <section v-if="lastChange && lastChange.labels.length" class="changed" aria-label="What changed on the last turn">
+      <div class="changed-head">
+        <span class="changed-dot" aria-hidden="true"></span>
+        What changed{{ lastChange.turn ? ` after message ${lastChange.turn}` : '' }}
+      </div>
+      <p v-if="lastChange.summary" class="changed-summary">{{ lastChange.summary }}</p>
+      <div class="chips">
+        <span v-for="l in lastChange.labels" :key="l" class="tag">{{ l }}</span>
+      </div>
+    </section>
+
+    <!-- Still open: compact instead of a wall of placeholders -->
+    <section v-if="openItems.length" class="card card--open">
+      <h3>Still open <span class="count">{{ openItems.length }}</span></h3>
+      <p class="hint">Pick one to talk about next. It drafts a message for you; nothing is sent until you press enter.</p>
+      <div class="chips">
+        <button v-for="o in openItems" :key="o.path" type="button" class="open-chip" @click="$emit('ask', o.starter)">
+          {{ o.label }}
+        </button>
+      </div>
+    </section>
+
     <!-- Problem and customer -->
-    <section class="card">
+    <section v-if="filled(PROBLEM_FIELDS).length" class="card">
       <h3>Problem and customer</h3>
-      <IdeaClaim v-for="f in PROBLEM_FIELDS" :key="f.path" v-bind="claimProps(f)" @edit="fwdEdit" @lock="fwdLock" />
+      <IdeaClaim v-for="f in filled(PROBLEM_FIELDS)" :key="f.path" v-bind="claimProps(f)" @edit="fwdEdit" @lock="fwdLock" />
     </section>
 
     <!-- Solution and model -->
-    <section class="card">
+    <section v-if="filled(SOLUTION_FIELDS).length" class="card">
       <h3>Solution and business model</h3>
-      <IdeaClaim v-for="f in SOLUTION_FIELDS" :key="f.path" v-bind="claimProps(f)" @edit="fwdEdit" @lock="fwdLock" />
+      <IdeaClaim v-for="f in filled(SOLUTION_FIELDS)" :key="f.path" v-bind="claimProps(f)" @edit="fwdEdit" @lock="fwdLock" />
     </section>
 
     <!-- Could / won't work -->
-    <section class="card card--split">
+    <section v-if="state.what_could_work.length || state.what_wont_work.length" class="card card--split">
       <div>
         <h3>What could work</h3>
         <IdeaClaim
@@ -78,7 +97,7 @@
             :changed="isChanged(`/what_wont_work/${i}`)" @edit="fwdEdit" @lock="fwdLock"
           />
         </div>
-        <p v-if="!state.what_wont_work.length" class="empty">No red flags recorded yet.</p>
+        <p v-if="!state.what_wont_work.length" class="empty">No red flags yet.</p>
       </div>
     </section>
 
@@ -116,43 +135,46 @@
         />
       </div>
 
-      <div class="search-meta">
+      <p class="search-meta">
         <template v-if="search.searched_at">
-          Searched {{ search.providers.map(providerName).join(', ') }}
-          <span v-if="search.unavailable.length"> · not used: {{ search.unavailable.join(', ') }}</span>.
-          A company missing here does not mean nobody has built it.
+          Searched {{ search.providers.map(providerName).join(', ') }}<span v-if="search.unavailable.length">; not used: {{ search.unavailable.join(', ') }}</span>.
+          Missing from this list does not mean nobody has built it.
         </template>
-        <template v-else>Research runs automatically once the problem and solution are clear.</template>
+        <template v-else>Runs automatically once the problem and the solution are clear, or start it now.</template>
+      </p>
+      <div class="row">
+        <button type="button" class="btn-research" :disabled="busy || confidential || (search.sweeps || 0) >= 3" @click="$emit('research')">
+          {{ search.searched_at ? 'Research again' : 'Research now' }}
+        </button>
+        <span v-if="confidential" class="muted-note">Confidential mode is on: no searches.</span>
+        <span v-else-if="(search.sweeps || 0) >= 3" class="muted-note">Research limit reached for this idea.</span>
       </div>
-      <button type="button" class="btn-research" :disabled="busy || confidential || (search.sweeps || 0) >= 3"
-              @click="$emit('research')">
-        {{ search.searched_at ? 'Research again' : 'Research now' }}
-      </button>
-      <span v-if="confidential" class="muted-note">Confidential mode is on: no searches.</span>
     </section>
 
     <!-- Why now + challenges -->
-    <section class="card">
-      <h3>Why now</h3>
-      <IdeaClaim
-        v-for="(c, i) in state.why_now" :key="'wn' + i"
-        :claim="c" :path="`/why_now/${i}`" :sources="state.sources"
-        :changed="isChanged(`/why_now/${i}`)" @edit="fwdEdit" @lock="fwdLock"
-      />
-      <p v-if="!state.why_now.length" class="empty">What changed recently that makes this possible? Not covered yet.</p>
-      <h3 class="mt">Key challenges</h3>
-      <template v-for="kind in CHALLENGES" :key="kind.id">
+    <section v-if="state.why_now.length || hasChallenges" class="card">
+      <template v-if="state.why_now.length">
+        <h3>Why now</h3>
         <IdeaClaim
-          v-for="(c, i) in state.challenges[kind.id]" :key="kind.id + i"
-          :claim="c" :path="`/challenges/${kind.id}/${i}`" :label="kind.label" :sources="state.sources"
-          :changed="isChanged(`/challenges/${kind.id}/${i}`)" @edit="fwdEdit" @lock="fwdLock"
+          v-for="(c, i) in state.why_now" :key="'wn' + i"
+          :claim="c" :path="`/why_now/${i}`" :sources="state.sources"
+          :changed="isChanged(`/why_now/${i}`)" @edit="fwdEdit" @lock="fwdLock"
         />
       </template>
-      <p v-if="!hasChallenges" class="empty">None recorded yet.</p>
+      <template v-if="hasChallenges">
+        <h3 :class="{ mt: state.why_now.length }">Key challenges</h3>
+        <template v-for="kind in CHALLENGES" :key="kind.id">
+          <IdeaClaim
+            v-for="(c, i) in state.challenges[kind.id]" :key="kind.id + i"
+            :claim="c" :path="`/challenges/${kind.id}/${i}`" :label="kind.label" :sources="state.sources"
+            :changed="isChanged(`/challenges/${kind.id}/${i}`)" @edit="fwdEdit" @lock="fwdLock"
+          />
+        </template>
+      </template>
     </section>
 
     <!-- Riskiest assumptions -->
-    <section class="card" :class="{ flash: isChanged('/risky_assumptions') }">
+    <section v-if="state.risky_assumptions.length" class="card" :class="{ flash: isChanged('/risky_assumptions') }">
       <h3>Riskiest assumptions and the cheapest tests</h3>
       <div v-for="(a, i) in state.risky_assumptions" :key="'ra' + i" class="risk">
         <div class="risk-top">
@@ -172,17 +194,15 @@
           </div>
         </div>
       </div>
-      <p v-if="!state.risky_assumptions.length" class="empty">The riskiest assumptions appear as the idea takes shape.</p>
     </section>
 
-    <!-- Objections + next questions -->
-    <section class="card card--split">
-      <div>
+    <!-- Concerns + next questions -->
+    <section class="card" :class="{ 'card--split': state.open_objections.length }">
+      <div v-if="state.open_objections.length">
         <h3>Open concerns</h3>
         <ul class="plain">
           <li v-for="(o, i) in state.open_objections" :key="'ob' + i">{{ o.text }}</li>
         </ul>
-        <p v-if="!state.open_objections.length" class="empty">None open.</p>
       </div>
       <div>
         <h3>Questions coming up</h3>
@@ -192,7 +212,7 @@
       </div>
     </section>
 
-    <!-- Sources -->
+    <!-- Sources + legend -->
     <details v-if="sourceList.length" class="card sources">
       <summary>Sources ({{ sourceList.length }})</summary>
       <a v-for="s in sourceList" :key="s.id" :href="s.url" target="_blank" rel="noopener" class="source">
@@ -200,6 +220,12 @@
         <span class="src-title">{{ s.title }}</span>
       </a>
     </details>
+    <p class="legend">
+      <span><b>You said</b> your words</span>
+      <span><b>AI guess</b> inferred, edit it if wrong</span>
+      <span><b>Evidence</b> backed by a linked source</span>
+      <span><b>Lock</b> stops the AI changing a field</span>
+    </p>
   </div>
 </template>
 
@@ -210,26 +236,32 @@ import IdeaClaim from './IdeaClaim.vue'
 const props = defineProps({
   state: { type: Object, required: true },
   changed: { type: Array, default: () => [] },
+  lastChange: { type: Object, default: null },
   busy: { type: Boolean, default: false },
   confidential: { type: Boolean, default: false },
 })
-const emit = defineEmits(['edit', 'lock', 'research', 'send-brief'])
+const emit = defineEmits(['edit', 'lock', 'research', 'send-brief', 'ask'])
 
 const PROBLEM_FIELDS = [
-  { path: '/problem/statement', label: 'Problem', key: ['problem', 'statement'] },
-  { path: '/problem/who', label: 'Who has it', key: ['problem', 'who'] },
-  { path: '/problem/workaround', label: 'What they do today', key: ['problem', 'workaround'] },
-  { path: '/problem/frequency', label: 'How often', key: ['problem', 'frequency'] },
-  { path: '/problem/severity', label: 'What it costs', key: ['problem', 'severity'] },
-  { path: '/customer/early_adopters', label: 'First customers', key: ['customer', 'early_adopters'] },
-  { path: '/customer/buyer', label: 'Who signs off', key: ['customer', 'buyer'] },
+  { path: '/problem/statement', label: 'Problem', key: ['problem', 'statement'], starter: 'The core problem is ' },
+  { path: '/problem/who', label: 'Who has it', key: ['problem', 'who'], starter: 'The people who have this problem are ' },
+  { path: '/problem/workaround', label: 'What they do today', key: ['problem', 'workaround'], starter: 'Today they get around it by ' },
+  { path: '/problem/frequency', label: 'How often', key: ['problem', 'frequency'], starter: 'It happens about ' },
+  { path: '/problem/severity', label: 'What it costs', key: ['problem', 'severity'], starter: 'The last time it happened, it cost ' },
+  { path: '/customer/early_adopters', label: 'First customers', key: ['customer', 'early_adopters'], starter: 'The first customers I would go after are ' },
+  { path: '/customer/buyer', label: 'Who signs off', key: ['customer', 'buyer'], starter: 'The person who would approve buying it is ' },
 ]
 const SOLUTION_FIELDS = [
-  { path: '/solution/core', label: 'What it does', key: ['solution', 'core'] },
-  { path: '/solution/smallest_version', label: 'Smallest version', key: ['solution', 'smallest_version'] },
-  { path: '/business_model/who_pays', label: 'Who pays', key: ['business_model', 'who_pays'] },
-  { path: '/business_model/price_anchor', label: 'Price anchor', key: ['business_model', 'price_anchor'] },
+  { path: '/solution/core', label: 'What it does', key: ['solution', 'core'], starter: 'What the product actually does is ' },
+  { path: '/solution/smallest_version', label: 'Smallest version', key: ['solution', 'smallest_version'], starter: 'The smallest version I could ship is ' },
+  { path: '/business_model/who_pays', label: 'Who pays', key: ['business_model', 'who_pays'], starter: 'The one who pays would be ' },
+  { path: '/business_model/price_anchor', label: 'Price', key: ['business_model', 'price_anchor'], starter: 'For price, today they spend ' },
 ]
+const LIST_OPEN = [
+  { path: '/why_now', label: 'Why now', starter: 'What changed recently that makes this possible now is ' },
+  { path: '/risky_assumptions', label: 'Riskiest assumption', starter: 'The thing that must be true for this to work is ' },
+]
+const SECTION_ORDER = ['Problem', 'Customer', 'Solution', 'Market', 'Business model', 'Risks and tests']
 const CHALLENGES = [
   { id: 'technical', label: 'Technical' }, { id: 'regulatory', label: 'Regulatory' },
   { id: 'go_to_market', label: 'Go to market' }, { id: 'capital', label: 'Capital' }, { id: 'team', label: 'Team' },
@@ -243,24 +275,27 @@ const BLOCKER_LABEL = {
   incumbents: 'Incumbents', timing: 'Timing', capital: 'Capital', cold_start: 'Cold start', trust_liability: 'Trust',
 }
 
-const SECTION_ORDER = ['Problem', 'Customer', 'Solution', 'Market', 'Business model', 'Risks and tests']
 const clarity = computed(() => props.state.clarity || { score: 0, by_section: {} })
 const v = (name) => clarity.value.by_section?.[name] ?? 0
-const ringOffset = computed(() => 169.6 * (1 - (clarity.value.score || 0) / 100))
 const wnb = computed(() => props.state.why_not_built)
 const search = computed(() => wnb.value.search || { providers: [], unavailable: [] })
 const hasChallenges = computed(() => CHALLENGES.some(k => props.state.challenges[k.id]?.length))
 const sourceList = computed(() => Object.entries(props.state.sources || {}).map(([id, s]) => ({ id, ...s })))
+
+function claimOf(f) { return props.state[f.key[0]][f.key[1]] }
+function filled(fields) { return fields.filter(f => (claimOf(f).text || '').trim()) }
+
+const openItems = computed(() => [
+  ...[...PROBLEM_FIELDS, ...SOLUTION_FIELDS].filter(f => !(claimOf(f).text || '').trim()),
+  ...LIST_OPEN.filter(l => !props.state[l.path.slice(1)]?.length),
+])
 
 function isChanged(prefix) {
   return props.changed.some(p => p === prefix || p.startsWith(prefix + '/'))
 }
 
 function claimProps(f) {
-  return {
-    claim: props.state[f.key[0]][f.key[1]], path: f.path, label: f.label,
-    sources: props.state.sources, changed: isChanged(f.path),
-  }
+  return { claim: claimOf(f), path: f.path, label: f.label, sources: props.state.sources, changed: isChanged(f.path) }
 }
 
 function fwdEdit(path, text) { emit('edit', path, text) }
@@ -271,7 +306,7 @@ function host(url) {
 }
 
 function providerName(p) {
-  return { tavily: 'Web (Tavily)', exa: 'Companies (Exa)', hn: 'Hacker News', github: 'GitHub' }[p] || p
+  return { tavily: 'the web', exa: 'company search', hn: 'Hacker News', github: 'GitHub' }[p] || p
 }
 </script>
 
@@ -285,41 +320,61 @@ function providerName(p) {
   transition: border-color 0.8s ease;
 }
 .card.flash { border-color: rgba(59, 130, 246, 0.45); }
-.card h3 { font-size: 13px; font-weight: 650; color: var(--text-primary); margin: 0 0 6px 2px; }
+.card h3 { font-size: 13px; font-weight: 650; color: var(--text-primary); margin: 0 0 6px 2px; display: flex; align-items: center; gap: 8px; }
 .card .mt { margin-top: 14px; }
 .card--split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .h-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .h-row h3 { margin: 0; }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .eyebrow { font-size: 11px; font-weight: 600; color: var(--accent); margin: 0 0 2px 12px; }
 .empty { font-size: 12.5px; color: #5a5a5a; padding: 6px 12px; }
-.muted-note { font-size: 11.5px; color: var(--text-tertiary); margin-left: 8px; }
+.muted-note { font-size: 11.5px; color: var(--text-tertiary); }
+.count { font-size: 11px; font-weight: 600; color: var(--text-tertiary); background: #161616; border-radius: 999px; padding: 1px 8px; }
 
+/* Hero: one headline number, sans, with its parts underneath */
 .card--hero { background: linear-gradient(180deg, #0f0f0f, #0a0a0a); }
 .hero-row { display: flex; gap: 16px; align-items: flex-start; }
 .hero-text { flex: 1; min-width: 0; }
 .hero-text :deep(.claim-text) { font-size: 17px; font-weight: 600; line-height: 1.4; }
-.ring { position: relative; width: 76px; height: 76px; flex-shrink: 0; text-align: center; }
-.ring svg { width: 76px; height: 76px; transform: rotate(-90deg); }
-.ring-track { fill: none; stroke: #1f1f1f; stroke-width: 6; }
-.ring-fill { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 169.6; transition: stroke-dashoffset 0.6s ease; }
-.ring-num { position: absolute; top: 20px; left: 0; right: 0; font-size: 20px; font-weight: 700; }
-.ring-label { position: absolute; top: 44px; left: 0; right: 0; font-size: 9.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
-.sections { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 14px; margin: 12px 12px 4px; }
-.sec-top { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
-.sec-track { height: 4px; border-radius: 999px; background: rgba(59, 130, 246, 0.14); overflow: hidden; }
-.sec-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.6s ease; }
-.missing { font-size: 12px; color: var(--text-secondary); margin: 10px 12px 0; line-height: 1.5; }
-.missing strong { color: var(--text-primary); }
-.drop-note { font-size: 12px; color: #fcd34d; margin: 8px 12px 0; }
-.caption { font-size: 11px; color: #5a5a5a; margin: 6px 12px 0; }
+.score { text-align: right; flex-shrink: 0; padding: 4px 6px 0 0; }
+.score-num { font-size: 48px; font-weight: 650; line-height: 1; letter-spacing: -0.03em; }
+.score-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+.checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; margin: 14px 12px 2px; }
+.check { display: grid; grid-template-columns: 104px minmax(0, 1fr) 26px; align-items: center; gap: 10px; }
+.check-name { font-size: 12px; color: var(--text-secondary); }
+.check-track { height: 6px; border-radius: 999px; background: rgba(59, 130, 246, 0.14); overflow: hidden; }
+.check-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.6s ease; }
+.check-val { font-size: 12px; font-weight: 600; text-align: right; color: var(--text-primary); }
+.drop-note { font-size: 12px; color: #fcd34d; margin: 10px 12px 0; }
+.caption { font-size: 11.5px; line-height: 1.5; color: #6b6b6b; margin: 10px 12px 0; }
 .handoff { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 12px 4px; }
-.btn-send {
-  font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: none;
-  background: var(--accent); color: #fff;
-}
+.btn-send { font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: none; background: var(--accent); color: #fff; }
 .btn-send:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-send:disabled { background: #1a1a1a; color: #555; cursor: not-allowed; }
 .handoff-note { font-size: 11.5px; color: var(--text-tertiary); }
+
+/* What changed */
+.changed {
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.06);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+.changed-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; color: #93c5fd; }
+.changed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.changed-summary { font-size: 13px; line-height: 1.5; color: var(--text-primary); margin: 6px 0 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 11.5px; color: var(--text-secondary); padding: 2px 9px; border-radius: 999px; border: 1px solid #2a2a2a; background: #0d0d0d; }
+
+/* Still open */
+.card--open { padding-bottom: 14px; }
+.hint { font-size: 12px; color: var(--text-tertiary); margin: 0 2px 10px; }
+.open-chip {
+  font-size: 12.5px; color: var(--text-secondary); padding: 5px 11px; border-radius: 999px;
+  border: 1px dashed #333; background: transparent; transition: border-color 0.15s, color 0.15s;
+}
+.open-chip:hover { color: var(--text-primary); border-color: var(--accent); border-style: solid; }
 
 .sev-wrap { position: relative; }
 .sev, .impact {
@@ -339,8 +394,7 @@ function providerName(p) {
 .companies { display: flex; flex-direction: column; gap: 6px; }
 .company {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px;
-  padding: 9px 11px; border: 1px solid #1f1f1f; border-radius: 8px; text-decoration: none;
-  transition: border-color 0.15s;
+  padding: 9px 11px; border: 1px solid #1f1f1f; border-radius: 8px; text-decoration: none; transition: border-color 0.15s;
 }
 .company:hover { border-color: #3a3a3a; }
 .co-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
@@ -348,10 +402,7 @@ function providerName(p) {
 .co-note { grid-column: 1 / -1; font-size: 12px; color: var(--text-tertiary); }
 .dead { font-size: 10px; font-weight: 700; color: #fca5a5; margin-left: 6px; text-transform: uppercase; }
 .search-meta { font-size: 11.5px; line-height: 1.5; color: var(--text-tertiary); margin: 12px 2px 8px; }
-.btn-research {
-  font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 7px;
-  border: 1px solid #333; background: #141414; color: var(--text-primary);
-}
+.btn-research { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 7px; border: 1px solid #333; background: #141414; color: var(--text-primary); }
 .btn-research:hover:not(:disabled) { border-color: var(--accent); }
 .btn-research:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -371,6 +422,9 @@ function providerName(p) {
 .src-prov { color: var(--text-tertiary); min-width: 110px; }
 .src-title { color: #93c5fd; }
 
-@media (max-width: 1100px) { .card--split { grid-template-columns: 1fr; } .sections { grid-template-columns: repeat(2, 1fr); } }
-@media (prefers-reduced-motion: reduce) { .card, .ring-fill, .sec-fill { transition: none; } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: #6b6b6b; margin: 2px 4px 0; }
+.legend b { color: var(--text-secondary); font-weight: 600; margin-right: 4px; }
+
+@media (max-width: 1100px) { .card--split { grid-template-columns: 1fr; } .checklist { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .card, .check-fill { transition: none; } }
 </style>

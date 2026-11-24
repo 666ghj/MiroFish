@@ -9,7 +9,7 @@
           <span>GTM Simulation Lab</span>
         </router-link>
         <nav class="nav-links" aria-label="Sections">
-          <router-link to="/studio">Idea Studio</router-link>
+          <router-link to="/studio">Napkin</router-link>
           <a href="#how">How it works</a>
           <a href="#results">Results</a>
           <a href="#example">Example</a>
@@ -47,7 +47,7 @@
               <a href="#example" class="btn btn-ghost btn-lg">See an example</a>
             </div>
             <router-link to="/studio" class="studio-pill">
-              <span class="new">New</span> Not sure yet? Talk your idea through with an AI co-founder <span aria-hidden="true">→</span>
+              <span class="new">New</span> Napkin: talk your idea through with an AI co-founder <span aria-hidden="true">→</span>
             </router-link>
             <ul class="hero-meta">
               <li>No signup</li>

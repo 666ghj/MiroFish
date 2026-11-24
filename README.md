@@ -27,9 +27,9 @@ An open-source simulator for B2B founders. Describe your product and buyer, shap
 
 ---
 
-## Idea Studio
+## Napkin (Idea Studio)
 
-Not sure what to simulate yet? Open **Idea Studio** (`/studio`) and talk an early idea through with an AI co-founder. A live panel sharpens with every message:
+Not sure what to simulate yet? Open **Napkin** (`/studio`) and talk an early idea through with an AI co-founder. A live panel sharpens with every message:
 
 - **One question at a time**, chosen in code from what is still unknown (Mom Test style: past behavior, not opinions).
 - **Every field is labelled**: what you said, what the AI guessed, what is backed by evidence (with links), and contradictions. You can edit or lock any field.

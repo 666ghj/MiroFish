@@ -6,8 +6,9 @@
         <img src="/favicon.svg" alt="" width="22" height="22" />
         <span>GTM Simulation Lab</span>
       </router-link>
-      <span class="bar-title">Idea Studio</span>
+      <span class="bar-title"><strong>Napkin</strong> <span class="bar-sub">talk an idea through</span></span>
       <span class="bar-spacer"></span>
+      <span v-if="savedAt" class="saved" :title="'Saved in this browser at ' + savedAt">Saved in this browser</span>
       <label class="conf" :title="'Confidential mode: nothing is searched on the web'">
         <input type="checkbox" v-model="confidential" />
         <span class="switch" aria-hidden="true"></span>
@@ -41,6 +42,12 @@
               <span v-if="m.streaming && !m.content" class="typing" aria-hidden="true"><i></i><i></i><i></i></span>
               <div v-if="m.notice" class="notice">{{ m.notice }}</div>
             </div>
+          </div>
+          <div v-if="isFresh" class="starters" aria-label="Ways to start">
+            <button v-for="s in STARTERS" :key="s.title" type="button" class="starter" @click="useStarter(s)">
+              <span class="starter-title">{{ s.title }}</span>
+              <span class="starter-desc">{{ s.desc }}</span>
+            </button>
           </div>
           <div v-if="status" class="status" role="status">
             <span class="spinner" aria-hidden="true"></span>{{ status }}
@@ -85,12 +92,14 @@
           v-if="state"
           :state="state"
           :changed="changed"
+          :last-change="lastChange"
           :busy="busy"
           :confidential="confidential"
           @edit="onEdit"
           @lock="onLock"
           @research="research"
           @send-brief="sendBrief"
+          @ask="draftAbout"
         />
       </aside>
     </div>
@@ -100,12 +109,28 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import IdeaPanel from '../components/IdeaPanel.vue'
 import { newIdea, streamIdeaTurn, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
+const STARTERS = [
+  { title: 'I have an idea', desc: 'Describe it roughly and sharpen it together.', text: 'My idea is ' },
+  { title: 'Help me find one', desc: 'Start from problems you have seen, not from scratch.',
+    text: "I want to start something but I don't have an idea yet. Here is what I know well: " },
+  { title: 'Poke holes in mine', desc: 'Stress-test an idea you already believe in.',
+    text: 'I have an idea I believe in. Please challenge it hard: ' },
+]
+const PATH_LABELS = [
+  ['/one_liner', 'One-liner'], ['/problem/statement', 'Problem'], ['/problem/who', 'Who has it'],
+  ['/problem/workaround', 'What they do today'], ['/problem/frequency', 'How often'], ['/problem/severity', 'What it costs'],
+  ['/customer/early_adopters', 'First customers'], ['/customer/buyer', 'Who signs off'], ['/customer', 'Customer'],
+  ['/solution/core', 'What it does'], ['/solution', 'Solution'], ['/business_model', 'Business model'],
+  ['/why_now', 'Why now'], ['/what_could_work', 'What could work'], ['/what_wont_work', 'Red flags'],
+  ['/challenges', 'Challenges'], ['/why_not_built/competitors', 'Competitors'], ['/why_not_built/predecessors', 'Tried before'],
+  ['/why_not_built', 'Why not built'], ['/risky_assumptions', 'Risky assumptions'], ['/open_objections', 'Open concerns'],
+]
 const PREFILL_KEY = 'gtm.prefill.v1'
 const router = useRouter()
 const HISTORY_SENT = 12
@@ -119,6 +144,9 @@ const error = ref('')
 const changed = ref([])
 const announce = ref('')
 const confidential = ref(false)
+const lastChange = ref(null)
+const savedAt = ref('')
+const isFresh = computed(() => messages.value.length <= 1 && !busy.value)
 const tab = ref('chat')
 const unseen = ref(false)
 const scroller = ref(null)
@@ -134,6 +162,7 @@ function save() {
       state: state.value, confidential: confidential.value,
       messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice }) => ({ role, content, notice })),
     }))
+    savedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   } catch (_) {}
 }
 
@@ -158,6 +187,7 @@ async function startNew() {
     state.value = res.data.state
     messages.value = [{ role: 'assistant', content: res.data.opening }]
     changed.value = []
+    lastChange.value = null
     save()
   } catch (e) {
     error.value = 'Could not reach the server. Is the backend running on port 5001?'
@@ -257,6 +287,11 @@ function onEvent(ev, live) {
     case 'state':
       state.value = ev.state
       flash(ev.applied || [])
+      lastChange.value = {
+        turn: ev.state.meta?.turn,
+        summary: ev.summary || '',
+        labels: [...new Set((ev.applied || []).map(labelFor))],
+      }
       if (ev.notice) live.notice = [live.notice, ev.notice].filter(Boolean).join(' ')
       announce.value = `Live idea updated: ${(ev.applied || []).length} ${(ev.applied || []).length === 1 ? 'field' : 'fields'}. Clarity ${ev.state.clarity.score}.`
       if (tab.value !== 'panel' && (ev.applied || []).length) unseen.value = true
@@ -268,6 +303,22 @@ function onEvent(ev, live) {
 
 function research() {
   send('Look up who already does this and who has tried it before.', { research: true })
+}
+
+function labelFor(path) {
+  const hit = PATH_LABELS.find(([prefix]) => path === prefix || path.startsWith(prefix + '/'))
+  return hit ? hit[1] : 'Idea'
+}
+
+function useStarter(s) {
+  draft.value = s.text
+  focusComposer(true)
+}
+
+function draftAbout(text) {
+  draft.value = text
+  tab.value = 'chat'
+  focusComposer(true)
 }
 
 function retry() {
@@ -325,8 +376,13 @@ function scrollDown() {
   nextTick(() => { if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
 }
 
-function focusComposer() {
-  nextTick(() => composer.value?.focus())
+function focusComposer(toEnd = false) {
+  nextTick(() => {
+    const el = composer.value
+    if (!el) return
+    el.focus()
+    if (toEnd) el.setSelectionRange(el.value.length, el.value.length)
+  })
 }
 
 watch(tab, (t) => { if (t === 'panel') unseen.value = false })
@@ -362,7 +418,18 @@ onMounted(async () => {
 }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14px; color: var(--text-primary); text-decoration: none; }
 .brand img { border-radius: 5px; }
-.bar-title { font-size: 13px; color: var(--text-secondary); padding-left: 14px; border-left: 1px solid #262626; }
+.bar-title { font-size: 14px; color: var(--text-primary); padding-left: 14px; border-left: 1px solid #262626; }
+.bar-sub { font-size: 12.5px; color: var(--text-tertiary); margin-left: 6px; font-weight: 400; }
+.saved { font-size: 11.5px; color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 6px; }
+.saved::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.starters { display: grid; grid-template-columns: 1fr; gap: 8px; margin-left: 38px; }
+.starter {
+  text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;
+  border: 1px solid #222; border-radius: 10px; background: #0b0b0b; transition: border-color 0.15s;
+}
+.starter:hover { border-color: var(--accent); }
+.starter-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.starter-desc { font-size: 12.5px; color: var(--text-tertiary); }
 .bar-spacer { flex: 1; }
 .menu { display: flex; gap: 6px; }
 .btn-ghost {
@@ -435,7 +502,9 @@ onMounted(async () => {
 
 @media (max-width: 900px) {
   .bar { padding: 0 12px; gap: 8px; }
-  .bar-title, .brand span, .menu .btn-ghost:not(.btn-new) { display: none; }
+  .brand span, .bar-sub, .saved, .menu .btn-ghost:not(.btn-new) { display: none; }
+  .bar-title { border-left: none; padding-left: 0; }
+  .starters { margin-left: 0; }
   .tabs { display: flex; border-bottom: 1px solid #1a1a1a; }
   .tabs button {
     flex: 1; padding: 10px; font-size: 13px; font-weight: 600; background: none; border: none;

@@ -14,7 +14,7 @@
         <span class="sim-nav-step-item">4. Report</span>
       </div>
       <div class="sim-nav-right">
-        <router-link to="/studio" class="sim-nav-studio">Idea Studio</router-link>
+        <router-link to="/studio" class="sim-nav-studio">Napkin</router-link>
         <button class="sim-nav-demo" @click="loadDemo" type="button">Load example</button>
       </div>
     </nav>
@@ -29,7 +29,7 @@
           <p class="sim-subtitle">Describe your product and target buyer. The AI generates personas, tests outreach angles, simulates reactions, and produces a GTM strategy report.</p>
         </div>
         <div v-if="fromStudio" class="sim-prefill" role="status">
-          Filled in from Idea Studio. Review every field, add a product name if it is missing, then run the simulation.
+          Filled in from Napkin. Review every field, add a product name if it is missing, then run the simulation.
         </div>
         <GTMBriefForm
           :loading="loading"
