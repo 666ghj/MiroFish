@@ -73,6 +73,25 @@
           </transition>
         </div>
 
+        <div v-if="state" class="ideation-controls">
+          <div class="mode-picker" role="group" aria-label="Conversation mode">
+            <button v-for="option in MODES" :key="option.id" class="tool" type="button"
+                    :aria-pressed="mode === option.id" :disabled="busy || updating"
+                    @click="setMode(option.id)">{{ option.label }}</button>
+          </div>
+          <details v-if="candidates.length" class="candidate-list">
+            <summary>Shortlist ({{ candidates.length }})</summary>
+            <ul>
+              <li v-for="candidate in candidates" :key="candidate">
+                <span>{{ candidate }}</span>
+                <button type="button" class="tool" :disabled="busy || updating" @click="sharpenCandidate(candidate)">Sharpen</button>
+                <button type="button" class="tool" :disabled="busy || updating" :aria-label="'Remove ' + candidate"
+                        @click="storeCandidates(candidates.filter(item => item !== candidate))">Remove</button>
+              </li>
+            </ul>
+          </details>
+        </div>
+
         <form class="composer" :class="{ busy }" @submit.prevent="send()">
           <span v-if="busy" class="progress" aria-hidden="true"></span>
           <textarea
@@ -80,14 +99,24 @@
             v-model="draft"
             rows="1"
             maxlength="4000"
-            :placeholder="busy ? 'Your team is working. Type your next thought...' : (answering ? 'Your answer...' : (messages.length > 1 ? 'Reply to your co-founder...' : 'Describe your idea, however rough...'))"
+            :placeholder="busy ? 'Your team is working. Type your next thought...' : (answering ? 'Your answer...' : mode === 'brainstorm' ? 'Describe a problem you have seen firsthand...' : (messages.length > 1 ? 'Reply to your co-founder...' : 'Describe your idea, however rough...'))"
             aria-label="Message your AI co-founder"
             :disabled="!state"
             @input="autoGrow"
             @keydown.enter.exact.prevent="send()"
           ></textarea>
+          <div v-if="mode === 'brainstorm'" class="brainstorm-tools">
+            <button type="button" class="tool" :disabled="busy"
+                    @click="requestAssistance('hint')">Get a hint</button>
+            <button type="button" class="tool" :disabled="busy"
+                    @click="requestAssistance('sparks')">Show rough ideas</button>
+            <button v-if="draft.trim()" type="button" class="tool"
+                    :disabled="busy || candidates.length >= 12 || draft.trim().length > 400 || alreadyShortlisted"
+                    title="Save a short problem statement in your own words, including why it matters to you"
+                    @click="storeCandidates([...candidates, draft.trim()])">Save to shortlist</button>
+          </div>
           <div class="tools">
-            <button type="button" class="tool" :disabled="busy || confidential || !state || (state.why_not_built.search.sweeps || 0) >= 3"
+            <button v-if="mode !== 'brainstorm'" type="button" class="tool" :disabled="busy || confidential || !state || (state.why_not_built.search.sweeps || 0) >= 3"
                     :title="confidential ? 'Confidential mode is on, so nothing is searched' : 'Look up who already does this'" @click="research">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3a4 4 0 100 8 4 4 0 000-8zM10 10l3.5 3.5" /></svg>Research
             </button>
@@ -226,13 +255,18 @@ import { AGENTS, SPECIALIST_IDS } from '../utils/agents'
 import { newIdea, streamIdeaTurn, streamIdeaTeam, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
+const MODES = [
+  { id: 'brainstorm', label: 'Brainstorm' },
+  { id: 'sharpen', label: 'Sharpen' },
+  { id: 'stress-test', label: 'Stress-test' },
+]
 const STARTERS = [
-  { title: 'I have an idea', desc: 'Describe it roughly and sharpen it together.', text: 'My idea is ',
+  { mode: 'sharpen', title: 'I have an idea', desc: 'Describe it roughly and sharpen it together.', text: 'My idea is ',
     icon: 'M8 2.5a4 4 0 00-2.4 7.2c.5.4.9.9.9 1.3h3c0-.4.4-.9.9-1.3A4 4 0 008 2.5zM6.5 13h3' },
-  { title: 'Help me find one', desc: 'Start from problems you have seen, not from scratch.',
+  { mode: 'brainstorm', title: 'Help me find one', desc: 'Start from problems you have seen, not from scratch.',
     text: "I want to start something but I don't have an idea yet. Here is what I know well: ",
     icon: 'M7 3a4 4 0 100 8 4 4 0 000-8zM10 10l3.5 3.5' },
-  { title: 'Poke holes in mine', desc: 'Stress-test an idea you already believe in.',
+  { mode: 'stress-test', title: 'Poke holes in mine', desc: 'Stress-test an idea you already believe in.',
     text: 'I have an idea I believe in. Please challenge it hard: ', icon: 'M8 2.5l6 10.5H2zM8 6.5v3M8 11.2v.3' },
 ]
 const PATH_LABELS = [
@@ -251,6 +285,14 @@ const HISTORY_SENT = 12
 const state = ref(null)
 const messages = ref([])
 const draft = ref('')
+const mode = computed(() => MODES.find(option => option.id === state.value?.brainstorm?.mode)?.id || 'sharpen')
+const candidates = computed(() => {
+  const items = state.value?.brainstorm?.candidates
+  return Array.isArray(items) ? items.filter(item => typeof item === 'string') : []
+})
+const alreadyShortlisted = computed(() =>
+  candidates.value.some(item => item.toLowerCase() === draft.value.trim().toLowerCase())
+)
 const busy = ref(false)
 const status = ref('')
 const error = ref('')
@@ -409,7 +451,7 @@ async function importIdea(e) {
 async function send(text, opts = {}) {
   const content = (text ?? draft.value).trim()
   if (!content || busy.value || !state.value) return
-  draft.value = ''
+  if (!opts.assistance) draft.value = ''
   answering.value = false
   nextTick(autoGrow)
   error.value = ''
@@ -425,8 +467,9 @@ async function send(text, opts = {}) {
   scrollDown(true)
   setLive('cofounder', { status: 'running' })
 
+  const brainstormTurn = mode.value === 'brainstorm'
   lastPayload = { state: state.value, messages: history, content, research: !!opts.research,
-                  confidential: confidential.value }
+                  confidential: confidential.value, assistance: opts.assistance }
   let ok = false
   controller = new AbortController()
   try {
@@ -437,7 +480,7 @@ async function send(text, opts = {}) {
     finishOpenSteps(live, 'failed')
     messages.value.splice(messages.value.indexOf(live), 1)
     messages.value.splice(messages.value.length - 1, 1)   // drop the unanswered user message
-    draft.value = content
+    if (!opts.assistance) draft.value = content
     nextTick(autoGrow)
     error.value = e.name === 'AbortError' ? '' : (e.message || 'Something went wrong.')
   } finally {
@@ -451,7 +494,7 @@ async function send(text, opts = {}) {
     save()
     focusComposer()
   }
-  if (ok) { traceMsg = live; runTeam() }
+  if (ok && !brainstormTurn) { traceMsg = live; runTeam() }
 }
 
 // ── Agent team ──────────────────────────────────────────────────────────────
@@ -598,17 +641,21 @@ function onEvent(ev, live) {
       if (ev.notice) live.notice = ev.notice
       if (Array.isArray(ev.actions)) live.actions = ev.actions
       status.value = ''
-      updating.value = true
+      updating.value = !ev.brainstorm
       step(live, 'cofounder', { status: 'done', detail: ev.source === 'scripted' ? 'used a scripted question' : 'replied' })
-      step(live, 'analyst', { status: 'running', detail: 'updating the live idea' })
+      if (!ev.brainstorm) step(live, 'analyst', { status: 'running', detail: 'updating the live idea' })
       live.tail = 0
       live.ask = ev.ask || null
       if (ev.research) live.research = ev.research
       scrollDown()
       setLive('cofounder', { status: 'done', at: Date.now() })
-      setLive('analyst', { status: 'running' })
+      if (!ev.brainstorm) setLive('analyst', { status: 'running' })
       break
     case 'state':
+      if (ev.brainstorm) {
+        state.value = { ...state.value, brainstorm: ev.state.brainstorm }
+        break
+      }
       updating.value = false
       {
         const n = (ev.applied || []).length
@@ -652,7 +699,29 @@ function openDetail(sectionId) {
   })
 }
 
+function setMode(selected) {
+  state.value = { ...state.value, brainstorm: { ...state.value.brainstorm, mode: selected } }
+  save()
+}
+
+function storeCandidates(items) {
+  state.value = { ...state.value, brainstorm: { ...state.value.brainstorm, candidates: items } }
+  save()
+}
+
+function sharpenCandidate(candidate) {
+  setMode('sharpen')
+  draftAbout(candidate)
+}
+
+function requestAssistance(assistance) {
+  const text = assistance === 'hint' ? 'Give me a hint.' : 'Show me rough ideas to react to.'
+  send(text, { assistance })
+}
+
 function useStarter(s) {
+  if (!state.value) return
+  setMode(s.mode)
   draft.value = s.text
   nextTick(autoGrow)
   focusComposer(true)
@@ -666,7 +735,7 @@ function draftAbout(text) {
 }
 
 function retry() {
-  if (lastPayload) send(lastPayload.content, { research: lastPayload.research })
+  if (lastPayload) send(lastPayload.content, { research: lastPayload.research, assistance: lastPayload.assistance })
 }
 
 function flash(paths) {
@@ -691,7 +760,7 @@ async function sendBrief() {
 async function onEdit(path, text) {
   try {
     const res = await editIdeaField(state.value, path, text)
-    state.value = res.data.state
+    state.value = { ...res.data.state, brainstorm: state.value?.brainstorm ?? res.data.state.brainstorm }
     flash([path])
     save()
   } catch (e) { error.value = e.message }
@@ -700,7 +769,7 @@ async function onEdit(path, text) {
 async function onLock(path, locked) {
   try {
     const res = await lockIdeaField(state.value, path, locked)
-    state.value = res.data.state
+    state.value = { ...res.data.state, brainstorm: state.value?.brainstorm ?? res.data.state.brainstorm }
     save()
   } catch (e) { error.value = e.message }
 }
@@ -868,6 +937,16 @@ onMounted(async () => {
 .jump-enter-from, .jump-leave-to { opacity: 0; transform: translate(-50%, 6px); }
 
 /* Composer */
+.ideation-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
+  max-width: 680px; width: calc(100% - 32px); margin: 0 auto 8px; }
+.mode-picker { display: flex; flex-wrap: wrap; gap: 4px; }
+.mode-picker .tool[aria-pressed="true"] { background: #222936; color: #bfdbfe; }
+.candidate-list { color: var(--text-secondary); font-size: 13px; max-width: 100%; }
+.candidate-list summary { cursor: pointer; padding: 4px; }
+.candidate-list[open] { width: 100%; }
+.candidate-list ul { margin: 4px 0; padding: 0; max-height: 145px; overflow: auto; }
+.candidate-list li { display: flex; align-items: center; gap: 6px; padding: 4px; border-top: 1px solid #222; }
+.candidate-list li span { flex: 1; overflow-wrap: anywhere; }
 .composer { position: relative; max-width: 680px; width: calc(100% - 32px); margin: 0 auto; padding: 12px 12px 8px; overflow: hidden;
   border: 1px solid #262626; border-radius: 18px; background: #0c0c0c;
   transition: border-color var(--dur-2) ease, box-shadow var(--dur-2) ease; }
@@ -879,6 +958,7 @@ onMounted(async () => {
 .composer textarea { display: block; width: 100%; resize: none; border: none; background: transparent; color: var(--text-primary);
   font: inherit; font-size: 15px; line-height: 1.5; min-height: 24px; max-height: 180px; outline: none; padding: 2px 4px; }
 .composer textarea::placeholder { color: #5a5a5a; }
+.brainstorm-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .tool { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550; padding: 5px 10px; border-radius: 999px;
   border: 1px solid #262626; background: transparent; color: var(--text-secondary); }

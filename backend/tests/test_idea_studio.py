@@ -287,3 +287,46 @@ def test_analyst_model_defaults(monkeypatch):
     monkeypatch.delenv('IDEA_EXTRACT_MODEL')
     monkeypatch.setenv('LLM_BASE_URL', 'https://api.openai.com/v1')
     assert studio.model_for('IDEA_EXTRACT_MODEL') is None
+
+
+def test_brainstorm_api_advances_hints_without_changing_the_active_idea(client, monkeypatch):
+    chat = FakeChat(chunks=('Schedule changes might not reach the next shift.\n'
+                            'Handoffs may depend on one supervisor.\n'
+                            'Time records may disagree across tools.',))
+    monkeypatch.setattr(studio, '_llm', lambda env: chat if env == 'IDEA_CHAT_MODEL' else pytest.fail(env))
+    state = client.get('/api/idea/new').get_json()['data']['state']
+    state = st.founder_edit(state, '/problem/statement', 'A problem already in the brief')
+    state['brainstorm'].update(mode='brainstorm', candidates=['A separate founder observation'])
+    problem = state['problem']
+    progress = state['meta']
+
+    for content, assistance, expected_level in [
+        ('Give me a hint.', 'hint', 1),
+        ("I'm stuck.", '', 2),
+        ('Show me rough ideas.', 'sparks', 4),
+        ('Shift leads copy the schedule into three spreadsheets every day.', '', 0),
+    ]:
+        stream = sse(client.post('/api/idea/turn', json={
+            'state': state, 'content': content, 'assistance': assistance,
+        }))
+        assert stream[-1]['type'] == 'done'
+        reply = next(event for event in stream if event['type'] == 'reply')
+        assert ('AI-suggested hypotheses' in reply['content']) == (expected_level == 4)
+        assert reply['content'].count('?') == 1
+        state = next(event for event in stream if event['type'] == 'state')['state']
+        assert state['brainstorm']['hint_level'] == expected_level
+        assert state['brainstorm']['candidates'] == ['A separate founder observation']
+        assert state['problem'] == problem
+        assert state['meta'] == progress
+
+
+def test_stress_test_routes_to_risk_and_preserves_brief_when_analyst_is_down():
+    state = st.refresh(st.new_state())
+    state['brainstorm']['mode'] = 'stress-test'
+    chat = FakeChat()
+    stream = events(studio.run_turn(state, [], 'What could kill the idea?',
+                                    chat_llm=chat, extract_llm=FakeExtract([])))
+    assert stream[0]['next_question']['field'] == 'risky_assumptions'
+    assert 'Mode: Stress-test' in chat.messages[-1]['content']
+    updated = next(event for event in stream if event['type'] == 'state')['state']
+    assert updated['problem']['statement']['text'] == ''

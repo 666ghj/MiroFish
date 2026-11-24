@@ -18,6 +18,8 @@ import copy
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from .idea_brainstorm import clean_workspace
+
 SCHEMA_VERSION = 1
 
 STATUSES = ('unknown', 'founder_stated', 'ai_inference', 'evidence', 'contradiction')
@@ -103,6 +105,7 @@ def new_state(session_id: str = '') -> Dict[str, Any]:
     return {
         'meta': {'schema_version': SCHEMA_VERSION, 'session_id': session_id, 'turn': 0,
                  'version': 0, 'stage': 'vague'},
+        'brainstorm': clean_workspace(None),
         'one_liner': _claim(),
         'problem': {k: _claim() for k in ('statement', 'who', 'severity', 'frequency', 'workaround')},
         'customer': {k: _claim() for k in ('buyer', 'early_adopters', 'where_they_gather')},
@@ -646,6 +649,7 @@ def validate_client_state(raw: Any, session_id: str = '') -> Dict[str, Any]:
     if isinstance(raw.get('history'), list):
         base['history'] = [h for h in raw['history'] if isinstance(h, dict)][-30:]
     base['parked'] = clean_parked(raw.get('parked'))
+    base['brainstorm'] = clean_workspace(raw.get('brainstorm'))
     return refresh(base)
 
 
