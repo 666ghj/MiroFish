@@ -72,7 +72,8 @@ def test_full_turn_streams_reply_and_applies_validated_patch():
     types = [e['type'] for e in ev]
     assert types == ['start', 'delta', 'delta', 'reply', 'state', 'done']
     reply = next(e for e in ev if e['type'] == 'reply')
-    assert reply['source'] == 'llm' and reply['content'] == 'Got it. **What can they not do well today?**'
+    assert reply['source'] == 'llm' and reply['acknowledgment'] == 'Got it.'
+    assert reply['ask']['field'] != 'problem.statement'
     state_ev = next(e for e in ev if e['type'] == 'state')
     s = state_ev['state']
     assert s['problem']['statement']['status'] == 'founder_stated'
@@ -82,11 +83,13 @@ def test_full_turn_streams_reply_and_applies_validated_patch():
     assert len(s['open_questions']) == 3
 
 
-def test_extractor_is_third_person_and_sees_the_reply():
+def test_extractor_reads_only_the_latest_founder_message():
     chat, extract = FakeChat(), FakeExtract([{'founder_facts': {}}])
     events(studio.run_turn(new(), [], 'my idea', chat, extract))
     system = extract.messages[0]['content']
-    assert system.startswith('An analyst is reviewing') and 'Advisor: Got it. **What can they not do well today?**' in extract.messages[1]['content']
+    assert system.startswith('An analyst is reviewing')
+    assert 'LATEST FOUNDER MESSAGE:\nmy idea' in extract.messages[1]['content']
+    assert 'Advisor:' not in extract.messages[1]['content']
     assert 'NEXT QUESTION' in chat.messages[1]['content']
 
 
@@ -96,13 +99,12 @@ def test_chat_failure_falls_back_to_scripted_question():
     assert reply['source'] == 'scripted' and reply['notice'] and reply['content'].startswith('**')
 
 
-def test_extraction_retries_then_captures_founder_text_as_written():
+def test_extraction_retries_without_guessing_the_field():
     extract = FakeExtract([RuntimeError('bad json'), RuntimeError('bad json again')])
     ev = events(studio.run_turn(new(), [], 'Dentists waste time on reminder calls', FakeChat(), extract))
     state_ev = next(e for e in ev if e['type'] == 'state')
-    assert extract.calls == 2 and 'not analysed' in state_ev['notice']
-    assert state_ev['state']['problem']['statement']['text'] == 'Dentists waste time on reminder calls'
-    assert state_ev['state']['problem']['statement']['status'] == 'founder_stated'
+    assert extract.calls == 2 and 'remains in the conversation' in state_ev['notice']
+    assert state_ev['state']['problem']['statement']['text'] == ''
 
 
 def test_extraction_retry_succeeds_on_second_try():
@@ -119,7 +121,8 @@ def test_evidence_hook_sources_are_registered_and_citable():
                                                'snippet': 'Weave helps dental offices', 'provider': 'tavily'}],
                'search': {'terms': ['dental appointment software'], 'providers': ['tavily'],
                           'searched_at': '2026-11-24', 'unavailable': []}}
-    extract = FakeExtract([{'founder_facts': {}, 'analysis': {'competitors': [{'name': 'Weave', 'source_id': 'S1'}]}}])
+        yield {'type': 'research', 'analysis': {'competitors': [{'name': 'Weave', 'source_id': 'S1'}]}}
+    extract = FakeExtract([{'founder_facts': {}}])
     chat = FakeChat()
     ev = events(studio.run_turn(new(), [], 'idea', chat, extract, evidence_hook=hook))
     assert [e['type'] for e in ev][:3] == ['start', 'searching', 'sources']
@@ -253,8 +256,8 @@ def test_state_to_brief_maps_fields_and_readiness():
     out = studio.state_to_brief(s, 'FreightGuard')
     b = out['brief']
     assert b['productName'] == 'FreightGuard'
-    assert b['painPoint'].startswith('Carriers overbill small 3PLs') and '$18,000' in b['painPoint']
-    assert b['icp'] == 'AP clerks at 3PLs with 20 to 100 people.'
+    assert b['painPoint'] == 'Carriers overbill small 3PLs on freight invoices'
+    assert b['icp'] == 'AP clerks at 3PLs with 20 to 100 people'
     assert b['competitors'] == 'FreightPOP' and b['salesChannel'] == 'partnerships'
     assert b['pricingModel'] == '20 percent of recovered overcharges'
     assert 'Carriers may dispute' in b['existingProblems']
@@ -330,3 +333,53 @@ def test_stress_test_routes_to_risk_and_preserves_brief_when_analyst_is_down():
     assert 'Mode: Stress-test' in chat.messages[-1]['content']
     updated = next(event for event in stream if event['type'] == 'state')['state']
     assert updated['problem']['statement']['text'] == ''
+
+
+def test_off_domain_answer_is_quarantined_and_blocks_prefill(client):
+    state = st.founder_edit(new(), '/problem/who', 'Alex, solo founder')
+    extract = FakeExtract([{'founder_facts': {
+        'who': 'RF engineer at Amdocs', 'problem': 'Cell towers use too much energy',
+    }}])
+    stream = events(studio.run_turn(state, [], 'RF engineer at Amdocs', FakeChat(), extract))
+    state = next(event for event in stream if event['type'] == 'state')['state']
+    assert state['problem']['who']['text'] == 'Alex, solo founder'
+    assert state['problem']['statement']['text'] == ''
+    assert state['conflicts'] == {'/problem/who': 'RF engineer at Amdocs'}
+    assert client.post('/api/idea/brief', json={'state': state}).status_code == 409
+
+    response = client.post('/api/idea/resolve-conflict', json={
+        'state': state, 'path': '/problem/who', 'choice': 'replace',
+    })
+    updated = response.get_json()['data']['state']
+    assert updated['conflicts'] == {}
+    assert updated['problem']['who']['text'] == 'RF engineer at Amdocs'
+    assert updated['history'][-1]['revisions'][0]['before']['text'] == 'Alex, solo founder'
+
+
+@pytest.mark.parametrize('text', [
+    'some examples',
+    'help me increase the score to moe than 60',
+    'Meet Alex, a solo founder who prioritizes original thinking.',
+    'mark that as pending and top priority',
+])
+def test_non_answer_turns_bypass_extraction_and_preserve_interview_slot(text):
+    examples = ['Can you describe the last time?', 'What did it cost?']
+    chat = FakeExtract([{'acknowledgment': 'Try these prompts.', 'coaching_items': examples}])
+    extractor = FakeExtract([{'founder_facts': {'who': 'Different customer'}}])
+    stream = events(studio.run_turn(new(), [], text, chat, extractor))
+    reply = next(event for event in stream if event['type'] == 'reply')
+    state = next(event for event in stream if event['type'] == 'state')['state']
+    assert reply['coaching_items'] == examples
+    assert reply['ask']['question'] == ''
+    assert extractor.calls == 0 and not state['history']
+    assert state['problem']['who']['text'] == ''
+    if 'pending' in text:
+        assert state['parked'][0]['priority'] == 'top'
+
+
+def test_simulation_coherence_check_rejects_existing_mixed_brief():
+    state = st.founder_edit(new(), '/one_liner', 'MindForge is a cognitive gym for solo founders.')
+    state = st.founder_edit(state, '/problem/who', 'RF engineers at Amdocs')
+    state = st.founder_edit(state, '/problem/statement', 'Cell towers draw too much power')
+    judge = FakeExtract([{'aligned': False, 'issue': 'The pain describes telecommunications.'}])
+    assert 'telecommunications' in studio.check_brief_coherence(state, judge)

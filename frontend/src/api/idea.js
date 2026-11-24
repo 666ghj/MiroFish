@@ -125,3 +125,6 @@ async function streamSSE(path, payload, onEvent, signal) {
 
 /** Turn the idea into a pre-filled GTM brief: {brief, ready, clarity, missing, ready_at}. */
 export const ideaToBrief = (state) => service.post('/api/idea/brief', { state })
+
+export const resolveIdeaConflict = (state, path, choice) =>
+  service.post('/api/idea/resolve-conflict', { state, path, choice })

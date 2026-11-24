@@ -198,11 +198,33 @@ def idea_lock():
     return _state_action(lambda m, s, b: m.refresh(m.set_locked(s, str(b.get('path', '')), bool(b.get('locked')))))
 
 
+@idea_bp.route('/resolve-conflict', methods=['POST'])
+def idea_resolve_conflict():
+    def resolve(module, state, body):
+        path = str(body.get('path', ''))
+        if path not in state['conflicts'] or body.get('choice') not in ('keep', 'replace'):
+            raise ValueError('Choose a value for an open conflict.')
+        candidate = state['conflicts'].pop(path)
+        if body['choice'] == 'replace':
+            return module.founder_edit(state, path, candidate)
+        state['meta']['version'] += 1
+        return state
+
+    return _state_action(resolve)
+
+
 @idea_bp.route('/brief', methods=['POST'])
 def idea_brief():
     """Turn the idea into a pre-filled GTM brief (the founder reviews it before running)."""
     from ..services import idea_state, idea_studio
     body = request.get_json(silent=True) or {}
     state = idea_state.validate_client_state(body.get('state'))
-    name = idea_studio.suggest_name(state) if body.get('suggest_name', True) else ''
+    if state['conflicts']:
+        return jsonify({'success': False, 'error': 'Resolve the conflicting fields in Idea Studio before opening the simulation.'}), 409
+    if any(claim['status'] == 'contradiction' for _, claim in idea_state.iter_claims(state)):
+        return jsonify({'success': False, 'error': 'Confirm the correct values for fields marked as contradictions before opening the simulation.'}), 409
+    error = idea_studio.check_brief_coherence(state)
+    if error:
+        return jsonify({'success': False, 'error': error}), 409
+    name = idea_studio.suggest_name(state) if body.get('suggest_name', True) and not state['product_name']['text'] else ''
     return jsonify({'success': True, 'data': idea_studio.state_to_brief(state, name)})

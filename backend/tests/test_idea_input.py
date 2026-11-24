@@ -165,7 +165,7 @@ def test_research_asked_in_words_runs_the_search_and_the_reply_must_report_it():
     assert reply['content'].startswith('I searched for "x".')          # the facts are written by code
 
 
-def test_idea_update_happens_before_research_so_search_uses_the_new_idea():
+def test_research_does_not_apply_a_router_suggested_rewrite():
     seen = {}
 
     def hook(state, msg, force=False, recent=""):
@@ -176,7 +176,7 @@ def test_idea_update_happens_before_research_so_search_uses_the_new_idea():
                        'idea_update': {'one_liner': 'Helps people use AI without losing their own thinking'}})
     list(studio.run_turn(base(), [], 'look it up', FakeChat('Ok. **Who?**'), FakeJSON({'founder_facts': {}}),
                          evidence_hook=hook, read_llm=reader))
-    assert seen['one_liner'] == 'Helps people use AI without losing their own thinking'
+    assert seen['one_liner'] == base()['one_liner']['text']
 
 
 def test_research_line_is_exact():

@@ -153,15 +153,15 @@ def test_hook_in_a_turn_registers_sources_and_asks_differentiation():
 
     class Extract:
         def chat_json(self, m, **kw):
-            return {'founder_facts': {}, 'analysis': {
-                'competitors': [{'name': 'FreightPOP', 'source_id': 'Sabc123', 'status': 'active'}],
-                'classification': 'exists_unknown'}}
+            return {'founder_facts': {}}
 
-    class NoSynth:
+    class Synth:
         def chat_json(self, m, **kw):
-            return {}
+            return {
+                'competitors': [{'name': 'FreightPOP', 'source_id': 'Sabc123', 'status': 'active'}],
+                'classification': 'exists_unknown'}
 
-    hook = ev.make_hook(planner_llm=Planner(), sweep_fn=fake_sweep, synth_llm=NoSynth())
+    hook = ev.make_hook(planner_llm=Planner(), sweep_fn=fake_sweep, synth_llm=Synth())
     events = list(studio.run_turn(idea_state(turn=1), [], 'It audits invoices', Chat(), Extract(), evidence_hook=hook))
     kinds = [e['type'] for e in events]
     assert kinds[:3] == ['start', 'searching', 'sources']

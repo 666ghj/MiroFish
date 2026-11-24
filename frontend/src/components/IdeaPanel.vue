@@ -5,6 +5,8 @@
       <div class="hero-row">
         <div class="hero-text">
           <div class="eyebrow">The idea, so far</div>
+          <IdeaClaim v-if="state.product_name" :claim="state.product_name" path="/product_name" label="Product name"
+                     :sources="state.sources" placeholder="Add a product name" @edit="fwdEdit" @lock="fwdLock" />
           <IdeaClaim
             :claim="state.one_liner"
             path="/one_liner"
@@ -33,7 +35,7 @@
       </p>
 
       <div class="handoff">
-        <button type="button" class="btn-send" :disabled="busy || clarity.score < 60" @click="$emit('send-brief')">
+        <button type="button" class="btn-send" :disabled="busy || clarity.score < 60 || Object.keys(state.conflicts || {}).length" @click="$emit('send-brief')">
           Test it with buyer personas <span aria-hidden="true">→</span>
         </button>
         <span class="handoff-note">

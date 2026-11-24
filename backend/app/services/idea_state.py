@@ -41,7 +41,7 @@ IMPACTS = ('fatal', 'major', 'minor')
 
 # Single-claim fields the model may write
 CLAIM_PATHS = {
-    '/one_liner',
+    '/product_name', '/one_liner',
     '/problem/statement', '/problem/who', '/problem/severity', '/problem/frequency', '/problem/workaround',
     '/customer/buyer', '/customer/early_adopters', '/customer/where_they_gather',
     '/solution/core', '/solution/smallest_version',
@@ -105,7 +105,9 @@ def new_state(session_id: str = '') -> Dict[str, Any]:
     return {
         'meta': {'schema_version': SCHEMA_VERSION, 'session_id': session_id, 'turn': 0,
                  'version': 0, 'stage': 'vague'},
+        'conflicts': {},
         'brainstorm': clean_workspace(None),
+        'product_name': _claim(),
         'one_liner': _claim(),
         'problem': {k: _claim() for k in ('statement', 'who', 'severity', 'frequency', 'workaround')},
         'customer': {k: _claim() for k in ('buyer', 'early_adopters', 'where_they_gather')},
@@ -534,6 +536,8 @@ def apply_patch(state: Dict[str, Any], ops: List[Dict[str, Any]], turn: Optional
         new['history'] = (new['history'] + [{
             'turn': turn, 'version': new['meta']['version'], 'reason': _clean_text(reason)[:200],
             'paths': [a['path'] for a in applied],
+            'revisions': [{'path': a['path'], 'before': _get(state, a['path']), 'after': _get(new, a['path'])}
+                          for a in applied if a['path'] in CLAIM_PATHS],
         }])[-30:]
     refresh(new)
     return new, applied, rejected
@@ -564,8 +568,16 @@ def founder_edit(state: Dict[str, Any], path: str, text: str) -> Dict[str, Any]:
     node = _get(new, path)
     if not isinstance(node, dict) or 'status' not in node:
         raise ValueError('only claims can be edited')
+    before = node.copy()
     node.update({'text': _clean_text(text), 'status': 'founder_stated' if text.strip() else 'unknown',
-                 'specific': True, 'locked': True, 'updated_turn': new['meta']['turn']})
+                 'specific': True, 'locked': True, 'confidence': 'high' if text.strip() else 'low',
+                 'source_ids': [], 'updated_turn': new['meta']['turn']})
+    new['conflicts'].pop(path, None)
+    new['meta']['version'] += 1
+    new['history'] = (new['history'] + [{
+        'turn': new['meta']['turn'], 'version': new['meta']['version'], 'reason': 'Founder edit',
+        'paths': [path], 'revisions': [{'path': path, 'before': before, 'after': node.copy()}],
+    }])[-30:]
     refresh(new)
     return new
 
@@ -650,6 +662,10 @@ def validate_client_state(raw: Any, session_id: str = '') -> Dict[str, Any]:
         base['history'] = [h for h in raw['history'] if isinstance(h, dict)][-30:]
     base['parked'] = clean_parked(raw.get('parked'))
     base['brainstorm'] = clean_workspace(raw.get('brainstorm'))
+    conflicts = raw.get('conflicts')
+    if isinstance(conflicts, dict):
+        base['conflicts'] = {path: _clean_text(value) for path, value in conflicts.items()
+                             if path in CLAIM_PATHS and isinstance(value, str) and value.strip()}
     return refresh(base)
 
 

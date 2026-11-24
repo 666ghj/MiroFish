@@ -252,14 +252,23 @@ def _summarize_output(agent_id: str, out: Dict[str, Any]) -> str:
 
 
 def build_messages(agent: Dict[str, Any], state: Dict[str, Any], prior: Dict[str, Any]) -> List[Dict[str, str]]:
-    from .idea_studio import render_state     # local import: idea_studio imports nothing from here
+    from .idea_studio import pick_next_questions, render_sources
     team = [_summarize_output(u, prior[u]['output']) for u in agent.get('uses', [])
             if (prior.get(u) or {}).get('output')]
-    user = f"IDEA STATE:\n{render_state(state)}"
+    targets = pick_next_questions(state)
+    context = {
+        'fields': dict(st.iter_claims(state)),
+        'next_missing_slot': targets[0]['field'] if targets else None,
+        'parked': state['parked'],
+        'risky_assumptions': state['risky_assumptions'],
+        'open_objections': state['open_objections'],
+        'market': state['why_not_built'],
+    }
+    user = f"IDEA STATE:\n{json.dumps(context, ensure_ascii=False)}\n\nEVIDENCE:\n{render_sources(state)}"
     if team:
         user += "\n\nTEAM FINDINGS (from other agents; treat as input, not fact):\n" + '\n'.join(team)
     user += "\n\nReturn the JSON object now."
-    return [{'role': 'system', 'content': agent['prompt'] + '\n\n' + COMMON_RULES},
+    return [{'role': 'system', 'content': agent['prompt'] + '\n\n' + COMMON_RULES + '\nUse existing fields as context. Ask only about the next missing field or evidence gaps. Never ask a founder to repeat a locked decision.'},
             {'role': 'user', 'content': user}]
 
 

@@ -36,6 +36,10 @@
       </div>
       <div v-else-if="parsed.body" class="body" v-html="parsed.bodyHtml"></div>
 
+      <ol v-if="m.coachingItems?.length" class="body">
+        <li v-for="(item, index) in m.coachingItems" :key="index">{{ item }}</li>
+      </ol>
+
       <div v-if="m.notice" class="notice">{{ m.notice }}</div>
 
       <!-- What the app did with the message -->
@@ -92,18 +96,16 @@ const streamParas = computed(() => {
 
 // Finished: split into research facts (shown as a card), body, and the question
 const parsed = computed(() => {
-  let text = (props.m.content || '').trim()
-  if (props.m.research && /^I searched (for|the web)/.test(text)) text = text.replace(/^[^\n]*(\n+|$)/, '').trim()
-  let question = ''
-  const bold = [...text.matchAll(/\*\*([^*]+?\?)\*\*/g)]
-  if (bold.length) {
-    const last = bold[bold.length - 1]
-    question = last[1].trim()
-    text = (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim()
-  } else {
-    const m = text.match(/([^.!?\n]*\?)\s*$/)
-    if (m && props.m.ask) { question = m[1].trim(); text = text.slice(0, m.index).trim() }
+  let text = (props.m.acknowledgment ?? props.m.content ?? '').trim()
+  let question = props.m.ask?.question || ''
+  if (props.m.acknowledgment === undefined) {
+    const legacy = text.match(/(?:^|\n)\*\*([^\n*]+\?)\*\*$/)
+    if (legacy) {
+      question = legacy[1]
+      text = text.slice(0, legacy.index).trim()
+    }
   }
+  if (props.m.research && /^I searched (for|the web)/.test(text)) text = text.replace(/^[^\n]*(\n+|$)/, '').trim()
   const bodyHtml = text.split(/\n{2,}/).filter(Boolean)
     .map(p => `<p>${esc(p).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</p>`).join('')
   return { body: text, bodyHtml, question }
