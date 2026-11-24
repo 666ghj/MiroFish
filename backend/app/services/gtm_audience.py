@@ -151,11 +151,16 @@ def normalize_audience(raw: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def audience_prompt(audience: Optional[Dict[str, Any]], count: int) -> str:
-    """Prompt section describing the audience. Empty when no audience was set."""
+def audience_prompt(audience: Optional[Dict[str, Any]], count: int,
+                    role_counts: Optional[List[int]] = None) -> str:
+    """Prompt section describing the audience. Empty when no audience was set.
+
+    `role_counts` (decision makers, champions, evaluators) overrides the split derived
+    from the mix, so each persona batch can ask for its exact share.
+    """
     if not audience:
         return ''
-    counts = apportion([audience['mix'][k] for k in ARCHETYPE_IDS], count)
+    counts = role_counts or apportion([audience['mix'][k] for k in ARCHETYPE_IDS], count)
     role_line = ', '.join(
         f"about {n} {_ROLE_NAMES[k][0 if n == 1 else 1]} ({_ROLE_DESC[k]})" for k, n in zip(ARCHETYPE_IDS, counts)
     )

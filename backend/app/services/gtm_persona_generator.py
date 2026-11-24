@@ -1,18 +1,31 @@
 """
-GTM Persona Generator - produces 10-12 realistic B2B buyer personas from a GTM brief.
-Uses LLMClient.chat_json() with a structured prompt; falls back to mock data if the
-LLM is unavailable or returns invalid output.
+GTM Persona Generator - produces realistic B2B buyer personas from a GTM brief.
+
+Personas are generated in parallel batches of BATCH_SIZE so large audiences are not
+truncated by a single response's token limit. Each batch gets its exact share of the
+audience's role mix and regions, and a different spread of persona types.
+
+Honesty rules:
+- A failed batch is retried once, then dropped. Missing personas are never padded with
+  sample data; the result reports how many were generated.
+- Sample data is used only when too few batches succeed (or the LLM is unavailable),
+  and the result is labelled source="mock" with the reason.
 """
 
 import os
 import json
+import math
+import random
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
 
 from ..utils.llm_client import LLMClient
 from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
-from .gtm_audience import audience_prompt, enrich_personas, market_context
+from .gtm_audience import (
+    ARCHETYPE_IDS, apportion, audience_prompt, enrich_personas, market_context,
+)
 
 logger = get_logger('mirofish.gtm_persona_generator')
 
@@ -27,6 +40,10 @@ PERSONA_TYPES = [
 ]
 
 VALID_REACTIONS = {'interested', 'neutral', 'objection'}
+
+BATCH_SIZE = 10            # personas per LLM call; ~10 fit comfortably in one response
+MAX_PARALLEL_BATCHES = 6
+MIN_COVERAGE = 0.5         # below this share of requested personas, fall back to labelled sample data
 VALID_SENSITIVITIES = {'low', 'medium', 'high'}
 
 SYSTEM_PROMPT = """You are a senior B2B GTM strategist. Your job is to generate realistic,
@@ -71,8 +88,20 @@ pain and pushes for change. Evaluator = checks fit, risk, and integration. Most 
 blend two or three roles (a founder might be 60/30/10)."""
 
 
-def _build_user_prompt(brief: Any, count: int) -> str:
+def _build_user_prompt(brief: Any, count: int, batch: Optional[Dict[str, Any]] = None) -> str:
     competitors = ', '.join(brief.competitors) if brief.competitors else 'None specified'
+    audience = getattr(brief, 'audience', None)
+    if batch and audience:
+        audience = {**audience, 'regions': batch['regions'] or audience.get('regions', [])}
+    role_counts = batch['role_counts'] if batch else None
+    types = batch['persona_types'] if batch else PERSONA_TYPES
+    batch_line = ''
+    if batch and batch['total'] > 1:
+        batch_line = (f"This is batch {batch['index'] + 1} of {batch['total']} for the same audience. "
+                      'Other batches cover other personas, so give every persona a distinct, '
+                      'region-appropriate full name and avoid generic archetypes.\n')
+    mix_rule = ('Include at least 3 "interested", 3 "neutral", and 3 "objection" reactions.'
+                if count >= 9 else 'Include a realistic mix of "interested", "neutral", and "objection" reactions.')
     return f"""GTM Brief:
 Product: {brief.product_name} - {brief.product_description}
 ICP: {brief.icp}
@@ -86,20 +115,20 @@ Company Stage: {brief.company_stage or 'Not specified'}
 Team Size: {brief.team_size or 'Not specified'}
 Existing Problems: {brief.existing_problems or 'Not specified'}
 
-{audience_prompt(getattr(brief, 'audience', None), count)}
+{audience_prompt(audience, count, role_counts)}
 
-{market_context(getattr(brief, 'audience', None))}
+{market_context(audience)}
 If live market context is given, let it shape each persona: economic conditions drive budget pressure and urgency,
 local outreach rules and culture shape how they react to cold outreach, and upcoming holidays or fiscal year-ends
 affect timing objections.
 
-Generate exactly {count} distinct buyer personas as a JSON array.
-Use a different persona_type for each persona where possible ({', '.join(PERSONA_TYPES)});
-repeat types only when you need more than {len(PERSONA_TYPES)} personas.
+{batch_line}Generate exactly {count} distinct buyer personas as a JSON array.
+Use a different persona_type for each persona where possible, preferring in this order: {', '.join(types)}.
+Repeat types only when you need more than {len(PERSONA_TYPES)} personas.
 Make them context-aware - their goals, objections, and communication styles should
 reflect the specific product and ICP described above.
 Vary skepticism levels (some should be 1-2, some 3, some 4-5).
-Include at least 3 "interested", 3 "neutral", and 3 "objection" reactions."""
+{mix_rule}"""
 
 
 def _load_mock(count: int) -> List[Dict]:
@@ -144,6 +173,56 @@ def _ensure_unique_ids(personas: List[Dict]) -> List[Dict]:
     return personas
 
 
+def plan_batches(audience: Optional[Dict[str, Any]], count: int, seed: int = 7) -> List[Dict[str, Any]]:
+    """Split `count` personas into batches with exact role counts, regions, and persona types."""
+    n_batches = max(1, math.ceil(count / BATCH_SIZE))
+    sizes = apportion([1] * n_batches, count)
+    rand = random.Random(seed)
+
+    # Dominant role per persona, matching the audience mix exactly, then interleaved
+    mix = (audience or {}).get('mix') or {}
+    role_totals = apportion([mix.get(k, 0) for k in ARCHETYPE_IDS], count) if any(mix.values()) else None
+    roles: List[int] = []
+    if role_totals:
+        roles = [i for i, n in enumerate(role_totals) for _ in range(n)]
+        rand.shuffle(roles)
+
+    regions_all = (audience or {}).get('regions') or []
+    region_slots = [regions_all[i % len(regions_all)] for i in range(count)] if regions_all else []
+    if region_slots:
+        rand.shuffle(region_slots)
+
+    batches, start = [], 0
+    for b, size in enumerate(sizes):
+        chunk = slice(start, start + size)
+        role_counts = None
+        if roles:
+            role_counts = [sum(1 for r in roles[chunk] if r == i) for i in range(len(ARCHETYPE_IDS))]
+        regions = list(dict.fromkeys(region_slots[chunk])) if region_slots else []
+        offset = (b * 5) % len(PERSONA_TYPES)
+        batches.append({
+            'index': b,
+            'total': n_batches,
+            'size': size,
+            'role_counts': role_counts,
+            'regions': regions,
+            'persona_types': PERSONA_TYPES[offset:] + PERSONA_TYPES[:offset],
+        })
+        start += size
+    return batches
+
+
+def _extract_list(result: Any) -> List[Dict]:
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        for val in result.values():
+            if isinstance(val, list):
+                return val
+        raise ValueError("LLM response dict contained no list value")
+    raise ValueError(f"Unexpected LLM response type: {type(result)}")
+
+
 class GTMPersonaGenerator:
 
     def __init__(self):
@@ -155,50 +234,83 @@ class GTMPersonaGenerator:
         return self._llm
 
     def generate(self, brief: Any, count: int = 12) -> List[Dict]:
-        return enrich_personas(self._generate(brief, count), getattr(brief, 'audience', None))
+        """Backward-compatible: returns only the persona list."""
+        return self.generate_detailed(brief, count)['personas']
 
-    def _generate(self, brief: Any, count: int = 12) -> List[Dict]:
+    def generate_detailed(self, brief: Any, count: int = 12) -> Dict[str, Any]:
         """
-        Generate `count` buyer personas from a GTMBrief.
-        Falls back to mock data on any error.
+        Generate `count` personas in parallel batches.
+
+        Returns {
+          'personas':       list,
+          'meta': {
+            'source':         'llm' | 'mock',
+            'mock_reason':    str | None,
+            'requested':      int,
+            'generated':      int,
+            'batches':        int,
+            'batches_failed': int,
+          }
+        }
         """
+        audience = getattr(brief, 'audience', None)
+        meta = {'source': 'llm', 'mock_reason': None, 'requested': count,
+                'generated': 0, 'batches': 0, 'batches_failed': 0}
+
+        if os.environ.get('MOCK_MODE', '').lower() == 'true':
+            return self._mock(count, meta, 'MOCK_MODE is enabled', audience)
         try:
-            messages = [
-                {'role': 'system', 'content': SYSTEM_PROMPT},
-                {'role': 'user', 'content': _build_user_prompt(brief, count)},
-            ]
-            result = strip_em_dashes(self._get_llm().chat_json(messages, temperature=0.75, max_tokens=6000))
-
-            # chat_json returns a dict - look for the array
-            if isinstance(result, list):
-                personas = result
-            elif isinstance(result, dict):
-                # model may wrap the array in a key
-                for val in result.values():
-                    if isinstance(val, list):
-                        personas = val
-                        break
-                else:
-                    raise ValueError("LLM response dict contained no list value")
-            else:
-                raise ValueError(f"Unexpected LLM response type: {type(result)}")
-
-            valid = [p for p in personas if _validate(p)]
-            if len(valid) < count // 2:
-                logger.warning(f"Too few valid personas from LLM ({len(valid)}/{count}), using mock fallback")
-                return _load_mock(count)
-
-            # Pad with mock if LLM returned fewer than requested
-            if len(valid) < count:
-                mock = _load_mock(count)
-                used_types = {p.get('persona_type') for p in valid}
-                extras = [p for p in mock if p.get('persona_type') not in used_types]
-                valid += extras[:count - len(valid)]
-
-            _ensure_unique_ids(valid)
-            logger.info(f"Generated {len(valid)} buyer personas via LLM")
-            return valid[:count]
-
+            self._get_llm()
         except Exception as e:
-            logger.warning(f"Persona generation via LLM failed ({e}), using mock fallback")
-            return _load_mock(count)
+            return self._mock(count, meta, f'LLM unavailable: {e}', audience)
+
+        batches = plan_batches(audience, count, seed=(audience or {}).get('seed', 7))
+        meta['batches'] = len(batches)
+        with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_BATCHES, len(batches))) as pool:
+            results = list(pool.map(lambda b: self._run_batch(brief, b), batches))
+
+        personas: List[Dict] = []
+        for got in results:
+            if got is None:
+                meta['batches_failed'] += 1
+            else:
+                personas.extend(got)
+
+        if len(personas) < max(1, math.ceil(count * MIN_COVERAGE)):
+            return self._mock(
+                count, meta,
+                f'Only {len(personas)} of {count} personas could be generated', audience,
+            )
+
+        personas = _ensure_unique_ids(personas[:count])
+        meta['generated'] = len(personas)
+        logger.info(f"Generated {len(personas)}/{count} personas in {len(batches)} batches "
+                    f"({meta['batches_failed']} failed)")
+        return {'personas': enrich_personas(personas, audience), 'meta': meta}
+
+    def _run_batch(self, brief: Any, batch: Dict[str, Any], attempts: int = 2) -> Optional[List[Dict]]:
+        """One LLM call for one batch, retried once. Returns None if it never succeeds."""
+        for attempt in range(1, attempts + 1):
+            try:
+                messages = [
+                    {'role': 'system', 'content': SYSTEM_PROMPT},
+                    {'role': 'user', 'content': _build_user_prompt(brief, batch['size'], batch)},
+                ]
+                raw = strip_em_dashes(self._get_llm().chat_json(
+                    messages, temperature=0.75, max_tokens=900 * batch['size'] + 500))
+                valid = [p for p in _extract_list(raw) if isinstance(p, dict) and _validate(p)]
+                if len(valid) < max(1, batch['size'] // 2):
+                    raise ValueError(f"only {len(valid)}/{batch['size']} valid personas")
+                return valid[:batch['size']]
+            except Exception as e:
+                logger.warning(f"Persona batch {batch['index'] + 1}/{batch['total']} failed "
+                               f"(attempt {attempt}/{attempts}): {e}")
+        return None
+
+    def _mock(self, count: int, meta: Dict[str, Any], reason: str, audience: Any) -> Dict[str, Any]:
+        logger.warning(f"Using sample personas: {reason}")
+        personas = _load_mock(count)
+        return {
+            'personas': enrich_personas(personas, audience),
+            'meta': {**meta, 'source': 'mock', 'mock_reason': reason, 'generated': len(personas)},
+        }

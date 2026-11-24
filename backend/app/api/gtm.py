@@ -58,6 +58,30 @@ def _load_cached_personas(brief_id: str):
         return json.load(f)
 
 
+def _personas_meta_path(brief_id: str) -> str:
+    return os.path.join(os.path.dirname(_personas_path(brief_id)), 'personas_meta.json')
+
+
+def _load_personas_meta(brief_id: str):
+    path = _personas_meta_path(brief_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _generate_personas(brief_id: str, brief, count: int):
+    """Generate personas in batches, persist them with their meta, return (personas, meta)."""
+    from ..services.gtm_persona_generator import GTMPersonaGenerator
+    result = GTMPersonaGenerator().generate_detailed(brief, count=count)
+    _save_personas(brief_id, result['personas'])
+    with open(_personas_meta_path(brief_id), 'w', encoding='utf-8') as f:
+        json.dump(result['meta'], f, indent=2)
+    logger.info(f"Generated {len(result['personas'])} personas for brief {brief_id} "
+                f"(source={result['meta']['source']})")
+    return result['personas'], result['meta']
+
+
 @gtm_bp.route('/brief', methods=['POST'])
 def submit_brief():
     """
@@ -130,17 +154,13 @@ def generate_personas(brief_id: str):
     cached = _load_cached_personas(brief_id)
     if cached:
         logger.info(f"Returning cached personas for brief {brief_id}")
-        return jsonify({'success': True, 'data': cached, 'cached': True})
+        return jsonify({'success': True, 'data': cached, 'meta': _load_personas_meta(brief_id), 'cached': True})
 
     try:
-        from ..services.gtm_persona_generator import GTMPersonaGenerator
-        generator = GTMPersonaGenerator()
         body = request.get_json(silent=True, force=True) or {}
-        n = int(body.get('count', _persona_count(brief)))
-        personas = generator.generate(brief, count=n)
-        _save_personas(brief_id, personas)
-        logger.info(f"Generated and cached {len(personas)} personas for brief {brief_id}")
-        return jsonify({'success': True, 'data': personas, 'cached': False})
+        n = max(6, min(500, int(body.get('count', _persona_count(brief)))))
+        personas, meta = _generate_personas(brief_id, brief, n)
+        return jsonify({'success': True, 'data': personas, 'meta': meta, 'cached': False})
     except Exception as e:
         logger.error(f"Persona generation failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -160,15 +180,12 @@ def get_personas(brief_id: str):
 
     cached = _load_cached_personas(brief_id)
     if cached:
-        return jsonify({'success': True, 'data': cached, 'cached': True})
+        return jsonify({'success': True, 'data': cached, 'meta': _load_personas_meta(brief_id), 'cached': True})
 
     # Auto-generate on GET if not cached
     try:
-        from ..services.gtm_persona_generator import GTMPersonaGenerator
-        generator = GTMPersonaGenerator()
-        personas = generator.generate(brief, count=_persona_count(brief))
-        _save_personas(brief_id, personas)
-        return jsonify({'success': True, 'data': personas, 'cached': False})
+        personas, meta = _generate_personas(brief_id, brief, _persona_count(brief))
+        return jsonify({'success': True, 'data': personas, 'meta': meta, 'cached': False})
     except Exception as e:
         logger.error(f"On-demand persona generation failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -231,9 +248,7 @@ def generate_messages(brief_id: str):
     try:
         personas = _load_json(_personas_path(brief_id))
         if not personas:
-            from ..services.gtm_persona_generator import GTMPersonaGenerator
-            personas = GTMPersonaGenerator().generate(brief, count=_persona_count(brief))
-            _save_json(_personas_path(brief_id), personas)
+            personas, _ = _generate_personas(brief_id, brief, _persona_count(brief))
 
         from ..services.gtm_message_generator import GTMMessageGenerator
         messages = GTMMessageGenerator().generate(brief, personas, count=_message_count(brief))
@@ -308,9 +323,7 @@ def generate_reactions(brief_id: str):
     try:
         personas = _load_json(_personas_path(brief_id))
         if not personas:
-            from ..services.gtm_persona_generator import GTMPersonaGenerator
-            personas = GTMPersonaGenerator().generate(brief, count=_persona_count(brief))
-            _save_json(_personas_path(brief_id), personas)
+            personas, _ = _generate_personas(brief_id, brief, _persona_count(brief))
 
         messages = _load_json(_messages_path(brief_id))
         if not messages:
@@ -373,9 +386,7 @@ def generate_report(brief_id: str):
         # Ensure all upstream data exists
         personas = _load_json(_personas_path(brief_id))
         if not personas:
-            from ..services.gtm_persona_generator import GTMPersonaGenerator
-            personas = GTMPersonaGenerator().generate(brief, count=_persona_count(brief))
-            _save_json(_personas_path(brief_id), personas)
+            personas, _ = _generate_personas(brief_id, brief, _persona_count(brief))
 
         messages = _load_json(_messages_path(brief_id))
         if not messages:

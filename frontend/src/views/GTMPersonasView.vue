@@ -49,6 +49,14 @@
           Demo mode: the server is unreachable. Showing sample personas, not generated from your brief.
           <a href="https://github.com/sanketmuchhala/GTM-SImulator#quick-start" target="_blank" rel="noopener" class="pg-mock-link">Run locally →</a>
         </div>
+        <div v-else-if="personasMeta?.source === 'mock'" class="pg-mock-banner">
+          Sample personas, not generated from your brief. The simulation could not run ({{ personasMeta.mock_reason }}).
+        </div>
+        <div v-else-if="personasMeta && personasMeta.generated < personasMeta.requested" class="pg-partial-banner">
+          Generated {{ personasMeta.generated }} of {{ personasMeta.requested }} personas.
+          {{ personasMeta.batches_failed }} of {{ personasMeta.batches }} batches failed after a retry, so the rest
+          were left out rather than filled with sample data.
+        </div>
 
         <!-- Summary bar -->
         <div class="pg-summary-bar">
@@ -127,7 +135,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PersonaCard from '../components/PersonaCard.vue'
 import { generatePersonas, getGTMBrief } from '../api/gtm.js'
-import { getGTMState, setPersonas, getPersonas } from '../store/gtmSimulation.js'
+import { getGTMState, setPersonas, getPersonas, getPersonasMeta } from '../store/gtmSimulation.js'
 import { MOCK_PERSONAS_FULL } from '../mock/gtm_preview.js'
 
 const props = defineProps({ briefId: String })
@@ -142,6 +150,7 @@ const errorMsg = ref('')
 const personas = ref([])
 const brief = ref(null)
 const isMockData = ref(false)
+const personasMeta = ref(null)
 
 // Resolved persona count - read from store brief, fall back to 12
 const numPersonas = computed(() => {
@@ -235,6 +244,7 @@ async function loadPersonas() {
   const cached = getPersonas()
   if (cached?.length) {
     personas.value = cached
+    personasMeta.value = getPersonasMeta()
     viewState.value = 'ready'
     stopLoadingAnimation()
     return
@@ -247,7 +257,8 @@ async function loadPersonas() {
     const data = res.data ?? res
     if (Array.isArray(data) && data.length) {
       personas.value = data
-      setPersonas(data)
+      personasMeta.value = res.meta ?? null
+      setPersonas(data, personasMeta.value)
       isMockData.value = false
       viewState.value = 'ready'
     } else {
@@ -450,6 +461,16 @@ onMounted(async () => {
 }
 
 /* ── Mock data banner ──────────────────────────────────────── */
+.pg-partial-banner {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--amber);
+  margin-bottom: 16px;
+}
+
 .pg-mock-banner {
   background: rgba(248, 113, 113, 0.08);
   border: 1px solid rgba(248, 113, 113, 0.25);

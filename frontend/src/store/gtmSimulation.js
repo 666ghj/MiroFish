@@ -59,8 +59,14 @@ export function setSimulationPreview(briefId, previewData) {
   state.status = 'preview'
 }
 
-export function setPersonas(personasArray) {
+export function setPersonas(personasArray, meta = null) {
   state.personas = personasArray
+  state.personasMeta = meta
+}
+
+/** Generation meta for the current personas: {source, mock_reason, requested, generated, ...} */
+export function getPersonasMeta() {
+  return state.personasMeta ?? null
 }
 
 export function getPersonas() {
