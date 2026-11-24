@@ -21,6 +21,7 @@ from ..utils.locale import get_locale, t
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from ..utils.zep import (
     call_zep_read_with_retry,
+    ensure_zep_graph_uuid,
     get_zep_client,
     normalize_zep_search_limit,
     normalize_zep_search_query,
@@ -478,17 +479,19 @@ class ZepToolsService:
         """
         logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
         
+        graph_id = ensure_zep_graph_uuid(graph_id)
         zep_query = normalize_zep_search_query(query)
         zep_limit = normalize_zep_search_limit(limit)
+        if scope not in {"edges", "nodes"}:
+            raise ValueError("scope must be 'edges' or 'nodes'")
 
         try:
-            search_results = self._call_with_retry(
-                func=lambda: self.client.graph.search(
-                    graph_id=graph_id,
+            search_page = self._call_with_retry(
+                func=lambda: getattr(self.client.graph, f"search_{scope}")(
+                    graph_id,
                     query=zep_query,
-                    limit=zep_limit,
-                    scope=scope,
-                    reranker="cross_encoder"
+                    page_size=zep_limit,
+                    reranker="cross_encoder",
                 ),
                 operation_name=t("console.graphSearchOp", graphId=graph_id)
             )
@@ -496,10 +499,11 @@ class ZepToolsService:
             facts = []
             edges = []
             nodes = []
+            search_items = getattr(search_page, "items", None) or []
             
             # 解析边搜索结果
-            if hasattr(search_results, 'edges') and search_results.edges:
-                for edge in search_results.edges:
+            if scope == "edges":
+                for edge in search_items:
                     if hasattr(edge, 'fact') and edge.fact:
                         facts.append(edge.fact)
                     edges.append({
@@ -511,8 +515,8 @@ class ZepToolsService:
                     })
             
             # 解析节点搜索结果
-            if hasattr(search_results, 'nodes') and search_results.nodes:
-                for node in search_results.nodes:
+            if scope == "nodes":
+                for node in search_items:
                     nodes.append({
                         "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
                         "name": getattr(node, 'name', ''),
@@ -709,7 +713,7 @@ class ZepToolsService:
         logger.info(t("console.fetchedEdges", count=len(result)))
         return result
     
-    def get_node_detail(self, node_uuid: str) -> Optional[NodeInfo]:
+    def get_node_detail(self, graph_id: str, node_uuid: str) -> Optional[NodeInfo]:
         """
         获取单个节点的详细信息
         
@@ -720,10 +724,11 @@ class ZepToolsService:
             节点信息或None
         """
         logger.info(t("console.fetchingNodeDetail", uuid=node_uuid[:8]))
+        graph_id = ensure_zep_graph_uuid(graph_id)
         
         try:
             node = self._call_with_retry(
-                func=lambda: self.client.graph.node.get(uuid_=node_uuid),
+                func=lambda: self.client.graph.node.get(graph_id, node_uuid),
                 operation_name=t("console.fetchNodeDetailOp", uuid=node_uuid[:8])
             )
             
@@ -1041,7 +1046,7 @@ class ZepToolsService:
                 continue
             try:
                 # 单独获取每个相关节点的信息
-                node = self.get_node_detail(uuid)
+                node = self.get_node_detail(graph_id, uuid)
                 if node:
                     node_map[uuid] = node
                     entity_type = next((l for l in node.labels if l not in ["Entity", "Node"]), "实体")

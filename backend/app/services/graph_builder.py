@@ -10,7 +10,8 @@ import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
-from zep_cloud import BatchAddItem, EntityEdgeSourceTarget, NotFoundError
+from zep_cloud.ontology import EdgeModel, EntityModel, EntityText, build_ontology
+from zep_cloud.types import BatchItemInput
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
@@ -24,7 +25,9 @@ from ..utils.ontology import (
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
     call_zep_read_with_retry,
+    deterministic_idempotency_key,
     get_zep_client,
+    ensure_zep_graph_uuid,
     is_retryable_zep_error,
 )
 from .text_processor import TextProcessor
@@ -219,45 +222,26 @@ class GraphBuilderService:
         self,
         name: str,
         *,
-        graph_id: str | None = None,
         graph_id_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
-        """Create a graph with a caller-durable ID and reconcile lost replies."""
+        """Create a graph and return its server-generated UUID."""
 
-        graph_id = graph_id or f"mirofish_{uuid.uuid4().hex[:16]}"
-        # Persist the client-generated ID before the non-idempotent POST so a
-        # later reset can clean up a graph whose successful response was lost.
+        idempotency_key = str(uuid.uuid4())
+        for attempt in range(3):
+            try:
+                graph = self.client.graph.create(
+                    name=name,
+                    description="MiroFish Social Simulation Graph",
+                    idempotency_key=idempotency_key,
+                )
+                break
+            except Exception as error:
+                if not is_retryable_zep_error(error) or attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
+        graph_id = graph.uuid_
         if graph_id_callback:
             graph_id_callback(graph_id)
-
-        try:
-            self.client.graph.create(
-                graph_id=graph_id,
-                name=name,
-                description="MiroFish Social Simulation Graph"
-            )
-        except Exception as error:
-            if not is_retryable_zep_error(error):
-                raise
-            reconciliation_error = None
-            for attempt in range(3):
-                try:
-                    call_zep_read_with_retry(
-                        lambda: self.client.graph.get(graph_id),
-                        operation_name=f"reconcile graph create {graph_id}",
-                    )
-                    reconciliation_error = None
-                    break
-                except NotFoundError as not_found:
-                    reconciliation_error = not_found
-                    if attempt < 2:
-                        time.sleep(attempt + 1)
-                except Exception as read_error:
-                    reconciliation_error = read_error
-                    break
-            if reconciliation_error is not None:
-                raise error from reconciliation_error
-
         return graph_id
 
     @staticmethod
@@ -278,21 +262,23 @@ class GraphBuilderService:
 
         for attempt in range(1, max_attempts + 1):
             matches: List[Any] = []
-            cursor: int | None = None
-            seen_cursors: set[int] = set()
+            cursor: str | None = None
+            seen_cursors: set[str] = set()
             while True:
                 page = call_zep_read_with_retry(
-                    lambda: self.client.batch.list(limit=100, cursor=cursor),
+                    lambda: self.client.batch.list(page_size=100, cursor=cursor),
                     operation_name=f"reconcile batch create {operation_id}",
                 )
-                for batch in getattr(page, "batches", None) or []:
+                for batch in getattr(page, "items", None) or []:
                     metadata = getattr(batch, "metadata", None) or {}
                     if (
                         metadata.get("mirofish_operation_id") == operation_id
                         and metadata.get("graph_id") == graph_id
                     ):
                         matches.append(batch)
-                next_cursor = getattr(page, "next_cursor", None)
+                next_cursor = getattr(
+                    getattr(page, "response", None), "next_cursor", None
+                )
                 if next_cursor is None:
                     break
                 if next_cursor == cursor or next_cursor in seen_cursors:
@@ -312,10 +298,9 @@ class GraphBuilderService:
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
         """设置图谱本体（公开方法）"""
+        graph_id = ensure_zep_graph_uuid(graph_id)
         import warnings
-        from typing import Optional
         from pydantic import Field
-        from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
         
         # 抑制 Pydantic v2 关于 Field(default=None) 的警告
         # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略
@@ -344,7 +329,7 @@ class GraphBuilderService:
                 attr_desc = normalized["description"]
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[EntityText]  # 类型注解
+                annotations[attr_name] = EntityText
             
             attrs["__annotations__"] = annotations
             
@@ -370,7 +355,7 @@ class GraphBuilderService:
                 attr_desc = normalized["description"]
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[str]  # 边属性用str类型
+                annotations[attr_name] = EntityText
             
             attrs["__annotations__"] = annotations
             
@@ -384,24 +369,24 @@ class GraphBuilderService:
             for st in normalize_ontology_source_targets(
                 edge_def.get("source_targets", [])
             ):
-                source_targets.append(
-                    EntityEdgeSourceTarget(
-                        source=st.get("source", "Entity"),
-                        target=st.get("target", "Entity")
-                    )
-                )
+                source_targets.append({
+                    "source": st.get("source", "Entity"),
+                    "target": st.get("target", "Entity"),
+                })
             
             if source_targets:
                 edge_definitions[name] = (edge_class, source_targets)
         
         # 调用Zep API设置本体
         if entity_types or edge_definitions:
-            self.client.graph.set_ontology(
-                graph_ids=[graph_id],
-                # Zep iterates entities.items(), so edge-only ontologies must
-                # pass an empty dictionary rather than None.
+            entity_types, edge_types = build_ontology(
                 entities=entity_types,
-                edges=edge_definitions if edge_definitions else None,
+                edges=edge_definitions,
+            )
+            self.client.graph.set_ontology(
+                graph_id,
+                entity_types=entity_types,
+                edge_types=edge_types,
             )
     
     def add_text_batches(
@@ -412,16 +397,15 @@ class GraphBuilderService:
         progress_callback: Optional[Callable] = None,
         batch_created_callback: Optional[Callable[[str | None, str], None]] = None,
     ) -> BatchSubmission:
-        """Submit document chunks through Zep's current Batch API.
+        """Submit document chunks through Zep's Batch API.
 
-        Mutating calls are deliberately not retried: create/add are not
-        documented as idempotent, and an ambiguous replay can duplicate graph
-        episodes. The returned batch identity allows callers to persist and
-        reconcile the operation instead.
+        Batch writes include idempotency keys. MiroFish does not replay an
+        ambiguous write and reconciles the server-side batch instead.
         """
 
         if not graph_id:
             raise ValueError("graph_id is required")
+        graph_id = ensure_zep_graph_uuid(graph_id)
         self.validate_batch_chunks(chunks, batch_size=batch_size)
 
         total_chunks = len(chunks)
@@ -438,7 +422,11 @@ class GraphBuilderService:
                     "mirofish_operation_id": operation_id,
                     "graph_id": graph_id,
                     "chunk_count": total_chunks,
-                }
+                },
+                idempotency_key=deterministic_idempotency_key(
+                    operation_id,
+                    "create",
+                ),
             )
         except Exception as error:
             if not is_retryable_zep_error(error):
@@ -448,9 +436,9 @@ class GraphBuilderService:
                 raise RuntimeError(
                     "Zep batch creation is unconfirmed and no matching operation was found"
                 ) from error
-        batch_id = getattr(batch, "batch_id", None)
+        batch_id = getattr(batch, "uuid_", None)
         if not batch_id:
-            raise RuntimeError("Zep Batch API returned no batch_id")
+            raise RuntimeError("Zep Batch API returned no batch UUID")
         if batch_created_callback:
             batch_created_callback(batch_id, operation_id)
 
@@ -468,9 +456,9 @@ class GraphBuilderService:
                 )
             
             items = [
-                BatchAddItem(
+                BatchItemInput(
                     type="graph_episode",
-                    graph_id=graph_id,
+                    graph_uuid=graph_id,
                     data=chunk,
                     data_type="text",
                     source_description="MiroFish source document chunk",
@@ -487,10 +475,21 @@ class GraphBuilderService:
 
             expected_item_count = i + len(items)
             try:
-                item_details = self.client.batch.add(
-                    batch_id=batch_id,
+                response = self.client.batch.add_items(
+                    batch_id,
                     items=items,
+                    idempotency_key=deterministic_idempotency_key(
+                        operation_id,
+                        "items",
+                        str(i),
+                    ),
                 )
+                rejected_items = getattr(response, "rejected_items", None) or []
+                if rejected_items:
+                    raise RuntimeError(
+                        f"Zep batch {batch_id} rejected {len(rejected_items)} items"
+                    )
+                item_details = getattr(response, "items", None) or []
             except Exception as e:
                 if progress_callback:
                     progress_callback(t('progress.batchFailed', batch=batch_num, error=str(e)), 0)
@@ -543,12 +542,18 @@ class GraphBuilderService:
                     episode_uuids.append(episode_uuid)
 
         try:
-            self.client.batch.process(batch_id=batch_id)
+            self.client.batch.process(
+                batch_id,
+                idempotency_key=deterministic_idempotency_key(
+                    operation_id,
+                    "process",
+                ),
+            )
         except Exception as error:
             # A process response can be lost after the server accepted it.
             # Reconcile with a safe GET instead of issuing a second POST.
             summary = call_zep_read_with_retry(
-                lambda: self.client.batch.get(batch_id=batch_id),
+                lambda: self.client.batch.get(batch_id),
                 operation_name=f"reconcile batch {batch_id}",
             )
             if getattr(summary, "status", None) in {None, "draft"}:
@@ -581,19 +586,21 @@ class GraphBuilderService:
 
     def _list_batch_items(self, batch_id: str) -> List[Any]:
         items: List[Any] = []
-        cursor: int | None = None
-        seen_cursors: set[int] = set()
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
         while True:
             page = call_zep_read_with_retry(
                 lambda: self.client.batch.list_items(
-                    batch_id=batch_id,
-                    limit=100,
+                    batch_id,
+                    page_size=100,
                     cursor=cursor,
                 ),
                 operation_name=f"list batch items {batch_id}",
             )
             items.extend(getattr(page, "items", None) or [])
-            next_cursor = getattr(page, "next_cursor", None)
+            next_cursor = getattr(
+                getattr(page, "response", None), "next_cursor", None
+            )
             if next_cursor is None:
                 break
             if next_cursor == cursor or next_cursor in seen_cursors:
@@ -624,7 +631,7 @@ class GraphBuilderService:
         """Read a persisted batch identity for restart reconciliation."""
 
         return call_zep_read_with_retry(
-            lambda: self.client.batch.get(batch_id=batch_id),
+            lambda: self.client.batch.get(batch_id),
             operation_name=f"get batch {batch_id}",
         )
 
@@ -647,14 +654,18 @@ class GraphBuilderService:
                 )
 
             summary = call_zep_read_with_retry(
-                lambda: self.client.batch.get(batch_id=submission.batch_id),
+                lambda: self.client.batch.get(submission.batch_id),
                 operation_name=f"poll batch {submission.batch_id}",
             )
             status = getattr(summary, "status", None)
             progress = getattr(summary, "progress", None)
-            percent = float(getattr(progress, "percent_complete", 0) or 0) / 100
+            completed = int(getattr(progress, "succeeded_items", 0) or 0)
+            failed = int(getattr(progress, "failed_items", 0) or 0)
+            total = int(
+                getattr(progress, "total_items", 0) or submission.item_count
+            )
+            percent = (completed + failed) / total if total else 0.0
             if progress_callback:
-                completed = int(getattr(progress, "succeeded_items", 0) or 0)
                 progress_callback(
                     t(
                         'progress.zepProcessing',
@@ -719,11 +730,13 @@ class GraphBuilderService:
     
     def _wait_for_episodes(
         self,
+        graph_id: str,
         episode_uuids: List[str],
         progress_callback: Optional[Callable] = None,
         timeout: int = ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
     ):
         """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
+        graph_id = ensure_zep_graph_uuid(graph_id)
         if not episode_uuids:
             if progress_callback:
                 progress_callback(t('progress.noEpisodesWait'), 1.0)
@@ -752,7 +765,7 @@ class GraphBuilderService:
             # 检查每个 episode 的处理状态
             for ep_uuid in list(pending_episodes):
                 episode = call_zep_read_with_retry(
-                    lambda: self.client.graph.episode.get(uuid_=ep_uuid),
+                    lambda: self.client.graph.episode.get(graph_id, ep_uuid),
                     operation_name=f"poll episode {ep_uuid}",
                 )
                 is_processed = getattr(episode, 'processed', False)
@@ -776,6 +789,7 @@ class GraphBuilderService:
     
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         """获取图谱信息"""
+        graph_id = ensure_zep_graph_uuid(graph_id)
         # 获取节点（分页）
         nodes = fetch_all_nodes(self.client, graph_id)
 
@@ -807,6 +821,7 @@ class GraphBuilderService:
         Returns:
             包含nodes和edges的字典，包括时间信息、属性等详细数据
         """
+        graph_id = ensure_zep_graph_uuid(graph_id)
         nodes = fetch_all_nodes(self.client, graph_id)
         edges = fetch_all_edges(self.client, graph_id)
 
@@ -839,21 +854,17 @@ class GraphBuilderService:
             invalid_at = getattr(edge, 'invalid_at', None)
             expired_at = getattr(edge, 'expired_at', None)
             
-            # 获取 episodes
-            episodes = getattr(edge, 'episodes', None) or getattr(edge, 'episode_ids', None)
+            episodes = getattr(edge, 'episode_uuids', None)
             if episodes and not isinstance(episodes, list):
                 episodes = [str(episodes)]
             elif episodes:
                 episodes = [str(e) for e in episodes]
             
-            # 获取 fact_type
-            fact_type = getattr(edge, 'fact_type', None) or edge.name or ""
-            
             edges_data.append({
                 "uuid": edge.uuid_,
                 "name": edge.name or "",
                 "fact": edge.fact or "",
-                "fact_type": fact_type,
+                "fact_type": edge.name or "",
                 "source_node_uuid": edge.source_node_uuid,
                 "target_node_uuid": edge.target_node_uuid,
                 "source_node_name": node_map.get(edge.source_node_uuid, ""),
@@ -876,4 +887,26 @@ class GraphBuilderService:
     
     def delete_graph(self, graph_id: str):
         """删除图谱"""
-        self.client.graph.delete(graph_id=graph_id)
+        graph_id = ensure_zep_graph_uuid(graph_id)
+        result = self.client.graph.delete(graph_id)
+        task = getattr(result, "task", None)
+        task_uuid = getattr(task, "uuid_", None)
+        if not task_uuid:
+            raise RuntimeError("Zep graph delete returned no task UUID")
+
+        deadline = time.monotonic() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            task = call_zep_read_with_retry(
+                lambda: self.client.task.get(task_uuid),
+                operation_name=f"poll graph delete task {task_uuid}",
+            )
+            status = getattr(task, "status", None)
+            if status in {"succeeded", "partial", "failed"}:
+                if status == "failed":
+                    raise RuntimeError(f"Zep graph delete task {task_uuid} failed")
+                return
+            time.sleep(1)
+        raise TimeoutError(
+            f"Zep graph delete task {task_uuid} did not finish within "
+            f"{ZEP_INGESTION_WAIT_TIMEOUT_SECONDS}s"
+        )

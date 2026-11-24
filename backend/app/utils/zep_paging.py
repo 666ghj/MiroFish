@@ -6,16 +6,16 @@ from collections.abc import Callable
 from typing import Any
 
 from zep_cloud.client import Zep
+from zep_cloud.types import EdgeListFilters
 
 from .logger import get_logger
-from .zep import call_zep_read_with_retry
+from .zep import call_zep_read_with_retry, ensure_zep_graph_uuid
 
 logger = get_logger("mirofish.zep_paging")
 
 _DEFAULT_PAGE_SIZE = 100
 _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_RETRY_DELAY = 2.0
-_NEXT_CURSOR_HEADER = "zep-next-cursor"
 
 
 def _fetch_page_with_retry(
@@ -36,22 +36,6 @@ def _fetch_page_with_retry(
     )
 
 
-def _header_value(headers: Any, name: str) -> str | None:
-    if not headers:
-        return None
-    direct = headers.get(name)
-    if direct is not None:
-        return str(direct)
-    return next(
-        (
-            str(value)
-            for header_name, value in headers.items()
-            if str(header_name).lower() == name.lower()
-        ),
-        None,
-    )
-
-
 def _fetch_all(
     api_call: Callable[..., Any],
     graph_id: str,
@@ -61,6 +45,7 @@ def _fetch_all(
     max_items: int | None,
     max_retries: int,
     retry_delay: float,
+    filters: EdgeListFilters | None = None,
 ) -> list[Any]:
     if not 1 <= page_size <= 100:
         raise ValueError("page_size must be between 1 and 100")
@@ -73,9 +58,9 @@ def _fetch_all(
     page_number = 0
 
     while True:
-        kwargs: dict[str, Any] = {"limit": page_size}
-        if cursor is not None:
-            kwargs["cursor"] = cursor
+        kwargs: dict[str, Any] = {"page_size": page_size, "cursor": cursor}
+        if filters is not None:
+            kwargs["filters"] = filters
 
         page_number += 1
         response = _fetch_page_with_retry(
@@ -88,7 +73,7 @@ def _fetch_all(
             ),
             **kwargs,
         )
-        batch = list(getattr(response, "data", None) or [])
+        batch = list(getattr(response, "items", None) or [])
         all_items.extend(batch)
 
         if max_items is not None and len(all_items) >= max_items:
@@ -102,10 +87,7 @@ def _fetch_all(
             )
             break
 
-        next_cursor = _header_value(
-            getattr(response, "headers", None),
-            _NEXT_CURSOR_HEADER,
-        )
+        next_cursor = getattr(getattr(response, "response", None), "next_cursor", None)
         if next_cursor is None:
             break
         if next_cursor in seen_cursors or next_cursor == cursor:
@@ -128,8 +110,9 @@ def fetch_all_nodes(
 ) -> list[Any]:
     """Fetch every graph node unless the caller supplies an explicit cap."""
 
+    graph_id = ensure_zep_graph_uuid(graph_id)
     return _fetch_all(
-        client.graph.node.with_raw_response.get_by_graph_id,
+        client.graph.node.list,
         graph_id,
         item_name="nodes",
         page_size=page_size,
@@ -146,15 +129,18 @@ def fetch_all_edges(
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
     max_items: int | None = None,
+    filters: EdgeListFilters | None = None,
 ) -> list[Any]:
     """Fetch every graph edge unless the caller supplies an explicit cap."""
 
+    graph_id = ensure_zep_graph_uuid(graph_id)
     return _fetch_all(
-        client.graph.edge.with_raw_response.get_by_graph_id,
+        client.graph.edge.list,
         graph_id,
         item_name="edges",
         page_size=page_size,
         max_items=max_items,
         max_retries=max_retries,
         retry_delay=retry_delay,
+        filters=filters,
     )

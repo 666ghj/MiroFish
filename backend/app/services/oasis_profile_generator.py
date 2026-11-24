@@ -22,6 +22,7 @@ from ..utils.locale import get_language_instruction, get_locale, set_locale, t
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
 from ..utils.zep import (
     call_zep_read_with_retry,
+    ensure_zep_graph_uuid,
     get_zep_client,
     is_retryable_zep_error,
     normalize_zep_search_query,
@@ -375,6 +376,7 @@ class OasisProfileGenerator:
         if not self.graph_id:
             logger.debug(f"跳过Zep检索：未设置graph_id")
             return results
+        self.graph_id = ensure_zep_graph_uuid(self.graph_id)
         
         comprehensive_query = normalize_zep_search_query(
             t('progress.zepSearchQuery', name=entity_name)
@@ -382,29 +384,29 @@ class OasisProfileGenerator:
         
         def search_edges():
             """搜索边（事实/关系）- 带重试机制"""
-            return call_zep_read_with_retry(
-                lambda: self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=30,
-                        scope="edges",
-                        reranker="rrf"
+            page = call_zep_read_with_retry(
+                lambda: self.zep_client.graph.search_edges(
+                    self.graph_id,
+                    query=comprehensive_query,
+                    page_size=30,
+                    reranker="rrf",
                 ),
                 operation_name=f"profile edge search ({entity.uuid})",
             )
+            return getattr(page, "items", None) or []
         
         def search_nodes():
             """搜索节点（实体摘要）- 带重试机制"""
-            return call_zep_read_with_retry(
-                lambda: self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=20,
-                        scope="nodes",
-                        reranker="rrf"
+            page = call_zep_read_with_retry(
+                lambda: self.zep_client.graph.search_nodes(
+                    self.graph_id,
+                    query=comprehensive_query,
+                    page_size=20,
+                    reranker="rrf",
                 ),
                 operation_name=f"profile node search ({entity.uuid})",
             )
+            return getattr(page, "items", None) or []
         
         try:
             # 并行执行edges和nodes搜索
@@ -421,16 +423,16 @@ class OasisProfileGenerator:
             
             # 处理边搜索结果
             all_facts = set()
-            if edge_result and hasattr(edge_result, 'edges') and edge_result.edges:
-                for edge in edge_result.edges:
+            if edge_result:
+                for edge in edge_result:
                     if hasattr(edge, 'fact') and edge.fact:
                         all_facts.add(edge.fact)
             results["facts"] = list(all_facts)
             
             # 处理节点搜索结果
             all_summaries = set()
-            if node_result and hasattr(node_result, 'nodes') and node_result.nodes:
-                for node in node_result.nodes:
+            if node_result:
+                for node in node_result:
                     if hasattr(node, 'summary') and node.summary:
                         all_summaries.add(node.summary)
                     if hasattr(node, 'name') and node.name and node.name != entity_name:

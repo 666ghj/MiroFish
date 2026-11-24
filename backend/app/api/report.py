@@ -1058,7 +1058,7 @@ def search_graph_tool():
     
     请求（JSON）：
         {
-            "graph_id": "mirofish_xxxx",
+            "graph_id": "00000000-0000-4000-8000-000000000000",
             "query": "搜索查询",
             "limit": 10
         }
@@ -1106,7 +1106,7 @@ def get_graph_statistics_tool():
     
     请求（JSON）：
         {
-            "graph_id": "mirofish_xxxx"
+            "graph_id": "00000000-0000-4000-8000-000000000000"
         }
     """
     try:
