@@ -167,6 +167,17 @@
         </div>
 
         <div v-if="state" class="view-body">
+          <p v-if="handoffError" class="conflicts" role="alert">{{ handoffError }}</p>
+          <section v-if="Object.keys(state.conflicts || {}).length" class="conflicts" aria-label="Conflicting idea fields">
+            <strong>Conflict detected</strong>
+            <div v-for="(candidate, path) in state.conflicts" :key="path">
+              <h3>{{ labelFor(path) }}</h3>
+              <p>Current: {{ currentClaim(path) || 'Unfilled' }}</p>
+              <p>Proposed: {{ candidate }}</p>
+              <button type="button" class="tool" :disabled="busy || resolvingConflict" @click="resolveConflict(path, 'keep')">Keep current</button>
+              <button type="button" class="tool" :disabled="busy || resolvingConflict" @click="resolveConflict(path, 'replace')">Use proposed</button>
+            </div>
+          </section>
           <transition name="view" mode="out-in">
             <IdeaDashboard
               v-if="view === 'overview'"
@@ -175,7 +186,7 @@
               :changed="changed"
               :last-change="lastChange"
               :updating="updating"
-              :busy="busy"
+              :busy="busy || checkingBrief || resolvingConflict"
               :confidential="confidential"
               :chief="team.chief?.output || null"
               @open="openDetail"
@@ -224,7 +235,7 @@
                 :state="state"
                 :changed="changed"
                 :last-change="lastChange"
-                :busy="busy"
+                :busy="busy || checkingBrief || resolvingConflict"
                 :confidential="confidential"
                 @edit="onEdit"
                 @lock="onLock"
@@ -252,7 +263,7 @@ import AgentTeam from '../components/AgentTeam.vue'
 import AgentDetail from '../components/AgentDetail.vue'
 import ChatMessage from '../components/ChatMessage.vue'
 import { AGENTS, SPECIALIST_IDS } from '../utils/agents'
-import { newIdea, streamIdeaTurn, streamIdeaTeam, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
+import { newIdea, streamIdeaTurn, streamIdeaTeam, editIdeaField, lockIdeaField, ideaToBrief, resolveIdeaConflict } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
 const MODES = [
@@ -270,7 +281,7 @@ const STARTERS = [
     text: 'I have an idea I believe in. Please challenge it hard: ', icon: 'M8 2.5l6 10.5H2zM8 6.5v3M8 11.2v.3' },
 ]
 const PATH_LABELS = [
-  ['/one_liner', 'One-liner'], ['/problem/statement', 'Problem'], ['/problem/who', 'Who has it'],
+  ['/product_name', 'Product name'], ['/one_liner', 'One-liner'], ['/problem/statement', 'Problem'], ['/problem/who', 'Who has it'],
   ['/problem/workaround', 'What they do today'], ['/problem/frequency', 'How often'], ['/problem/severity', 'What it costs'],
   ['/customer/early_adopters', 'First customers'], ['/customer/buyer', 'Who signs off'], ['/customer', 'Customer'],
   ['/solution/core', 'What it does'], ['/solution', 'Solution'], ['/business_model', 'Business model'],
@@ -294,8 +305,11 @@ const alreadyShortlisted = computed(() =>
   candidates.value.some(item => item.toLowerCase() === draft.value.trim().toLowerCase())
 )
 const busy = ref(false)
+const resolvingConflict = ref(false)
 const status = ref('')
 const error = ref('')
+const handoffError = ref('')
+const checkingBrief = ref(false)
 const changed = ref([])
 const announce = ref('')
 const confidential = ref(false)
@@ -319,6 +333,7 @@ const workingCount = computed(() => AGENTS.filter(a => isWorking(a.id)).length)
 const lastQuestion = computed(() => {
   const last = [...messages.value].reverse().find(m => m.role === 'assistant' && !m.streaming && m.content)
   if (!last || messages.value.length <= 1) return ''
+  if (last.acknowledgment !== undefined) return last.ask?.question || ''
   const bold = [...last.content.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1])
   if (bold.length) return bold[bold.length - 1]
   const q = last.content.split(/(?<=[.!?])\s+/).reverse().find(t => t.trim().endsWith('?'))
@@ -377,7 +392,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       state: state.value, confidential: confidential.value, team: team.value,
-      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions, trace, ask, research }) => ({ role, content, notice, actions, ask, research,
+      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions, trace, ask, research, acknowledgment, coachingItems }) => ({ role, content, notice, actions, ask, research, acknowledgment, coachingItems,
         trace: (trace || []).map(t => ({ ...t, faces: undefined, status: ['running', 'queued'].includes(t.status) ? 'done' : t.status })) })),
     }))
     savedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -437,7 +452,7 @@ async function importIdea(e) {
     if (!data?.state || !Array.isArray(data.messages)) throw new Error('not an Idea Studio export')
     // The server re-validates the state on the next turn; nothing imported is trusted.
     state.value = data.state
-    messages.value = data.messages.map(({ role, content, notice, actions }) => ({ role, content, notice, actions: Array.isArray(actions) ? actions : [] }))
+    messages.value = data.messages.map(({ role, content, notice, actions, ask, acknowledgment, coachingItems }) => ({ role, content, notice, ask, acknowledgment, coachingItems, actions: Array.isArray(actions) ? actions : [] }))
     team.value = data.team && typeof data.team === 'object' ? data.team : {}
     live.value = {}
     changed.value = []
@@ -450,14 +465,14 @@ async function importIdea(e) {
 // ── Turn ────────────────────────────────────────────────────────────────────
 async function send(text, opts = {}) {
   const content = (text ?? draft.value).trim()
-  if (!content || busy.value || !state.value) return
+  if (!content || busy.value || resolvingConflict.value || !state.value) return
   if (!opts.assistance) draft.value = ''
   answering.value = false
   nextTick(autoGrow)
   error.value = ''
   busy.value = true
   const history = messages.value.filter(m => !m.streaming).slice(-HISTORY_SENT)
-    .map(({ role, content }) => ({ role, content }))
+    .map(({ role, content, ask }) => ({ role, content, ask }))
   messages.value.push({ role: 'user', content })
   const reply = { role: 'assistant', content: '', streaming: true, notice: null, trace: [] }
   messages.value.push(reply)
@@ -467,14 +482,13 @@ async function send(text, opts = {}) {
   scrollDown(true)
   setLive('cofounder', { status: 'running' })
 
-  const brainstormTurn = mode.value === 'brainstorm'
   lastPayload = { state: state.value, messages: history, content, research: !!opts.research,
                   confidential: confidential.value, assistance: opts.assistance }
   let ok = false
   controller = new AbortController()
   try {
     await streamIdeaTurn(lastPayload, (ev) => onEvent(ev, live), controller.signal)
-    if (live.streaming) throw new Error('The reply ended unexpectedly.')
+    if (live.streaming || !live.completed) throw new Error('The reply ended unexpectedly.')
     ok = true
   } catch (e) {
     finishOpenSteps(live, 'failed')
@@ -494,7 +508,7 @@ async function send(text, opts = {}) {
     save()
     focusComposer()
   }
-  if (ok && !brainstormTurn) { traceMsg = live; runTeam() }
+  if (ok && live.runTeam) { traceMsg = live; runTeam() }
 }
 
 // ── Agent team ──────────────────────────────────────────────────────────────
@@ -636,7 +650,11 @@ function onEvent(ev, live) {
       scrollDown()
       break
     case 'reply':
-      live.content = ev.content
+      live.acknowledgment = ev.acknowledgment
+      live.coachingItems = ev.coaching_items
+      live.runTeam = ev.run_team
+      live.content = [ev.acknowledgment ?? ev.content, ...(ev.coaching_items || []), ev.ask?.question]
+        .filter(Boolean).join('\n')
       live.streaming = false
       if (ev.notice) live.notice = ev.notice
       if (Array.isArray(ev.actions)) live.actions = ev.actions
@@ -652,6 +670,7 @@ function onEvent(ev, live) {
       if (!ev.brainstorm) setLive('analyst', { status: 'running' })
       break
     case 'state':
+      handoffError.value = ''
       if (ev.brainstorm) {
         state.value = { ...state.value, brainstorm: ev.state.brainstorm }
         break
@@ -673,6 +692,9 @@ function onEvent(ev, live) {
       if (ev.notice) live.notice = [live.notice, ev.notice].filter(Boolean).join(' ')
       announce.value = `Live idea updated: ${(ev.applied || []).length} ${(ev.applied || []).length === 1 ? 'field' : 'fields'}. Clarity ${ev.state.clarity.score}.`
       if (tab.value !== 'panel' && (ev.applied || []).length) unseen.value = true
+      break
+    case 'done':
+      live.completed = true
       break
     case 'error':
       throw new Error(ev.error)
@@ -746,17 +768,42 @@ function flash(paths) {
 
 // ── Handoff to the GTM simulation ──────────────────────────────────────────
 async function sendBrief() {
-  error.value = ''
+  if (checkingBrief.value || busy.value || resolvingConflict.value) return
+  handoffError.value = ''
+  checkingBrief.value = true
+  const submitted = state.value
   try {
-    const res = await ideaToBrief(state.value)
+    const res = await ideaToBrief(submitted)
+    if (state.value !== submitted) return
     try { localStorage.setItem(PREFILL_KEY, JSON.stringify(res.data.brief)) } catch (_) {}
     router.push({ name: 'Simulate', query: { from: 'studio' } })
   } catch (e) {
-    error.value = 'Could not build the brief. ' + (e.message || '')
+    handoffError.value = e.message || 'Could not build the brief.'
+  } finally {
+    checkingBrief.value = false
   }
 }
 
 // ── Founder edits ───────────────────────────────────────────────────────────
+function currentClaim(path) {
+  return path.split('/').slice(1).reduce((value, key) => value?.[key], state.value)?.text
+}
+
+async function resolveConflict(path, choice) {
+  resolvingConflict.value = true
+  try {
+    const res = await resolveIdeaConflict(state.value, path, choice)
+    state.value = res.data.state
+    handoffError.value = ''
+    error.value = ''
+    save()
+  } catch (e) {
+    error.value = e.response?.data?.error || e.message
+  } finally {
+    resolvingConflict.value = false
+  }
+}
+
 async function onEdit(path, text) {
   try {
     const res = await editIdeaField(state.value, path, text)
@@ -943,6 +990,9 @@ onMounted(async () => {
 .jump-enter-from, .jump-leave-to { opacity: 0; transform: translate(-50%, 6px); }
 
 /* Composer */
+.conflicts { padding: 12px; margin: 10px; border: 1px solid #a16207; border-radius: 12px; color: #fde68a; }
+.conflicts p { overflow-wrap: anywhere; }
+.conflicts .tool { margin-right: 6px; }
 .ideation-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
   max-width: 680px; width: calc(100% - 32px); margin: 0 auto 8px; }
 .mode-picker { display: flex; flex-wrap: wrap; gap: 4px; }

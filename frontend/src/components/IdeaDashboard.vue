@@ -4,10 +4,11 @@
     <section class="tile tile--hero" :class="{ glow: changedAny(['/one_liner']) }">
       <div class="hero-main">
         <button type="button" class="tile-head" @click="$emit('open', 'sec-idea')">
-          <span>The idea</span><span class="open" aria-hidden="true">↗</span>
+          <span>{{ state.product_name?.text || 'The idea' }}</span><span class="open" aria-hidden="true">↗</span>
         </button>
         <p class="one-liner" :class="{ muted: !state.one_liner.text }">
           {{ state.one_liner.text || 'Your idea in one line appears here once you describe it.' }}
+          <small v-if="state.one_liner.text" class="provenance">{{ provenance(state.one_liner.status) }}</small>
         </p>
         <div class="bars" aria-label="Completeness by part">
           <div v-for="name in SECTIONS" :key="name" class="bar" :title="`${name}: ${v(name)} of 100`">
@@ -15,6 +16,10 @@
             <span class="bar-track"><span class="bar-fill" :style="{ width: v(name) + '%' }"></span></span>
           </div>
         </div>
+        <p v-if="state.one_liner.text || state.product_name?.text" class="coherence"
+           :class="{ warning: Object.keys(state.conflicts || {}).length }">
+          {{ Object.keys(state.conflicts || {}).length ? 'Conflict detected' : 'No open conflicts' }}
+        </p>
         <p class="ticker" aria-live="off">
           <template v-if="updating"><span class="pulse" aria-hidden="true"></span>Updating the picture...</template>
           <template v-else-if="lastChange && lastChange.labels.length">
@@ -28,11 +33,11 @@
           <div class="score-num">{{ shownScore }}</div>
           <div class="score-label">Completeness</div>
         </div>
-        <button type="button" class="btn-send" :disabled="busy || score < 60" @click="$emit('send-brief')"
+        <button type="button" class="btn-send" :disabled="busy || score < 60 || Object.keys(state.conflicts || {}).length" @click="$emit('send-brief')"
                 :title="score >= 60 ? 'Open the GTM simulation with this idea filled in' : `Unlocks at 60 (now ${score})`">
           Test with buyers →
         </button>
-        <span class="unlock">{{ score >= 60 ? 'Ready to simulate' : `Unlocks at 60` }}</span>
+        <span class="unlock">{{ Object.keys(state.conflicts || {}).length ? 'Resolve conflicts first' : score >= 60 ? 'Ready for coherence check' : 'Unlocks at 60' }}</span>
       </div>
     </section>
 
@@ -44,7 +49,7 @@
       <dl class="facts">
         <template v-for="f in filled(PROBLEM)" :key="f.path">
           <dt>{{ f.label }}</dt>
-          <dd :class="`st--${claimOf(f).status}`" :title="claimOf(f).text">{{ claimOf(f).text }}</dd>
+          <dd :class="`st--${claimOf(f).status}`" :title="claimOf(f).text">{{ claimOf(f).text }} <small class="provenance">{{ provenance(claimOf(f).status) }}</small></dd>
         </template>
       </dl>
       <div v-if="empty(PROBLEM).length" class="gaps">
@@ -60,7 +65,7 @@
       <dl class="facts">
         <template v-for="f in filled(SOLUTION)" :key="f.path">
           <dt>{{ f.label }}</dt>
-          <dd :class="`st--${claimOf(f).status}`" :title="claimOf(f).text">{{ claimOf(f).text }}</dd>
+          <dd :class="`st--${claimOf(f).status}`" :title="claimOf(f).text">{{ claimOf(f).text }} <small class="provenance">{{ provenance(claimOf(f).status) }}</small></dd>
         </template>
         <template v-if="state.why_now.length">
           <dt>Why now</dt>
@@ -194,6 +199,9 @@ const v = (name) => props.state.clarity?.by_section?.[name] ?? 0
 const wnb = computed(() => props.state.why_not_built)
 const sourceCount = computed(() => Object.keys(props.state.sources || {}).length)
 
+function provenance(status) {
+  return { founder_stated: 'Your Word', ai_inference: 'AI Guess', evidence: 'Evidence', contradiction: 'Conflict' }[status] || 'Unverified'
+}
 function claimOf(f) { return props.state[f.k[0]][f.k[1]] }
 function filled(list) { return list.filter(f => (claimOf(f).text || '').trim()) }
 function empty(list) { return list.filter(f => !(claimOf(f).text || '').trim()) }
@@ -203,6 +211,9 @@ function changedAny(prefixes) {
 </script>
 
 <style scoped>
+.coherence { font-size: 11px; color: #86efac; }
+.coherence.warning { color: #fcd34d; }
+.provenance { display: inline-block; font-size: 10px; border: 1px solid #404040; border-radius: 8px; padding: 0 5px; }
 /* Overview that fits one screen: fixed grid, content clamped, details in the drawer */
 .dash {
   height: 100%;
