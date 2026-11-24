@@ -53,11 +53,8 @@
           </div>
           <div class="hero-visual">
             <div class="viz-frame">
-              <div class="viz-frame-head">
-                <span class="viz-dot"></span><span class="viz-dot"></span><span class="viz-dot"></span>
-                <span class="viz-frame-title">Buyer network</span>
-              </div>
-              <div class="viz-body"><HeroViz /></div>
+              <div class="viz-frame-label">Buyer network preview</div>
+              <HeroViz />
             </div>
           </div>
         </div>
@@ -617,27 +614,26 @@ a { color: inherit; text-decoration: none; }
   background: no-repeat center / 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2360a5fa' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5l3.2 3.2L15 7'/%3E%3C/svg%3E");
 }
 
+/* Borderless network visual, as on the original landing page */
 .viz-frame {
-  border: 1px solid var(--line);
+  position: relative;
+  height: 440px;
   border-radius: 16px;
-  background: var(--panel);
   overflow: hidden;
-  box-shadow: 0 30px 80px -40px rgba(59, 130, 246, 0.25);
+  background: transparent;
 }
-.viz-frame-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
-}
-.viz-dot { width: 8px; height: 8px; border-radius: 50%; background: #262626; }
-.viz-body { height: 420px; }
-.viz-frame-title {
-  margin-left: 10px;
-  font-size: 12px;
-  color: var(--text-tertiary);
+.viz-frame-label {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  z-index: 10;
   font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  opacity: 0.6;
 }
 
 /* KPI row (stat tiles) */
@@ -1113,7 +1109,7 @@ a { color: inherit; text-decoration: none; }
   .nav-links { display: none; }
   .hero-inner, .results, .split, .faq-wrap { grid-template-columns: 1fr; gap: 48px; }
   .hero { padding: 72px 0 64px; }
-  .viz-body { height: 340px; }
+  .viz-frame { height: 360px; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .steps { grid-template-columns: repeat(2, 1fr); }
   .persona-grid, .message-grid, .audience-grid { grid-template-columns: 1fr; }
