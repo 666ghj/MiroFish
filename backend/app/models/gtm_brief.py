@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from ..config import Config
+from ..services.gtm_audience import normalize_audience
 
 
 REQUIRED_FIELDS = [
@@ -47,6 +48,7 @@ class GTMBrief:
     outreach_strategy: Optional[str] = None
     num_personas: int = 12
     num_messages: int = 3
+    audience: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -71,6 +73,7 @@ class GTMBrief:
             outreach_strategy=data.get('outreach_strategy'),
             num_personas=int(data.get('num_personas', 12)),
             num_messages=int(data.get('num_messages', 3)),
+            audience=normalize_audience(data.get('audience')),
         )
 
 
@@ -126,6 +129,7 @@ class GTMBriefManager:
             'outreach_strategy': (data.get('outreach_strategy') or '').strip() or None,
             'num_personas': max(6, min(500, int(data.get('num_personas') or 12))),
             'num_messages': max(2, min(5, int(data.get('num_messages') or 3))),
+            'audience': normalize_audience(data.get('audience')),
         }
 
     @staticmethod

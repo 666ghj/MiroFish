@@ -38,6 +38,19 @@
       <!-- Right: Simulation Scale Panel -->
       <div class="sim-right">
 
+        <!-- Buyer network (sticky so it stays visible while you tune the audience) -->
+        <div class="sim-agent-section">
+          <div class="sim-agent-header">
+            <span class="sim-agent-label">Buyer network</span>
+            <span class="sim-agent-hint">
+              {{ numPersonas > 120 ? 'showing 120 of ' + numPersonas : numPersonas + ' buyers' }} · hover a dot
+            </span>
+          </div>
+          <div class="sim-viz-wrap">
+            <HeroViz :count="numPersonas" :audience="audience" />
+          </div>
+        </div>
+
         <!-- Scale header -->
         <div class="sim-scale-header">
           <span class="sim-scale-label">Simulation Scale</span>
@@ -85,17 +98,9 @@
           </div>
         </div>
 
-        <!-- Live agent network -->
-        <div class="sim-agent-section">
-          <div class="sim-agent-header">
-            <span class="sim-agent-label">Agent network</span>
-            <span class="sim-agent-hint">
-              {{ numPersonas > 120 ? 'showing 120 of ' + numPersonas : numPersonas + ' agents' }}
-            </span>
-          </div>
-          <div class="sim-viz-wrap">
-            <HeroViz :count="numPersonas" />
-          </div>
+        <!-- Audience: buyer mix, colors, regions, behavior -->
+        <div class="sim-audience">
+          <AudienceBuilder v-model="audience" :count="numPersonas" />
         </div>
 
         <!-- Reaction math -->
@@ -129,10 +134,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GTMBriefForm from '../components/GTMBriefForm.vue'
 import HeroViz from '../components/HeroViz.vue'
+import AudienceBuilder from '../components/AudienceBuilder.vue'
+import { defaultAudience } from '../utils/audience.js'
 import { submitGTMBrief, getGTMPreview } from '../api/gtm.js'
 import { setGTMBrief, setSimulationPreview } from '../store/gtmSimulation.js'
 import { MOCK_GTM_PREVIEW } from '../mock/gtm_preview.js'
@@ -146,6 +153,20 @@ const submitError = ref('')
 const demoData   = ref(null)
 const numPersonas = ref(12)
 const numMessages = ref(3)
+
+// Audience settings are a per-browser convenience: remembered locally, sent with the brief.
+const AUDIENCE_KEY = 'gtm.audience.v1'
+function loadAudience() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUDIENCE_KEY) || 'null')
+    if (saved && saved.mix && saved.colors) return { ...defaultAudience(), ...saved }
+  } catch (_) {}
+  return defaultAudience()
+}
+const audience = ref(loadAudience())
+watch(audience, (val) => {
+  try { localStorage.setItem(AUDIENCE_KEY, JSON.stringify(val)) } catch (_) {}
+}, { deep: true })
 
 const angleNames = { 2: 'Pain · ROI', 3: '+Curiosity', 4: '+Feature', 5: '+Social' }
 
@@ -165,6 +186,7 @@ async function handleSubmit(payload) {
     ...payload,
     num_personas: numPersonas.value,
     num_messages: numMessages.value,
+    audience: audience.value,
   }
 
   try {
@@ -263,7 +285,7 @@ async function handleSubmit(payload) {
 /* ── Body ───────────────────────────────────────────────── */
 .sim-body {
   display: grid;
-  grid-template-columns: 1fr 400px;
+  grid-template-columns: 1fr 440px;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -481,11 +503,10 @@ async function handleSubmit(payload) {
 
 /* Agent viz section */
 .sim-agent-section {
-  flex: 1;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 0;
 }
 
 .sim-agent-header {
@@ -510,12 +531,28 @@ async function handleSubmit(payload) {
 }
 
 .sim-viz-wrap {
-  flex: 1;
-  min-height: 180px;
+  height: 300px;
   border-radius: 10px;
   overflow: hidden;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
+}
+
+.sim-agent-section {
+  position: sticky;
+  top: -20px;
+  z-index: 5;
+  margin: -20px -20px 0;
+  padding: 16px 20px 14px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sim-audience {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-card);
+  padding: 16px;
 }
 
 /* Math strip */
@@ -599,6 +636,7 @@ async function handleSubmit(payload) {
   .sim-page { height: auto; overflow: auto; }
   .sim-body { grid-template-columns: 1fr; overflow: auto; }
   .sim-right { border-top: 1px solid var(--border-subtle); }
+  .sim-agent-section { position: static; }
   .sim-left { overflow: visible; padding: 24px 20px 40px; }
   .sim-nav-center { display: none; }
 }

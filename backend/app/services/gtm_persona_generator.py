@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
+from .gtm_audience import audience_prompt, enrich_personas
 
 logger = get_logger('mirofish.gtm_persona_generator')
 
@@ -59,8 +60,15 @@ Each persona object must have these exact fields:
   "reaction": "<one of: interested, neutral, objection>",
   "skepticism_level": <integer 1-5>,
   "likely_response": "<one sentence quote of what they would actually say to your outreach>",
-  "objection_category": "<one of: status_quo_bias, integration_concern, budget_concern, trust_deficit, feature_gap, process_barrier, adoption_risk - or null if reaction is interested>"
-}"""
+  "objection_category": "<one of: status_quo_bias, integration_concern, budget_concern, trust_deficit, feature_gap, process_barrier, adoption_risk - or null if reaction is interested>",
+  "archetype_mix": {"decision_maker": <0-100>, "champion": <0-100>, "evaluator": <0-100>},
+  "region": "<region id from the audience settings, or null if none were given>"
+}
+
+archetype_mix says how much of each buying role this person plays, as whole numbers
+that sum to 100. Decision maker = owns budget and the final call. Champion = feels the
+pain and pushes for change. Evaluator = checks fit, risk, and integration. Most people
+blend two or three roles (a founder might be 60/30/10)."""
 
 
 def _build_user_prompt(brief: Any, count: int) -> str:
@@ -78,8 +86,11 @@ Company Stage: {brief.company_stage or 'Not specified'}
 Team Size: {brief.team_size or 'Not specified'}
 Existing Problems: {brief.existing_problems or 'Not specified'}
 
+{audience_prompt(getattr(brief, 'audience', None), count)}
+
 Generate exactly {count} distinct buyer personas as a JSON array.
-Each persona must use a different persona_type from: {', '.join(PERSONA_TYPES)}.
+Use a different persona_type for each persona where possible ({', '.join(PERSONA_TYPES)});
+repeat types only when you need more than {len(PERSONA_TYPES)} personas.
 Make them context-aware - their goals, objections, and communication styles should
 reflect the specific product and ICP described above.
 Vary skepticism levels (some should be 1-2, some 3, some 4-5).
@@ -139,6 +150,9 @@ class GTMPersonaGenerator:
         return self._llm
 
     def generate(self, brief: Any, count: int = 12) -> List[Dict]:
+        return enrich_personas(self._generate(brief, count), getattr(brief, 'audience', None))
+
+    def _generate(self, brief: Any, count: int = 12) -> List[Dict]:
         """
         Generate `count` buyer personas from a GTMBrief.
         Falls back to mock data on any error.

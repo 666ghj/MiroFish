@@ -210,3 +210,62 @@ def test_simulated_reactions_are_cleaned():
     llm.chat_json = with_dash
     result = GTMReactionSimulator(llm=llm).simulate(MESSAGES, PERSONAS, runs=1)
     assert all('—' not in r['simulated_reply'] for r in result['reactions'])
+
+
+# ── Audience settings ────────────────────────────────────────────────────────
+
+def test_audience_is_sanitized():
+    from app.services.gtm_audience import normalize_audience
+    a = normalize_audience({
+        'mix': {'decision_maker': 250, 'champion': '40', 'evaluator': -3, 'hacker': 9},
+        'colors': {'decision_maker': '#ff0000', 'champion': 'red;', 'evaluator': '#00ff00'},
+        'regions': ['dach', 'mars', 'dach', 'india'],
+        'company_sizes': ['11-50', 'huge'],
+        'traits': {'risk_appetite': 9, 'skepticism': 'x'},
+        'seed': 'abc',
+    })
+    assert a['mix'] == {'decision_maker': 100, 'champion': 40, 'evaluator': 0}
+    assert a['colors']['champion'] == '#d95926'          # invalid color falls back
+    assert a['regions'] == ['dach', 'india']              # unknown dropped, deduped
+    assert a['company_sizes'] == ['11-50']
+    assert a['traits']['risk_appetite'] == 5 and a['traits']['skepticism'] == 3
+    assert normalize_audience('nope') is None
+
+
+def test_audience_prompt_spells_out_role_counts_and_regions():
+    from app.services.gtm_audience import audience_prompt, normalize_audience
+    a = normalize_audience({'mix': {'decision_maker': 1, 'champion': 1, 'evaluator': 2},
+                            'regions': ['nordics'], 'traits': {'risk_appetite': 5}})
+    text = audience_prompt(a, 12)
+    assert 'about 3 decision makers' in text and 'about 6 evaluators' in text
+    assert 'Nordics' in text and 'very high (5/5)' in text
+    assert audience_prompt(None, 12) == ''
+
+
+def test_personas_always_leave_with_a_valid_mix_and_region():
+    from app.services.gtm_audience import enrich_personas, normalize_audience
+    a = normalize_audience({'mix': {'champion': 1}, 'regions': ['india', 'anz']})
+    people = enrich_personas([
+        {'persona_type': 'cfo'},                                             # no mix: derived
+        {'persona_type': 'vp_sales', 'archetype_mix': {'decision_maker': 1, 'champion': 1, 'evaluator': 1},
+         'region': 'india'},
+        {'persona_type': 'x', 'archetype_mix': 'bad', 'region': 'mars'},
+    ], a)
+    for p in people:
+        assert sum(p['archetype_mix'].values()) == 100
+        assert p['region'] in ('india', 'anz')
+    assert people[0]['archetype_mix'] == {'decision_maker': 65, 'champion': 0, 'evaluator': 35}
+    assert people[1]['region'] == 'india'
+
+
+def test_brief_round_trips_audience(tmp_path, monkeypatch):
+    from app.config import Config
+    from app.models.gtm_brief import GTMBriefManager
+    monkeypatch.setattr(Config, 'UPLOAD_FOLDER', str(tmp_path))
+    data = {f: 'x' * 25 for f in ['product_name', 'product_description', 'icp', 'pricing_model',
+                                  'target_market', 'sales_channel', 'pain_point', 'gtm_goal']}
+    data['audience'] = {'mix': {'champion': 70, 'evaluator': 30}, 'regions': ['latam']}
+    brief = GTMBriefManager.create_brief(data)
+    again = GTMBriefManager.get_brief(brief.brief_id)
+    assert again.audience['regions'] == ['latam']
+    assert again.audience['mix']['champion'] == 70

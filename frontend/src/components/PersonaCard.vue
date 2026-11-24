@@ -17,7 +17,9 @@
       <div class="pcf-identity">
         <div class="pcf-name">{{ persona.name }}</div>
         <div class="pcf-title">{{ persona.title }}</div>
-        <div class="pcf-company">{{ persona.company_type }} · {{ persona.company_stage }}</div>
+        <div class="pcf-company">
+          {{ persona.company_type }} · {{ persona.company_stage }}<template v-if="persona.region"> · {{ regionName }}</template>
+        </div>
       </div>
       <div class="pcf-badges">
         <span class="reaction-badge" :class="persona.reaction">{{ reactionLabel }}</span>
@@ -30,6 +32,23 @@
           ></div>
         </div>
         <span class="skep-label">Skepticism {{ persona.skepticism_level }}/5</span>
+      </div>
+    </div>
+
+    <!-- Role mix: exact blend of the three buying roles, shown as color and numbers -->
+    <div class="pcf-mix" :title="mixTitle">
+      <div class="pcf-mix-head">
+        <span class="pcf-mix-dot" :style="{ background: blended }"></span>
+        <span class="pcf-mix-text">
+          <template v-for="(a, i) in mixParts" :key="a.id"><span v-if="i" class="pcf-mix-sep"> · </span><strong>{{ a.value }}%</strong> {{ a.label }}</template>
+        </span>
+      </div>
+      <div class="pcf-mix-bar" aria-hidden="true">
+        <span
+          v-for="a in mixBar"
+          :key="a.id"
+          :style="{ flexGrow: a.value, background: a.color }"
+        ></span>
       </div>
     </div>
 
@@ -82,13 +101,32 @@
 
 <script setup>
 import { computed } from 'vue'
+import { ARCHETYPES, defaultAudience, personaWeights, blendColor, regionLabel } from '../utils/audience.js'
 
 const props = defineProps({
   persona: { type: Object, required: true },
   compact: { type: Boolean, default: false },
   /** Use dark theme (for dark-bg simulation views) */
   dark:    { type: Boolean, default: false },
+  /** Archetype colors chosen on the simulate page (falls back to the defaults) */
+  colors:  { type: Object, default: null },
 })
+
+const roleColors = computed(() => ({ ...defaultAudience().colors, ...(props.colors || {}) }))
+const weights = computed(() => personaWeights(props.persona))
+const blended = computed(() => blendColor(weights.value, roleColors.value))
+const mixParts = computed(() =>
+  ARCHETYPES
+    .map(a => ({ id: a.id, label: a.label, value: weights.value[a.id] || 0, color: roleColors.value[a.id] }))
+    .filter(a => a.value > 0)
+    .sort((x, y) => y.value - x.value)
+)
+// Bar keeps a fixed archetype order so cards can be compared at a glance
+const mixBar = computed(() => ARCHETYPES
+  .map(a => ({ id: a.id, value: weights.value[a.id] || 0, color: roleColors.value[a.id] }))
+  .filter(a => a.value > 0))
+const mixTitle = computed(() => mixParts.value.map(a => `${a.label} ${a.value}%`).join(', '))
+const regionName = computed(() => regionLabel(props.persona.region))
 
 const reactionLabel = computed(() => {
   const map = { interested: 'Interested', neutral: 'Neutral', objection: 'Objection' }
@@ -299,7 +337,23 @@ const angleLabel = computed(() => {
 .persona-card-full.dark .skep-label       { color: var(--text-tertiary); }
 
 .persona-card-full.dark .pcf-row-label { color: var(--text-tertiary); }
-.persona-card-full.dark .pcf-row-value { color: #c8c8e0; }
+.persona-card-full.dark .pcf-row-value { color: #d4d4d4; }
+
+/* Role mix */
+.pcf-mix { display: flex; flex-direction: column; gap: 7px; margin: 2px 0 4px; }
+.pcf-mix-head { display: flex; align-items: center; gap: 8px; }
+.pcf-mix-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px #000, 0 0 0 3px #2a2a2a;
+}
+.pcf-mix-text { font-size: 11px; color: var(--text-tertiary); line-height: 1.4; }
+.pcf-mix-text strong { color: var(--text-primary); font-weight: 600; }
+.pcf-mix-sep { color: #3a3a3a; }
+.pcf-mix-bar { display: flex; gap: 2px; height: 4px; border-radius: 999px; overflow: hidden; }
+.pcf-mix-bar span { display: block; min-width: 2px; }
 
 .persona-card-full.dark .pcf-objection-chip {
   background: rgba(248,113,113,0.1);

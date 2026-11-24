@@ -104,6 +104,7 @@
             :persona="persona"
             :compact="false"
             :dark="true"
+            :colors="brief?.audience?.colors"
           />
         </div>
 

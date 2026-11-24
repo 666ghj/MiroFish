@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
+from .gtm_audience import REGIONS
 
 logger = get_logger('mirofish.gtm_reaction_simulator')
 
@@ -79,6 +80,9 @@ def _build_reaction_prompt(message: dict, personas: list) -> str:
             f"Goal: {p['primary_goal']}. "
             f"Likely message angle: {p.get('likely_message_angle', 'unknown')}. "
             f"Skepticism: {p.get('skepticism_level', 3)}/5. "
+            f"Risk tolerance: {p.get('risk_tolerance', 'medium')}. "
+            f"Budget sensitivity: {p.get('budget_sensitivity', 'medium')}. "
+            + (f"Region: {REGIONS.get(p['region'], p['region'])}. " if p.get('region') else '') +
             f"Main objection: {p.get('objections', ['unknown'])[0] if p.get('objections') else 'unknown'}."
         )
     personas_text = '\n'.join(persona_list)
