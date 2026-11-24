@@ -9,6 +9,7 @@ Thumbs.db
 .env.development
 .env.test
 .env.production
+# .env.example is intentionally committed (contains only placeholders, no secrets)
 
 # Python
 __pycache__/
@@ -58,3 +59,5 @@ backend/uploads/
 
 # Docker 数据
 data/
+# Idea Studio eval outputs
+backend/evals/results/

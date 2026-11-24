@@ -13,6 +13,16 @@ const routes = [
     component: Home
   },
   {
+    path: '/simulate',
+    name: 'Simulate',
+    component: () => import('../views/SimulatePage.vue'),
+  },
+  {
+    path: '/studio',
+    name: 'IdeaStudio',
+    component: () => import('../views/IdeaStudio.vue'),
+  },
+  {
     path: '/process/:projectId',
     name: 'Process',
     component: Process,
@@ -40,6 +50,24 @@ const routes = [
     path: '/interaction/:reportId',
     name: 'Interaction',
     component: InteractionView,
+    props: true
+  },
+  {
+    path: '/gtm/personas/:briefId',
+    name: 'GTMPersonas',
+    component: () => import('../views/GTMPersonasView.vue'),
+    props: true
+  },
+  {
+    path: '/gtm/messages/:briefId',
+    name: 'GTMMessages',
+    component: () => import('../views/GTMMessageTestingView.vue'),
+    props: true
+  },
+  {
+    path: '/gtm/report/:briefId',
+    name: 'GTMReport',
+    component: () => import('../views/GTMReportView.vue'),
     props: true
   }
 ]

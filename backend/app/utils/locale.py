@@ -66,4 +66,4 @@ def t(key: str, **kwargs) -> str:
 def get_language_instruction() -> str:
     locale = get_locale()
     lang_config = _languages.get(locale, _languages.get('zh', {}))
-    return lang_config.get('llmInstruction', '请使用中文回答。')
+    return lang_config.get('llmInstruction', 'Please respond in English.')

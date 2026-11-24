@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: gtm-sim-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --worker-class gthread --threads 8 --timeout 300 --keep-alive 5
+    envVars:
+      - key: LLM_API_KEY
+        sync: false          # set manually in Render dashboard
+      - key: LLM_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: LLM_MODEL_NAME
+        value: openai/gpt-4o-mini
+      - key: ZEP_API_KEY
+        value: not-used      # GTM flow does not use Zep
+      - key: FLASK_DEBUG
+        value: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.9

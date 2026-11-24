@@ -107,7 +107,7 @@ def test_manual_stop_timeout_leaves_monitor_owned_state_stopping(monkeypatch):
     SimulationRunner._graph_memory_enabled.pop("sim-timeout", None)
 
     try:
-        with pytest.raises(TimeoutError, match="仍在停止中"):
+        with pytest.raises(TimeoutError, match="still stopping"):
             SimulationRunner.stop_simulation("sim-timeout")
         assert state.runner_status == RunnerStatus.STOPPING
     finally:

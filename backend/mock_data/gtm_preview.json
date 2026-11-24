@@ -1,0 +1,48 @@
+{
+  "personas": [
+    {
+      "id": "skeptical_vp_sales",
+      "name": "Marcus Rivera",
+      "role": "VP of Sales",
+      "company": "Series A SaaS, 80 employees",
+      "skepticism_level": 4,
+      "reaction": "objection",
+      "likely_response": "We already have a process for this. What makes your ROI different from what we've tried before?",
+      "objection_category": "status_quo_bias"
+    },
+    {
+      "id": "process_revops",
+      "name": "Sara Kim",
+      "role": "RevOps Manager",
+      "company": "B2B SaaS, 120 employees",
+      "skepticism_level": 3,
+      "reaction": "neutral",
+      "likely_response": "Interesting, I'd need to see how it integrates with our existing stack before committing to a call.",
+      "objection_category": "integration_concern"
+    },
+    {
+      "id": "founder_seller",
+      "name": "David Lee",
+      "role": "Founder / CEO",
+      "company": "Pre-revenue startup, 8 employees",
+      "skepticism_level": 2,
+      "reaction": "interested",
+      "likely_response": "This is exactly the problem I've been trying to solve. Can we do a quick 20-minute demo?",
+      "objection_category": null
+    }
+  ],
+  "message_angle_teasers": [
+    {
+      "angle": "pain_led",
+      "label": "Pain-Led",
+      "preview": "Strongest early signal, 5 of 12 personas responded with interest or curiosity",
+      "top_objection": "Integration complexity"
+    },
+    {
+      "angle": "roi_led",
+      "label": "ROI-Led",
+      "preview": "Best fit for budget-focused buyers, 4 of 12 responded positively",
+      "top_objection": "Proof of ROI claims"
+    }
+  ]
+}

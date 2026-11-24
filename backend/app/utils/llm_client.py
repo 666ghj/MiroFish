@@ -1,6 +1,6 @@
 """
-LLM客户端封装
-统一使用OpenAI格式调用
+LLM client wrapper
+Uses OpenAI-compatible format for all calls
 """
 
 import json
@@ -89,7 +89,7 @@ def _contains_additional_json_container(content: str) -> bool:
 
 
 class LLMClient:
-    """LLM客户端"""
+    """LLM client"""
     
     def __init__(
         self,
@@ -102,11 +102,19 @@ class LLMClient:
         self.model = model or Config.LLM_MODEL_NAME
         
         if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
+            raise ValueError("LLM_API_KEY is not configured")
         
+        extra_headers = {}
+        if self.base_url and "openrouter.ai" in self.base_url:
+            extra_headers = {
+                "HTTP-Referer": "https://github.com/666ghj/MiroFish",
+                "X-Title": Config.APP_NAME,
+            }
+
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            default_headers=extra_headers if extra_headers else None,
         )
 
     def _create_completion(
@@ -136,16 +144,16 @@ class LLMClient:
         response_format: Optional[Dict] = None
     ) -> str:
         """
-        发送聊天请求
+        Send a chat request
         
         Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            response_format: 响应格式（如JSON模式）
+            messages: list of messages
+            temperature: temperature parameter
+            max_tokens: maximum token count
+            response_format: response format (e.g. JSON mode)
             
         Returns:
-            模型响应文本
+            Model response text
         """
         response = self._create_completion(
             messages=messages,
@@ -156,24 +164,70 @@ class LLMClient:
         content = extract_chat_completion_text(response)
         return _clean_chat_text(content)
     
+    def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = 1024,
+    ):
+        """
+        Stream a chat reply as text chunks.
+
+        Yields each non-empty content delta as it arrives. Reasoning wrappers
+        (<think>...</think>) are dropped. Provider errors propagate to the caller.
+        """
+        stream = create_chat_completion(
+            self.client,
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        in_think = False
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta is not None else None
+            if not text:
+                continue
+            out, rest = "", text
+            while rest:
+                if in_think:
+                    if "</think>" in rest:
+                        rest = rest.split("</think>", 1)[1]
+                        in_think = False
+                    else:
+                        rest = ""
+                elif "<think>" in rest:
+                    before, rest = rest.split("<think>", 1)
+                    out += before
+                    in_think = True
+                else:
+                    out, rest = out + rest, ""
+            if out:
+                yield out
+
     def chat_json(
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.3,
         max_tokens: Optional[int] = 4096,
         max_attempts: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
-        发送聊天请求并返回JSON
+        Send a chat request and return parsed JSON
         
         Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            max_attempts: 内容生成尝试次数（不含一次明确的JSON模式能力降级）
+            messages: list of messages
+            temperature: temperature parameter
+            max_tokens: maximum token count
+            max_attempts: content generation attempts (not counting one explicit JSON-mode downgrade)
             
         Returns:
-            解析后的JSON对象
+            Parsed JSON object or array
         """
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
@@ -232,7 +286,7 @@ class LLMClient:
         raise LLMResponseError("LLM did not produce a JSON response")
 
     @staticmethod
-    def _parse_json_response(response: Any) -> Dict[str, Any]:
+    def _parse_json_response(response: Any) -> Any:
         choices = getattr(response, "choices", None) or []
         if not choices:
             raise LLMResponseError("LLM returned no choices")
@@ -281,9 +335,11 @@ class LLMClient:
                     )
                 logger.warning("Ignoring text after a complete LLM JSON object")
 
-        if not isinstance(value, dict):
+        # GTM services may receive a bare JSON array (e.g. a list of reactions);
+        # they unwrap either shape themselves.
+        if not isinstance(value, (dict, list)):
             raise LLMResponseError(
-                "LLM JSON response must be a top-level JSON object",
+                "LLM JSON response must be a top-level JSON object or array",
                 finish_reason=finish_reason,
             )
 

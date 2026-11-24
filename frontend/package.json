@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "axios": "^1.18.1",
     "d3": "^7.9.0",
     "vue": "^3.5.24",

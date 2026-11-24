@@ -120,11 +120,22 @@ def test_chat_json_rejects_a_second_json_document(content):
         )
 
 
-def test_chat_json_rejects_top_level_array():
+def test_chat_json_accepts_top_level_array():
+    # GTM services ask for bare JSON arrays (e.g. reaction lists) and unwrap both shapes.
     sequence = CompletionSequence(_response('[{"ok": true}]'))
     client = _client_for(sequence)
 
-    with pytest.raises(LLMResponseError, match="JSON object"):
+    assert client.chat_json(
+        messages=[{"role": "user", "content": "Return JSON"}],
+        max_attempts=1,
+    ) == [{"ok": True}]
+
+
+def test_chat_json_rejects_top_level_scalar():
+    sequence = CompletionSequence(_response('42'))
+    client = _client_for(sequence)
+
+    with pytest.raises(LLMResponseError, match="JSON object or array"):
         client.chat_json(
             messages=[{"role": "user", "content": "Return JSON"}],
             max_attempts=1,

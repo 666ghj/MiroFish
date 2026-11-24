@@ -1,203 +1,236 @@
-<div align="center">
+# Preflight
 
-<img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="75%"/>
+> **Test your go-to-market before takeoff.**
 
-<a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="666ghj%2FMiroFish | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+*Preflight is a temporary name (set in `frontend/src/brand.js` and `APP_NAME`).*
 
-简洁通用的群体智能引擎，预测万物
-</br>
-<em>A Simple and Universal Swarm Intelligence Engine, Predicting Anything</em>
+An open-source simulator for B2B founders. Describe your product and buyer, shape the audience, and get AI buyer personas, scored reactions to several cold-email angles, the objections to prepare for, and a 7-day outbound plan that respects local outreach law. All before you send a single real email.
 
-<a href="https://www.shanda.com/" target="_blank"><img src="./static/image/shanda_logo.png" alt="666ghj%2FMiroFish | Shanda" height="40"/></a>
+---
 
-[![GitHub Stars](https://img.shields.io/github/stars/666ghj/MiroFish?style=flat-square&color=DAA520)](https://github.com/666ghj/MiroFish/stargazers)
-[![GitHub Watchers](https://img.shields.io/github/watchers/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/watchers)
-[![GitHub Forks](https://img.shields.io/github/forks/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/network)
-[![Docker](https://img.shields.io/badge/Docker-Build-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/666ghj/MiroFish)
+## What it does
 
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white)](http://discord.gg/ePf5aPaHnA)
-[![X](https://img.shields.io/badge/X-Follow-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/mirofish_ai)
-[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?style=flat-square&logo=instagram&logoColor=white)](https://www.instagram.com/mirofish_ai/)
+| Step | What happens |
+|------|-------------|
+| 1. **Brief** | Your product, ICP, pricing, channel, pain point, and goal |
+| 2. **Audience** | Buyer role mix (decision maker, champion, evaluator), regions, company sizes, industries, what buyers use today, and five behavior traits |
+| 3. **Market intelligence** | For each region: cold-outreach rules per country, buying culture, fiscal year-ends, local time, public holidays, World Bank indicators, and this week's headlines |
+| 4. **Personas** | 12 by default (up to 500), generated in parallel batches that follow the audience and live market context |
+| 5. **Message testing** | 2 to 5 cold emails, each on a different angle |
+| 6. **Reactions** | Every persona scores every email for interest, clarity, trust, and urgency, three times in shuffled order; the winner is reported with its win rate |
+| 7. **Report** | Winning angle, top objections with rebuttals, best segment, risks, workflow, and a 7-day experiment |
 
-[English](./README.md) | [中文文档](./README-ZH.md)
+### Built to be trusted
 
-</div>
+- **Repeated, not one-shot.** Reactions run three times; a winner that flips between runs is called a tie.
+- **No silent fake data.** If the AI service is unavailable, you see clearly labelled sample data and the reason. Partial results say how many were generated; they are never padded.
+- **Each buyer judged alone**, in small batches, with no built-in rule about which roles should like you.
+- **Sources on everything live.** Economic data shows its year; outreach rules are marked settled or contested and are not legal advice.
 
-## ⚡ Overview
+---
 
-**MiroFish** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
+## Idea Studio
 
-> You only need to: Upload seed materials (data analysis reports or interesting novel stories) and describe your prediction requirements in natural language</br>
-> MiroFish will return: A detailed prediction report and a deeply interactive high-fidelity digital world
+Not sure what to simulate yet? Open **Idea Studio** (`/studio`) and talk an early idea through with an AI co-founder. A live panel sharpens with every message:
 
-### Our Vision
+- **One question at a time**, chosen in code from what is still unknown (Mom Test style: past behavior, not opinions).
+- **Every field is labelled**: what you said, what the AI guessed, what is backed by evidence (with links), and contradictions. You can edit or lock any field.
+- **Clarity (0 to 100)** is computed in code from how complete and specific the idea is. It measures clarity, not quality.
+- **Why hasn't this been built yet?** comes from real searches only (Tavily, Exa, Hacker News, GitHub). Competitors must appear in a retrieved source; review sites are not counted; "not found" never means "does not exist".
+- **Riskiest assumptions** each come with the cheapest test that could disprove them, and open concerns stay open until you bring new facts.
+- At clarity 60, **Test it with buyer personas** opens the GTM simulation with the idea filled in.
 
-MiroFish is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
+Your idea is stored only in your browser (export and import as JSON). Confidential mode turns search off. A session costs roughly $0.02 to $0.06 including searches.
 
-- **At the Macro Level**: We are a rehearsal laboratory for decision-makers, allowing policies and public relations to be tested at zero risk
-- **At the Micro Level**: We are a creative sandbox for individual users — whether deducing novel endings or exploring imaginative scenarios, everything can be fun, playful, and accessible
+---
 
-From serious predictions to playful simulations, we let every "what if" see its outcome, making it possible to predict anything.
+### It acts on what you say, not just answers it
 
-## 🌐 Live Demo
+Before replying, each message is read for what it asks the app to do, and the app does it in code:
 
-Welcome to visit our online demo environment and experience a prediction simulation on trending public opinion events we've prepared for you: [mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
+- "park this", "mark that as pending, top priority": saved to a Parked list (overview bottom bar and details), never asked again until you bring it back
+- your idea changed: the one-liner, problem, and solution are updated before anything else, so research searches the current idea
+- "who else does this?": runs research, same as the button. The reply opens with exactly what was searched and found, written by code
+- "idk": a smaller question or a way to find out, never the answer for you
+- a question to the AI: answered first. "help me come up with...": angles to think from, not finished ideas
 
-## 📸 Screenshots
+Each reply shows chips for what was actually done. The co-founder is never allowed to claim an action the app did not take,
+and any sentence naming a company or product that appears nowhere in the sources or your own words is removed.
+If the reply drifts from the question the router picked, the router's question is put back.
 
-<div align="center">
-<table>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图1.png" alt="Screenshot 1" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图2.png" alt="Screenshot 2" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图3.png" alt="Screenshot 3" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图4.png" alt="Screenshot 4" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图5.png" alt="Screenshot 5" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图6.png" alt="Screenshot 6" width="100%"/></td>
-</tr>
-</table>
-</div>
+### The agent team
 
-## 🎬 Demo Videos
+After each turn a team of AI agents works on the idea in parallel (Agents tab in the right panel):
 
-### 1. Wuhan University Public Opinion Simulation + MiroFish Project Introduction
+| Agent | Does |
+|---|---|
+| Co-founder, Analyst, Researcher | run inside the chat turn: ask the next question, update the live idea, search with sources |
+| Skeptic | the three strongest reasons it fails, each with what would defuse it |
+| Customer panel | three synthetic buyers react (labelled synthetic: objections, not proof of demand) |
+| Market sizer | bottom-up count × price; the multiplication is done in code |
+| Pitch writer | three one-liners, a 30-second pitch, a phrase to stop using |
+| GTM strategist | one channel, a hook, steps to the first 10 customers, this week's tasks |
+| Experiment designer | the cheapest tests with pass thresholds (reads the Skeptic) |
+| Chief of staff | reads the whole team, calls keep going / narrow it / rethink, gives 3 next moves |
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="MiroFish Demo Video" width="75%"/></a>
+Agents wait until the fields they need exist, and re-run only when the parts of the idea they
+read change (fingerprints), so a turn about pricing does not re-run the Pitch writer. Stages run
+in order (specialists, then experiments, then the chief), agents within a stage run in parallel.
+`POST /api/idea/team` streams the run; `IDEA_AGENT_MODEL` picks the model; MOCK_MODE serves
+labelled samples.
 
-Click the image to watch the complete demo video for prediction using BettaFish-generated "Wuhan University Public Opinion Report"
-</div>
+## Quick start
 
-### 2. Dream of the Red Chamber Lost Ending Simulation
+### Prerequisites
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1cPk3BBExq" target="_blank"><img src="./static/image/红楼梦模拟推演封面.jpg" alt="MiroFish Demo Video" width="75%"/></a>
+- Python 3.11 or 3.12
+- Node.js 18+
+- An OpenAI-compatible API key (OpenRouter recommended), or none at all in mock mode
 
-Click the image to watch MiroFish's deep prediction of the lost ending based on hundreds of thousands of words from the first 80 chapters of "Dream of the Red Chamber"
-</div>
-
-> **Financial Prediction**, **Political News Prediction** and more examples coming soon...
-
-## 🔄 Workflow
-
-1. **Graph Building**: Seed extraction & Individual/collective memory injection & GraphRAG construction
-2. **Environment Setup**: Entity relationship extraction & Persona generation & Agent configuration injection
-3. **Simulation**: Dual-platform parallel simulation & Auto-parse prediction requirements & Dynamic temporal memory updates
-4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
-5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
-
-## 🚀 Quick Start
-
-### Option 1: Source Code Deployment (Recommended)
-
-#### Prerequisites
-
-| Tool | Version | Description | Check Installation |
-|------|---------|-------------|-------------------|
-| **Node.js** | 18+ | Frontend runtime, includes npm | `node -v` |
-| **Python** | ≥3.11, ≤3.12 | Backend runtime | `python --version` |
-| **uv** | Latest | Python package manager | `uv --version` |
-
-#### 1. Configure Environment Variables
+### Run locally
 
 ```bash
-# Copy the example configuration file
-cp .env.example .env
+git clone https://github.com/sanketmuchhala/GTM-SImulator.git
+cd GTM-SImulator
+cp .env.example .env          # add your LLM_API_KEY
 
-# Edit the .env file and fill in the required API keys
-```
+# Backend (http://localhost:5001)
+cd backend
+pip install -r requirements.txt
+python run.py
 
-**Required Environment Variables:**
-
-```env
-# LLM API Configuration (supports any LLM API with OpenAI SDK format)
-# Recommended: Alibaba Qwen-plus model via Bailian Platform: https://bailian.console.aliyun.com/
-# High consumption, try simulations with fewer than 40 rounds first
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL_NAME=qwen-plus
-
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
-```
-
-#### 2. Install Dependencies
-
-```bash
-# One-click installation of all dependencies (root + frontend + backend)
-npm run setup:all
-```
-
-Or install step by step:
-
-```bash
-# Install Node dependencies (root + frontend)
-npm run setup
-
-# Install Python dependencies (backend, auto-creates virtual environment)
-npm run setup:backend
-```
-
-#### 3. Start Services
-
-```bash
-# Start both frontend and backend (run from project root)
+# Frontend (http://localhost:3000), in a second terminal
+cd frontend
+npm install
 npm run dev
 ```
 
-**Service URLs:**
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:5001`
-
-**Start Individually:**
+### Mock mode (no API key)
 
 ```bash
-npm run backend   # Start backend only
-npm run frontend  # Start frontend only
+cd backend
+MOCK_MODE=true python run.py
 ```
 
-### Option 2: Docker Deployment
+Every step serves pre-generated sample data from `backend/mock_data/`, labelled as sample data in the UI. Live market intelligence still works because it does not need an LLM.
 
-```bash
-# 1. Configure environment variables (same as source deployment)
-cp .env.example .env
+### Docker
 
-# 2. Pull image and start
-docker compose up -d
+`docker compose up --build` builds this repository's `Dockerfile` (backend and frontend in one container, ports 3000 and 5001). It is not covered by CI; the manual steps above are the tested path.
+
+---
+
+## Configuration
+
+| Variable | Purpose |
+|----------|---------|
+| `LLM_API_KEY` | API key for any OpenAI-compatible provider |
+| `LLM_BASE_URL` | Provider URL, e.g. `https://openrouter.ai/api/v1` |
+| `LLM_MODEL_NAME` | Model, e.g. `openai/gpt-4o-mini` |
+| `MOCK_MODE` | `true` serves labelled sample data and lets the server start without a key |
+| `VITE_API_BASE_URL` | Frontend only: backend URL when deployed (e.g. Vercel to Render) |
+| `TAVILY_API_KEY`, `EXA_API_KEY` | Idea Studio web and company search (optional; Hacker News and GitHub need no key) |
+| `GITHUB_TOKEN` | Optional, raises GitHub search limits |
+| `IDEA_CHAT_MODEL`, `IDEA_EXTRACT_MODEL` | Optional model overrides for Idea Studio (the analyst defaults to `openai/gpt-4.1-mini` on OpenRouter) |
+| `ZEP_API_KEY` | Optional, only for the legacy social-simulation flow |
+
+A default run (12 personas, 3 angles) makes 22 LLM calls (2 persona batches, 1 for messages, 18 for reactions, 1 for the report) and costs roughly $0.03 on gpt-4o-mini.
+
+---
+
+## Architecture
+
+```
+POST /api/gtm/brief                  brief + audience, saved to uploads/gtm_briefs/<id>/
+GET  /api/gtm/market?regions=...     region profiles + live signals (no LLM)
+POST /api/gtm/personas/<id>          batched persona generation, with meta (source, generated/requested)
+POST /api/gtm/messages/<id>          2 to 5 message variants
+POST /api/gtm/reactions/<id>         3 shuffled runs, averaged, with win rate and stability
+POST /api/gtm/report/<id>            report + 7-day plan that respects outreach rules and holidays
+
+POST /api/idea/sessions              Idea Studio (in progress): chat sessions
+POST /api/idea/sessions/<id>/messages   streamed co-founder reply (Server-Sent Events)
 ```
 
-Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`
+Everything is cached per brief as JSON under `backend/uploads/`. No database, no accounts.
 
-> Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
+### Live data sources (no API keys)
 
-## 📬 Join the Conversation
+| Source | Used for |
+|--------|----------|
+| [World Bank Indicators API](https://data.worldbank.org/) | GDP growth, inflation, unemployment |
+| [Nager.Date](https://date.nager.at/) | Public holidays in the next 60 days |
+| [Google News RSS](https://news.google.com/) | This week's business headlines per region |
 
-<div align="center">
-<img src="./static/image/QQ群.png" alt="QQ Group" width="60%"/>
-</div>
+Each source is cached and fails soft: a region always returns its static profile.
 
-&nbsp;
+---
 
-The MiroFish team is recruiting full-time/internship positions. If you're interested in multi-agent simulation and LLM applications, feel free to send your resume to: **mirofish@shanda.com**
+## Tech stack
 
-## 📄 Acknowledgments
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Vue 3 (Composition API), Vue Router, D3 |
+| Backend | Flask, Python 3.11, gunicorn (threaded workers) |
+| LLM | Any OpenAI-compatible API via `backend/app/utils/llm_client.py` |
+| Persistence | JSON files under `backend/uploads/` |
+| Deploy | Render (backend, `render.yaml`) and Vercel (frontend) |
 
-**MiroFish has received strategic support and incubation from Shanda Group!**
+The repository also contains the original multi-agent social simulation flow (OASIS, Zep) it was forked from. The GTM flow does not use it.
 
-MiroFish's simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**, We sincerely thank the CAMEL-AI team for their open-source contributions!
+---
 
-## 📈 Project Statistics
+## Project structure
 
-<a href="https://github.com/666ghj/MiroFish">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="static/image/star-history-dark.svg" />
-   <source media="(prefers-color-scheme: light)" srcset="static/image/star-history-light.svg" />
-   <img alt="666ghj/MiroFish Star History Chart" src="static/image/star-history-light.svg" />
- </picture>
-</a>
+```
+frontend/src/
+  views/        Home, SimulatePage, GTMPersonasView, GTMMessageTestingView, GTMReportView
+  components/   GTMBriefForm, AudienceBuilder, MarketIntel, HeroViz (buyer network), PersonaCard
+  api/          gtm.js, idea.js (streaming), index.js (axios)
+  store/        gtmSimulation.js
+  utils/        audience.js (roles, color blending), gtmFormatter.js, downloadMarkdown.js
+  mock/         offline sample data
+
+backend/app/
+  api/          gtm.py, idea.py
+  services/     gtm_persona_generator, gtm_message_generator, gtm_reaction_simulator,
+                gtm_aggregator, gtm_report_generator, gtm_audience, gtm_market, idea_chat
+  models/       gtm_brief.py, idea_session.py
+  utils/        llm_client.py, text_style.py, logger.py
+backend/tests/  pytest suite (no network, stubbed LLM)
+backend/mock_data/
+```
+
+Run the tests with `cd backend && python -m pytest -q` (no network). Run the Idea Studio quality suite against the real models with `cd backend && python -m evals.idea_studio_eval` (costs a few cents; checks fact capture, one question per reply, no caving under pushback, no invented competitors).
+
+---
+
+## FAQ
+
+**Is this real buyer data?**
+No. Personas, reactions, and scores are AI-generated. Use the result as a directional first read and confirm the winning angle with a small real send.
+
+**Are the outreach rules legal advice?**
+No. They summarise published guidance as of November 2026, and several countries are marked contested. Check with local counsel before relying on them.
+
+**Can I export the report?**
+Yes. The report page opens a print-ready version with every section and the 7-day plan; use your browser's Save as PDF.
+
+---
+
+## Roadmap
+
+- [x] Brief, personas, message testing, reactions, report
+- [x] Multi-run scoring with win rate, labelled sample data
+- [x] Audience builder with blended buyer-role colors
+- [x] Live market intelligence per region
+- [x] Batched persona generation for large audiences
+- [x] Idea Studio: talk through an early idea with an AI co-founder and watch it sharpen live
+- [ ] History of past simulations
+- [ ] Real reply ingestion to calibrate the simulation
+
+---
+
+## License
+
+[AGPL-3.0](LICENSE)
