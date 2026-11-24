@@ -36,11 +36,14 @@
       <!-- Chat -->
       <section class="chat" :class="{ hide: tab !== 'chat' }" aria-label="Conversation">
         <div ref="scroller" class="messages" role="log" aria-live="polite" aria-relevant="additions">
-          <div v-for="(m, i) in messages" :key="i" class="msg" :class="`msg--${m.role}`">
-            <div v-if="m.role === 'assistant'" class="avatar" aria-hidden="true">AI</div>
+          <div v-for="(m, i) in messages" :key="i" class="msg" :class="[`msg--${m.role}`, { working: m.streaming || traceLive(m) }]">
+            <div v-if="m.role === 'assistant'" class="avatar" aria-hidden="true">
+              <svg viewBox="0 0 16 16"><path d="M3 4.5h10v6H7l-3 2.5v-2.5H3z" /></svg>
+            </div>
             <div class="bubble">
-              <div class="bubble-text" v-html="render(m.content)" :aria-live="m.streaming ? 'off' : null"></div>
-              <span v-if="m.streaming && !m.content" class="typing" aria-hidden="true"><i></i><i></i><i></i></span>
+              <WorkTrace v-if="m.trace?.length" :steps="m.trace" :live="traceLive(m)" />
+              <div class="bubble-text" :class="{ streaming: m.streaming && m.content }" v-html="render(m.content)"
+                   :aria-live="m.streaming ? 'off' : null"></div>
               <div v-if="m.notice" class="notice">{{ m.notice }}</div>
               <div v-if="m.actions?.length" class="acts" aria-label="What the app did">
                 <span v-for="(a, j) in m.actions" :key="j" class="act" :class="`act--${a.kind}`" :style="{ '--j': j }"
@@ -59,9 +62,6 @@
               <span class="starter-desc">{{ s.desc }}</span>
             </button>
           </div>
-          <div v-if="status" class="status" role="status">
-            <span class="spinner" aria-hidden="true"></span>{{ status }}
-          </div>
           <div v-if="error" class="error" role="alert">
             {{ error }} <button type="button" class="link" @click="retry">Try again</button>
           </div>
@@ -73,7 +73,7 @@
             v-model="draft"
             rows="2"
             maxlength="4000"
-            :placeholder="messages.length > 1 ? 'Reply to your co-founder...' : 'Describe your idea, however rough...'"
+            :placeholder="busy ? 'Your team is on it. You can type your next thought...' : (messages.length > 1 ? 'Reply to your co-founder...' : 'Describe your idea, however rough...')"
             aria-label="Message your AI co-founder"
             :disabled="!state"
             @keydown.enter.exact.prevent="send()"
@@ -81,7 +81,9 @@
           <button type="submit" class="send" :disabled="busy || !draft.trim()" aria-label="Send">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5" /></svg>
           </button>
+          <span class="composer-glow" aria-hidden="true"></span>
         </form>
+        <div class="hint" aria-hidden="true"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</div>
         <div class="fine">
           A thinking tool, not investment, legal, or financial advice.
           <button type="button" class="privacy-link" :aria-expanded="privacyOpen" aria-controls="privacy-card"
@@ -201,6 +203,7 @@ import IdeaPanel from '../components/IdeaPanel.vue'
 import IdeaDashboard from '../components/IdeaDashboard.vue'
 import AgentTeam from '../components/AgentTeam.vue'
 import AgentDetail from '../components/AgentDetail.vue'
+import WorkTrace from '../components/WorkTrace.vue'
 import { AGENTS, SPECIALIST_IDS } from '../utils/agents'
 import { newIdea, streamIdeaTurn, streamIdeaTeam, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
@@ -259,6 +262,36 @@ const lastQuestion = computed(() => {
   const q = last.content.split(/(?<=[.!?])\s+/).reverse().find(t => t.trim().endsWith('?'))
   return (q || '').trim()
 })
+// ── Work trace: which agent is doing what, shown inside the chat message ─────
+let traceMsg = null          // the assistant message the team run reports into
+function traceLive(m) { return !!m.trace?.some(s => s.status === 'running' || s.status === 'queued') }
+function step(m, id, patch) {
+  if (!m) return
+  if (!m.trace) m.trace = []
+  const i = m.trace.findIndex(s => s.id === id)
+  const t = Date.now()
+  if (i === -1) {
+    m.trace.push({ id, status: 'running', detail: '', t0: t, ...patch })
+  } else {
+    const cur = m.trace[i]
+    const next = { ...cur, ...patch }
+    if (patch.status === 'running' && cur.status !== 'running') next.t0 = t
+    if (['done', 'failed'].includes(patch.status) && !cur.t1) next.t1 = t
+    m.trace.splice(i, 1, next)
+  }
+}
+function finishOpenSteps(m, status = 'done') {
+  for (const s of m?.trace || []) if (s.status === 'running' || s.status === 'queued') step(m, s.id, { status })
+}
+function readSummary(items) {
+  const parked = items.filter(a => a.kind === 'parked').length
+  const bits = []
+  if (parked) bits.push(`Parked ${parked} ${parked === 1 ? 'topic' : 'topics'}`)
+  if (items.some(a => a.kind === 'idea_updated')) bits.push('Updated your idea')
+  if (items.some(a => a.kind === 'unparked')) bits.push('Brought a topic back')
+  return bits.join(' · ') || 'Understood'
+}
+
 function setLive(id, patch) { live.value = { ...live.value, [id]: { ...(live.value[id] || {}), ...patch } } }
 const savedAt = ref('')
 const isFresh = computed(() => messages.value.length <= 1 && !busy.value)
@@ -275,7 +308,8 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       state: state.value, confidential: confidential.value, team: team.value,
-      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions }) => ({ role, content, notice, actions })),
+      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions, trace }) => ({ role, content, notice, actions,
+        trace: (trace || []).map(t => ({ ...t, faces: undefined, status: ['running', 'queued'].includes(t.status) ? 'done' : t.status })) })),
     }))
     savedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   } catch (_) {}
@@ -354,10 +388,11 @@ async function send(text, opts = {}) {
   const history = messages.value.filter(m => !m.streaming).slice(-HISTORY_SENT)
     .map(({ role, content }) => ({ role, content }))
   messages.value.push({ role: 'user', content })
-  const reply = { role: 'assistant', content: '', streaming: true, notice: null }
+  const reply = { role: 'assistant', content: '', streaming: true, notice: null, trace: [] }
   messages.value.push(reply)
   const live = messages.value[messages.value.length - 1]
   status.value = ''
+  step(live, 'read', { status: 'running' })
   scrollDown()
   setLive('cofounder', { status: 'running' })
 
@@ -369,6 +404,7 @@ async function send(text, opts = {}) {
     if (live.streaming) throw new Error('The reply ended unexpectedly.')
     ok = true
   } catch (e) {
+    finishOpenSteps(live, 'failed')
     messages.value.splice(messages.value.indexOf(live), 1)
     messages.value.splice(messages.value.length - 1, 1)   // drop the unanswered user message
     draft.value = content
@@ -383,7 +419,7 @@ async function send(text, opts = {}) {
     save()
     focusComposer()
   }
-  if (ok) runTeam()
+  if (ok) { traceMsg = live; runTeam() }
 }
 
 // ── Agent team ──────────────────────────────────────────────────────────────
@@ -392,18 +428,48 @@ async function runTeam(opts = {}) {
   if (teamRunning.value) { teamPending = true; return }
   teamRunning.value = true
   const only = opts.only || null
+  const target = opts.only ? null : traceMsg
+  traceMsg = null
+  teamTrace = target
   try {
     await streamIdeaTeam({ state: state.value, team: team.value, only, force: !!opts.force }, (ev) => onTeamEvent(ev, only))
   } catch (e) {
     for (const id of SPECIALIST_IDS) if (isWorking(id)) setLive(id, { status: 'failed' })
+    if (target) step(target, 'team', { status: 'failed', detail: 'The team could not run this time' })
   } finally {
+    if (target && traceLive(target)) finishOpenSteps(target)
+    teamTrace = null
     teamRunning.value = false
     save()
     if (teamPending) { teamPending = false; runTeam() }
   }
 }
 
+let teamTrace = null
+function teamFaces(doneIds) {
+  return SPECIALIST_IDS.filter(id => ['queued', 'running', 'done'].includes(live.value[id]?.status) || doneIds.includes(id))
+    .map(id => ({ color: AGENTS.find(a => a.id === id).color, on: doneIds.includes(id) }))
+}
+let teamDone = []
 function onTeamEvent(ev, only) {
+  const m = teamTrace
+  if (m && ev.type === 'plan') {
+    teamDone = []
+    const n = ev.agents.filter(a => a.status === 'queued').length
+    if (n) { step(m, 'team', { status: 'running', detail: `${n} specialists working`, faces: [] }); nextTick(scrollDown) }
+  }
+  if (m && ev.type === 'agent' && ev.status === 'done') {
+    teamDone.push(ev.id)
+    const name = AGENTS.find(a => a.id === ev.id)?.name || ev.id
+    step(m, 'team', { detail: `${name} reported`, faces: teamFaces(teamDone) })
+  }
+  if (m && ev.type === 'done' && m.trace?.some(s => s.id === 'team')) {
+    const chief = team.value.chief?.output
+    const VERD = { keep_going: 'Keep going', narrow: 'Narrow it', rethink: 'Rethink' }
+    step(m, 'team', { status: 'done', faces: [],
+      detail: chief && teamDone.includes('chief') ? `Chief of staff: ${VERD[chief.verdict]}. ${chief.next_actions?.[0] || ''}`
+        : `${ev.ran} ${ev.ran === 1 ? 'specialist' : 'specialists'} reported` })
+  }
   if (ev.type === 'plan') {
     for (const a of ev.agents) {
       if (only && !only.includes(a.id) && a.status !== 'waiting') continue
@@ -448,27 +514,44 @@ function openAgent(id) {
 function onEvent(ev, live) {
   switch (ev.type) {
     case 'actions':
+      step(live, 'read', { status: 'done', detail: readSummary(ev.items || []) })
       live.actions = ev.items || []
       if ((ev.items || []).some(a => a.kind === 'idea_updated')) flash((ev.items.find(a => a.kind === 'idea_updated').paths) || [])
       break
+    case 'start':
+      if (live.trace?.find(s => s.id === 'read')?.status === 'running') step(live, 'read', { status: 'done', detail: 'Understood' })
+      step(live, 'cofounder', { status: 'running', detail: 'Thinking' })
+      break
     case 'searching':
+      step(live, 'cofounder', { status: 'queued', detail: 'Waiting for the research' })
+      step(live, 'research', { status: 'running', detail: `Searching "${(ev.terms || [''])[0]}"` })
+      live.trace.sort((a, b) => ['read', 'research', 'cofounder', 'analyst', 'team'].indexOf(a.id) - ['read', 'research', 'cofounder', 'analyst', 'team'].indexOf(b.id))
       setLive('researcher', { status: 'running' })
       status.value = 'Researching who already does this (web, companies, Hacker News, GitHub)...'
       break
     case 'sources':
+      step(live, 'research', { detail: `Reading ${ev.count} results` })
       status.value = `Found ${ev.count} results. Reading them...`
       break
     case 'research': {
       setLive('researcher', { status: 'done', at: Date.now() })
       const n = ev.competitors?.length || 0
+      step(live, 'research', { status: 'done', detail: n ? `${n} ${n === 1 ? 'company' : 'companies'} found` : 'No companies found' })
+      step(live, 'cofounder', { status: 'running', detail: 'Thinking' })
       status.value = n ? `Found ${n} ${n === 1 ? 'company' : 'companies'} already doing this. Thinking...` : 'Research done. Thinking...'
       break
     }
     case 'evidence_skipped':
+      step(live, 'research', { status: 'failed', detail: ev.reason })
+      step(live, 'cofounder', { status: 'running', detail: 'Thinking' })
       live.notice = ev.reason
       break
     case 'delta':
       status.value = ''
+      if (!live.content) {
+        if (live.trace?.find(s => s.id === 'research')?.status === 'running') step(live, 'research', { status: 'done', detail: 'Done' })
+        step(live, 'cofounder', { status: 'running', detail: 'Writing' })
+      }
       live.content += ev.text
       scrollDown()
       break
@@ -479,11 +562,18 @@ function onEvent(ev, live) {
       if (Array.isArray(ev.actions)) live.actions = ev.actions
       status.value = ''
       updating.value = true
+      step(live, 'cofounder', { status: 'done', detail: ev.source === 'scripted' ? 'Used a scripted question' : 'Replied' })
+      step(live, 'analyst', { status: 'running', detail: 'Updating the live idea' })
       setLive('cofounder', { status: 'done', at: Date.now() })
       setLive('analyst', { status: 'running' })
       break
     case 'state':
       updating.value = false
+      {
+        const n = (ev.applied || []).length
+        const labels = [...new Set((ev.applied || []).map(labelFor))].slice(0, 3).join(', ')
+        step(live, 'analyst', { status: 'done', detail: n ? `${n} ${n === 1 ? 'field' : 'fields'} updated${labels ? ': ' + labels : ''}` : 'Nothing new to record' })
+      }
       setLive('analyst', { status: 'done', at: Date.now() })
       state.value = ev.state
       flash(ev.applied || [])
@@ -682,15 +772,33 @@ onMounted(async () => {
 
 /* Chat */
 .chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #1a1a1a; }
-.messages { flex: 1; overflow-y: auto; padding: 24px 22px 12px; display: flex; flex-direction: column; gap: 16px; }
+.messages { flex: 1; overflow-y: auto; padding: 24px 22px 12px; display: flex; flex-direction: column; gap: 20px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px); mask-image: linear-gradient(180deg, transparent 0, #000 18px); }
 .msg { display: flex; gap: 10px; max-width: 100%; animation: rise-in var(--dur-2) var(--ease-out) both; }
 .msg--user { justify-content: flex-end; }
+@property --ring { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .avatar {
-  width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; display: grid; place-items: center;
-  font-size: 10px; font-weight: 700; color: #93c5fd; background: rgba(59, 130, 246, 0.12);
+  position: relative; width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px; display: grid; place-items: center; isolation: isolate;
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.22), rgba(59, 130, 246, 0.06)); border: 1px solid rgba(96, 165, 250, 0.3);
 }
+.avatar svg { width: 14px; height: 14px; fill: none; stroke: #93c5fd; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* While the team works on this reply, a light orbits the avatar */
+.msg.working .avatar { border-color: transparent; }
+.msg.working .avatar::before { content: ''; position: absolute; inset: -1px; border-radius: 10px; padding: 1px; z-index: -1;
+  background: conic-gradient(from var(--ring), transparent 0 60%, #60a5fa 85%, transparent 100%) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: ring 1.6s linear infinite; }
+@keyframes ring { to { --ring: 360deg; } }
+/* Streaming caret */
+.bubble-text.streaming::after { content: ''; display: inline-block; width: 7px; height: 15px; margin-left: 2px; vertical-align: -2px;
+  border-radius: 2px; background: #60a5fa; animation: caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
 .bubble { max-width: 86%; }
-.msg--user .bubble { background: #161616; border: 1px solid #222; border-radius: 12px 12px 4px 12px; padding: 10px 13px; }
+.msg--user .bubble { background: linear-gradient(180deg, #181818, #131313); border: 1px solid #242424; border-radius: 14px 14px 4px 14px;
+  padding: 10px 14px; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
+.msg--user { animation: send-in var(--dur-3) var(--ease-out) both; }
+@keyframes send-in { from { opacity: 0; transform: translate(10px, 6px) scale(0.98); } to { opacity: 1; transform: none; } }
+.msg--assistant .bubble { flex: 1; min-width: 0; }
 .bubble-text { font-size: 14.5px; line-height: 1.6; color: var(--text-primary); overflow-wrap: anywhere; }
 .msg--assistant .bubble-text :deep(strong) { display: inline; color: #fff; font-weight: 650; }
 .notice { margin-top: 8px; font-size: 12px; color: #fcd34d; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 7px; padding: 6px 9px; }
@@ -705,8 +813,19 @@ onMounted(async () => {
 .error { animation: pop-in var(--dur-2) var(--ease-out) both; font-size: 12.5px; color: #fca5a5; padding-left: 38px; }
 .link { background: none; border: none; color: #93c5fd; text-decoration: underline; font-size: 12.5px; padding: 0; }
 
-.composer { display: flex; gap: 8px; align-items: flex-end; margin: 0 16px; padding: 10px; border: 1px solid #262626; border-radius: 12px; background: #0b0b0b; }
-.composer:focus-within { border-color: #3a3a3a; }
+.composer { position: relative; display: flex; gap: 8px; align-items: flex-end; margin: 0 16px; padding: 10px; border: 1px solid #262626;
+  border-radius: 14px; background: #0b0b0b; isolation: isolate; transition: border-color var(--dur-2) ease, box-shadow var(--dur-2) ease; }
+.composer:focus-within { border-color: rgba(96, 165, 250, 0.45); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08), 0 8px 30px -12px rgba(59, 130, 246, 0.35); }
+/* While the team works, a light travels along the composer edge */
+.studio[data-busy="true"] .composer { border-color: transparent; }
+.composer-glow { position: absolute; inset: -1px; border-radius: 15px; padding: 1px; z-index: -1; pointer-events: none; opacity: 0;
+  background: conic-gradient(from var(--ring), transparent 0 70%, #60a5fa 85%, #2dd4bf 92%, transparent 100%) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  transition: opacity var(--dur-2) ease; }
+.studio[data-busy="true"] .composer-glow { opacity: 1; animation: ring 2.4s linear infinite; }
+.hint { font-size: 10.5px; color: #444; padding: 6px 20px 0; opacity: 0; transition: opacity var(--dur-2) ease; }
+.chat:focus-within .hint { opacity: 1; }
+.hint kbd { font-family: inherit; font-size: 10px; padding: 0 4px; border-radius: 4px; border: 1px solid #2a2a2a; color: #777; }
 .composer textarea {
   flex: 1; resize: none; border: none; background: transparent; color: var(--text-primary);
   font: inherit; font-size: 14.5px; line-height: 1.5; max-height: 160px; outline: none;
@@ -716,6 +835,10 @@ onMounted(async () => {
   display: grid; place-items: center; flex-shrink: 0;
 }
 .send:disabled { background: #1f1f1f; color: #555; }
+.send:not(:disabled) { box-shadow: 0 4px 14px -4px rgba(59, 130, 246, 0.6); }
+.send:not(:disabled):hover svg { transform: translateX(2px); }
+.send svg { transition: transform var(--dur-1) var(--ease-out); }
+.send:not(:disabled):active svg { transform: translate(6px, -6px); opacity: 0; transition: transform 160ms ease-in, opacity 160ms ease-in; }
 .send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .fine { font-size: 11px; line-height: 1.45; color: #555; padding: 8px 18px 12px; }
 .fine { position: relative; }
