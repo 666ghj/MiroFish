@@ -65,11 +65,13 @@ class Config:
 
     @classmethod
     def validate(cls) -> list[str]:
-        """Validate required configuration. Only LLM_API_KEY is required for the GTM flow."""
+        """Validate required configuration. Only LLM_API_KEY is required for the GTM flow,
+        and not even that in MOCK_MODE, where every step serves labelled sample data."""
         errors: list[str] = []
-        if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY is not configured")
-        # ZEP_API_KEY is optional — only needed for the legacy OASIS simulation flow
+        mock_mode = os.environ.get("MOCK_MODE", "").lower() == "true"
+        if not cls.LLM_API_KEY and not mock_mode:
+            errors.append("LLM_API_KEY is not configured (or set MOCK_MODE=true to run with sample data)")
+        # ZEP_API_KEY is optional, only needed for the legacy OASIS simulation flow
         if os.environ.get("ZEP_API_URL"):
             errors.append("ZEP_API_URL is not supported; MiroFish only connects to Zep Cloud")
         if cls.DEBUG:

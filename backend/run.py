@@ -1,5 +1,5 @@
 """
-MiroFish Backend Entry Point
+GTM Simulation Lab backend Entry Point
 """
 
 import os

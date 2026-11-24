@@ -269,3 +269,33 @@ def test_brief_round_trips_audience(tmp_path, monkeypatch):
     again = GTMBriefManager.get_brief(brief.brief_id)
     assert again.audience['regions'] == ['latam']
     assert again.audience['mix']['champion'] == 70
+
+
+def test_config_allows_mock_mode_without_key(monkeypatch):
+    from app.config import Config
+    monkeypatch.setattr(Config, 'LLM_API_KEY', None)
+    monkeypatch.setattr(Config, 'DEBUG', False)
+    monkeypatch.setenv('MOCK_MODE', 'true')
+    assert Config.validate() == []
+    monkeypatch.delenv('MOCK_MODE')
+    assert any('LLM_API_KEY' in e for e in Config.validate())
+
+
+def test_mock_mode_covers_messages_and_report(monkeypatch):
+    from types import SimpleNamespace as N
+    from app.services.gtm_message_generator import GTMMessageGenerator
+    from app.services.gtm_report_generator import GTMReportGenerator
+    monkeypatch.setenv('MOCK_MODE', 'true')
+
+    class Boom:
+        def chat_json(self, *a, **k):
+            raise AssertionError('LLM must not be called in MOCK_MODE')
+
+    mg = GTMMessageGenerator(); mg._llm = Boom()
+    msgs = mg.generate(N(), PERSONAS, count=3)
+    assert len(msgs) == 3
+    rg = GTMReportGenerator(); rg._llm = Boom()
+    sim = GTMReactionSimulator().simulate(MESSAGES, PERSONAS)
+    agg = aggregate(MESSAGES, sim['reactions'], sim['run_reactions'])
+    report = rg.generate(N(brief_id='b1'), PERSONAS, MESSAGES, sim['reactions'], agg['summaries'], agg['winner'])
+    assert report and report['brief_id'] == 'b1'

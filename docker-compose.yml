@@ -1,9 +1,8 @@
 services:
-  mirofish:
-    image: ghcr.io/666ghj/mirofish:latest
-    # Mirror image (replace the address above if pulling is slow)
-    # image: ghcr.nju.edu.cn/666ghj/mirofish:latest
-    container_name: mirofish
+  gtm-sim:
+    # Builds this repository (GTM Simulation Lab), not the upstream image
+    build: .
+    container_name: gtm-sim
     env_file:
       - .env
     ports:

@@ -45,7 +45,7 @@
 - User can fill form and submit
 - Brief is stored as project context (file-system)
 - Graph Build step replaced by Brief Review step
-**Do not:** Remove the existing graph building logic — keep it intact alongside the new flow.
+**Do not:** Remove the existing graph building logic - keep it intact alongside the new flow.
 
 ---
 
@@ -60,7 +60,7 @@
 - 12 buyer personas generated with name, role, company size, pain point, skepticism level
 - Personas displayed in Step 2 as review cards
 - Fallback mock personas available if LLM unavailable
-**Do not:** Change the existing OASIS profile format — add a GTM variant alongside it.
+**Do not:** Change the existing OASIS profile format - add a GTM variant alongside it.
 
 ---
 
@@ -77,12 +77,12 @@
 - Each persona reacts: interested / neutral / objection
 - Objections captured as strings
 - Matrix displayed in Step 3
-**Do not:** Run OASIS social simulation — pure LLM generation is sufficient for MVP.
+**Do not:** Run OASIS social simulation - pure LLM generation is sufficient for MVP.
 
 ---
 
 ## Phase 5: Simulation Results
-**Goal:** Surface aggregated results — response rates, top objections, segment readiness.
+**Goal:** Surface aggregated results - response rates, top objections, segment readiness.
 **Files likely affected:**
 - `backend/app/api/gtm.py` (add GET `/api/gtm/results/<id>`)
 - `frontend/src/views/SimulationRunView.vue` (replace action log with results dashboard)
@@ -132,3 +132,41 @@
 - Mobile-readable (not necessarily responsive, just not broken)
 - README updated with demo quickstart
 **Do not:** Add auth, billing, database, or deployment config.
+
+---
+
+## Phase 8: Trustworthy Simulation and Audience (done)
+
+| Sub | What shipped |
+|-----|--------------|
+| 8.1 | Labelled mock fallback, unbiased reaction prompt, 3 shuffled runs with win rate and stability |
+| 8.2 | Synced upstream MiroFish fixes; translated new upstream text to English |
+| 8.3 | True-black UI, neutral greys, unified blue accent |
+| 8.4 | Site copy that matches the product; no em dashes; honest cost and time estimates |
+| 8.5 | Landing page redesign with checkable metrics |
+| 8.6 | Audience builder; buyers colored as an exact blend of three buying roles |
+| 8.7 | Market intelligence per region (outreach rules, culture, fiscal timing, holidays, World Bank data, headlines) |
+| 8.8 | Batched persona generation with honest `meta`; no silent padding |
+| 8.9 | Idea Studio plumbing: streamed chat (SSE) and JSON session storage |
+| 8.10 | Docs refresh; MOCK_MODE covers every GTM step and starts without a key |
+
+---
+
+## Phase 9: Idea Studio (next, waiting for research)
+
+**Goal:** An early founder talks an idea through with an AI co-founder. A live panel sharpens the idea every turn: clear one-line idea, problem and customer, what could work and what won't, "why hasn't this been built yet" with evidence, challenges, why now, riskiest assumptions and cheapest tests. One click turns a clear idea into a GTM brief.
+
+**Inputs:** three deep-research reports (ChatGPT, Gemini, Claude) in `../deep_researchs/` (kept outside the repo). They decide the conversation strategy, the panel schema, the scoring rubric, the evidence sources, and the MVP scope.
+
+**Already in place (8.9):** `/api/idea` sessions, streamed replies, `chat_stream()`, `frontend/src/api/idea.js`.
+
+**Do not:** start the panel, clarity score, or evidence logic before the research is reviewed; add a database or accounts.
+
+---
+
+## Deferred
+
+- `?mock=true` per-request mock flag (CLAUDE.md rule 7 originally asked for it; `MOCK_MODE` covers the need today)
+- History view of past simulations
+- Real reply ingestion to calibrate simulations
+- Docker image is built from this repo but not covered by CI

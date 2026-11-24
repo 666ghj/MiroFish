@@ -229,6 +229,8 @@ class GTMReportGenerator:
         deterministic = _compute_deterministic(messages, reactions, summaries, winner)
 
         try:
+            if os.environ.get('MOCK_MODE', '').lower() == 'true':
+                raise RuntimeError('MOCK_MODE is enabled')
             prompt_messages = [
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user', 'content': _build_user_prompt(

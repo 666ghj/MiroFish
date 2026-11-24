@@ -111,6 +111,8 @@ class GTMMessageGenerator:
         count = max(2, min(5, count))
         selected_angles = ALL_ANGLES[:count]
         try:
+            if os.environ.get('MOCK_MODE', '').lower() == 'true':
+                raise RuntimeError('MOCK_MODE is enabled')
             messages_prompt = [
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user', 'content': _build_user_prompt(brief, personas, selected_angles)},
