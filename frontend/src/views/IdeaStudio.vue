@@ -87,20 +87,45 @@
       </section>
 
       <!-- Live panel -->
-      <aside class="side" :class="{ hide: tab !== 'panel' }" aria-label="Live idea analysis">
-        <IdeaPanel
+      <aside class="side" :class="{ hide: tab !== 'panel' }" aria-label="Live idea overview">
+        <IdeaDashboard
           v-if="state"
           :state="state"
           :changed="changed"
           :last-change="lastChange"
+          :updating="updating"
           :busy="busy"
           :confidential="confidential"
-          @edit="onEdit"
-          @lock="onLock"
+          @open="openDetail"
+          @ask="draftAbout"
           @research="research"
           @send-brief="sendBrief"
-          @ask="draftAbout"
         />
+
+        <!-- Detail drawer: the full, editable picture, opened at the tile you clicked -->
+        <transition name="drawer">
+          <div v-if="drawerOpen && state" class="drawer" role="dialog" aria-label="Idea details" @keydown.esc="drawerOpen = false">
+            <div class="drawer-head">
+              <span>Details</span>
+              <span class="drawer-hint">Edit or lock any field. Esc to close.</span>
+              <button ref="drawerClose" type="button" class="drawer-x" aria-label="Close details" @click="drawerOpen = false">✕</button>
+            </div>
+            <div ref="drawerBody" class="drawer-body">
+              <IdeaPanel
+                :state="state"
+                :changed="changed"
+                :last-change="lastChange"
+                :busy="busy"
+                :confidential="confidential"
+                @edit="onEdit"
+                @lock="onLock"
+                @research="research"
+                @send-brief="sendBrief"
+                @ask="(t) => { drawerOpen = false; draftAbout(t) }"
+              />
+            </div>
+          </div>
+        </transition>
       </aside>
     </div>
 
@@ -109,9 +134,10 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import IdeaPanel from '../components/IdeaPanel.vue'
+import IdeaDashboard from '../components/IdeaDashboard.vue'
 import { newIdea, streamIdeaTurn, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
@@ -145,6 +171,10 @@ const changed = ref([])
 const announce = ref('')
 const confidential = ref(false)
 const lastChange = ref(null)
+const updating = ref(false)
+const drawerOpen = ref(false)
+const drawerBody = ref(null)
+const drawerClose = ref(null)
 const savedAt = ref('')
 const isFresh = computed(() => messages.value.length <= 1 && !busy.value)
 const tab = ref('chat')
@@ -251,6 +281,7 @@ async function send(text, opts = {}) {
     error.value = e.message || 'Something went wrong.'
   } finally {
     busy.value = false
+    updating.value = false
     status.value = ''
     save()
     focusComposer()
@@ -282,9 +313,11 @@ function onEvent(ev, live) {
       live.content = ev.content
       live.streaming = false
       if (ev.notice) live.notice = ev.notice
-      status.value = 'Updating the live idea...'
+      status.value = ''
+      updating.value = true
       break
     case 'state':
+      updating.value = false
       state.value = ev.state
       flash(ev.applied || [])
       lastChange.value = {
@@ -308,6 +341,16 @@ function research() {
 function labelFor(path) {
   const hit = PATH_LABELS.find(([prefix]) => path === prefix || path.startsWith(prefix + '/'))
   return hit ? hit[1] : 'Idea'
+}
+
+function openDetail(sectionId) {
+  drawerOpen.value = true
+  nextTick(() => {
+    const target = drawerBody.value?.querySelector(`#${sectionId}`)
+    if (target) target.scrollIntoView({ block: 'start' })
+    else if (drawerBody.value) drawerBody.value.scrollTop = 0
+    drawerClose.value?.focus()
+  })
 }
 
 function useStarter(s) {
@@ -386,9 +429,12 @@ function focusComposer(toEnd = false) {
 }
 
 watch(tab, (t) => { if (t === 'panel') unseen.value = false })
+function onKey(e) { if (e.key === 'Escape' && drawerOpen.value) drawerOpen.value = false }
+onUnmounted(() => window.removeEventListener('keydown', onKey))
 watch(confidential, save)
 
 onMounted(async () => {
+  window.addEventListener('keydown', onKey)
   if (!load()) await startNew()
   scrollDown()
   focusComposer()
@@ -498,7 +544,24 @@ onMounted(async () => {
 .privacy strong { color: #c4c4c4; }
 
 /* Panel */
-.side { overflow-y: auto; padding: 20px 22px 40px; background: #050505; }
+.side { position: relative; overflow: hidden; padding: 14px 16px; background: #050505; min-height: 0; }
+.drawer {
+  position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column;
+  background: #050505; border-left: 1px solid #1f1f1f;
+}
+.drawer-head {
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #1a1a1a;
+  font-size: 13px; font-weight: 650;
+}
+.drawer-hint { font-size: 11.5px; font-weight: 400; color: var(--text-tertiary); flex: 1; }
+.drawer-x {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid #262626; background: transparent;
+  color: var(--text-secondary); font-size: 12px;
+}
+.drawer-x:hover { color: var(--text-primary); border-color: #3a3a3a; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 16px 18px 40px; }
+.drawer-enter-active, .drawer-leave-active { transition: transform 0.22s ease, opacity 0.22s ease; }
+.drawer-enter-from, .drawer-leave-to { transform: translateX(24px); opacity: 0; }
 
 @media (max-width: 900px) {
   .bar { padding: 0 12px; gap: 8px; }
@@ -516,11 +579,13 @@ onMounted(async () => {
   .body { grid-template-columns: 1fr; }
   .chat { border-right: none; }
   .hide { display: none; }
-  .side { padding: 14px 12px 32px; }
+  .side { padding: 14px 12px 32px; overflow-y: auto; }
+  .drawer { position: fixed; top: 0; }
   .messages { padding: 16px 14px 10px; }
   .composer { margin: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .typing i, .spinner { animation: none; }
+  .drawer-enter-active, .drawer-leave-active { transition: none; }
 }
 </style>

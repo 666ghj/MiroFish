@@ -1,7 +1,7 @@
 <template>
   <div class="panel">
     <!-- The idea + completeness -->
-    <section class="card card--hero" :class="{ flash: isChanged('/one_liner') }">
+    <section id="sec-idea" class="card card--hero" :class="{ flash: isChanged('/one_liner') }">
       <div class="hero-row">
         <div class="hero-text">
           <div class="eyebrow">The idea, so far</div>
@@ -66,19 +66,19 @@
     </section>
 
     <!-- Problem and customer -->
-    <section v-if="filled(PROBLEM_FIELDS).length" class="card">
+    <section id="sec-problem" v-if="filled(PROBLEM_FIELDS).length" class="card">
       <h3>Problem and customer</h3>
       <IdeaClaim v-for="f in filled(PROBLEM_FIELDS)" :key="f.path" v-bind="claimProps(f)" @edit="fwdEdit" @lock="fwdLock" />
     </section>
 
     <!-- Solution and model -->
-    <section v-if="filled(SOLUTION_FIELDS).length" class="card">
+    <section id="sec-solution" v-if="filled(SOLUTION_FIELDS).length" class="card">
       <h3>Solution and business model</h3>
       <IdeaClaim v-for="f in filled(SOLUTION_FIELDS)" :key="f.path" v-bind="claimProps(f)" @edit="fwdEdit" @lock="fwdLock" />
     </section>
 
     <!-- Could / won't work -->
-    <section v-if="state.what_could_work.length || state.what_wont_work.length" class="card card--split">
+    <section id="sec-work" v-if="state.what_could_work.length || state.what_wont_work.length" class="card card--split">
       <div>
         <h3>What could work</h3>
         <IdeaClaim
@@ -102,7 +102,7 @@
     </section>
 
     <!-- Why hasn't this been built -->
-    <section class="card" :class="{ flash: isChanged('/why_not_built') }">
+    <section id="sec-wnb" class="card" :class="{ flash: isChanged('/why_not_built') }">
       <div class="h-row">
         <h3>Why hasn't this been built yet?</h3>
         <span class="wnb-badge" :class="`wnb--${wnb.classification}`">{{ WNB_LABEL[wnb.classification] }}</span>
@@ -174,7 +174,7 @@
     </section>
 
     <!-- Riskiest assumptions -->
-    <section v-if="state.risky_assumptions.length" class="card" :class="{ flash: isChanged('/risky_assumptions') }">
+    <section id="sec-risks" v-if="state.risky_assumptions.length" class="card" :class="{ flash: isChanged('/risky_assumptions') }">
       <h3>Riskiest assumptions and the cheapest tests</h3>
       <div v-for="(a, i) in state.risky_assumptions" :key="'ra' + i" class="risk">
         <div class="risk-top">
@@ -197,7 +197,7 @@
     </section>
 
     <!-- Concerns + next questions -->
-    <section class="card" :class="{ 'card--split': state.open_objections.length }">
+    <section id="sec-next" class="card" :class="{ 'card--split': state.open_objections.length }">
       <div v-if="state.open_objections.length">
         <h3>Open concerns</h3>
         <ul class="plain">
