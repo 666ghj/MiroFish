@@ -67,7 +67,7 @@
       <!-- KPI row -->
       <section class="kpis" aria-label="By the numbers">
         <div class="container">
-          <div class="kpi-grid">
+          <div class="kpi-grid" v-reveal="1">
             <div class="kpi" v-for="k in kpis" :key="k.label">
               <div class="kpi-label">{{ k.label }}</div>
               <div class="kpi-value">{{ k.value }}</div>
@@ -78,7 +78,7 @@
       </section>
 
       <!-- Problem -->
-      <section class="section section--first">
+      <section class="section section--first" v-reveal>
         <div class="container"><div class="split">
           <div>
             <div class="eyebrow">The problem</div>
@@ -101,14 +101,14 @@
       </section>
 
       <!-- How it works -->
-      <section class="section" id="how">
+      <section class="section" id="how" v-reveal>
         <div class="container">
           <div class="section-head">
             <div class="eyebrow">How it works</div>
             <h2 class="section-title">From brief to outbound plan in five steps.</h2>
             <p class="section-sub">You fill in one form. Everything after that is generated, scored, and summarised for you.</p>
           </div>
-          <ol class="steps">
+          <ol class="steps" v-reveal="1">
             <li class="step" v-for="(step, i) in steps" :key="step.title">
               <div class="step-num">{{ String(i + 1).padStart(2, '0') }}</div>
               <div class="step-title">{{ step.title }}</div>
@@ -120,7 +120,7 @@
       </section>
 
       <!-- Results you can trust -->
-      <section class="section" id="results">
+      <section class="section" id="results" v-reveal>
         <div class="container results">
           <div class="results-copy">
             <div class="eyebrow">Results you can trust</div>
@@ -187,7 +187,7 @@
       </section>
 
       <!-- What you get -->
-      <section class="section">
+      <section class="section" v-reveal>
         <div class="container">
           <div class="section-head">
             <div class="eyebrow">What you get</div>
@@ -207,7 +207,7 @@
       </section>
 
       <!-- Example run -->
-      <section class="section" id="example">
+      <section class="section" id="example" v-reveal>
         <div class="container">
           <div class="section-head">
             <div class="eyebrow">Example run</div>
@@ -301,7 +301,7 @@
       </section>
 
       <!-- Built for -->
-      <section class="section">
+      <section class="section" v-reveal>
         <div class="container">
           <div class="section-head">
             <div class="eyebrow">Built for</div>
@@ -320,7 +320,7 @@
       </section>
 
       <!-- FAQ -->
-      <section class="section" id="faq">
+      <section class="section" id="faq" v-reveal>
         <div class="container faq-wrap">
           <div>
             <div class="eyebrow">FAQ</div>
@@ -336,7 +336,7 @@
       </section>
 
       <!-- Final CTA -->
-      <section class="cta">
+      <section class="cta" v-reveal>
         <div class="container">
           <div class="cta-card">
             <h2 class="cta-title">Test your next campaign before it ships.</h2>
@@ -470,6 +470,14 @@ function demoSummaryFor(msgId) {
 </script>
 
 <style scoped>
+/* Hero entrance: copy lines rise in one after another, the visual fades in last */
+.hero-copy > * { animation: rise-in var(--dur-3) var(--ease-out) both; }
+.hero-copy > *:nth-child(2) { animation-delay: 60ms; }
+.hero-copy > *:nth-child(3) { animation-delay: 120ms; }
+.hero-copy > *:nth-child(4) { animation-delay: 180ms; }
+.hero-copy > *:nth-child(5) { animation-delay: 240ms; }
+.hero-visual { animation: fade-in 700ms var(--ease-out) 200ms both; }
+
 .home {
   min-height: 100vh;
   background: var(--bg-base);

@@ -25,7 +25,7 @@
       </div>
       <div class="hero-side">
         <div class="score" role="img" :aria-label="`Completeness ${score} out of 100`">
-          <div class="score-num">{{ score }}</div>
+          <div class="score-num">{{ shownScore }}</div>
           <div class="score-label">Completeness</div>
         </div>
         <button type="button" class="btn-send" :disabled="busy || score < 60" @click="$emit('send-brief')"
@@ -136,7 +136,8 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
+import { tweenNumber } from '../motion'
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -169,6 +170,11 @@ const WNB = {
 }
 
 const score = computed(() => props.state.clarity?.score ?? 0)
+// The big number counts up to its new value instead of jumping
+const shownScore = ref(score.value)
+let stopTween = () => {}
+watch(score, (to, from) => { stopTween(); stopTween = tweenNumber(from ?? 0, to, (n) => { shownScore.value = n }) })
+onUnmounted(() => stopTween())
 const v = (name) => props.state.clarity?.by_section?.[name] ?? 0
 const wnb = computed(() => props.state.why_not_built)
 const sourceCount = computed(() => Object.keys(props.state.sources || {}).length)
@@ -208,6 +214,16 @@ function changedAny(prefixes) {
   gap: 8px;
   transition: border-color 0.8s ease, background 0.8s ease;
 }
+/* Tiles settle in one after another on load */
+.tile { animation: rise-in var(--dur-3) var(--ease-out) both; }
+.tile:nth-of-type(2) { animation-delay: 40ms; } .tile:nth-of-type(3) { animation-delay: 80ms; }
+.tile:nth-of-type(4) { animation-delay: 120ms; } .tile:nth-of-type(5) { animation-delay: 160ms; }
+.tile:nth-of-type(6) { animation-delay: 200ms; } .tile:nth-of-type(7) { animation-delay: 240ms; }
+/* New facts, chips, and names fade in where they land */
+.facts dd, .facts dt, .gap, .name, .risks li, .pairs li, .badge, .next { animation: fade-in var(--dur-3) ease both; }
+.tile-head .open { transition: transform var(--dur-1) var(--ease-out), color var(--dur-1) ease; }
+.tile-head:hover .open { transform: translate(1px, -1px); }
+.tile:has(.tile-head:hover) { border-color: #2c2c2c; }
 .tile.glow { border-color: rgba(59, 130, 246, 0.5); background: #0b0f17; }
 .tile--hero { grid-area: hero; flex-direction: row; gap: 16px; background: linear-gradient(180deg, #0f0f0f, #0a0a0a); }
 .tile:nth-of-type(2) { grid-area: a; }

@@ -14,6 +14,7 @@ before launching real outreach.
 - Product name: **Preflight** (temporary). Never hardcode it: use `$brand.name` in templates, `BRAND` in JS, `Config.APP_NAME` in Python
 - Tagline: *"Test your go-to-market before takeoff."*
 - The idea-chat feature is called **Idea Studio**
+- Motion: use the tokens in `App.vue` (`--ease-out`, `--dur-1/2/3`) and the shared `rise-in` / `fade-in` / `pop-in` keyframes or `v-reveal`; small distances (6 to 8px), no bounce; reduced motion is handled globally
 - Do not imply external brand affiliations or endorsements
 - Replace all MiroFish, "swarm intelligence", and "parallel digital world" copy with GTM-focused language
 - Do not show "Built on MiroFish" or similar credits in the UI (the LICENSE file stays)

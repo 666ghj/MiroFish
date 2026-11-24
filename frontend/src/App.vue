@@ -1,5 +1,9 @@
 <template>
-  <router-view />
+  <router-view v-slot="{ Component, route }">
+    <transition name="page" mode="out-in">
+      <component :is="Component" :key="route.path" />
+    </transition>
+  </router-view>
   <Analytics />
 </template>
 
@@ -40,6 +44,12 @@ import { Analytics } from '@vercel/analytics/vue'
   /* Typography */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Motion: one easing, three durations. Small distances, no bounce. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-1: 120ms;   /* hover, press, color */
+  --dur-2: 220ms;   /* enter, popovers, drawers */
+  --dur-3: 420ms;   /* page and section reveals */
 }
 
 /* ── Global reset ───────────────────────────────────────────── */
@@ -81,4 +91,42 @@ html, body {
 html { scrollbar-color: #262626 transparent; }
 
 button { font-family: inherit; cursor: pointer; }
+
+/* ── Motion ─────────────────────────────────────────────────── */
+/* Interactive feedback: every button and link eases its colors and presses in slightly */
+button, a, [role="button"] {
+  transition: color var(--dur-1) ease, background-color var(--dur-1) ease,
+              border-color var(--dur-1) ease, box-shadow var(--dur-1) ease,
+              opacity var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
+button:not(:disabled):active, [role="button"]:active { transform: scale(0.97); }
+
+/* Page change: quick fade with a 6px rise */
+.page-enter-active { transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
+.page-leave-active { transition: opacity var(--dur-1) ease; }
+.page-enter-from { opacity: 0; transform: translateY(6px); }
+.page-leave-to { opacity: 0; }
+
+/* v-reveal (see motion.js) */
+.reveal { opacity: 0; transform: translateY(8px); transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
+.reveal.is-in { opacity: 1; transform: none; }
+.reveal--stagger { opacity: 1; transform: none; }
+.reveal--stagger > * { opacity: 0; transform: translateY(8px);
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 60ms); }
+.reveal--stagger.is-in > * { opacity: 1; transform: none; }
+
+/* Shared enter animation for things that appear in place */
+@keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+/* Respect the OS setting everywhere, including older component animations */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; transition-delay: 0ms !important; scroll-behavior: auto !important;
+  }
+  .reveal, .reveal--stagger > * { opacity: 1 !important; transform: none !important; }
+}
 </style>
