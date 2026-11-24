@@ -74,15 +74,20 @@
         </form>
         <div class="fine">
           A thinking tool, not investment, legal, or financial advice.
-          <details class="privacy">
-            <summary>How your idea is handled</summary>
+          <button type="button" class="privacy-link" :aria-expanded="privacyOpen" aria-controls="privacy-card"
+                  @click.stop="privacyOpen = !privacyOpen">How your idea is handled</button>
+          <div v-if="privacyOpen" id="privacy-card" class="privacy-card" role="dialog" aria-label="How your idea is handled" @click.stop>
+            <div class="privacy-head">
+              <span>How your idea is handled</span>
+              <button type="button" class="privacy-x" aria-label="Close" @click="privacyOpen = false">✕</button>
+            </div>
             <ul>
               <li><strong>Stored:</strong> only in this browser. There is no account and no server copy. "New idea" clears it; Export saves a file.</li>
               <li><strong>AI:</strong> each message is sent through OpenRouter to the model provider. API providers say they do not train on it, but some keep requests briefly for abuse monitoring. We do not promise zero retention.</li>
               <li><strong>Search:</strong> only short category phrases are sent to Tavily, Exa, Hacker News, and GitHub, never your full description. The exact phrases are listed under "Why hasn't this been built yet?".</li>
               <li><strong>Confidential mode</strong> turns search off. For a stealth idea, run this open-source app yourself with your own API key.</li>
             </ul>
-          </details>
+          </div>
         </div>
       </section>
 
@@ -171,6 +176,7 @@ const changed = ref([])
 const announce = ref('')
 const confidential = ref(false)
 const lastChange = ref(null)
+const privacyOpen = ref(false)
 const updating = ref(false)
 const drawerOpen = ref(false)
 const drawerBody = ref(null)
@@ -429,12 +435,21 @@ function focusComposer(toEnd = false) {
 }
 
 watch(tab, (t) => { if (t === 'panel') unseen.value = false })
-function onKey(e) { if (e.key === 'Escape' && drawerOpen.value) drawerOpen.value = false }
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+function onKey(e) {
+  if (e.key !== 'Escape') return
+  if (privacyOpen.value) privacyOpen.value = false
+  else if (drawerOpen.value) drawerOpen.value = false
+}
+function onDocClick() { privacyOpen.value = false }
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  document.removeEventListener('click', onDocClick)
+})
 watch(confidential, save)
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  document.addEventListener('click', onDocClick)
   if (!load()) await startNew()
   scrollDown()
   focusComposer()
@@ -538,10 +553,22 @@ onMounted(async () => {
 .send:disabled { background: #1f1f1f; color: #555; }
 .send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .fine { font-size: 11px; line-height: 1.45; color: #555; padding: 8px 18px 12px; }
-.privacy summary { cursor: pointer; color: #8a8a8a; display: inline; margin-left: 4px; }
-.privacy summary:hover { color: var(--text-primary); }
-.privacy ul { margin: 8px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; color: #8a8a8a; }
-.privacy strong { color: #c4c4c4; }
+.fine { position: relative; }
+.privacy-link {
+  background: none; border: none; padding: 0; margin-left: 4px; font-size: 11px;
+  color: #8a8a8a; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.privacy-link:hover { color: var(--text-primary); }
+.privacy-card {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% + 8px); z-index: 20;
+  background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6); font-size: 12px; line-height: 1.5; color: #9a9a9a;
+}
+.privacy-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px; font-weight: 650; color: var(--text-primary); }
+.privacy-x { width: 24px; height: 24px; border-radius: 6px; border: 1px solid #2a2a2a; background: transparent; color: var(--text-secondary); font-size: 11px; }
+.privacy-x:hover { color: var(--text-primary); border-color: #444; }
+.privacy-card ul { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 6px; }
+.privacy-card strong { color: #d4d4d4; }
 
 /* Panel */
 .side { position: relative; overflow: hidden; padding: 14px 16px; background: #050505; min-height: 0; }
