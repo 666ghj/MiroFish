@@ -1,6 +1,6 @@
 /**
  * GTM brief normalization utilities.
- * Pure functions — no side effects, no imports.
+ * Pure functions - no side effects, no imports.
  */
 
 /**
@@ -83,4 +83,26 @@ export function validateGTMBrief(formData) {
     }
   }
   return errors
+}
+
+
+/**
+ * Rough run time and API cost (openai/gpt-4o-mini) for a simulation.
+ * Mirrors the backend: personas are scored in batches of 6, up to 3 runs,
+ * capped at 60 reaction calls per simulation.
+ */
+export function estimateRun(numPersonas, numMessages) {
+  const p = numPersonas
+  const m = numMessages
+  const callsPerRun = m * Math.ceil(p / 6)
+  const runs = Math.max(1, Math.min(3, Math.floor(60 / callsPerRun)))
+  const reactions = p * m * runs * 0.0002   // ~250 output + ~200 input tokens per scored reaction
+  const personas = p * 0.0003               // persona generation
+  const fixed = 0.006                       // messages + report
+  let time = '~30 min'
+  if (p <= 12) time = '~2 min'
+  else if (p <= 50) time = '~4 min'
+  else if (p <= 100) time = '~8 min'
+  else if (p <= 200) time = '~15 min'
+  return { runs, time, cost: (reactions + personas + fixed).toFixed(2) }
 }

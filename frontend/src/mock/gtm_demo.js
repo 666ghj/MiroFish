@@ -6,7 +6,7 @@
 export const DEMO_BRIEF = {
   productName: 'Acme AI SDR',
   productDescription:
-    'AI-powered outbound research tool that auto-builds targeted lead lists and personalizes cold email copy in seconds — so your sales team spends time selling, not researching.',
+    'AI-powered outbound research tool that auto-builds targeted lead lists and personalizes cold email copy in seconds, so your sales team spends time selling, not researching.',
   pricingModel: '$499/month flat (up to 5 seats)',
   icp: 'B2B SaaS companies, 10–100 employees, sales team of 2–8, actively doing cold email outbound',
   targetMarket: 'US seed-to-Series-A SaaS founders and VP Sales running founder-led outbound',

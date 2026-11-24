@@ -239,7 +239,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch, watchEffect } from 'vue'
-import { validateGTMBrief, formatGTMBrief } from '../utils/gtmFormatter.js'
+import { validateGTMBrief, formatGTMBrief, estimateRun } from '../utils/gtmFormatter.js'
 
 const props = defineProps({
   loading: {
@@ -282,13 +282,9 @@ const form = reactive({
 
 const personaCostNote = computed(() => {
   const n = form.numPersonas
-  const reactions = n * form.numMessages
-  const cost = (n * 0.008).toFixed(2)
-  if (n <= 12)  return `${n} personas · ${reactions} reactions · fast (~1 min) · ~$${cost}`
-  if (n <= 50)  return `${n} personas · ${reactions} reactions · ~2–3 min · ~$${cost}`
-  if (n <= 100) return `${n} personas · ${reactions} reactions · ~5–8 min · ~$${cost} — deep signal`
-  if (n <= 200) return `${n} personas · ${reactions} reactions · ~10–15 min · ~$${cost} — very deep`
-  return `${n} personas · ${reactions} reactions · ~20–40 min · ~$${cost} — exhaustive simulation`
+  const { runs, time, cost } = estimateRun(n, form.numMessages)
+  const runLabel = runs === 1 ? '1 scoring run' : `${runs} scoring runs`
+  return `${n} personas · ${form.numMessages} angles · ${runLabel} · ${time} · ~$${cost}`
 })
 
 function applyInitialData(data) {

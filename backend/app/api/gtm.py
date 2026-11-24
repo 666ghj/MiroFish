@@ -1,5 +1,5 @@
 """
-GTM Simulation Lab — API endpoints for GTM brief submission, preview, and persona generation.
+GTM Simulation Lab - API endpoints for GTM brief submission, preview, and persona generation.
 """
 
 import os
@@ -89,7 +89,7 @@ def submit_brief():
 
 @gtm_bp.route('/brief/<brief_id>', methods=['GET'])
 def get_brief(brief_id: str):
-    """GET /api/gtm/brief/<brief_id> — retrieve a stored GTM brief."""
+    """GET /api/gtm/brief/<brief_id> - retrieve a stored GTM brief."""
     brief = GTMBriefManager.get_brief(brief_id)
     if not brief:
         return jsonify({'success': False, 'error': f'Brief not found: {brief_id}'}), 404
@@ -102,7 +102,7 @@ def get_preview(brief_id: str):
     GET /api/gtm/brief/<brief_id>/preview
 
     Returns a quick 3-persona preview (mock) for the Home.vue teaser state.
-    Intentionally fast — does not call LLM.
+    Intentionally fast - does not call LLM.
     Full 12-persona generation is done via POST /api/gtm/personas/<brief_id>.
     """
     brief = GTMBriefManager.get_brief(brief_id)
@@ -176,7 +176,7 @@ def get_personas(brief_id: str):
 
 @gtm_bp.route('/briefs', methods=['GET'])
 def list_briefs():
-    """GET /api/gtm/briefs — list recent GTM briefs."""
+    """GET /api/gtm/briefs - list recent GTM briefs."""
     limit = request.args.get('limit', 20, type=int)
     briefs = GTMBriefManager.list_briefs(limit=limit)
     return jsonify({
@@ -217,7 +217,7 @@ def generate_messages(brief_id: str):
     POST /api/gtm/messages/<brief_id>
 
     Generate 3 outreach messages using LLM + GTM brief context.
-    Idempotent — returns cached messages if already generated.
+    Idempotent - returns cached messages if already generated.
     Requires personas to already be generated (or auto-generates them).
     """
     brief = GTMBriefManager.get_brief(brief_id)
@@ -247,7 +247,7 @@ def generate_messages(brief_id: str):
 
 @gtm_bp.route('/messages/<brief_id>', methods=['GET'])
 def get_messages(brief_id: str):
-    """GET /api/gtm/messages/<brief_id> — return cached messages; auto-generate if missing."""
+    """GET /api/gtm/messages/<brief_id> - return cached messages; auto-generate if missing."""
     brief = GTMBriefManager.get_brief(brief_id)
     if not brief:
         return jsonify({'success': False, 'error': f'Brief not found: {brief_id}'}), 404
@@ -280,7 +280,7 @@ def _simulate_reactions(messages: list, personas: list) -> dict:
         'reactions': sim['reactions'],
         'summaries': agg['summaries'],
         'winner': agg['winner'],
-        'source': sim['source'],            # 'llm' or 'mock' — the UI must label mock results
+        'source': sim['source'],            # 'llm' or 'mock' - the UI must label mock results
         'mock_reason': sim['mock_reason'],
         'runs_requested': sim['runs_requested'],
         'runs_completed': sim['runs_completed'],
@@ -295,7 +295,7 @@ def generate_reactions(brief_id: str):
 
     Simulate all persona × message reactions (36 total) using LLM.
     Also runs aggregation and returns summaries + winner in the same response.
-    Idempotent — returns cached if already simulated.
+    Idempotent - returns cached if already simulated.
     """
     brief = GTMBriefManager.get_brief(brief_id)
     if not brief:
@@ -332,7 +332,7 @@ def generate_reactions(brief_id: str):
 
 @gtm_bp.route('/reactions/<brief_id>', methods=['GET'])
 def get_reactions(brief_id: str):
-    """GET /api/gtm/reactions/<brief_id> — return cached reactions; auto-simulate if missing."""
+    """GET /api/gtm/reactions/<brief_id> - return cached reactions; auto-simulate if missing."""
     brief = GTMBriefManager.get_brief(brief_id)
     if not brief:
         return jsonify({'success': False, 'error': f'Brief not found: {brief_id}'}), 404
@@ -358,7 +358,7 @@ def generate_report(brief_id: str):
     POST /api/gtm/report/<brief_id>
 
     Generate a structured GTM report from existing simulation data.
-    Idempotent — returns cached report if already generated.
+    Idempotent - returns cached report if already generated.
     Auto-generates any missing upstream data (personas, messages, reactions).
     """
     brief = GTMBriefManager.get_brief(brief_id)
@@ -404,7 +404,7 @@ def generate_report(brief_id: str):
 
 @gtm_bp.route('/report/<brief_id>', methods=['GET'])
 def get_report(brief_id: str):
-    """GET /api/gtm/report/<brief_id> — return cached report; auto-generate if missing."""
+    """GET /api/gtm/report/<brief_id> - return cached report; auto-generate if missing."""
     brief = GTMBriefManager.get_brief(brief_id)
     if not brief:
         return jsonify({'success': False, 'error': f'Brief not found: {brief_id}'}), 404

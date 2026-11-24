@@ -97,7 +97,7 @@ const reactionLabel = computed(() => {
 
 const angleLabel = computed(() => {
   const map = { pain_led: 'Pain-Led', roi_led: 'ROI-Led', social_proof_led: 'Social Proof' }
-  return map[props.persona.likely_message_angle] ?? props.persona.likely_message_angle ?? '—'
+  return map[props.persona.likely_message_angle] ?? props.persona.likely_message_angle ?? '-'
 })
 </script>
 
@@ -146,7 +146,7 @@ const angleLabel = computed(() => {
   padding-top: 6px;
 }
 
-/* ── FULL MODE — light (default) ─────────────────────────── */
+/* ── FULL MODE - light (default) ─────────────────────────── */
 .persona-card-full {
   background: #fff;
   border: 1px solid #e5e5e5;
@@ -271,7 +271,7 @@ const angleLabel = computed(() => {
   padding-top: 10px;
 }
 
-/* ── FULL MODE — dark variant ─────────────────────────────── */
+/* ── FULL MODE - dark variant ─────────────────────────────── */
 .persona-card-full.dark {
   background: var(--bg-card);
   border-color: var(--border-subtle);

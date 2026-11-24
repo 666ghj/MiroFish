@@ -27,7 +27,7 @@ import { Analytics } from '@vercel/analytics/vue'
   --text-secondary: #a3a3a3;
   --text-tertiary:  #737373;
 
-  /* Accent — blue */
+  /* Accent - blue */
   --accent:     #3b82f6;
   --accent-dim: rgba(59, 130, 246, 0.12);
   --accent-hover: #2563eb;
@@ -73,7 +73,7 @@ html, body {
   outline-offset: 2px;
 }
 
-/* Scrollbar — dark for simulation views, light for home */
+/* Scrollbar - dark for simulation views, light for home */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #262626; border-radius: 3px; }

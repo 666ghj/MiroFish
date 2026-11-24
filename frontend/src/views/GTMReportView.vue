@@ -11,7 +11,7 @@
         <span class="gr-brief-goal">{{ goalLabel }}</span>
       </div>
 
-      <div class="gr-step-badge">Step 4 / 5 — GTM Report</div>
+      <div class="gr-step-badge">Step 4 of 5 · GTM Report</div>
     </header>
 
     <main class="gr-main">
@@ -30,7 +30,7 @@
             <span class="gr-step-label">{{ step }}</span>
           </div>
         </div>
-        <div class="gr-loading-sub">Building your personalized GTM playbook from 36 simulated buyer reactions.</div>
+        <div class="gr-loading-sub">Building your GTM playbook from the simulated buyer reactions.</div>
       </div>
 
       <!-- Error state -->
@@ -46,7 +46,7 @@
 
         <!-- Mock data warning -->
         <div v-if="isMockData" class="gr-mock-banner">
-          Demo mode — backend unreachable. This report is sample data, not generated from your brief.
+          Demo mode: the server is unreachable. This report is sample data, not generated from your brief.
           <a href="https://github.com/sanketmuchhala/GTM-SImulator#quick-start" target="_blank" rel="noopener" class="gr-mock-link">Run locally →</a>
         </div>
 
@@ -80,7 +80,7 @@
           <div class="gr-section-label">Executive Summary</div>
           <div class="gr-summary-text">{{ report.executive_summary }}</div>
           <div class="gr-confidence-note">
-            Strong directional signal — based on 36 simulated buyer reactions.
+            Directional signal from simulated buyer reactions.
             Validate with real outbound before committing to this strategy.
           </div>
         </section>
@@ -129,7 +129,7 @@
         <section class="gr-card gr-winner-card">
           <div class="gr-card-label">
             <span class="gr-winner-star">WINNER</span>
-            Winning Message — {{ angleLabel(report.winning_message?.angle) }}
+            Winning Message: {{ angleLabel(report.winning_message?.angle) }}
             <span class="gr-winner-score">{{ report.winning_message?.average_score }} avg</span>
           </div>
           <div class="gr-winner-subject">{{ report.winning_message?.recommended_subject_line }}</div>
@@ -212,7 +212,7 @@
             </div>
           </div>
           <div class="gr-day-detail" v-if="selectedDayData">
-            <div class="gr-day-detail-header">Day {{ selectedDayData.day }} — {{ selectedDayData.goal }}</div>
+            <div class="gr-day-detail-header">Day {{ selectedDayData.day }}: {{ selectedDayData.goal }}</div>
             <div class="gr-day-detail-row">
               <span class="gr-day-detail-key">Action</span>
               <span class="gr-day-detail-val">{{ selectedDayData.action }}</span>
@@ -232,7 +232,7 @@
 
         <!-- Simulation note -->
         <div class="gr-sim-note">
-          <strong>Simulation note</strong> — All personas, reactions, and scores are AI-generated.
+          <strong>Simulation note:</strong> All personas, reactions, and scores are AI-generated.
           This is directional signal, not real buyer data. Run real outbound to validate.
         </div>
 
@@ -588,7 +588,7 @@ loadAll()
   gap: 6px;
 }
 
-/* Executive Summary — clean left-accent, no gradient clutter */
+/* Executive Summary - clean left-accent, no gradient clutter */
 .gr-summary-section {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);

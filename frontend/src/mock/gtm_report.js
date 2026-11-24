@@ -1,5 +1,5 @@
 /**
- * Auto-generated demo report — Acme AI SDR simulation.
+ * Auto-generated demo report, Acme AI SDR simulation.
  */
 export const MOCK_REPORT = {
   "executive_summary": "The simulation indicates strong interest in the Acme AI SDR, particularly with the ROI-focused messaging. To convert leads into customers, prioritize outreach to the best-fit personas and address integration and training concerns.",

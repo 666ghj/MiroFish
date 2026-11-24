@@ -27,7 +27,7 @@
   },
   "meta": {
     "title": "GTM Simulation Lab",
-    "description": "GTM Simulation Lab — Simulate your GTM before launching outreach"
+    "description": "GTM Simulation Lab: simulate your GTM before launching outreach"
   },
   "nav": {
     "visitGithub": "View on GitHub"
@@ -37,7 +37,7 @@
     "version": "/ v0.1-Preview",
     "heroTitle1": "Validate Your GTM,",
     "heroTitle2": "Before You Launch",
-    "heroDesc": "From a single product brief, {brand} generates {agentScale}, tests your outreach messaging, and surfaces likely objections — so you can find the {optimalSolution} before spending a dollar on outreach.",
+    "heroDesc": "From a single product brief, {brand} generates {agentScale}, tests your outreach messaging, and surfaces likely objections, so you can find the {optimalSolution} before spending a dollar on outreach.",
     "heroDescBrand": "GTM Simulation Lab",
     "heroDescAgentScale": "12 AI buyer personas",
     "heroDescOptimalSolution": "best first outbound experiment",
@@ -256,7 +256,7 @@
     "chatWithAgent": "Interview a buyer persona",
     "selectChatTarget": "Select persona to interview",
     "sendSurvey": "Send survey to all personas",
-    "reportAgentChat": "GTM Report Agent — Chat",
+    "reportAgentChat": "GTM Report Agent: Chat",
     "reportAgentDesc": "A conversational version of the GTM report agent with access to 4 professional analysis tools and the complete buyer simulation memory",
     "toolInsightForge": "InsightForge Deep Attribution",
     "toolInsightForgeDesc": "Aligns ICP data with simulation state, combining buyer memory for cross-temporal deep attribution analysis",
@@ -707,7 +707,7 @@
     "placeholderICP": "// B2B SaaS companies, 10–200 employees, sales team of 3–10...",
     "placeholderPainPoint": "// SDRs spend 70% of time on research and list building...",
     "placeholderCompetitors": "Apollo, Outreach, Clay",
-    "briefReceived": "GTM brief received — simulation ready",
+    "briefReceived": "GTM brief received, simulation ready",
     "briefBuilding": "Building GTM simulation...",
     "briefError": "Something went wrong. Please try again."
   }

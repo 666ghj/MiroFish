@@ -11,7 +11,7 @@
         <span class="mt-brief-goal">{{ goalLabel }}</span>
       </div>
 
-      <div class="mt-step-badge">Step 3 / 5 — Message Testing</div>
+      <div class="mt-step-badge">Step 3 of 5 · Message Testing</div>
     </header>
 
     <main class="mt-main">
@@ -49,8 +49,8 @@
         <!-- Mock data warning -->
         <div v-if="isMockData" class="mt-mock-banner">
           {{ mockReason
-            ? `Sample data, not your results — the simulation could not run (${mockReason}). These reactions were not generated from your brief.`
-            : 'Demo mode — backend unreachable. Showing sample messages and reactions, not generated from your brief.' }}
+            ? `Sample data, not your results. The simulation could not run (${mockReason}), so these reactions were not generated from your brief.`
+            : 'Demo mode: the server is unreachable. Showing sample messages and reactions, not generated from your brief.' }}
           <a href="https://github.com/sanketmuchhala/GTM-SImulator#quick-start" target="_blank" rel="noopener" class="mt-mock-link">Run locally →</a>
         </div>
 
@@ -245,7 +245,7 @@ function stabilityLabel(stability) {
   return {
     stable: 'stable signal',
     leaning: 'leaning, not conclusive',
-    unstable: 'unstable — treat as a tie',
+    unstable: 'too close to call, treat as a tie',
   }[stability] ?? ''
 }
 const messages = ref([])
@@ -260,7 +260,7 @@ const totalPersonas = ref(12)
 const loadingSteps = [
   'Loading 12 buyer personas...',
   'Generating 3 message variants...',
-  'Simulating 36 buyer reactions...',
+  'Simulating buyer reactions...',
   'Scoring results...',
 ]
 const loadingStep = ref(0)
@@ -568,7 +568,7 @@ loadAll()
 .mt-error-title { font-size: 18px; font-weight: 700; color: #ededed; }
 .mt-error-msg { font-size: 14px; color: #a3a3a3; text-align: center; max-width: 400px; }
 
-/* Winner banner — refined, not overwhelming */
+/* Winner banner - refined, not overwhelming */
 .mt-mock-banner {
   background: rgba(248,113,113,0.08);
   border: 1px solid rgba(248,113,113,0.25);
@@ -918,7 +918,7 @@ loadAll()
   max-width: 300px;
 }
 
-/* Insights — grouped conclusion block */
+/* Insights - grouped conclusion block */
 .mt-insights {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

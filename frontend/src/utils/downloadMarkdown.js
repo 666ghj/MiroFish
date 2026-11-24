@@ -3,10 +3,10 @@
  * Opens a styled HTML page and triggers the browser print dialog (Save as PDF).
  *
  * Sections:
- *  1. Cover — brand header, metrics strip, brief summary, executive summary
- *  2. Buyer Personas — all 12 in a grid
- *  3. Message Testing — 3 angle cards + reaction score table
- *  4. GTM Report — ICP, winning message, readiness, objections, risks, workflow, 7-day plan
+ *  1. Cover - brand header, metrics strip, brief summary, executive summary
+ *  2. Buyer Personas - all 12 in a grid
+ *  3. Message Testing - 3 angle cards + reaction score table
+ *  4. GTM Report - ICP, winning message, readiness, objections, risks, workflow, 7-day plan
  */
 
 /* ── helpers ─────────────────────────────────────────────── */
@@ -105,7 +105,7 @@ function buildCover(brief, report, date) {
         <div class="metric-label">ICP Fit</div>
       </div>
       <div class="metric">
-        <div class="metric-val" style="color:${scoreColor(br.score || 0)}">${br.score ?? '—'}/10</div>
+        <div class="metric-val" style="color:${scoreColor(br.score || 0)}">${br.score ?? '-'}/10</div>
         <div class="metric-label">Buyer Readiness</div>
       </div>
       <div class="metric">
@@ -113,13 +113,13 @@ function buildCover(brief, report, date) {
         <div class="metric-label">Winning Angle</div>
       </div>
       <div class="metric">
-        <div class="metric-val">${days > 0 ? days + '-Day' : '—'}</div>
+        <div class="metric-val">${days > 0 ? days + '-Day' : '-'}</div>
         <div class="metric-label">Experiment Plan</div>
       </div>
     </div>
 
     <div class="conf-note">
-      <strong>Simulation note</strong> — All personas, reactions, and scores are AI-generated synthetic data. Use as directional signal; validate with real outbound before committing to strategy.
+      <strong>Simulation note:</strong> All personas, reactions, and scores are AI-generated synthetic data. Use as directional signal; validate with real outbound before committing to strategy.
     </div>
 
     ${report?.executive_summary ? `
@@ -217,7 +217,7 @@ function buildMessages(messages, reactions, summaries, winner, personas) {
     const objCount  = msgReactions.filter(r => r.verdict === 'objection').length
     const avgScore  = summary?.average_interest_score ?? (msgReactions.length
       ? (msgReactions.reduce((s, r) => s + (r.interest_score || 0), 0) / msgReactions.length).toFixed(1)
-      : '—')
+      : '-')
 
     return `
     <div class="msg-card${isWinner ? ' msg-card--winner' : ''}">
@@ -248,16 +248,16 @@ function buildMessages(messages, reactions, summaries, winner, personas) {
     </div>`
   }).join('')
 
-  // Reaction table — group by persona, show each message's score
+  // Reaction table - group by persona, show each message's score
   const personaIds = [...new Set((reactions || []).map(r => r.persona_id))]
   const tableRows = personaIds.slice(0, 20).map(pid => {
     const pReactions = (reactions || []).filter(r => r.persona_id === pid)
     const persona = personaMap[pid] || { name: pid }
     const cells = messages.map(msg => {
       const r = pReactions.find(r => r.message_id === msg.id)
-      if (!r) return '<td class="rt-cell">—</td>'
+      if (!r) return '<td class="rt-cell">-</td>'
       return `<td class="rt-cell">
-        <span style="color:${scoreColor(r.interest_score || 0)};font-weight:700">${r.interest_score ?? '—'}</span>
+        <span style="color:${scoreColor(r.interest_score || 0)};font-weight:700">${r.interest_score ?? '-'}</span>
         <span class="rt-verdict" style="color:${verdictColor(r.verdict)}">${verdictLabel(r.verdict)}</span>
       </td>`
     }).join('')
@@ -276,7 +276,7 @@ function buildMessages(messages, reactions, summaries, winner, personas) {
   <div class="section-header">
     <div class="section-header-eyebrow">Step 3</div>
     <div class="section-header-title">Message Testing</div>
-    <div class="section-header-sub">3 outreach angles tested against ${personaIds.length} buyer personas — ${(reactions || []).length} simulated reactions</div>
+    <div class="section-header-sub">${messages.length} outreach angles tested against ${personaIds.length} buyer personas · ${(reactions || []).length} simulated reactions</div>
   </div>
   <div class="msg-cards">${msgCards}</div>
   ${tableRows ? `
@@ -365,7 +365,7 @@ function buildReport(report, brief, reactions) {
 
   <!-- Winning message -->
   <div class="section">
-    <div class="section-title">Winning Message — ${esc(angleLabel(wm.angle))}</div>
+    <div class="section-title">Winning Message: ${esc(angleLabel(wm.angle))}</div>
     <div class="info-box">
       <div class="info-row">
         <span class="info-key">Avg Interest</span>
@@ -381,9 +381,9 @@ function buildReport(report, brief, reactions) {
   <div class="section">
     <div class="section-title">Buyer Readiness</div>
     <div class="readiness-box">
-      <div class="readiness-score" style="color:${scoreColor(br.score || 0)}">${br.score ?? '—'}</div>
+      <div class="readiness-score" style="color:${scoreColor(br.score || 0)}">${br.score ?? '-'}</div>
       <div class="readiness-detail">
-        <div class="readiness-label">${(br.label || 'N/A').toUpperCase()} — out of 10</div>
+        <div class="readiness-label">${(br.label || 'N/A').toUpperCase()} · out of 10</div>
         ${br.reasoning ? `<div class="readiness-reasoning">${esc(br.reasoning)}</div>` : ''}
       </div>
     </div>
@@ -653,7 +653,7 @@ function buildHTML({ report, brief, personas, messages, reactions, summaries, wi
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>GTM Report — ${esc(name)}</title>
+<title>GTM Report: ${esc(name)}</title>
 <style>${CSS}</style>
 </head>
 <body>
@@ -663,7 +663,7 @@ function buildHTML({ report, brief, personas, messages, reactions, summaries, wi
   ${msgSection}
   ${reportSection}
   <div class="doc-footer">
-    <span>GTM Simulation Lab — synthetic buyer data, not real responses</span>
+    <span>GTM Simulation Lab · synthetic buyer data, not real responses</span>
     <span>${esc(date)}</span>
   </div>
 </div>
@@ -678,7 +678,7 @@ export function downloadGTMReport(payload) {
   const html = buildHTML(payload)
   const win = window.open('', '_blank')
   if (!win) {
-    // Popup blocked — fall back to HTML download
+    // Popup blocked - fall back to HTML download
     const name = payload?.brief?.product_name || 'report'
     const blob = new Blob([html], { type: 'text/html' })
     const url = URL.createObjectURL(blob)

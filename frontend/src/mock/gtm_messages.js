@@ -1,12 +1,12 @@
 /**
- * Auto-generated demo messages + reactions — Acme AI SDR simulation.
+ * Auto-generated demo messages + reactions, Acme AI SDR simulation.
  */
 export const MOCK_MESSAGES = [
   {
     "id": "msg_pain_001",
     "angle": "pain_first",
     "subject_line": "Are your SDRs overworked?",
-    "body": "Hi {first_name},\n\nI’ve noticed many sales teams spend 60-70% of their day on research instead of actually selling. It’s frustrating to watch time slip away on manual tasks. Acme AI SDR automates lead building and personalizes outreach, so your team can focus on what matters—closing deals. \n\nCould I share how we’ve helped others in your position?\n\nBest,\n[Your Name]",
+    "body": "Hi {first_name},\n\nI’ve noticed many sales teams spend 60-70% of their day on research instead of actually selling. It’s frustrating to watch time slip away on manual tasks. Acme AI SDR automates lead building and personalizes outreach, so your team can focus on what matters-closing deals. \n\nCould I share how we’ve helped others in your position?\n\nBest,\n[Your Name]",
     "target_persona_reasoning": "This angle resonates with founders overwhelmed by their team's manual tasks."
   },
   {
@@ -565,6 +565,6 @@ export const MOCK_REACTIONS_RESULT = {
     "winner_message_id": "msg_roi_001",
     "winner_angle": "roi_first",
     "close_test": true,
-    "note": "Close test — the top two angles are within 0.5 points. Run real outbound validation with both before committing."
+    "note": "Close test: the top two angles are within 0.5 points. Run real outbound validation with both before committing."
   }
 }

@@ -45,7 +45,7 @@ export const listGTMBriefs = (limit = 20) =>
 
 /**
  * Generate 10–12 buyer personas for a brief (LLM + fallback to mock).
- * Idempotent — returns cached personas if already generated.
+ * Idempotent - returns cached personas if already generated.
  * @param {string} briefId
  * @param {number} [count=12]
  * @returns {Promise<{success: boolean, data: object[], cached: boolean}>}
@@ -65,7 +65,7 @@ export const getPersonas = (briefId) =>
 
 /**
  * Generate 3 outreach message variants for a brief (LLM + fallback to mock).
- * Idempotent — returns cached messages if already generated.
+ * Idempotent - returns cached messages if already generated.
  * @param {string} briefId
  * @returns {Promise<{success: boolean, data: object[], cached: boolean}>}
  */
@@ -81,7 +81,7 @@ export const getMessages = (briefId) =>
 
 /**
  * Simulate all persona × message reactions for a brief (LLM + fallback to mock).
- * Idempotent — returns cached reactions if already simulated.
+ * Idempotent - returns cached reactions if already simulated.
  * @param {string} briefId
  * @returns {Promise<{success: boolean, data: {reactions, summaries, winner}, cached: boolean}>}
  */
@@ -97,7 +97,7 @@ export const getReactions = (briefId) =>
 
 /**
  * Generate a structured GTM report for a brief (LLM + deterministic + mock fallback).
- * Idempotent — returns cached report if already generated.
+ * Idempotent - returns cached report if already generated.
  * @param {string} briefId
  * @returns {Promise<{success: boolean, data: object, cached: boolean}>}
  */

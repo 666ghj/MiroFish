@@ -1,5 +1,5 @@
 """
-GTM Message Generator — produces 2–5 outreach message variants from a GTM brief and buyer personas.
+GTM Message Generator - produces 2–5 outreach message variants from a GTM brief and buyer personas.
 Default angles: pain_first, roi_first, curiosity_first.
 Extended angles: feature_first, social_proof_first.
 """
@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from collections import Counter
 
 from ..utils.llm_client import LLMClient
+from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.gtm_message_generator')
@@ -36,6 +37,7 @@ Generate concise, founder-style outreach messages for cold outbound email and Li
 Rules:
 - Max 80 words per message body
 - No buzzwords or corporate marketing language
+- Never use em dashes. Use commas, periods, colons, or parentheses instead.
 - Sound like a real person, not a marketing department
 - Use {first_name} as the only personalization token
 - Subject line: max 10 words, no clickbait
@@ -60,7 +62,7 @@ def _build_user_prompt(brief: Any, personas: list, selected_angles: list) -> str
     angle_list = '\n'.join(f"- {a}: {ANGLE_DESCRIPTIONS[a]}" for a in selected_angles)
 
     return f"""GTM Brief:
-Product: {brief.product_name} — {brief.product_description}
+Product: {brief.product_name} - {brief.product_description}
 ICP: {brief.icp}
 Pricing: {brief.pricing_model}
 Target Market: {brief.target_market}
@@ -113,7 +115,7 @@ class GTMMessageGenerator:
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user', 'content': _build_user_prompt(brief, personas, selected_angles)},
             ]
-            result = self._get_llm().chat_json(messages_prompt, temperature=0.7, max_tokens=2000 + count * 200)
+            result = strip_em_dashes(self._get_llm().chat_json(messages_prompt, temperature=0.7, max_tokens=2000 + count * 200))
 
             if isinstance(result, list):
                 msgs = result

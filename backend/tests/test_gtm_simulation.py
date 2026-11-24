@@ -187,3 +187,26 @@ def test_simulate_all_wrapper_returns_list():
     out = GTMReactionSimulator(llm=llm).simulate_all(MESSAGES, PERSONAS)
     assert isinstance(out, list) and out
     json.dumps(out)  # serializable for the JSON file store
+
+
+def test_generated_copy_has_no_em_dashes():
+    from app.utils.text_style import strip_em_dashes
+    raw = {'reply': 'Sounds good — send the case study', 'list': ['a—b', 3], 'n': 7.5}
+    out = strip_em_dashes(raw)
+    assert out == {'reply': 'Sounds good, send the case study', 'list': ['a-b', 3], 'n': 7.5}
+    assert '—' not in SYSTEM_PROMPT
+
+
+def test_simulated_reactions_are_cleaned():
+    llm = FakeLLM(lambda m, p, c: 7.0)
+    original = llm.chat_json
+
+    def with_dash(messages, **kw):
+        out = original(messages, **kw)
+        for r in out:
+            r['simulated_reply'] = 'Interesting — tell me more'
+        return out
+
+    llm.chat_json = with_dash
+    result = GTMReactionSimulator(llm=llm).simulate(MESSAGES, PERSONAS, runs=1)
+    assert all('—' not in r['simulated_reply'] for r in result['reactions'])

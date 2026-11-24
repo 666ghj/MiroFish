@@ -3,21 +3,21 @@
     "id": "msg_pain_001",
     "angle": "pain_first",
     "subject_line": "Your reps are spending 3 hours a day on research",
-    "body": "Hi {first_name},\n\nMost SDR managers I talk to say the same thing: their reps spend more time building lists than actually selling.\n\nWe built something that handles the research and first-touch automatically — so your team can focus on conversations, not spreadsheets.\n\nWorth a 15-minute look?",
+    "body": "Hi {first_name},\n\nMost SDR managers I talk to say the same thing: their reps spend more time building lists than actually selling.\n\nWe built something that handles the research and first-touch automatically, so your team can focus on conversations, not spreadsheets.\n\nWorth a 15-minute look?",
     "target_persona_reasoning": "Leads with the operational pain. Best fit for SDR managers, startup operators, and founder-sellers who feel the time cost directly."
   },
   {
     "id": "msg_roi_001",
     "angle": "roi_first",
     "subject_line": "How one team booked 40% more meetings with the same headcount",
-    "body": "Hi {first_name},\n\nA Series A SaaS company with 4 SDRs went from 18 to 26 meetings booked per month — without hiring anyone.\n\nThey automated the research and list-building step that was eating 2+ hours per rep per day.\n\nHappy to share the specifics if it's relevant to what you're working on.",
+    "body": "Hi {first_name},\n\nA Series A SaaS company with 4 SDRs went from 18 to 26 meetings booked per month, without hiring anyone.\n\nThey automated the research and list-building step that was eating 2+ hours per rep per day.\n\nHappy to share the specifics if it's relevant to what you're working on.",
     "target_persona_reasoning": "Opens with a concrete business outcome. Best fit for VP Sales, RevOps, and CFOs who evaluate decisions through pipeline and ROI metrics."
   },
   {
     "id": "msg_curiosity_001",
     "angle": "curiosity_first",
     "subject_line": "Quick question about your outbound stack",
-    "body": "Hi {first_name},\n\nI noticed your team does a lot of outbound. Curious — how long does it take your reps to build a list of 50 qualified prospects right now?\n\nAsking because we just released something that cuts that down to under 10 minutes. Might be worth a quick conversation.",
+    "body": "Hi {first_name},\n\nI noticed your team does a lot of outbound. Curious, how long does it take your reps to build a list of 50 qualified prospects right now?\n\nAsking because we just released something that cuts that down to under 10 minutes. Might be worth a quick conversation.",
     "target_persona_reasoning": "Low-friction opener. No pitch, just curiosity. Works as a pattern interrupt across all persona types but especially effective with busy operators who delete long cold emails."
   }
 ]

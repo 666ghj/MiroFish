@@ -1,6 +1,6 @@
 /**
  * GTM simulation session state.
- * Reactive singleton — same pattern as store/pendingUpload.js.
+ * Reactive singleton - same pattern as store/pendingUpload.js.
  * Holds the brief, quick preview, and full persona set between views.
  */
 import { reactive } from 'vue'

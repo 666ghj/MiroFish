@@ -1,5 +1,5 @@
 """
-GTM Aggregator — pure Python aggregation of message reactions.
+GTM Aggregator - pure Python aggregation of message reactions.
 No LLM calls. Takes messages + reactions → summaries + winner.
 """
 
@@ -30,7 +30,7 @@ def _recommendation(summary: dict) -> str:
     avg = summary['average_interest_score']
 
     if avg >= 7.5:
-        return f"Strong signal — {pos} of {pos + summary['neutral_count'] + neg} personas responded positively."
+        return f"Strong signal: {pos} of {pos + summary['neutral_count'] + neg} personas responded positively."
     if avg >= 6.0:
         return f"Moderate signal. Best for {', '.join(summary['best_fit_personas'][:2])} personas."
     return f"Weak signal for most personas. {_angle_label(angle)} messaging may need repositioning."
@@ -148,7 +148,7 @@ def _add_stability(winner: dict, summaries: list, messages: list, run_reactions:
         winner['stability'] = 'unstable'
         winner['close_test'] = True
         winner['note'] = (
-            f"Unstable result — this angle won only {wins} of {len(run_winners)} simulation runs. "
+            f"Unstable result: this angle won only {wins} of {len(run_winners)} simulation runs. "
             'Treat the angles as tied and validate both with real outbound.'
         )
 
@@ -176,7 +176,7 @@ def _compute_winner(summaries: list) -> dict:
     )
 
     note = (
-        'Close test — the top two angles are within 0.5 points. '
+        'Close test: the top two angles are within 0.5 points. '
         'Run real outbound validation with both before committing.'
         if close_test else None
     )

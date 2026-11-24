@@ -11,7 +11,7 @@
         <span class="pg-brief-goal">{{ goalLabel }}</span>
       </div>
 
-      <div class="pg-step-badge">Step 2 / 5 — Buyer Personas</div>
+      <div class="pg-step-badge">Step 2 of 5 · Buyer Personas</div>
     </header>
 
     <!-- Main content -->
@@ -37,7 +37,7 @@
       <!-- Error state -->
       <div v-else-if="viewState === 'error'" class="pg-error">
         <div class="pg-error-title">Persona generation failed</div>
-        <div class="pg-error-msg">{{ errorMsg || 'The LLM may be unavailable — using sample personas instead.' }}</div>
+        <div class="pg-error-msg">{{ errorMsg || 'The AI service may be unavailable, so sample personas are shown instead.' }}</div>
         <button class="pg-btn-secondary" @click="retryGeneration">Retry</button>
       </div>
 
@@ -46,7 +46,7 @@
 
         <!-- Mock data warning -->
         <div v-if="isMockData" class="pg-mock-banner">
-          Demo mode — backend unreachable. Showing sample personas, not AI-generated from your brief.
+          Demo mode: the server is unreachable. Showing sample personas, not generated from your brief.
           <a href="https://github.com/sanketmuchhala/GTM-SImulator#quick-start" target="_blank" rel="noopener" class="pg-mock-link">Run locally →</a>
         </div>
 
@@ -92,7 +92,7 @@
           </div>
 
           <div class="pg-confidence-note">
-            Directional signal — validate your top segments with real outreach before committing.
+            Directional signal. Validate your top segments with real outreach before committing.
           </div>
         </div>
 
@@ -142,13 +142,13 @@ const personas = ref([])
 const brief = ref(null)
 const isMockData = ref(false)
 
-// Resolved persona count — read from store brief, fall back to 12
+// Resolved persona count - read from store brief, fall back to 12
 const numPersonas = computed(() => {
   const n = brief.value?.num_personas
   return (n && n > 0) ? n : 12
 })
 
-// Loading animation — dynamic text
+// Loading animation - dynamic text
 const loadingSteps = computed(() => [
   'Analyzing your GTM brief...',
   'Identifying buyer segments...',
@@ -179,7 +179,7 @@ const neutralCount = computed(() => personas.value.filter(p => p.reaction === 'n
 const objectionCount = computed(() => personas.value.filter(p => p.reaction === 'objection').length)
 
 const bestAngle = computed(() => {
-  if (!personas.value.length) return '—'
+  if (!personas.value.length) return '-'
   const counts = {}
   for (const p of personas.value) {
     const a = p.likely_message_angle || 'unknown'
@@ -187,7 +187,7 @@ const bestAngle = computed(() => {
   }
   const winner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
   const labels = { pain_led: 'Pain-Led', roi_led: 'ROI-Led', social_proof_led: 'Social Proof' }
-  return labels[winner?.[0]] ?? winner?.[0] ?? '—'
+  return labels[winner?.[0]] ?? winner?.[0] ?? '-'
 })
 
 const goalLabel = computed(() => {
@@ -239,7 +239,7 @@ async function loadPersonas() {
     return
   }
 
-  // 2. Call the generation API — pass the count from the saved brief
+  // 2. Call the generation API - pass the count from the saved brief
   try {
     const count = numPersonas.value
     const res = await generatePersonas(briefId.value, count)
@@ -253,7 +253,7 @@ async function loadPersonas() {
       throw new Error('Empty persona list returned')
     }
   } catch (err) {
-    // 3. Backend unreachable (Vercel demo, no keys, offline) — show mock with banner
+    // 3. Backend unreachable (Vercel demo, no keys, offline) - show mock with banner
     console.warn('Persona generation failed, using sample data:', err.message)
     personas.value = MOCK_PERSONAS_FULL
     setPersonas(MOCK_PERSONAS_FULL)
@@ -415,6 +415,7 @@ onMounted(async () => {
 
 .pg-summary-stats {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   font-size: 13px;

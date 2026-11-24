@@ -1,5 +1,5 @@
 /**
- * Auto-generated demo preview — Acme AI SDR simulation.
+ * Auto-generated demo preview, Acme AI SDR simulation.
  */
 export const MOCK_GTM_PREVIEW = {
   "personas": [

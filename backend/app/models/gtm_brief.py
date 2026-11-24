@@ -1,5 +1,5 @@
 """
-GTMBrief model — stores a founder's GTM simulation brief.
+GTMBrief model - stores a founder's GTM simulation brief.
 """
 
 import os

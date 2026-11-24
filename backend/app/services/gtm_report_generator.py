@@ -1,5 +1,5 @@
 """
-GTM Report Generator — produces a structured GTMReport from existing simulation data.
+GTM Report Generator - produces a structured GTMReport from existing simulation data.
 Hybrid approach: deterministic fields computed from cached aggregations + single LLM call
 for narrative sections (executive summary, recommendations, 7-day experiment, etc.).
 Falls back to mock_data/gtm_report.json on any LLM or validation failure.
@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 from ..utils.llm_client import LLMClient
+from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.gtm_report_generator')
@@ -33,11 +34,12 @@ Given simulation data (buyer personas, message performance, reactions, and aggre
 produce an actionable GTM decision report.
 
 Rules:
-- Be specific — reference the actual product, ICP, and simulation results provided
+- Be specific - reference the actual product, ICP, and simulation results provided
 - Do not give generic marketing advice; ground every insight in the data
 - seven_day_experiment must have exactly 7 entries (day 1 through 7)
 - risk_signals: identify 2-4 risks from the common risk_signal themes in the reactions
 - recommended_workflow.steps: 6-8 agentic steps (discover → enrich → send → follow up → log → route → update)
+- Never use em dashes. Use commas, periods, colons, or parentheses instead.
 - Return ONLY a valid JSON object, no markdown, no wrapper keys
 
 JSON schema:
@@ -104,7 +106,7 @@ def _build_user_prompt(brief, personas: list, deterministic: dict, summaries: li
     scores_text = '\n'.join(msg_scores)
 
     return f"""GTM Brief:
-Product: {brief.product_name} — {brief.product_description}
+Product: {brief.product_name} - {brief.product_description}
 ICP: {brief.icp}
 Pricing: {brief.pricing_model}
 Target Market: {brief.target_market}
@@ -134,7 +136,7 @@ Generate the GTM report JSON now. Be specific to this product and simulation dat
 
 
 def _compute_deterministic(messages: list, reactions: list, summaries: list, winner: dict) -> dict:
-    """Compute fields that don't need LLM — extracted directly from simulation data."""
+    """Compute fields that don't need LLM - extracted directly from simulation data."""
     # Winning message fields
     winning_angle = winner.get('winner_angle', '')
     winning_msg_obj = next((m for m in messages if m.get('angle') == winning_angle), None)
@@ -227,7 +229,7 @@ class GTMReportGenerator:
                     brief, personas, deterministic, summaries, winner
                 )},
             ]
-            result = self._get_llm().chat_json(prompt_messages, temperature=0.5, max_tokens=4000)
+            result = strip_em_dashes(self._get_llm().chat_json(prompt_messages, temperature=0.5, max_tokens=4000))
 
             if not isinstance(result, dict):
                 raise ValueError(f"Unexpected response type: {type(result)}")

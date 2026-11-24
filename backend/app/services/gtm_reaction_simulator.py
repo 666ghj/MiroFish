@@ -1,5 +1,5 @@
 """
-GTM Reaction Simulator — simulates buyer reactions to outreach messages.
+GTM Reaction Simulator - simulates buyer reactions to outreach messages.
 
 How a simulation works:
 - Personas are scored in small batches (BATCH_SIZE per LLM call) so each persona is
@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
 
 from ..utils.llm_client import LLMClient
+from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.gtm_reaction_simulator')
@@ -48,7 +49,8 @@ Rules:
   skepticism level, and communication style. Do not rank personas against each other.
 - Use the full 0-10 range when the persona's profile justifies it; do not default to the middle.
 - interest_score is primary; drive verdict from it (>=7 = positive, 4-6.9 = neutral, <4 = negative)
-- simulated_reply should sound like a real person — concise, authentic, includes their likely skepticism or enthusiasm
+- simulated_reply should sound like a real person - concise, authentic, includes their likely skepticism or enthusiasm
+- Never use em dashes. Use commas, periods, colons, or parentheses instead.
 - Return ONLY a valid JSON array, no markdown
 
 Each reaction object must have these exact fields:
@@ -276,7 +278,7 @@ class GTMReactionSimulator:
             {'role': 'system', 'content': SYSTEM_PROMPT},
             {'role': 'user', 'content': _build_reaction_prompt(message, personas)},
         ]
-        result = self._get_llm().chat_json(prompt_messages, temperature=0.6, max_tokens=3000)
+        result = strip_em_dashes(self._get_llm().chat_json(prompt_messages, temperature=0.6, max_tokens=3000))
 
         if isinstance(result, list):
             reactions = result

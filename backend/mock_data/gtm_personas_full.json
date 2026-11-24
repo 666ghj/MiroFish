@@ -40,7 +40,7 @@
     "summary": "Won't engage without a peer case study. Needs proof the tool drives pipeline, not just activity.",
     "reaction": "objection",
     "skepticism_level": 4,
-    "likely_response": "We already have a cadence tool. What's the actual ROI — meetings booked, not emails sent?",
+    "likely_response": "We already have a cadence tool. What's the actual ROI, meetings booked, not emails sent?",
     "objection_category": "status_quo_bias"
   },
   {
@@ -185,7 +185,7 @@
     "primary_goal": "Scale client outbound delivery without hiring more account managers",
     "pain_points": ["Each client needs a custom workflow", "Hard to deliver consistent results at scale", "Client reporting takes too long"],
     "buying_triggers": ["Multi-client account support", "White-label reporting", "API access for automation"],
-    "objections": ["Does this support multiple client workspaces?", "Can I white-label the output?", "My margins are thin — what's the agency pricing?"],
+    "objections": ["Does this support multiple client workspaces?", "Can I white-label the output?", "My margins are thin, what's the agency pricing?"],
     "communication_style": "ROI-focused, asks about agency-specific features and pricing",
     "budget_sensitivity": "medium",
     "risk_tolerance": "medium",
@@ -249,7 +249,7 @@
     "company_stage": "Series A",
     "persona_type": "champion_user",
     "primary_goal": "Become a top performer without working more hours",
-    "pain_points": ["Spends 2 hours/day on list building and research", "Inconsistent pipeline — feast or famine", "Manager doesn't give credit for effort, only results"],
+    "pain_points": ["Spends 2 hours/day on list building and research", "Inconsistent pipeline, feast or famine", "Manager doesn't give credit for effort, only results"],
     "buying_triggers": ["Saves at least 5 hours/week", "Makes her look good to management", "Easy to learn in under an hour"],
     "objections": ["My manager hasn't approved new tools", "I don't have budget authority", "Will this make me look like I need help?"],
     "communication_style": "Enthusiastic early adopter, will champion internally if it works",

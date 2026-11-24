@@ -25,7 +25,7 @@ let linkSel      = null
 let nodeSel      = null
 let W = 0, H = 0
 
-// Cap for performance — D3 force gets heavy beyond this
+// Cap for performance - D3 force gets heavy beyond this
 const MAX_NODES = 120
 
 const TYPES = [
@@ -80,7 +80,7 @@ function makeLinks(nodes) {
   return links
 }
 
-// Mutable node array — shared across updates
+// Mutable node array - shared across updates
 let nodes = []
 
 function buildNodeData(count) {
@@ -208,7 +208,7 @@ onMounted(() => {
     .velocityDecay(0.55)
     .on('tick', () => {
       if (!nodes.length) return
-      // Soft boundary — proportional velocity nudge instead of hard clamp
+      // Soft boundary - proportional velocity nudge instead of hard clamp
       // so nodes use the full space and never stick to edges
       nodes.forEach(d => {
         const pad = (d.r || 10) + 6
@@ -217,7 +217,7 @@ onMounted(() => {
         if (d.x > W - pad) d.vx -= k * (d.x - W + pad)
         if (d.y < pad)     d.vy += k * (pad - d.y)
         if (d.y > H - pad) d.vy -= k * (d.y - H + pad)
-        // Absolute fallback — keep within SVG
+        // Absolute fallback - keep within SVG
         d.x = Math.max(0, Math.min(W, d.x || W / 2))
         d.y = Math.max(0, Math.min(H, d.y || H / 2))
       })

@@ -17,7 +17,7 @@
       "company": "B2B SaaS, 120 employees",
       "skepticism_level": 3,
       "reaction": "neutral",
-      "likely_response": "Interesting — I'd need to see how it integrates with our existing stack before committing to a call.",
+      "likely_response": "Interesting, I'd need to see how it integrates with our existing stack before committing to a call.",
       "objection_category": "integration_concern"
     },
     {
@@ -35,13 +35,13 @@
     {
       "angle": "pain_led",
       "label": "Pain-Led",
-      "preview": "Strongest early signal — 5 of 12 personas responded with interest or curiosity",
+      "preview": "Strongest early signal, 5 of 12 personas responded with interest or curiosity",
       "top_objection": "Integration complexity"
     },
     {
       "angle": "roi_led",
       "label": "ROI-Led",
-      "preview": "Best fit for budget-focused buyers — 4 of 12 responded positively",
+      "preview": "Best fit for budget-focused buyers, 4 of 12 responded positively",
       "top_objection": "Proof of ROI claims"
     }
   ]

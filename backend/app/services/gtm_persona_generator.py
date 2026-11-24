@@ -1,5 +1,5 @@
 """
-GTM Persona Generator — produces 10-12 realistic B2B buyer personas from a GTM brief.
+GTM Persona Generator - produces 10-12 realistic B2B buyer personas from a GTM brief.
 Uses LLMClient.chat_json() with a structured prompt; falls back to mock data if the
 LLM is unavailable or returns invalid output.
 """
@@ -10,6 +10,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 
 from ..utils.llm_client import LLMClient
+from ..utils.text_style import strip_em_dashes
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.gtm_persona_generator')
@@ -34,6 +35,7 @@ Each persona must feel like a real person who would realistically encounter this
 in the market. Vary their roles, company stages, goals, objections, and communication styles.
 Avoid generic or repetitive profiles.
 
+Never use em dashes in any field; use commas, periods, colons, or parentheses instead.
 Return ONLY a valid JSON array. No markdown, no explanation, no wrapper keys.
 
 Each persona object must have these exact fields:
@@ -57,14 +59,14 @@ Each persona object must have these exact fields:
   "reaction": "<one of: interested, neutral, objection>",
   "skepticism_level": <integer 1-5>,
   "likely_response": "<one sentence quote of what they would actually say to your outreach>",
-  "objection_category": "<one of: status_quo_bias, integration_concern, budget_concern, trust_deficit, feature_gap, process_barrier, adoption_risk — or null if reaction is interested>"
+  "objection_category": "<one of: status_quo_bias, integration_concern, budget_concern, trust_deficit, feature_gap, process_barrier, adoption_risk - or null if reaction is interested>"
 }"""
 
 
 def _build_user_prompt(brief: Any, count: int) -> str:
     competitors = ', '.join(brief.competitors) if brief.competitors else 'None specified'
     return f"""GTM Brief:
-Product: {brief.product_name} — {brief.product_description}
+Product: {brief.product_name} - {brief.product_description}
 ICP: {brief.icp}
 Pricing: {brief.pricing_model}
 Target Market: {brief.target_market}
@@ -78,7 +80,7 @@ Existing Problems: {brief.existing_problems or 'Not specified'}
 
 Generate exactly {count} distinct buyer personas as a JSON array.
 Each persona must use a different persona_type from: {', '.join(PERSONA_TYPES)}.
-Make them context-aware — their goals, objections, and communication styles should
+Make them context-aware - their goals, objections, and communication styles should
 reflect the specific product and ICP described above.
 Vary skepticism levels (some should be 1-2, some 3, some 4-5).
 Include at least 3 "interested", 3 "neutral", and 3 "objection" reactions."""
@@ -146,9 +148,9 @@ class GTMPersonaGenerator:
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user', 'content': _build_user_prompt(brief, count)},
             ]
-            result = self._get_llm().chat_json(messages, temperature=0.75, max_tokens=6000)
+            result = strip_em_dashes(self._get_llm().chat_json(messages, temperature=0.75, max_tokens=6000))
 
-            # chat_json returns a dict — look for the array
+            # chat_json returns a dict - look for the array
             if isinstance(result, list):
                 personas = result
             elif isinstance(result, dict):

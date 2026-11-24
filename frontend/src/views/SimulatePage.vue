@@ -137,6 +137,7 @@ import { submitGTMBrief, getGTMPreview } from '../api/gtm.js'
 import { setGTMBrief, setSimulationPreview } from '../store/gtmSimulation.js'
 import { MOCK_GTM_PREVIEW } from '../mock/gtm_preview.js'
 import { DEMO_BRIEF } from '../mock/gtm_demo.js'
+import { estimateRun } from '../utils/gtmFormatter.js'
 
 const router = useRouter()
 
@@ -148,18 +149,9 @@ const numMessages = ref(3)
 
 const angleNames = { 2: 'Pain · ROI', 3: '+Curiosity', 4: '+Feature', 5: '+Social' }
 
-const timeEstimate = computed(() => {
-  const n = numPersonas.value
-  if (n <= 12)  return '~1 min'
-  if (n <= 50)  return '~3 min'
-  if (n <= 100) return '~8 min'
-  if (n <= 200) return '~20 min'
-  return '~45 min'
-})
-
-const costEstimate = computed(() =>
-  (numPersonas.value * 0.008 * numMessages.value).toFixed(2)
-)
+const estimate = computed(() => estimateRun(numPersonas.value, numMessages.value))
+const timeEstimate = computed(() => estimate.value.time)
+const costEstimate = computed(() => estimate.value.cost)
 
 function loadDemo() {
   demoData.value = { ...DEMO_BRIEF }
