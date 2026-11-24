@@ -6,7 +6,6 @@
 
   <!-- Co-founder and the team -->
   <article v-else class="msg msg--ai" :class="{ working: m.streaming || teamWorking }">
-    <div class="avatar" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 4.5h10v6H7l-3 2.5v-2.5H3z" /></svg></div>
     <div class="col">
       <AgentActivity v-if="m.trace?.length" :steps="m.trace" />
 
@@ -40,7 +39,7 @@
       <div v-if="m.notice" class="notice">{{ m.notice }}</div>
 
       <!-- What the app did with the message -->
-      <ul v-if="receipts.length" class="receipts" aria-label="What the app did">
+      <ul v-if="receipts.length && !m.streaming" class="receipts" aria-label="What the app did">
         <li v-for="(a, j) in receipts" :key="j" :class="`rc--${a.kind}`" :style="{ '--j': j }">
           <button type="button" @click="$emit('act', a)">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path :d="ICON[a.kind] || ICON.parked" /></svg>
@@ -112,19 +111,14 @@ const parsed = computed(() => {
 </script>
 
 <style scoped>
-.msg { display: flex; gap: 12px; animation: rise-in var(--dur-3) var(--ease-out) both; }
+.msg { display: flex; gap: 12px; min-width: 0; animation: rise-in var(--dur-3) var(--ease-out) both; }
 .msg--user { justify-content: flex-end; animation-name: send-in; }
 @keyframes send-in { from { opacity: 0; transform: translate(8px, 6px) scale(0.98); } to { opacity: 1; transform: none; } }
 .you { max-width: 82%; padding: 9px 14px; border-radius: 16px 16px 4px 16px; background: #1a1a1c; border: 1px solid #26262a;
   font-size: 14.5px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.avatar { position: relative; width: 26px; height: 26px; flex-shrink: 0; margin-top: 1px; border-radius: 50%; display: grid; place-items: center;
-  background: radial-gradient(circle at 30% 30%, rgba(147, 197, 253, 0.35), rgba(59, 130, 246, 0.12)); box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35); }
-.avatar svg { width: 12px; height: 12px; fill: none; stroke: #bfdbfe; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.working .avatar { animation: halo 1.6s ease-out infinite; }
-@keyframes halo { 0% { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.6), 0 0 0 0 rgba(96, 165, 250, 0.35); }
-  100% { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.6), 0 0 0 8px rgba(96, 165, 250, 0); } }
-.col { flex: 1; min-width: 0; }
+.col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.col > * { min-width: 0; max-width: 100%; }
 
 .body { font-size: 14.5px; line-height: 1.65; color: #d4d4d4; overflow-wrap: anywhere; }
 .body :deep(p), .body p { margin: 0 0 10px; }
@@ -144,9 +138,9 @@ const parsed = computed(() => {
 .rs-head svg { width: 13px; height: 13px; fill: none; stroke: #5eead4; stroke-width: 1.6; stroke-linecap: round; flex-shrink: 0; }
 .rs-head span:nth-child(2) { color: #5eead4; font-weight: 600; }
 .rs-q { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.rs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .rs-label { font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: #555; margin-right: 2px; }
-.co { font-size: 12.5px; padding: 3px 9px; border-radius: 7px; background: #141616; border: 1px solid #232727; color: var(--text-primary);
+.co { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; padding: 3px 9px; border-radius: 7px; background: #141616; border: 1px solid #232727; color: var(--text-primary);
   text-decoration: none; animation: pop-in var(--dur-2) var(--ease-out) both; animation-delay: calc(80ms + var(--i) * 45ms); }
 a.co:hover { border-color: rgba(45, 212, 191, 0.5); }
 .co--dead { color: var(--text-tertiary); text-decoration: line-through; text-decoration-color: #555; }

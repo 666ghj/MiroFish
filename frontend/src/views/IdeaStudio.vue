@@ -825,22 +825,28 @@ onMounted(async () => {
 }
 
 /* Chat */
-.chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #161616; background: #000; }
+.chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid #161616; background: #000;
+  container-type: inline-size; }
+@container (max-width: 520px) {
+  .kbd-hint { display: none; }
+  .starters { grid-template-columns: 1fr !important; }
+  .welcome h2 { font-size: 24px; }
+}
 .thread-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .messages { flex: 1; overflow-y: auto; padding: 28px 24px 24px;
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px); mask-image: linear-gradient(180deg, transparent 0, #000 20px); }
-.thread { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
+.thread { max-width: 680px; min-width: 0; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+.messages { overflow-x: hidden; }
 
 /* Welcome */
 .welcome { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding-top: 6vh; }
-.welcome-faces { display: flex; margin-bottom: 4px; }
-.welcome-faces span { width: 18px; height: 18px; border-radius: 50%; margin-left: -5px; border: 2px solid #000;
-  background: radial-gradient(circle at 35% 35%, color-mix(in srgb, var(--c) 80%, #fff), var(--c));
-  animation: face-in 500ms var(--ease-out) both, float 3.2s ease-in-out infinite;
-  animation-delay: calc(var(--i) * 60ms), calc(600ms + var(--i) * 0.25s); }
-.welcome-faces span:first-child { margin-left: 0; }
+/* The team, as a quiet row of colored dots that wave once in a while */
+.welcome-faces { display: flex; gap: 6px; margin-bottom: 6px; }
+.welcome-faces span { width: 6px; height: 6px; border-radius: 50%; background: var(--c);
+  animation: face-in 500ms var(--ease-out) both, float 2.8s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 60ms), calc(700ms + var(--i) * 0.12s); }
 @keyframes face-in { from { opacity: 0; transform: translateY(8px) scale(0.6); } to { opacity: 1; transform: none; } }
-@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes float { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(-4px); } }
 .welcome h2 { font-family: 'Space Grotesk', var(--font-sans); font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15;
   text-wrap: balance; animation: rise-in var(--dur-3) var(--ease-out) 120ms both; }
 .welcome p { font-size: 14.5px; line-height: 1.6; color: var(--text-secondary); max-width: 52ch; animation: rise-in var(--dur-3) var(--ease-out) 200ms both; }
@@ -918,6 +924,10 @@ onMounted(async () => {
 .side { position: relative; overflow: hidden; padding: 12px 16px 14px; background: #050505; min-height: 0;
   display: flex; flex-direction: column; gap: 10px; }
 .view-body { flex: 1; min-height: 0; }
+@media (max-height: 780px) and (min-width: 901px) {
+  .view-body { overflow-y: auto; margin-right: -8px; padding-right: 8px; }
+  .view-body > * { height: auto; }
+}
 .view-body > * { height: 100%; }
 .view-enter-active { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
 .view-leave-active { transition: opacity var(--dur-1) ease, transform var(--dur-1) ease; }

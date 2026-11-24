@@ -361,5 +361,12 @@ function changedAny(prefixes) {
   .hero-side { flex-direction: row; align-items: center; width: 100%; }
   .bars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+/* Short windows: never clip or overlap; let the overview scroll instead */
+@media (max-height: 780px) and (min-width: 901px) {
+  .dash { height: auto !important; grid-template-rows: none; grid-auto-rows: auto; align-content: start; }
+  .tile { overflow: visible; min-height: auto; }
+  .tile > *, .hero-main > * { flex-shrink: 0; }
+  .facts, .pairs, .risks { overflow: visible; -webkit-mask-image: none; mask-image: none; padding-bottom: 0; }
+}
 @media (prefers-reduced-motion: reduce) { .tile, .bar-fill { transition: none; } .pulse { animation: none; } }
 </style>

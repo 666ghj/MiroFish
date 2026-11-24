@@ -52,20 +52,21 @@ const words = computed(() => props.question.split(/\s+/).filter(Boolean))
 .q { margin-top: 14px; }
 
 .q--active, .q--pending {
-  position: relative; padding: 14px 16px 14px; border-radius: 14px; border: 1px solid rgba(96, 165, 250, 0.22);
+  position: relative; min-width: 0; overflow: hidden; padding: 14px 16px 14px; border-radius: 14px; border: 1px solid rgba(96, 165, 250, 0.22);
   background: radial-gradient(120% 140% at 0% 0%, rgba(59, 130, 246, 0.10), transparent 55%), #0a0b0d;
   animation: card-in 420ms var(--ease-out) both;
 }
 @keyframes card-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
 
-.eyebrow { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em;
+.eyebrow { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em;
   text-transform: uppercase; color: #93c5fd; }
-.for { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-tertiary); font-size: 11.5px; }
-.spark { width: 6px; height: 6px; border-radius: 50%; background: #60a5fa; box-shadow: 0 0 10px #60a5fa; }
+.eyebrow > span:nth-child(2) { flex-shrink: 0; }
+.for { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-tertiary); font-size: 11.5px; }
+.spark { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: #60a5fa; box-shadow: 0 0 10px #60a5fa; }
 .q--pending .spark { animation: blink 1.2s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
-.text { margin: 8px 0 12px; font-family: 'Space Grotesk', var(--font-sans); font-size: 17.5px; font-weight: 600; line-height: 1.4;
+.text { overflow-wrap: anywhere; margin: 8px 0 12px; font-family: 'Space Grotesk', var(--font-sans); font-size: 17.5px; font-weight: 600; line-height: 1.4;
   letter-spacing: -0.01em; color: #f5f5f5; text-wrap: balance; }
 /* Words settle in one after another */
 .w { display: inline-block; animation: word 380ms var(--ease-out) both; animation-delay: calc(120ms + var(--i) * 28ms); }
