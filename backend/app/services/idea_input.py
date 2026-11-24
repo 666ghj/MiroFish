@@ -64,7 +64,12 @@ _PARK_CUE = re.compile(r"\b(pending|park|parked|later|aside|on hold|hold off|com
 _TOP_RE = re.compile(r'\b(top|high|highest)[- ]priority\b|\burgent\b|\bimportant\b', re.I)
 _RESEARCH_RE = re.compile(r"\bwho (else )?(already )?(does|is doing|builds|built|makes|offers)\b|\bcompetit|\blook (it |this |that )?up\b"
                           r"|\b(search|research)\b|\banyone (else )?(doing|tried|built)\b", re.I)
-_HINT_RE = re.compile(r'\b(hint|nudge|clue)\b', re.I)
+_HINT_RE = re.compile(
+    r"^\s*(?:a )?(?:hint|nudge|clue)(?: please)?[.!?\s]*$|"
+    r"\b(?:give|offer|send) (?:me |us )?(?:a |one |some )?(?:hint|nudge|clue)\b|"
+    r"\b(?:can|could|may) (?:i|we) (?:get|have) (?:a |one )?(?:hint|nudge|clue)\b",
+    re.I,
+)
 _IDK_RE = re.compile(r"^\s*(idk|i (really )?(don'?t|do not) know|not sure|no idea|unsure|no clue)\b", re.I)
 
 

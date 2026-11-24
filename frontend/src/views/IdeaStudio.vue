@@ -659,6 +659,12 @@ function onEvent(ev, live) {
       if (ev.notice) live.notice = ev.notice
       if (Array.isArray(ev.actions)) live.actions = ev.actions
       status.value = ''
+      if (ev.support) {
+        live.trace = []
+        live.ask = null
+        scrollDown()
+        break
+      }
       updating.value = !ev.brainstorm
       step(live, 'cofounder', { status: 'done', detail: ev.source === 'scripted' ? 'used a scripted question' : 'replied' })
       if (!ev.brainstorm) step(live, 'analyst', { status: 'running', detail: 'updating the live idea' })

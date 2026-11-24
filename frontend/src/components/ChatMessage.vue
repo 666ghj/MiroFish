@@ -54,8 +54,7 @@
         </li>
       </ul>
 
-      <QuestionCard v-if="m.streaming" pending />
-      <QuestionCard v-else-if="parsed.question" :question="parsed.question" :reason="m.ask?.reason || ''" :active="isLast && !busy"
+      <QuestionCard v-if="!m.streaming && parsed.question" :question="parsed.question" :reason="m.ask?.reason || ''" :active="isLast && !busy"
                     @answer="$emit('answer')" @quick="(t) => $emit('quick', t)" />
     </div>
   </article>

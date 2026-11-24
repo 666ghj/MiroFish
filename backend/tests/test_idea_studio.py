@@ -383,3 +383,23 @@ def test_simulation_coherence_check_rejects_existing_mixed_brief():
     state = st.founder_edit(state, '/problem/statement', 'Cell towers draw too much power')
     judge = FakeExtract([{'aligned': False, 'issue': 'The pain describes telecommunications.'}])
     assert 'telecommunications' in studio.check_brief_coherence(state, judge)
+
+
+def test_hint_ignores_stale_question_text_and_skips_agents():
+    state = st.founder_edit(new(), '/problem/statement', 'Founders lose originality when outsourcing early thinking.')
+    state['history'].append({'asked': {'field': 'problem.severity', 'turn': 1}})
+    history = [{'role': 'assistant', 'content': 'When did Alex last have a cell tower performance issue?'}]
+
+    class UnexpectedModel:
+        def chat_json(self, *_args, **_kwargs):
+            pytest.fail('An explicit hint should not call a model')
+
+    model = UnexpectedModel()
+    stream = list(studio.run_turn(state, history, 'I am not sure. Can you give me a hint, without answering it for me?',
+                                  chat_llm=model, extract_llm=model, read_llm=model))
+
+    assert [event['type'] for event in stream] == ['reply', 'done']
+    reply = stream[0]
+    assert reply['support'] is True and reply['ask'] == {}
+    assert 'cell tower' not in reply['content'] and 'Alex' not in reply['content']
+    assert not reply.get('run_team')

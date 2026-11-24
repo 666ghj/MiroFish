@@ -438,6 +438,40 @@ def _brainstorm_turn(state, history, user_message, assistance, chat_llm):
     yield {'type': 'done'}
 
 
+SUPPORT_HINTS = {
+    'problem.statement': 'Think of the last time the person got stuck. Start with what they were trying to get done.',
+    'problem.who': 'Picture one person you could actually talk to. Think about what they were responsible for when the problem came up.',
+    'problem.frequency': 'Pick one person and one recent week. Count the times the workaround came up, even if that count is zero.',
+    'problem.severity': 'Think of one time the workaround got in the way. What did the person have to redo, put off, or give up?',
+    'problem.workaround': 'Walk through the last time it happened, step by step. Pay attention to what they reached for first.',
+    'customer.early_adopters': 'Think about who is already spending time or money to get around this. That is a place to look for your first users.',
+    'solution.core': 'Find the single step in the workaround you would want to remove first. Leave the other steps alone for now.',
+    'why_not_built': 'Start with what people already turn to when this comes up. A manual workaround counts.',
+    'why_now': 'Compare the same task today with a few years ago. Look for something that changed in the tools, rules, or habits around it.',
+    'business_model': 'Start with the cost of the workaround today. Think about whose time or budget it comes out of.',
+    'risky_assumptions': 'Pick one thing that has to be true for the idea to work. Think of an observation that would make you doubt it.',
+}
+
+
+def _support_text(state, wants_hint):
+    if state['conflicts']:
+        return 'Let’s settle the conflicting details in the Idea panel first. Then we can pick up the thread.'
+    if not wants_hint:
+        return 'It’s okay to leave that open. If you can remember one concrete example, start there. Otherwise, we can come back to it.'
+    prior = next((entry['asked'].get('field') for entry in reversed(state['history'])
+                  if isinstance(entry.get('asked'), dict) and entry['asked'].get('field')), '')
+    options = pick_next_questions(state)
+    if prior not in {option['field'] for option in options}:
+        prior = options[0]['field'] if options else ''
+    return SUPPORT_HINTS.get(prior, 'Start with one concrete moment you remember and what someone did next. A partial answer is enough.')
+
+
+def _support_events(state, wants_hint):
+    content = _support_text(state, wants_hint)
+    yield {'type': 'reply', 'content': content, 'acknowledgment': content, 'support': True, 'ask': {}}
+    yield {'type': 'done'}
+
+
 def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
              chat_llm: Optional[LLMClient] = None, extract_llm: Optional[LLMClient] = None,
              evidence_hook: Optional[Callable[..., Iterator[Dict[str, Any]]]] = None,
@@ -461,14 +495,23 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
         yield from _brainstorm_turn(state, history, user_message, assistance, chat_llm)
         return
 
+    support_intent = set(idea_input.read_by_rules(user_message, [])['kinds'])
+    requested_research = bool(getattr(evidence_hook, 'requested', False))
+    if not requested_research and support_intent & {'hint', 'dont_know'} and not support_intent & {'park', 'research', 'example'}:
+        yield from _support_events(state, 'hint' in support_intent)
+        return
+
     state['meta']['turn'] += 1
 
     # 0. Read the message: what does it ask the app to do? Act on it before replying.
     #    Offline callers (tests) that inject chat/extract models but no reader get the keyword rules.
     reader = read_llm if read_llm is not None else (None if (chat_llm or extract_llm) else _llm('IDEA_READ_MODEL'))
-    button = bool(getattr(evidence_hook, 'requested', False))
+    button = requested_research
     reading = idea_input.read_input(state, history, user_message, reader, about_to_search=button)
     kinds = set(reading['kinds'])
+    if not button and kinds & {'hint', 'dont_know'} and not kinds & {'park', 'unpark', 'research', 'example'}:
+        yield from _support_events(state, 'hint' in kinds)
+        return
     can_write = bool(kinds & {'answer', 'idea_update'}) and not (
         button or kinds.intersection(idea_input.NON_ANSWER_KINDS)
     )
