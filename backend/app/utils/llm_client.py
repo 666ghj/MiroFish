@@ -164,6 +164,52 @@ class LLMClient:
         content = extract_chat_completion_text(response)
         return _clean_chat_text(content)
     
+    def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = 1024,
+    ):
+        """
+        Stream a chat reply as text chunks.
+
+        Yields each non-empty content delta as it arrives. Reasoning wrappers
+        (<think>...</think>) are dropped. Provider errors propagate to the caller.
+        """
+        stream = create_chat_completion(
+            self.client,
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        in_think = False
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta is not None else None
+            if not text:
+                continue
+            out, rest = "", text
+            while rest:
+                if in_think:
+                    if "</think>" in rest:
+                        rest = rest.split("</think>", 1)[1]
+                        in_think = False
+                    else:
+                        rest = ""
+                elif "<think>" in rest:
+                    before, rest = rest.split("<think>", 1)
+                    out += before
+                    in_think = True
+                else:
+                    out, rest = out + rest, ""
+            if out:
+                yield out
+
     def chat_json(
         self,
         messages: List[Dict[str, str]],

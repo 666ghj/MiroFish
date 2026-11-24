@@ -4,7 +4,7 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300 --keep-alive 5
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --worker-class gthread --threads 8 --timeout 300 --keep-alive 5
     envVars:
       - key: LLM_API_KEY
         sync: false          # set manually in Render dashboard

@@ -25,9 +25,11 @@ def create_chat_completion(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     response_format: Optional[Dict[str, Any]] = None,
+    stream: bool = False,
 ) -> Any:
     """
     Create a chat completion with model-specific request parameters.
+    With stream=True the SDK returns an iterator of chunks instead of one response.
 
     Compatibility strategy:
     - For GPT-5 family, avoid sending temperature by default.
@@ -42,6 +44,9 @@ def create_chat_completion(
 
     if response_format is not None:
         kwargs["response_format"] = response_format
+
+    if stream:
+        kwargs["stream"] = True
 
     gpt5_family = is_gpt5_family(model)
 
