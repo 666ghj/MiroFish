@@ -22,7 +22,7 @@ class Config:
 
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
-    DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
     # JSON settings - disable ASCII escaping so non-ASCII characters render directly
     JSON_AS_ASCII = False
@@ -64,10 +64,15 @@ class Config:
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
 
     @classmethod
-    def validate(cls):
+    def validate(cls) -> list[str]:
         """Validate required configuration. Only LLM_API_KEY is required for the GTM flow."""
-        errors = []
+        errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY is not configured")
         # ZEP_API_KEY is optional — only needed for the legacy OASIS simulation flow
+        if os.environ.get("ZEP_API_URL"):
+            errors.append("ZEP_API_URL is not supported; MiroFish only connects to Zep Cloud")
+        if cls.DEBUG:
+            import warnings
+            warnings.warn("Flask DEBUG mode is enabled. Do not use in production.", RuntimeWarning)
         return errors

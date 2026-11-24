@@ -686,13 +686,21 @@ const startBuildGraph = async () => {
     const response = await buildGraph({ project_id: currentProjectId.value })
     
     if (response.success) {
+      if (response.data.reused && response.data.graph_id) {
+        currentPhase.value = 2
+        buildProgress.value = null
+        const projectResponse = await getProject(currentProjectId.value)
+        if (projectResponse.success) {
+          projectData.value = projectResponse.data
+        }
+        await loadGraph(response.data.graph_id)
+        return
+      }
+
       buildProgress.value.message = 'Graph build task started...'
 
       // Save task_id for polling
       const taskId = response.data.task_id
-
-      // Start graph data polling (independent of task status polling)
-      startGraphPolling()
 
       // Start task status polling
       startPollingTask(taskId)

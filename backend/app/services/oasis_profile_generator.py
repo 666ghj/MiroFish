@@ -16,14 +16,64 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
-
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from ..utils.zep import (
+    call_zep_read_with_retry,
+    get_zep_client,
+    is_retryable_zep_error,
+    normalize_zep_search_query,
+)
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
+
+
+def _coerce_to_str(value: Any) -> str:
+    """Coerce a value to a plain string.
+
+    Handles dict, list, and other non-string types that may be returned
+    by LLM JSON parsing.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ('text', 'value', 'description', 'content', 'summary', 'name'):
+            if key in value:
+                candidate = _coerce_to_str(value[key])
+                if candidate:
+                    return candidate
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        str_items = [_coerce_to_str(item) for item in value]
+        str_items = [item for item in str_items if item]
+        return ', '.join(str_items)
+    return str(value)
+
+
+def _coerce_to_str_list(value: Any) -> List[str]:
+    """Coerce a value to a list of strings.
+
+    Handles nested structures that may be returned by LLM JSON parsing.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        result: List[str] = []
+        for item in value:
+            if isinstance(item, (list, tuple)):
+                result.extend(_coerce_to_str_list(item))
+            else:
+                text = _coerce_to_str(item)
+                if text:
+                    result.append(text)
+        return result
+    text = _coerce_to_str(value)
+    return [text] if text else []
 
 
 @dataclass
@@ -35,7 +85,7 @@ class OasisAgentProfile:
     name: str
     bio: str
     persona: str
-    
+
     # Optional fields - Reddit style
     karma: int = 1000
     
@@ -58,6 +108,18 @@ class OasisAgentProfile:
     
     created_at: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
     
+    def __post_init__(self):
+        """Normalize structured LLM fields once at the profile boundary."""
+        self.bio = _coerce_to_str(self.bio) or self.name
+        self.persona = _coerce_to_str(self.persona) or (
+            f"{self.name} is a participant in social discussions."
+        )
+        self.country = _coerce_to_str(self.country) or None
+        self.profession = _coerce_to_str(self.profession) or None
+        self.gender = _coerce_to_str(self.gender) or None
+        self.mbti = _coerce_to_str(self.mbti) or None
+        self.interested_topics = _coerce_to_str_list(self.interested_topics)
+
     def to_reddit_format(self) -> Dict[str, Any]:
         """Convert to Reddit platform format"""
         profile = {
@@ -205,7 +267,7 @@ class OasisProfileGenerator:
         
         if self.zep_api_key:
             try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
+                self.zep_client = get_zep_client(self.zep_api_key)
             except Exception as e:
                 logger.warning(f"Zep client initialization failed: {e}")
     
@@ -314,57 +376,35 @@ class OasisProfileGenerator:
             logger.debug(f"Skipping Zep retrieval: graph_id is not set")
             return results
         
-        comprehensive_query = t('progress.zepSearchQuery', name=entity_name)
+        comprehensive_query = normalize_zep_search_query(
+            t('progress.zepSearchQuery', name=entity_name)
+        )
         
         def search_edges():
-            """Search edges (facts/relationships) with retries"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
+            """Search edges (facts/relationships), with retries"""
+            return call_zep_read_with_retry(
+                lambda: self.zep_client.graph.search(
                         query=comprehensive_query,
                         graph_id=self.graph_id,
                         limit=30,
                         scope="edges",
                         reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep edge search  attempt {attempt + 1} failed: {str(e)[:80]}, retrying...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep edge search after {max_retries} attempts still failed: {e}")
-            return None
+                ),
+                operation_name=f"profile edge search ({entity.uuid})",
+            )
         
         def search_nodes():
-            """Search nodes (entity summaries) with retries"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
+            """Search nodes (entity summaries), with retries"""
+            return call_zep_read_with_retry(
+                lambda: self.zep_client.graph.search(
                         query=comprehensive_query,
                         graph_id=self.graph_id,
                         limit=20,
                         scope="nodes",
                         reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep node search  attempt {attempt + 1} failed: {str(e)[:80]}, retrying...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep node search after {max_retries} attempts still failed: {e}")
-            return None
+                ),
+                operation_name=f"profile node search ({entity.uuid})",
+            )
         
         try:
             # Run edge and node searches in parallel
@@ -372,9 +412,12 @@ class OasisProfileGenerator:
                 edge_future = executor.submit(search_edges)
                 node_future = executor.submit(search_nodes)
                 
-                # Get result
-                edge_result = edge_future.result(timeout=30)
-                node_result = node_future.result(timeout=30)
+                # Get results
+                # Each request already has the configured HTTP timeout and
+                # typed retry budget. A second hard-coded 30s future timeout
+                # discarded late successes while the executor still waited.
+                edge_result = edge_future.result()
+                node_result = node_future.result()
             
             # Process edge search result
             all_facts = set()
@@ -404,10 +447,10 @@ class OasisProfileGenerator:
             
             logger.info(f"Zep hybrid retrieval completed: {entity_name}, got {len(results['facts'])} facts, {len(results['node_summaries'])} related nodes")
             
-        except concurrent.futures.TimeoutError:
-            logger.warning(f"Zep retrieval timed out ({entity_name})")
         except Exception as e:
-            logger.warning(f"Zep retrieval failed ({entity_name}): {e}")
+            logger.warning(f"Zep search failed ({entity_name}): {e}")
+            if not is_retryable_zep_error(e):
+                raise
         
         return results
     
@@ -527,18 +570,19 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # Lower temperature on each retry
-                    # Do not set max_tokens; let the LLM decide
+                    temperature=0.7 - (attempt * 0.1),  # lower the temperature on each retry
+                    # no max_tokens, so the LLM is not cut off
                 )
                 
-                content = response.choices[0].message.content
+                content = extract_chat_completion_text(response)
                 
                 # Check whether output was truncated (finish_reason is not stop)
                 finish_reason = response.choices[0].finish_reason
@@ -1168,8 +1212,8 @@ Important:
                 "user_id": profile.user_id if profile.user_id is not None else idx,  # Important: must include user_id
                 "username": profile.user_name,
                 "name": profile.name,
-                "bio": profile.bio[:150] if profile.bio else f"{profile.name}",
-                "persona": profile.persona or f"{profile.name} is a participant in social discussions.",
+                "bio": profile.bio[:150],
+                "persona": profile.persona,
                 "karma": profile.karma if profile.karma else 1000,
                 "created_at": profile.created_at,
                 # OASIS required fields - ensure defaults exist

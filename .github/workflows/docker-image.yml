@@ -4,6 +4,15 @@ on:
   push:
     tags: ["*"]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the image (default-branch runs only)
+        required: false
+        default: false
+        type: boolean
+
+env:
+  SHOULD_PUBLISH: ${{ github.event_name == 'push' || (inputs.publish && github.ref_name == github.event.repository.default_branch) }}
 
 permissions:
   contents: read
@@ -23,6 +32,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: env.SHOULD_PUBLISH == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -44,6 +54,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          push: ${{ env.SHOULD_PUBLISH == 'true' }}
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

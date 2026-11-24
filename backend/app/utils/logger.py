@@ -108,18 +108,18 @@ def get_logger(name: str = 'mirofish') -> logging.Logger:
 logger = setup_logger()
 
 
-# Convenience methods
-def debug(msg, *args, **kwargs):
+# Convenience helpers
+def debug(msg: str, *args, **kwargs) -> None:
     logger.debug(msg, *args, **kwargs)
 
-def info(msg, *args, **kwargs):
+def info(msg: str, *args, **kwargs) -> None:
     logger.info(msg, *args, **kwargs)
 
-def warning(msg, *args, **kwargs):
+def warning(msg: str, *args, **kwargs) -> None:
     logger.warning(msg, *args, **kwargs)
 
-def error(msg, *args, **kwargs):
+def error(msg: str, *args, **kwargs) -> None:
     logger.error(msg, *args, **kwargs)
 
-def critical(msg, *args, **kwargs):
+def critical(msg: str, *args, **kwargs) -> None:
     logger.critical(msg, *args, **kwargs)

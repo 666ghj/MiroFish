@@ -1,11 +1,11 @@
-import service, { requestWithRetry } from './index'
+import service from './index'
 
 /**
  * Create simulation
  * @param {Object} data - { project_id, graph_id?, enable_twitter?, enable_reddit? }
  */
 export const createSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/create', data), 3, 1000)
+  return service.post('/api/simulation/create', data)
 }
 
 /**
@@ -13,7 +13,7 @@ export const createSimulation = (data) => {
  * @param {Object} data - { simulation_id, entity_types?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
  */
 export const prepareSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/prepare', data), 3, 1000)
+  return service.post('/api/simulation/prepare', data)
 }
 
 /**
@@ -35,19 +35,21 @@ export const getSimulation = (simulationId) => {
 /**
  * Get Agent Profiles for a simulation
  * @param {string} simulationId
- * @param {string} platform - 'reddit' | 'twitter'
+ * @param {string} [platform] - 'reddit' | 'twitter' (when omitted, the backend picks it from the simulation config)
  */
-export const getSimulationProfiles = (simulationId, platform = 'reddit') => {
-  return service.get(`/api/simulation/${simulationId}/profiles`, { params: { platform } })
+export const getSimulationProfiles = (simulationId, platform) => {
+  const params = platform ? { platform } : {}
+  return service.get(`/api/simulation/${simulationId}/profiles`, { params })
 }
 
 /**
  * Fetch Agent Profiles being generated in real time
  * @param {string} simulationId
- * @param {string} platform - 'reddit' | 'twitter'
+ * @param {string} [platform] - 'reddit' | 'twitter' (when omitted, the backend picks it from the simulation config)
  */
-export const getSimulationProfilesRealtime = (simulationId, platform = 'reddit') => {
-  return service.get(`/api/simulation/${simulationId}/profiles/realtime`, { params: { platform } })
+export const getSimulationProfilesRealtime = (simulationId, platform) => {
+  const params = platform ? { platform } : {}
+  return service.get(`/api/simulation/${simulationId}/profiles/realtime`, { params })
 }
 
 /**
@@ -81,7 +83,7 @@ export const listSimulations = (projectId) => {
  * @param {Object} data - { simulation_id, platform?, max_rounds?, enable_graph_memory_update? }
  */
 export const startSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/start', data), 3, 1000)
+  return service.post('/api/simulation/start', data)
 }
 
 /**
@@ -111,14 +113,14 @@ export const getRunStatusDetail = (simulationId) => {
 /**
  * Get posts from a simulation
  * @param {string} simulationId
- * @param {string} platform - 'reddit' | 'twitter'
- * @param {number} limit - number of results to return
- * @param {number} offset - pagination offset
+ * @param {string} [platform] - 'reddit' | 'twitter' (when omitted, the backend picks it from the simulation config)
+ * @param {number} limit - number of results
+ * @param {number} offset - offset
  */
-export const getSimulationPosts = (simulationId, platform = 'reddit', limit = 50, offset = 0) => {
-  return service.get(`/api/simulation/${simulationId}/posts`, {
-    params: { platform, limit, offset }
-  })
+export const getSimulationPosts = (simulationId, platform, limit = 50, offset = 0) => {
+  const params = { limit, offset }
+  if (platform) params.platform = platform
+  return service.get(`/api/simulation/${simulationId}/posts`, { params })
 }
 
 /**
@@ -173,7 +175,7 @@ export const getEnvStatus = (data) => {
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */
 export const interviewAgents = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/interview/batch', data), 3, 1000)
+  return service.post('/api/simulation/interview/batch', data)
 }
 
 /**

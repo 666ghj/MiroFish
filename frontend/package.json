@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
-    "axios": "^1.14.0",
+    "axios": "^1.18.1",
     "d3": "^7.9.0",
     "vue": "^3.5.24",
     "vue-i18n": "^11.3.0",
@@ -18,6 +18,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
-    "vite": "^7.2.4"
+    "vite": "^7.3.6"
   }
 }

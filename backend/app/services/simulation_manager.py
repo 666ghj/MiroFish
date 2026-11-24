@@ -28,6 +28,7 @@ class SimulationStatus(str, Enum):
     PREPARING = "preparing"
     READY = "ready"
     RUNNING = "running"
+    STOPPING = "stopping"
     PAUSED = "paused"
     STOPPED = "stopped"      # Simulation manually stopped
     COMPLETED = "completed"  # Simulation completed naturally
@@ -58,8 +59,9 @@ class SimulationState:
     entities_count: int = 0
     profiles_count: int = 0
     entity_types: List[str] = field(default_factory=list)
-
+    
     # Config generation info
+    profiles_generated: bool = False
     config_generated: bool = False
     config_reasoning: str = ""
 
@@ -87,6 +89,7 @@ class SimulationState:
             "entities_count": self.entities_count,
             "profiles_count": self.profiles_count,
             "entity_types": self.entity_types,
+            "profiles_generated": self.profiles_generated,
             "config_generated": self.config_generated,
             "config_reasoning": self.config_reasoning,
             "current_round": self.current_round,
@@ -96,6 +99,15 @@ class SimulationState:
             "updated_at": self.updated_at,
             "error": self.error,
         }
+    
+    def get_default_platform(self) -> str:
+        """Return the default platform based on which platforms are enabled"""
+        if self.enable_twitter and self.enable_reddit:
+            return "reddit"  # keep the original default when both are enabled
+        elif self.enable_twitter:
+            return "twitter"
+        else:
+            return "reddit"
 
     def to_simple_dict(self) -> Dict[str, Any]:
         """Simplified state dictionary (for API responses)"""
@@ -107,6 +119,7 @@ class SimulationState:
             "entities_count": self.entities_count,
             "profiles_count": self.profiles_count,
             "entity_types": self.entity_types,
+            "profiles_generated": self.profiles_generated,
             "config_generated": self.config_generated,
             "error": self.error,
         }
@@ -178,6 +191,7 @@ class SimulationManager:
             entities_count=data.get("entities_count", 0),
             profiles_count=data.get("profiles_count", 0),
             entity_types=data.get("entity_types", []),
+            profiles_generated=data.get("profiles_generated", False),
             config_generated=data.get("config_generated", False),
             config_reasoning=data.get("config_reasoning", ""),
             current_round=data.get("current_round", 0),
@@ -265,6 +279,10 @@ class SimulationManager:
 
         try:
             state.status = SimulationStatus.PREPARING
+            state.error = None
+            state.profiles_generated = False
+            state.config_generated = False
+            state.config_reasoning = ""
             self._save_simulation_state(state)
 
             sim_dir = self._get_simulation_dir(simulation_id)
@@ -299,9 +317,9 @@ class SimulationManager:
                 state.status = SimulationStatus.FAILED
                 state.error = "No entities matching the criteria were found. Please verify the graph was built correctly."
                 self._save_simulation_state(state)
-                return state
-
-            # ========== Phase 2: Generate Agent Profiles ==========
+                raise ValueError(state.error)
+            
+            # ========== Stage 2: generate agent profiles ==========
             total_entities = len(filtered.entities)
 
             if progress_callback:
@@ -347,10 +365,11 @@ class SimulationManager:
             )
 
             state.profiles_count = len(profiles)
-
-            # Save profile files
-            # Note: Twitter uses CSV format; Reddit uses JSON format
-            # Reddit profiles are already saved incrementally during generation — save again to ensure completeness
+            state.profiles_generated = len(profiles) > 0
+            self._save_simulation_state(state)
+            
+            # Save profile files (note: Twitter uses CSV, Reddit uses JSON)
+            # Reddit profiles were saved during generation; save again here to ensure completeness
             if progress_callback:
                 progress_callback(
                     "generating_profiles", 95,
@@ -478,18 +497,33 @@ class SimulationManager:
                         simulations.append(state)
 
         return simulations
-
-    def get_profiles(self, simulation_id: str, platform: str = "reddit") -> List[Dict[str, Any]]:
-        """Get Agent Profiles for a simulation"""
+    
+    def get_profiles(self, simulation_id: str, platform: str = None) -> List[Dict[str, Any]]:
+        """Get the agent profiles for a simulation"""
         state = self._load_simulation_state(simulation_id)
         if not state:
-            raise ValueError(f"Simulation does not exist: {simulation_id}")
+            raise ValueError(f"Simulation not found: {simulation_id}")
+
+        if platform is None:
+            platform = state.get_default_platform()
+
+        if platform not in {"twitter", "reddit"}:
+            raise ValueError(f"Unsupported platform: {platform}")
 
         sim_dir = self._get_simulation_dir(simulation_id)
-        profile_path = os.path.join(sim_dir, f"{platform}_profiles.json")
-
+        profile_path = os.path.join(
+            sim_dir,
+            "twitter_profiles.csv" if platform == "twitter" else "reddit_profiles.json",
+        )
+        
         if not os.path.exists(profile_path):
             return []
+
+        if platform == "twitter":
+            import csv
+
+            with open(profile_path, 'r', encoding='utf-8', newline='') as f:
+                return list(csv.DictReader(f))
 
         with open(profile_path, 'r', encoding='utf-8') as f:
             return json.load(f)

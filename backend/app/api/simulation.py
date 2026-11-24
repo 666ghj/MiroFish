@@ -5,6 +5,7 @@ Step2: Zep entity reading and filtering, OASIS simulation preparation and execut
 
 import os
 import traceback
+from contextlib import nullcontext
 from flask import request, jsonify, send_file
 
 from . import simulation_bp
@@ -12,17 +13,46 @@ from ..config import Config
 from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
-from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.simulation_runner import (
+    SimulationRunner,
+    RunnerStatus,
+    SimulationStopPending,
+)
+from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
+from ..utils.zep_lifecycle import get_graph_readers, graph_lifecycle_lock
 from ..models.project import ProjectManager
 
 logger = get_logger('mirofish.api.simulation')
 
 
-# Interview prompt optimization prefix
-# Adding this prefix prevents the Agent from calling tools and forces a plain-text reply
-INTERVIEW_PROMPT_PREFIX = "Drawing on your persona, all past memories and actions, reply to me directly in plain text without calling any tools: "
+def _get_default_platform(simulation_id: str) -> str:
+    """
+    Return the default platform from the simulation config
+
+    Reads the enable_twitter / enable_reddit settings from SimulationState
+    and returns the platform the simulation actually uses, instead of a hardcoded 'reddit'.
+
+    Args:
+        simulation_id: simulation ID
+
+    Returns:
+        'twitter' or 'reddit'
+    """
+    try:
+        manager = SimulationManager()
+        state = manager._load_simulation_state(simulation_id)
+        if state:
+            return state.get_default_platform()
+    except Exception:
+        pass
+    return "reddit"
+
+
+# Interview prompt prefix
+# This prefix stops the agent from calling tools so it replies directly in text
+INTERVIEW_PROMPT_PREFIX = "Based on your persona and all of your past memories and actions, reply to me directly in text without calling any tools: "
 
 
 def optimize_interview_prompt(prompt: str) -> str:
@@ -589,12 +619,17 @@ def prepare_simulation():
                     progress_callback=progress_callback,
                     parallel_profile_count=parallel_profile_count
                 )
-                
-                # Task complete
-                task_manager.complete_task(
-                    task_id,
-                    result=result_state.to_simple_dict()
-                )
+
+                if result_state.status == SimulationStatus.FAILED:
+                    task_manager.fail_task(
+                        task_id,
+                        result_state.error or "Simulation preparation failed"
+                    )
+                else:
+                    task_manager.complete_task(
+                        task_id,
+                        result=result_state.to_simple_dict()
+                    )
                 
             except Exception as e:
                 logger.error(f"Failed to prepare simulation: {str(e)}")
@@ -996,8 +1031,8 @@ def get_simulation_profiles(simulation_id: str):
         platform: Platform type (reddit/twitter, default reddit)
     """
     try:
-        platform = request.args.get('platform', 'reddit')
-        
+        platform = request.args.get('platform') or _get_default_platform(simulation_id)
+
         manager = SimulationManager()
         profiles = manager.get_profiles(simulation_id, platform=platform)
         
@@ -1058,9 +1093,9 @@ def get_simulation_profiles_realtime(simulation_id: str):
     from datetime import datetime
     
     try:
-        platform = request.args.get('platform', 'reddit')
-        
-        # Get simulation directory
+        platform = request.args.get('platform') or _get_default_platform(simulation_id)
+
+        # Get the simulation directory
         sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
 
         if not os.path.exists(sim_dir):
@@ -1100,7 +1135,9 @@ def get_simulation_profiles_realtime(simulation_id: str):
         # Check whether generation is in progress (determined via state.json)
         is_generating = False
         total_expected = None
-
+        status = None
+        error = None
+        
         state_file = os.path.join(sim_dir, "state.json")
         if os.path.exists(state_file):
             try:
@@ -1109,6 +1146,7 @@ def get_simulation_profiles_realtime(simulation_id: str):
                     status = state_data.get("status", "")
                     is_generating = status == "preparing"
                     total_expected = state_data.get("entities_count")
+                    error = state_data.get("error")
             except Exception:
                 pass
         
@@ -1120,6 +1158,8 @@ def get_simulation_profiles_realtime(simulation_id: str):
                 "count": len(profiles),
                 "total_expected": total_expected,
                 "is_generating": is_generating,
+                "status": status,
+                "error": error,
                 "file_exists": file_exists,
                 "file_modified_at": file_modified_at,
                 "profiles": profiles
@@ -1195,6 +1235,9 @@ def get_simulation_config_realtime(simulation_id: str):
         # Check whether generation is in progress (determined via state.json)
         is_generating = False
         generation_stage = None
+        status = None
+        error = None
+        profiles_generated = False
         config_generated = False
 
         state_file = os.path.join(sim_dir, "state.json")
@@ -1203,17 +1246,21 @@ def get_simulation_config_realtime(simulation_id: str):
                 with open(state_file, 'r', encoding='utf-8') as f:
                     state_data = json.load(f)
                     status = state_data.get("status", "")
+                    error = state_data.get("error")
                     is_generating = status == "preparing"
+                    profiles_generated = state_data.get("profiles_generated", False)
                     config_generated = state_data.get("config_generated", False)
 
                     # Determine the current stage
                     if is_generating:
-                        if state_data.get("profiles_generated", False):
+                        if profiles_generated:
                             generation_stage = "generating_config"
                         else:
                             generation_stage = "generating_profiles"
                     elif status == "ready":
                         generation_stage = "completed"
+                    elif status == "failed":
+                        generation_stage = "failed"
             except Exception:
                 pass
 
@@ -1223,7 +1270,10 @@ def get_simulation_config_realtime(simulation_id: str):
             "file_exists": file_exists,
             "file_modified_at": file_modified_at,
             "is_generating": is_generating,
+            "status": status,
+            "error": error,
             "generation_stage": generation_stage,
+            "profiles_generated": profiles_generated,
             "config_generated": config_generated,
             "config": config
         }
@@ -1500,9 +1550,19 @@ def start_simulation():
             }), 400
 
         platform = data.get('platform', 'parallel')
-        max_rounds = data.get('max_rounds')  # optional: maximum simulation rounds
-        enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # optional: enable graph memory update
-        force = data.get('force', False)  # optional: force restart
+        max_rounds = data.get('max_rounds')  # optional: max simulation rounds
+        enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # optional: enable graph memory updates
+        force = data.get('force', False)  # optional: force a restart
+        if not isinstance(enable_graph_memory_update, bool):
+            return jsonify({
+                "success": False,
+                "error": "enable_graph_memory_update must be a JSON boolean",
+            }), 400
+        if not isinstance(force, bool):
+            return jsonify({
+                "success": False,
+                "error": "force must be a JSON boolean",
+            }), 400
 
         # Validate max_rounds parameter
         if max_rounds is not None:
@@ -1543,31 +1603,67 @@ def start_simulation():
             is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
 
             if is_prepared:
-                # Preparation is complete; check whether a process is already running
-                if state.status == SimulationStatus.RUNNING:
-                    # Check whether the simulation process is actually running
-                    run_state = SimulationRunner.get_run_state(simulation_id)
-                    if run_state and run_state.runner_status.value == "running":
-                        # Process is indeed running
-                        if force:
-                            # Force mode: stop the running simulation
-                            logger.info(f"Force mode: stopping running simulation {simulation_id}")
-                            try:
-                                SimulationRunner.stop_simulation(simulation_id)
-                            except Exception as e:
-                                logger.warning(f"Warning while stopping simulation: {str(e)}")
-                        else:
-                            return jsonify({
-                                "success": False,
-                                "error": t('api.simRunningForceHint')
-                            }), 400
+                run_state = SimulationRunner.get_run_state(simulation_id)
+                updater = ZepGraphMemoryManager.get_updater(simulation_id)
+                needs_finalization = bool(
+                    run_state
+                    and run_state.runner_status in {
+                        RunnerStatus.RUNNING,
+                        RunnerStatus.PAUSED,
+                        RunnerStatus.STOPPING,
+                        RunnerStatus.FAILED,
+                    }
+                    and (
+                        run_state.runner_status
+                        in {
+                            RunnerStatus.RUNNING,
+                            RunnerStatus.PAUSED,
+                            RunnerStatus.STOPPING,
+                        }
+                        or updater is not None
+                    )
+                )
+                if needs_finalization:
+                    if not force:
+                        return jsonify({
+                            "success": False,
+                            "error": t('api.simRunningForceHint')
+                        }), 400
+                    logger.info(f"Force mode: finishing termination of the previous simulation first {simulation_id}")
+                    try:
+                        stopped = SimulationRunner.stop_simulation(simulation_id)
+                    except SimulationStopPending as error:
+                        return jsonify({
+                            "success": False,
+                            "pending": True,
+                            "error": str(error),
+                        }), 409
+                    except Exception as error:
+                        return jsonify({
+                            "success": False,
+                            "error": (
+                                "Cannot restart until the previous simulation "
+                                f"finalizes safely: {error}"
+                            ),
+                        }), 409
+                    if stopped.runner_status != RunnerStatus.STOPPED:
+                        return jsonify({
+                            "success": False,
+                            "error": "Previous simulation did not reach STOPPED",
+                        }), 409
 
                 # If force mode, clean up run logs
                 if force:
                     logger.info(f"Force mode: cleaning simulation logs {simulation_id}")
                     cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
                     if not cleanup_result.get("success"):
-                        logger.warning(f"Warning during log cleanup: {cleanup_result.get('errors')}")
+                        return jsonify({
+                            "success": False,
+                            "error": (
+                                "Failed to clean previous simulation logs: "
+                                f"{cleanup_result.get('errors')}"
+                            ),
+                        }), 500
                     force_restarted = True
 
                 # Process does not exist or has ended; reset status to ready
@@ -1584,34 +1680,82 @@ def start_simulation():
         # Fetch graph ID (for graph memory update)
         graph_id = None
         if enable_graph_memory_update:
-            # Get graph_id from simulation state or project
-            graph_id = state.graph_id
-            if not graph_id:
-                # Try to get from the project
-                project = ProjectManager.get_project(state.project_id)
-                if project:
-                    graph_id = project.graph_id
-            
+            # The project is authoritative. A graph ID copied into an older
+            # simulation can outlive a project reset/rebuild and must not be
+            # used to resurrect writes to a deleted graph.
+            project = ProjectManager.get_project(state.project_id)
+            graph_id = project.graph_id if project else None
             if not graph_id:
                 return jsonify({
                     "success": False,
                     "error": t('api.graphIdRequiredForMemory')
                 }), 400
-            
-            logger.info(f"Enabling graph memory update: simulation_id={simulation_id}, graph_id={graph_id}")
 
-        # Start simulation
-        run_state = SimulationRunner.start_simulation(
-            simulation_id=simulation_id,
-            platform=platform,
-            max_rounds=max_rounds,
-            enable_graph_memory_update=enable_graph_memory_update,
-            graph_id=graph_id
+        graph_guard = (
+            graph_lifecycle_lock(graph_id)
+            if enable_graph_memory_update
+            else nullcontext()
         )
-        
-        # Update simulation status
-        state.status = SimulationStatus.RUNNING
-        manager._save_simulation_state(state)
+        with graph_guard:
+            if enable_graph_memory_update:
+                # Re-read both references under the same per-graph lock used
+                # by reset/delete. Keep the lock through updater creation in
+                # start_simulation so check -> claim is atomic.
+                refreshed_state = manager.get_simulation(simulation_id)
+                refreshed_project = (
+                    ProjectManager.get_project(refreshed_state.project_id)
+                    if refreshed_state
+                    else None
+                )
+                current_graph_id = (
+                    refreshed_project.graph_id if refreshed_project else None
+                )
+                if current_graph_id != graph_id:
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "The project graph changed while the simulation "
+                            "was starting; retry after refreshing the project"
+                        ),
+                    }), 409
+                if (
+                    refreshed_state.graph_id
+                    and refreshed_state.graph_id != current_graph_id
+                ):
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "The simulation references an older graph; "
+                            "prepare it again before enabling graph memory"
+                        ),
+                    }), 409
+                active_reports = get_graph_readers(graph_id)
+                if active_reports:
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "A report is currently reading this graph; wait "
+                            "for report generation to finish before enabling "
+                            "graph memory updates"
+                        ),
+                        "active_reports": active_reports,
+                    }), 409
+                state = refreshed_state
+                logger.info(
+                    "Graph memory updates enabled: simulation_id=%s, graph_id=%s",
+                    simulation_id,
+                    graph_id,
+                )
+
+            # Start the simulation. With graph writes enabled, graph_guard stays held until the updater
+            # claim and process resources are fully published.
+            run_state = SimulationRunner.start_simulation(
+                simulation_id=simulation_id,
+                platform=platform,
+                max_rounds=max_rounds,
+                enable_graph_memory_update=enable_graph_memory_update,
+                graph_id=graph_id
+            )
         
         response_data = run_state.to_dict()
         if max_rounds:
@@ -1677,14 +1821,22 @@ def stop_simulation():
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         if state:
-            state.status = SimulationStatus.PAUSED
+            state.status = SimulationStatus.STOPPED
+            state.error = None
             manager._save_simulation_state(state)
         
         return jsonify({
             "success": True,
             "data": run_state.to_dict()
         })
-        
+
+    except SimulationStopPending as e:
+        return jsonify({
+            "success": False,
+            "pending": True,
+            "error": str(e),
+        }), 202
+
     except ValueError as e:
         return jsonify({
             "success": False,
@@ -1693,6 +1845,14 @@ def stop_simulation():
         
     except Exception as e:
         logger.error(f"Failed to stop simulation: {str(e)}")
+        simulation_id = (request.get_json(silent=True) or {}).get('simulation_id')
+        if simulation_id:
+            manager = SimulationManager()
+            state = manager.get_simulation(simulation_id)
+            if state:
+                state.status = SimulationStatus.FAILED
+                state.error = str(e)
+                manager._save_simulation_state(state)
         return jsonify({
             "success": False,
             "error": str(e),
@@ -1997,15 +2157,15 @@ def get_simulation_posts(simulation_id: str):
     Returns a list of posts (read from the SQLite database).
     """
     try:
-        platform = request.args.get('platform', 'reddit')
+        platform = request.args.get('platform') or _get_default_platform(simulation_id)
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
-        
+
         sim_dir = os.path.join(
             os.path.dirname(__file__),
             f'../../uploads/simulations/{simulation_id}'
         )
-        
+
         db_file = f"{platform}_simulation.db"
         db_path = os.path.join(sim_dir, db_file)
         
@@ -2065,24 +2225,26 @@ def get_simulation_posts(simulation_id: str):
 @simulation_bp.route('/<simulation_id>/comments', methods=['GET'])
 def get_simulation_comments(simulation_id: str):
     """
-    Get comments from the simulation (Reddit only).
+    Get comments from a simulation
 
     Query parameters:
-        post_id: Filter by post ID (optional)
-        limit: Number to return
-        offset: Offset
+        platform: platform type (twitter/reddit, chosen from the simulation config by default)
+        post_id: filter by post ID (optional)
+        limit: number of results
+        offset: offset
     """
     try:
+        platform = request.args.get('platform') or _get_default_platform(simulation_id)
         post_id = request.args.get('post_id')
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
-        
+
         sim_dir = os.path.join(
             os.path.dirname(__file__),
             f'../../uploads/simulations/{simulation_id}'
         )
         
-        db_path = os.path.join(sim_dir, "reddit_simulation.db")
+        db_path = os.path.join(sim_dir, f"{platform}_simulation.db")
         
         if not os.path.exists(db_path):
             return jsonify({

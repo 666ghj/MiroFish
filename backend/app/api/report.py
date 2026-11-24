@@ -12,10 +12,17 @@ from . import report_bp
 from ..config import Config
 from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
 from ..services.simulation_manager import SimulationManager
-from ..models.project import ProjectManager
+from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
+from ..models.project import ProjectManager, ProjectStatus
 from ..models.task import TaskManager, TaskStatus
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
+from ..utils.zep_lifecycle import (
+    graph_lifecycle_lock,
+    register_graph_reader,
+    unregister_graph_reader,
+)
 
 logger = get_logger('mirofish.api.report')
 
@@ -58,7 +65,12 @@ def generate_report():
             }), 400
 
         force_regenerate = data.get('force_regenerate', False)
-
+        if not isinstance(force_regenerate, bool):
+            return jsonify({
+                "success": False,
+                "error": "force_regenerate must be a JSON boolean",
+            }), 400
+        
         # Get simulation info
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
@@ -69,20 +81,40 @@ def generate_report():
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
 
-        # Check if a report already exists
-        if not force_regenerate:
-            existing_report = ReportManager.get_report_by_simulation(simulation_id)
-            if existing_report and existing_report.status == ReportStatus.COMPLETED:
-                return jsonify({
-                    "success": True,
-                    "data": {
-                        "simulation_id": simulation_id,
-                        "report_id": existing_report.report_id,
-                        "status": "completed",
-                        "message": t('api.reportAlreadyExists'),
-                        "already_generated": True
-                    }
-                })
+        run_state = SimulationRunner.get_run_state(simulation_id)
+        updater = ZepGraphMemoryManager.get_updater(simulation_id)
+        active_statuses = {
+            RunnerStatus.STARTING,
+            RunnerStatus.RUNNING,
+            RunnerStatus.PAUSED,
+            RunnerStatus.STOPPING,
+        }
+        if updater is not None or (
+            run_state is not None and run_state.runner_status in active_statuses
+        ):
+            return jsonify({
+                "success": False,
+                "error": (
+                    "Simulation or Zep graph ingestion is still active; "
+                    "wait for a terminal run status before generating a report"
+                ),
+                "ingestion_pending": updater is not None,
+            }), 409
+        successful_terminal_statuses = {
+            RunnerStatus.COMPLETED,
+            RunnerStatus.STOPPED,
+        }
+        if (
+            run_state is None
+            or run_state.runner_status not in successful_terminal_statuses
+        ):
+            return jsonify({
+                "success": False,
+                "error": (
+                    "A successfully completed or stopped simulation is required "
+                    "before generating a report"
+                ),
+            }), 409
 
         # Get project info
         project = ProjectManager.get_project(state.project_id)
@@ -91,14 +123,28 @@ def generate_report():
                 "success": False,
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
+        
+        if project.status != ProjectStatus.GRAPH_COMPLETED:
+            return jsonify({
+                "success": False,
+                "error": "The project graph must be completely built before reporting",
+            }), 409
 
-        graph_id = state.graph_id or project.graph_id
+        graph_id = project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
                 "error": t('api.missingGraphIdEnsure')
             }), 400
-
+        if state.graph_id and state.graph_id != graph_id:
+            return jsonify({
+                "success": False,
+                "error": (
+                    "The simulation references an older graph; prepare it "
+                    "again before generating a report"
+                ),
+            }), 409
+        
         simulation_requirement = project.simulation_requirement
         if not simulation_requirement:
             return jsonify({
@@ -109,76 +155,149 @@ def generate_report():
         # Pre-generate report_id so it can be returned to the frontend immediately
         import uuid
         report_id = f"report_{uuid.uuid4().hex[:12]}"
-
-        # Create async task
-        task_manager = TaskManager()
-        task_id = task_manager.create_task(
-            task_type="report_generate",
-            metadata={
-                "simulation_id": simulation_id,
-                "graph_id": graph_id,
-                "report_id": report_id
-            }
-        )
-
-        # Capture locale before spawning background thread
-        current_locale = get_locale()
-
-        # Define background task
-        def run_generate():
-            set_locale(current_locale)
-            try:
-                task_manager.update_task(
-                    task_id,
-                    status=TaskStatus.PROCESSING,
-                    progress=0,
-                    message=t('api.initReportAgent')
+        
+        # Register the background report as a graph reader under the same lock
+        # used by graph deletion and updater startup. A lock itself cannot be
+        # acquired in this request thread and released by the worker, so the
+        # durable reader registration is the cross-thread lease.
+        with graph_lifecycle_lock(graph_id):
+            refreshed_state = manager.get_simulation(simulation_id)
+            refreshed_project = (
+                ProjectManager.get_project(refreshed_state.project_id)
+                if refreshed_state
+                else None
+            )
+            refreshed_run_state = SimulationRunner.get_run_state(simulation_id)
+            refreshed_updater = ZepGraphMemoryManager.get_updater(simulation_id)
+            if (
+                refreshed_state is None
+                or refreshed_project is None
+                or refreshed_project.graph_id != graph_id
+                or refreshed_project.status != ProjectStatus.GRAPH_COMPLETED
+                or (
+                    refreshed_state.graph_id
+                    and refreshed_state.graph_id != graph_id
                 )
+            ):
+                return jsonify({
+                    "success": False,
+                    "error": "The project graph changed while reporting was starting",
+                }), 409
+            if refreshed_updater is not None or (
+                refreshed_run_state is not None
+                and refreshed_run_state.runner_status in active_statuses
+            ):
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Simulation or Zep graph ingestion became active; "
+                        "retry after it reaches a terminal state"
+                    ),
+                    "ingestion_pending": refreshed_updater is not None,
+                }), 409
+            if (
+                refreshed_run_state is None
+                or refreshed_run_state.runner_status
+                not in successful_terminal_statuses
+            ):
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "A successfully completed or stopped simulation is "
+                        "required before generating a report"
+                    ),
+                }), 409
 
-                # Create Report Agent
-                agent = ReportAgent(
-                    graph_id=graph_id,
-                    simulation_id=simulation_id,
-                    simulation_requirement=simulation_requirement
+            # Cached-report reuse is now part of the same atomic barrier, so a
+            # concurrent rerun cannot make the returned report stale between
+            # the status check and response.
+            if not force_regenerate:
+                existing_report = ReportManager.get_report_by_simulation(
+                    simulation_id
                 )
+                if (
+                    existing_report
+                    and existing_report.status == ReportStatus.COMPLETED
+                ):
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "simulation_id": simulation_id,
+                            "report_id": existing_report.report_id,
+                            "status": "completed",
+                            "message": t('api.reportAlreadyExists'),
+                            "already_generated": True
+                        }
+                    })
 
-                # Progress callback
-                def progress_callback(stage, progress, message):
+            task_manager = TaskManager()
+            task_id = task_manager.create_task(
+                task_type="report_generate",
+                metadata={
+                    "simulation_id": simulation_id,
+                    "graph_id": graph_id,
+                    "report_id": report_id
+                }
+            )
+            current_locale = get_locale()
+            register_graph_reader(graph_id, report_id)
+
+            def run_generate():
+                set_locale(current_locale)
+                try:
                     task_manager.update_task(
                         task_id,
-                        progress=progress,
-                        message=f"[{stage}] {message}"
+                        status=TaskStatus.PROCESSING,
+                        progress=0,
+                        message=t('api.initReportAgent')
                     )
 
-                # Generate report (pass in pre-generated report_id)
-                report = agent.generate_report(
-                    progress_callback=progress_callback,
-                    report_id=report_id
-                )
-
-                # Save report
-                ReportManager.save_report(report)
-
-                if report.status == ReportStatus.COMPLETED:
-                    task_manager.complete_task(
-                        task_id,
-                        result={
-                            "report_id": report.report_id,
-                            "simulation_id": simulation_id,
-                            "status": "completed"
-                        }
+                    agent = ReportAgent(
+                        graph_id=graph_id,
+                        simulation_id=simulation_id,
+                        simulation_requirement=simulation_requirement
                     )
-                else:
-                    task_manager.fail_task(task_id, report.error or t('api.reportGenerateFailed'))
 
-            except Exception as e:
-                logger.error(f"Report generation failed: {str(e)}")
-                task_manager.fail_task(task_id, str(e))
+                    def progress_callback(stage, progress, message):
+                        task_manager.update_task(
+                            task_id,
+                            progress=progress,
+                            message=f"[{stage}] {message}"
+                        )
 
-        # Start background thread
-        thread = threading.Thread(target=run_generate, daemon=True)
-        thread.start()
+                    report = agent.generate_report(
+                        progress_callback=progress_callback,
+                        report_id=report_id
+                    )
+                    ReportManager.save_report(report)
 
+                    if report.status == ReportStatus.COMPLETED:
+                        task_manager.complete_task(
+                            task_id,
+                            result={
+                                "report_id": report.report_id,
+                                "simulation_id": simulation_id,
+                                "status": "completed"
+                            }
+                        )
+                    else:
+                        task_manager.fail_task(
+                            task_id,
+                            report.error or t('api.reportGenerateFailed')
+                        )
+                except Exception as e:
+                    logger.error(f"Report generation failed: {str(e)}")
+                    task_manager.fail_task(task_id, str(e))
+                finally:
+                    unregister_graph_reader(graph_id, report_id)
+
+            try:
+                thread = threading.Thread(target=run_generate, daemon=True)
+                thread.start()
+            except Exception:
+                unregister_graph_reader(graph_id, report_id)
+                raise
+        
         return jsonify({
             "success": True,
             "data": {

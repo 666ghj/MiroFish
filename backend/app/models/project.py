@@ -43,8 +43,10 @@ class Project:
     # Graph information (populated after endpoint 2 completes)
     graph_id: Optional[str] = None
     graph_build_task_id: Optional[str] = None
-
-    # Configuration
+    zep_batch_id: Optional[str] = None
+    zep_batch_operation_id: Optional[str] = None
+    
+    # Config
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
@@ -66,6 +68,8 @@ class Project:
             "analysis_summary": self.analysis_summary,
             "graph_id": self.graph_id,
             "graph_build_task_id": self.graph_build_task_id,
+            "zep_batch_id": self.zep_batch_id,
+            "zep_batch_operation_id": self.zep_batch_operation_id,
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
@@ -91,6 +95,8 @@ class Project:
             analysis_summary=data.get('analysis_summary'),
             graph_id=data.get('graph_id'),
             graph_build_task_id=data.get('graph_build_task_id'),
+            zep_batch_id=data.get('zep_batch_id'),
+            zep_batch_operation_id=data.get('zep_batch_operation_id'),
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
@@ -195,7 +201,7 @@ class ProjectManager:
         return Project.from_dict(data)
 
     @classmethod
-    def list_projects(cls, limit: int = 50) -> List[Project]:
+    def list_projects(cls, limit: Optional[int] = 50) -> List[Project]:
         """
         List all projects
 
@@ -215,9 +221,19 @@ class ProjectManager:
 
         # Sort by creation time in descending order
         projects.sort(key=lambda p: p.created_at, reverse=True)
+        
+        return projects if limit is None else projects[:limit]
 
-        return projects[:limit]
+    @classmethod
+    def find_projects_by_graph_id(cls, graph_id: str) -> List[Project]:
+        """Return every persisted project that references a Cloud graph."""
 
+        return [
+            project
+            for project in cls.list_projects(limit=None)
+            if project.graph_id == graph_id
+        ]
+    
     @classmethod
     def delete_project(cls, project_id: str) -> bool:
         """

@@ -513,15 +513,16 @@ const fetchRunStatus = async () => {
       
       // Detect whether the simulation has completed via runner_status or platform completion state
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
+      const isFailed = data.runner_status === 'failed'
       
-      // Extra check: the platform may report completion before the backend updates runner_status
-      // Determine this through twitter_completed and reddit_completed
-      const platformsCompleted = checkPlatformsCompleted(data)
-      
-      if (isCompleted || platformsCompleted) {
-        if (platformsCompleted && !isCompleted) {
-          addLog(t('log.allPlatformsCompleted'))
-        }
+      // runner_status is authoritative because the backend only publishes a
+      // terminal state after the Zep ingestion barrier has completed.
+      if (isFailed) {
+        addLog(t('log.simFailed') + (data.error ? `: ${data.error}` : ''))
+        phase.value = 2
+        stopPolling()
+        emit('update-status', 'error')
+      } else if (isCompleted) {
         addLog(t('log.simCompleted'))
         phase.value = 2
         stopPolling()

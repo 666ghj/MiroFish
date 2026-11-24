@@ -12,14 +12,19 @@ import time
 import json
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
-
-from zep_cloud.client import Zep
+from zep_cloud import NotFoundError
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
 from ..utils.locale import get_locale, t
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from ..utils.zep import (
+    call_zep_read_with_retry,
+    get_zep_client,
+    normalize_zep_search_limit,
+    normalize_zep_search_query,
+)
 
 logger = get_logger('mirofish.zep_tools')
 
@@ -426,9 +431,9 @@ class ZepToolsService:
         self.api_key = api_key or Config.ZEP_API_KEY
         if not self.api_key:
             raise ValueError("ZEP_API_KEY is not configured")
-
-        self.client = Zep(api_key=self.api_key)
-        # LLM client used by InsightForge to generate sub-queries
+        
+        self.client = get_zep_client(self.api_key)
+        # LLM client used by InsightForge to generate sub-questions
         self._llm_client = llm_client
         logger.info(t("console.zepToolsInitialized"))
     
@@ -440,26 +445,14 @@ class ZepToolsService:
         return self._llm_client
     
     def _call_with_retry(self, func, operation_name: str, max_retries: int = None):
-        """API call with retry mechanism"""
-        max_retries = max_retries or self.MAX_RETRIES
-        last_exception = None
-        delay = self.RETRY_DELAY
+        """Retry one safe read using typed Zep/HTTPX error classification."""
 
-        for attempt in range(max_retries):
-            try:
-                return func()
-            except Exception as e:
-                last_exception = e
-                if attempt < max_retries - 1:
-                    logger.warning(
-                        t("console.zepRetryAttempt", operation=operation_name, attempt=attempt + 1, error=str(e)[:100], delay=f"{delay:.1f}")
-                    )
-                    time.sleep(delay)
-                    delay *= 2
-                else:
-                    logger.error(t("console.zepAllRetriesFailed", operation=operation_name, retries=max_retries, error=str(e)))
-        
-        raise last_exception
+        return call_zep_read_with_retry(
+            func,
+            operation_name=operation_name,
+            max_attempts=max_retries or self.MAX_RETRIES,
+            initial_delay=self.RETRY_DELAY,
+        )
     
     def search_graph(
         self, 
@@ -485,13 +478,15 @@ class ZepToolsService:
         """
         logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
         
-        # Attempt to use the Zep Cloud Search API
+        zep_query = normalize_zep_search_query(query)
+        zep_limit = normalize_zep_search_limit(limit)
+
         try:
             search_results = self._call_with_retry(
                 func=lambda: self.client.graph.search(
                     graph_id=graph_id,
-                    query=query,
-                    limit=limit,
+                    query=zep_query,
+                    limit=zep_limit,
                     scope=scope,
                     reranker="cross_encoder"
                 ),
@@ -539,9 +534,10 @@ class ZepToolsService:
             )
             
         except Exception as e:
-            logger.warning(t("console.zepSearchApiFallback", error=str(e)))
-            # Fallback: use local keyword matching search
-            return self._local_search(graph_id, query, limit, scope)
+            # Authentication, invalid input, missing graphs, and exhausted
+            # transient failures must remain visible to the report workflow.
+            logger.error(t("console.zepSearchApiFallback", error=str(e)))
+            raise
     
     def _local_search(
         self, 
@@ -741,9 +737,11 @@ class ZepToolsService:
                 summary=node.summary or "",
                 attributes=node.attributes or {}
             )
+        except NotFoundError:
+            return None
         except Exception as e:
             logger.error(t("console.fetchNodeDetailFailed", error=str(e)))
-            return None
+            raise
     
     def get_node_edges(self, graph_id: str, node_uuid: str) -> List[EdgeInfo]:
         """
@@ -774,8 +772,8 @@ class ZepToolsService:
             return result
             
         except Exception as e:
-            logger.warning(t("console.fetchNodeEdgesFailed", error=str(e)))
-            return []
+            logger.error(t("console.fetchNodeEdgesFailed", error=str(e)))
+            raise
     
     def get_entities_by_type(
         self, 

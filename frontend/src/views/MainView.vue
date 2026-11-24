@@ -246,7 +246,6 @@ const loadProject = async () => {
       } else if (res.data.status === 'graph_building' && res.data.graph_build_task_id) {
         currentPhase.value = 1
         startPollingTask(res.data.graph_build_task_id)
-        startGraphPolling()
       } else if (res.data.status === 'graph_completed' && res.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(res.data.graph_id)
@@ -281,8 +280,18 @@ const startBuildGraph = async () => {
     
     const res = await buildGraph({ project_id: currentProjectId.value })
     if (res.success) {
+      if (res.data.reused && res.data.graph_id) {
+        currentPhase.value = 2
+        buildProgress.value = null
+        const projectRes = await getProject(currentProjectId.value)
+        if (projectRes.success) {
+          projectData.value = projectRes.data
+        }
+        await loadGraph(res.data.graph_id)
+        return
+      }
+
       addLog(`Graph build task started. Task ID: ${res.data.task_id}`)
-      startGraphPolling()
       startPollingTask(res.data.task_id)
     } else {
       error.value = res.error

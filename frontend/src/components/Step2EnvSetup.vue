@@ -740,7 +740,15 @@ const addLog = (msg) => {
   emit('add-log', msg)
 }
 
-// Handle start simulation button click
+const handlePrepareFailure = (message) => {
+  stopPolling()
+  stopProfilesPolling()
+  stopConfigPolling()
+  addLog(t('log.prepareFailedWithError', { error: message || t('common.unknownError') }))
+  emit('update-status', 'error')
+}
+
+// Handle the start-simulation button click
 const handleStartSimulation = () => {
   // Build params to pass to parent component
   const params = {}
@@ -898,9 +906,7 @@ const pollPrepareStatus = async () => {
         stopProfilesPolling()
         await loadPreparedData()
       } else if (data.status === 'failed') {
-        addLog(t('log.prepareFailedWithError', { error: data.error || t('common.unknownError') }))
-        stopPolling()
-        stopProfilesPolling()
+        handlePrepareFailure(data.error)
       }
     }
   } catch (err) {
@@ -912,7 +918,7 @@ const fetchProfilesRealtime = async () => {
   if (!props.simulationId) return
   
   try {
-    const res = await getSimulationProfilesRealtime(props.simulationId, 'reddit')
+    const res = await getSimulationProfilesRealtime(props.simulationId)
     
     if (res.success && res.data) {
       const prevCount = profiles.value.length
@@ -972,6 +978,11 @@ const fetchConfigRealtime = async () => {
     
     if (res.success && res.data) {
       const data = res.data
+
+      if (data.status === 'failed' || data.error) {
+        handlePrepareFailure(data.error)
+        return
+      }
       
       // Output config generation stage logs without duplication
       if (data.generation_stage && data.generation_stage !== lastLoggedConfigStage) {
@@ -1032,29 +1043,36 @@ const loadPreparedData = async () => {
   try {
     const res = await getSimulationConfigRealtime(props.simulationId)
     if (res.success && res.data) {
-      if (res.data.config_generated && res.data.config) {
-        simulationConfig.value = res.data.config
+      const configState = res.data
+
+      if (configState.status === 'failed' || configState.error) {
+        handlePrepareFailure(configState.error)
+        return
+      }
+
+      if (configState.config_generated && configState.config) {
+        simulationConfig.value = configState.config
         addLog(t('log.configLoadSuccess'))
 
-        // Show detailed config summary
-        if (res.data.summary) {
-          addLog(t('log.configSummaryAgents', { count: res.data.summary.total_agents }))
-          addLog(t('log.configSummaryHours', { hours: res.data.summary.simulation_hours }))
-          addLog(t('log.configSummaryPostsAlt', { count: res.data.summary.initial_posts_count }))
+        // Show the detailed config summary
+        if (configState.summary) {
+          addLog(t('log.configSummaryAgents', { count: configState.summary.total_agents }))
+          addLog(t('log.configSummaryHours', { hours: configState.summary.simulation_hours }))
+          addLog(t('log.configSummaryPostsAlt', { count: configState.summary.initial_posts_count }))
         }
 
         addLog(t('log.envSetupComplete'))
         phase.value = 4
         emit('update-status', 'completed')
-      } else {
-        // Config has not been generated yet, start polling
+      } else if (configState.is_generating) {
         addLog(t('log.configGenerating'))
         startConfigPolling()
+      } else {
+        handlePrepareFailure(t('log.configNotGenerating'))
       }
     }
   } catch (err) {
-    addLog(t('log.loadConfigFailed', { error: err.message }))
-    emit('update-status', 'error')
+    handlePrepareFailure(t('log.loadConfigFailed', { error: err.message }))
   }
 }
 

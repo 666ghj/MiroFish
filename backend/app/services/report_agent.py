@@ -671,6 +671,12 @@ Your task is to:
    - Do not add information that does not exist in the simulation
    - If information on a certain aspect is insufficient, state so honestly
 
+5. [Do not fabricate data]
+   - ❌ Never invent usernames, quotes, statistics, or engagement data
+   - ❌ Never include <tool_result> blocks in your reply; only the system provides tool results
+   - ✅ Only cite entities, quotes, and data that actually appear in tool results
+   - If the tool results contain nothing relevant, say so honestly instead of making something up
+
 ═══════════════════════════════════════════════════════════════
 [⚠️ Formatting Rules - Critically Important!]
 ═══════════════════════════════════════════════════════════════
@@ -1145,7 +1151,40 @@ class ReportAgent:
             if params_desc:
                 desc_parts.append(f"  Parameters: {params_desc}")
         return "\n".join(desc_parts)
-    
+
+    @staticmethod
+    def _strip_fake_tool_results(response: str) -> str:
+        """Strip any <tool_result> blocks the LLM fabricated in its response.
+
+        When the LLM generates a <tool_call> block and then continues to generate
+        a <tool_result> block in the same response, we must strip the fake result
+        before appending to message history. The real tool result will be injected
+        separately by the system.
+        """
+        tag_pattern = re.compile(r'</?tool_result\b[^>]*>', flags=re.IGNORECASE)
+        parts = []
+        cursor = 0
+        depth = 0
+
+        for match in tag_pattern.finditer(response):
+            if depth == 0:
+                parts.append(response[cursor:match.start()])
+
+            if match.group(0).lstrip().startswith('</'):
+                depth = max(0, depth - 1)
+            else:
+                depth += 1
+            cursor = match.end()
+
+        if depth == 0:
+            parts.append(response[cursor:])
+
+        cleaned = ''.join(parts)
+        # Treat a malformed opening tag without a closing `>` as unsafe too.
+        cleaned = re.sub(r'<tool_result\b.*$', '', cleaned, flags=re.IGNORECASE | re.DOTALL)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
+
     def plan_outline(
         self,
         progress_callback: Optional[Callable] = None
@@ -1346,8 +1385,9 @@ class ReportAgent:
                 )
 
                 if conflict_retries <= 2:
-                    # First two times: discard this response, ask the LLM to reply again
-                    messages.append({"role": "assistant", "content": response})
+                    # First two times: discard this response and ask the LLM to reply again
+                    cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                    messages.append({"role": "assistant", "content": cleaned_response})
                     messages.append({
                         "role": "user",
                         "content": (
@@ -1385,9 +1425,10 @@ class ReportAgent:
 
             # ── Case 1: LLM output a Final Answer ──
             if has_final_answer:
-                # Tool call count is insufficient; reject and require more tool calls
+                cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                # Not enough tool calls; reject and ask it to keep calling tools
                 if tool_calls_count < min_tool_calls:
-                    messages.append({"role": "assistant", "content": response})
+                    messages.append({"role": "assistant", "content": cleaned_response})
                     unused_tools = all_tools - used_tools
                     unused_hint = f"(These tools have not been used yet — consider trying them: {', '.join(unused_tools)})" if unused_tools else ""
                     messages.append({
@@ -1400,8 +1441,8 @@ class ReportAgent:
                     })
                     continue
 
-                # Normal exit
-                final_answer = response.split("Final Answer:")[-1].strip()
+                # Normal finish
+                final_answer = cleaned_response.split("Final Answer:")[-1].strip()
                 logger.info(t('report.sectionGenDone', title=section.title, count=tool_calls_count))
 
                 if self.report_logger:
@@ -1417,7 +1458,8 @@ class ReportAgent:
             if has_tool_calls:
                 # Tool quota exhausted → inform explicitly, require Final Answer output
                 if tool_calls_count >= self.MAX_TOOL_CALLS_PER_SECTION:
-                    messages.append({"role": "assistant", "content": response})
+                    cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                    messages.append({"role": "assistant", "content": cleaned_response})
                     messages.append({
                         "role": "user",
                         "content": REACT_TOOL_LIMIT_MSG.format(
@@ -1465,7 +1507,8 @@ class ReportAgent:
                 if unused_tools and tool_calls_count < self.MAX_TOOL_CALLS_PER_SECTION:
                     unused_hint = REACT_UNUSED_TOOLS_HINT.format(unused_list="、".join(unused_tools))
 
-                messages.append({"role": "assistant", "content": response})
+                cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                messages.append({"role": "assistant", "content": cleaned_response})
                 messages.append({
                     "role": "user",
                     "content": REACT_OBSERVATION_TEMPLATE.format(
@@ -1479,8 +1522,9 @@ class ReportAgent:
                 })
                 continue
 
-            # ── Case 3: Neither a tool call nor a Final Answer ──
-            messages.append({"role": "assistant", "content": response})
+            # ── Case 3: neither a tool call nor a Final Answer ──
+            cleaned_response = ReportAgent._strip_fake_tool_results(response)
+            messages.append({"role": "assistant", "content": cleaned_response})
 
             if tool_calls_count < min_tool_calls:
                 # Tool call count insufficient; recommend unused tools
@@ -1500,7 +1544,7 @@ class ReportAgent:
             # Enough tool calls have been made; the LLM output content without the "Final Answer:" prefix.
             # Use the content directly as the final answer without wasting another iteration.
             logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
-            final_answer = response.strip()
+            final_answer = cleaned_response
 
             if self.report_logger:
                 self.report_logger.log_section_content(
@@ -1850,6 +1894,7 @@ class ReportAgent:
                 # No tool calls; return response directly
                 clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL)
                 clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
+                clean_response = ReportAgent._strip_fake_tool_results(clean_response)
                 
                 return {
                     "response": clean_response.strip(),
@@ -1869,9 +1914,10 @@ class ReportAgent:
                 })
                 tool_calls_made.append(call)
             
-            # Add result to messages
-            messages.append({"role": "assistant", "content": response})
-            observation = "\n".join([f"[{r['tool']}result]\n{r['result']}" for r in tool_results])
+            # Add the results to the messages
+            cleaned_response = ReportAgent._strip_fake_tool_results(response)
+            messages.append({"role": "assistant", "content": cleaned_response})
+            observation = "\n".join([f"[{r['tool']} result]\n{r['result']}" for r in tool_results])
             messages.append({
                 "role": "user",
                 "content": observation + CHAT_OBSERVATION_SUFFIX
@@ -1886,6 +1932,7 @@ class ReportAgent:
         # Clean response
         clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', final_response, flags=re.DOTALL)
         clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
+        clean_response = ReportAgent._strip_fake_tool_results(clean_response)
         
         return {
             "response": clean_response.strip(),
