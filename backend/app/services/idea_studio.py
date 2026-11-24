@@ -489,7 +489,16 @@ def run_turn(raw_state: Any, history: List[Dict[str, Any]], user_message: str,
                         'text': f"{n} {'company' if n == 1 else 'companies'} found" if n else 'no companies found'})
     elif research and research.get('skipped'):
         actions.append({'kind': 'research_skipped', 'text': research['skipped']})
-    yield {'type': 'reply', 'content': reply, 'source': source, 'notice': notice, 'actions': actions}
+    ask = {'field': directive.get('field', ''), 'reason': directive.get('reason', '')}
+    found = None
+    if research and research.get('ran'):
+        wnb = state['why_not_built']
+        urls = lambda c: next((state['sources'][i]['url'] for i in (c.get('source_ids') or []) if i in state['sources']), '')
+        found = {'query': (research.get('terms') or [''])[0],
+                 'competitors': [{'name': c['name'], 'url': urls(c)} for c in wnb['competitors'][:6]],
+                 'predecessors': [{'name': c['name'], 'url': urls(c)} for c in wnb['predecessors'][:3]]}
+    yield {'type': 'reply', 'content': reply, 'source': source, 'notice': notice, 'actions': actions,
+           'ask': ask, 'research': found}
 
     # 2. Analyst pass (separate, third person) -> validated patch
     ops, summary, panel_notice, asked_field = [], '', None, directive.get('field', '')

@@ -35,55 +35,73 @@
     <div class="body">
       <!-- Chat -->
       <section class="chat" :class="{ hide: tab !== 'chat' }" aria-label="Conversation">
-        <div ref="scroller" class="messages" role="log" aria-live="polite" aria-relevant="additions">
-          <div v-for="(m, i) in messages" :key="i" class="msg" :class="[`msg--${m.role}`, { working: m.streaming || traceLive(m) }]">
-            <div v-if="m.role === 'assistant'" class="avatar" aria-hidden="true">
-              <svg viewBox="0 0 16 16"><path d="M3 4.5h10v6H7l-3 2.5v-2.5H3z" /></svg>
-            </div>
-            <div class="bubble">
-              <WorkTrace v-if="m.trace?.length" :steps="m.trace" :live="traceLive(m)" />
-              <div class="bubble-text" :class="{ streaming: m.streaming && m.content }" v-html="render(m.content)"
-                   :aria-live="m.streaming ? 'off' : null"></div>
-              <div v-if="m.notice" class="notice">{{ m.notice }}</div>
-              <div v-if="m.actions?.length" class="acts" aria-label="What the app did">
-                <span v-for="(a, j) in m.actions" :key="j" class="act" :class="`act--${a.kind}`" :style="{ '--j': j }"
-                      @click="actOpen(a)" :role="ACT_SECTION[a.kind] ? 'button' : null" :tabindex="ACT_SECTION[a.kind] ? 0 : null">
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path :d="ACT_ICON[a.kind] || ACT_ICON.parked" /></svg>
-                  <span class="act-label">{{ ACT_LABEL[a.kind] }}</span>
-                  <span v-if="a.priority === 'top'" class="act-top">top priority</span>
-                  <span class="act-text">{{ a.kind === 'researched' && a.query ? `"${a.query}" · ${a.text}` : a.text }}</span>
-                </span>
+        <div class="thread-wrap">
+          <div ref="scroller" class="messages" role="log" aria-live="polite" aria-relevant="additions" @scroll="onScroll">
+            <div ref="threadInner" class="thread">
+              <!-- First visit: what this is and how to start -->
+              <div v-if="isFresh" class="welcome">
+                <div class="welcome-faces" aria-hidden="true">
+                  <span v-for="(a, i) in FACES" :key="a.id" :style="{ '--c': a.color, '--i': i }"></span>
+                </div>
+                <h2>What are you thinking of building?</h2>
+                <p>Rough is fine. Your co-founder asks one question at a time while a team of agents looks up who already does it,
+                  pokes holes in it, and sizes it.</p>
+                <div class="starters" aria-label="Ways to start">
+                  <button v-for="(st, i) in STARTERS" :key="st.title" type="button" class="starter" :style="{ '--i': i }" @click="useStarter(st)">
+                    <span class="starter-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path :d="st.icon" /></svg></span>
+                    <span class="starter-title">{{ st.title }}</span>
+                    <span class="starter-desc">{{ st.desc }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <template v-else>
+                <ChatMessage v-for="(m, i) in messages" :key="i" :m="m" :is-last="i === lastAiIndex" :busy="busy"
+                             @answer="answerNow" @quick="(t) => send(t)" @act="actOpen" />
+              </template>
+
+              <div v-if="error" class="error" role="alert">
+                <span>{{ error }}</span>
+                <button type="button" class="link" @click="retry">Try again</button>
               </div>
             </div>
           </div>
-          <div v-if="isFresh" class="starters" aria-label="Ways to start">
-            <button v-for="s in STARTERS" :key="s.title" type="button" class="starter" @click="useStarter(s)">
-              <span class="starter-title">{{ s.title }}</span>
-              <span class="starter-desc">{{ s.desc }}</span>
+          <transition name="jump">
+            <button v-if="!atBottom" type="button" class="jump" @click="scrollDown(true)">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3.5 8.5L8 13l4.5-4.5" /></svg>Latest
             </button>
-          </div>
-          <div v-if="error" class="error" role="alert">
-            {{ error }} <button type="button" class="link" @click="retry">Try again</button>
-          </div>
+          </transition>
         </div>
 
-        <form class="composer" @submit.prevent="send()">
+        <form class="composer" :class="{ busy }" @submit.prevent="send()">
+          <span v-if="busy" class="progress" aria-hidden="true"></span>
           <textarea
             ref="composer"
             v-model="draft"
-            rows="2"
+            rows="1"
             maxlength="4000"
-            :placeholder="busy ? 'Your team is on it. You can type your next thought...' : (messages.length > 1 ? 'Reply to your co-founder...' : 'Describe your idea, however rough...')"
+            :placeholder="busy ? 'Your team is working. Type your next thought...' : (answering ? 'Your answer...' : (messages.length > 1 ? 'Reply to your co-founder...' : 'Describe your idea, however rough...'))"
             aria-label="Message your AI co-founder"
             :disabled="!state"
+            @input="autoGrow"
             @keydown.enter.exact.prevent="send()"
           ></textarea>
-          <button type="submit" class="send" :disabled="busy || !draft.trim()" aria-label="Send">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5" /></svg>
-          </button>
-          <span class="composer-glow" aria-hidden="true"></span>
+          <div class="tools">
+            <button type="button" class="tool" :disabled="busy || confidential || !state || (state.why_not_built.search.sweeps || 0) >= 3"
+                    :title="confidential ? 'Confidential mode is on, so nothing is searched' : 'Look up who already does this'" @click="research">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3a4 4 0 100 8 4 4 0 000-8zM10 10l3.5 3.5" /></svg>Research
+            </button>
+            <span v-if="confidential" class="tool-note">Confidential: search off</span>
+            <span class="tools-spacer"></span>
+            <span class="kbd-hint"><kbd>Enter</kbd> send · <kbd>Shift</kbd> <kbd>Enter</kbd> new line</span>
+            <button v-if="busy" type="button" class="send send--stop" aria-label="Stop" @click="stop">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5" /></svg>
+            </button>
+            <button v-else type="submit" class="send" :disabled="!draft.trim()" aria-label="Send">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3.5M3.5 8L8 3.5 12.5 8" /></svg>
+            </button>
+          </div>
         </form>
-        <div class="hint" aria-hidden="true"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</div>
         <div class="fine">
           A thinking tool, not investment, legal, or financial advice.
           <button type="button" class="privacy-link" :aria-expanded="privacyOpen" aria-controls="privacy-card"
@@ -203,17 +221,19 @@ import IdeaPanel from '../components/IdeaPanel.vue'
 import IdeaDashboard from '../components/IdeaDashboard.vue'
 import AgentTeam from '../components/AgentTeam.vue'
 import AgentDetail from '../components/AgentDetail.vue'
-import WorkTrace from '../components/WorkTrace.vue'
+import ChatMessage from '../components/ChatMessage.vue'
 import { AGENTS, SPECIALIST_IDS } from '../utils/agents'
 import { newIdea, streamIdeaTurn, streamIdeaTeam, editIdeaField, lockIdeaField, ideaToBrief } from '../api/idea.js'
 
 const STORE_KEY = 'idea-studio.v1'
 const STARTERS = [
-  { title: 'I have an idea', desc: 'Describe it roughly and sharpen it together.', text: 'My idea is ' },
+  { title: 'I have an idea', desc: 'Describe it roughly and sharpen it together.', text: 'My idea is ',
+    icon: 'M8 2.5a4 4 0 00-2.4 7.2c.5.4.9.9.9 1.3h3c0-.4.4-.9.9-1.3A4 4 0 008 2.5zM6.5 13h3' },
   { title: 'Help me find one', desc: 'Start from problems you have seen, not from scratch.',
-    text: "I want to start something but I don't have an idea yet. Here is what I know well: " },
+    text: "I want to start something but I don't have an idea yet. Here is what I know well: ",
+    icon: 'M7 3a4 4 0 100 8 4 4 0 000-8zM10 10l3.5 3.5' },
   { title: 'Poke holes in mine', desc: 'Stress-test an idea you already believe in.',
-    text: 'I have an idea I believe in. Please challenge it hard: ' },
+    text: 'I have an idea I believe in. Please challenge it hard: ', icon: 'M8 2.5l6 10.5H2zM8 6.5v3M8 11.2v.3' },
 ]
 const PATH_LABELS = [
   ['/one_liner', 'One-liner'], ['/problem/statement', 'Problem'], ['/problem/who', 'Who has it'],
@@ -284,17 +304,24 @@ function finishOpenSteps(m, status = 'done') {
   for (const s of m?.trace || []) if (s.status === 'running' || s.status === 'queued') step(m, s.id, { status })
 }
 function readSummary(items) {
+  if (!items.length) return 'understood'
   const parked = items.filter(a => a.kind === 'parked').length
   const bits = []
   if (parked) bits.push(`Parked ${parked} ${parked === 1 ? 'topic' : 'topics'}`)
   if (items.some(a => a.kind === 'idea_updated')) bits.push('Updated your idea')
   if (items.some(a => a.kind === 'unparked')) bits.push('Brought a topic back')
-  return bits.join(' · ') || 'Understood'
+  return bits.join(' · ').toLowerCase() || 'understood'
 }
 
 function setLive(id, patch) { live.value = { ...live.value, [id]: { ...(live.value[id] || {}), ...patch } } }
 const savedAt = ref('')
 const isFresh = computed(() => messages.value.length <= 1 && !busy.value)
+const lastAiIndex = computed(() => { for (let i = messages.value.length - 1; i >= 0; i--) if (messages.value[i].role === 'assistant') return i; return -1 })
+const answering = ref(false)
+const atBottom = ref(true)
+const threadInner = ref(null)
+let controller = null
+let resizeObs = null
 const tab = ref('chat')
 const unseen = ref(false)
 const scroller = ref(null)
@@ -308,7 +335,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       state: state.value, confidential: confidential.value, team: team.value,
-      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions, trace }) => ({ role, content, notice, actions,
+      messages: messages.value.filter(m => !m.streaming).map(({ role, content, notice, actions, trace, ask, research }) => ({ role, content, notice, actions, ask, research,
         trace: (trace || []).map(t => ({ ...t, faces: undefined, status: ['running', 'queued'].includes(t.status) ? 'done' : t.status })) })),
     }))
     savedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -383,6 +410,8 @@ async function send(text, opts = {}) {
   const content = (text ?? draft.value).trim()
   if (!content || busy.value || !state.value) return
   draft.value = ''
+  answering.value = false
+  nextTick(autoGrow)
   error.value = ''
   busy.value = true
   const history = messages.value.filter(m => !m.streaming).slice(-HISTORY_SENT)
@@ -393,14 +422,15 @@ async function send(text, opts = {}) {
   const live = messages.value[messages.value.length - 1]
   status.value = ''
   step(live, 'read', { status: 'running' })
-  scrollDown()
+  scrollDown(true)
   setLive('cofounder', { status: 'running' })
 
   lastPayload = { state: state.value, messages: history, content, research: !!opts.research,
                   confidential: confidential.value }
   let ok = false
+  controller = new AbortController()
   try {
-    await streamIdeaTurn(lastPayload, (ev) => onEvent(ev, live))
+    await streamIdeaTurn(lastPayload, (ev) => onEvent(ev, live), controller.signal)
     if (live.streaming) throw new Error('The reply ended unexpectedly.')
     ok = true
   } catch (e) {
@@ -408,8 +438,10 @@ async function send(text, opts = {}) {
     messages.value.splice(messages.value.indexOf(live), 1)
     messages.value.splice(messages.value.length - 1, 1)   // drop the unanswered user message
     draft.value = content
-    error.value = e.message || 'Something went wrong.'
+    nextTick(autoGrow)
+    error.value = e.name === 'AbortError' ? '' : (e.message || 'Something went wrong.')
   } finally {
+    controller = null
     busy.value = false
     updating.value = false
     status.value = ''
@@ -456,18 +488,18 @@ function onTeamEvent(ev, only) {
   if (m && ev.type === 'plan') {
     teamDone = []
     const n = ev.agents.filter(a => a.status === 'queued').length
-    if (n) { step(m, 'team', { status: 'running', detail: `${n} specialists working`, faces: [] }); nextTick(scrollDown) }
+    if (n) step(m, 'team', { status: 'running', detail: `${n} specialists working` })
   }
   if (m && ev.type === 'agent' && ev.status === 'done') {
     teamDone.push(ev.id)
     const name = AGENTS.find(a => a.id === ev.id)?.name || ev.id
-    step(m, 'team', { detail: `${name} reported`, faces: teamFaces(teamDone) })
+    step(m, 'team', { detail: `${name.toLowerCase()} reported` })
   }
   if (m && ev.type === 'done' && m.trace?.some(s => s.id === 'team')) {
     const chief = team.value.chief?.output
     const VERD = { keep_going: 'Keep going', narrow: 'Narrow it', rethink: 'Rethink' }
-    step(m, 'team', { status: 'done', faces: [],
-      detail: chief && teamDone.includes('chief') ? `Chief of staff: ${VERD[chief.verdict]}. ${chief.next_actions?.[0] || ''}`
+    step(m, 'team', { status: 'done',
+      detail: chief && teamDone.includes('chief') ? `Chief of staff says ${VERD[chief.verdict].toLowerCase()}`
         : `${ev.ran} ${ev.ran === 1 ? 'specialist' : 'specialists'} reported` })
   }
   if (ev.type === 'plan') {
@@ -519,40 +551,45 @@ function onEvent(ev, live) {
       if ((ev.items || []).some(a => a.kind === 'idea_updated')) flash((ev.items.find(a => a.kind === 'idea_updated').paths) || [])
       break
     case 'start':
-      if (live.trace?.find(s => s.id === 'read')?.status === 'running') step(live, 'read', { status: 'done', detail: 'Understood' })
-      step(live, 'cofounder', { status: 'running', detail: 'Thinking' })
+      if (live.trace?.find(s => s.id === 'read')?.status === 'running') step(live, 'read', { status: 'done', detail: 'understood' })
+      step(live, 'cofounder', { status: 'running', detail: 'thinking' })
       break
     case 'searching':
       step(live, 'cofounder', { status: 'queued', detail: 'Waiting for the research' })
-      step(live, 'research', { status: 'running', detail: `Searching "${(ev.terms || [''])[0]}"` })
+      step(live, 'research', { status: 'running', detail: `searching "${(ev.terms || [''])[0]}"` })
+      live._query = (ev.terms || [''])[0]
       live.trace.sort((a, b) => ['read', 'research', 'cofounder', 'analyst', 'team'].indexOf(a.id) - ['read', 'research', 'cofounder', 'analyst', 'team'].indexOf(b.id))
       setLive('researcher', { status: 'running' })
       status.value = 'Researching who already does this (web, companies, Hacker News, GitHub)...'
       break
     case 'sources':
-      step(live, 'research', { detail: `Reading ${ev.count} results` })
+      step(live, 'research', { detail: `reading ${ev.count} results` })
       status.value = `Found ${ev.count} results. Reading them...`
       break
     case 'research': {
       setLive('researcher', { status: 'done', at: Date.now() })
       const n = ev.competitors?.length || 0
-      step(live, 'research', { status: 'done', detail: n ? `${n} ${n === 1 ? 'company' : 'companies'} found` : 'No companies found' })
-      step(live, 'cofounder', { status: 'running', detail: 'Thinking' })
+      step(live, 'research', { status: 'done', detail: n ? `${n} ${n === 1 ? 'company' : 'companies'} found` : 'no companies found' })
+      step(live, 'cofounder', { status: 'running', detail: 'thinking' })
+      live.research = { query: live._query || '', competitors: (ev.competitors || []).slice(0, 6).map(name => ({ name, url: '' })),
+                        predecessors: (ev.predecessors || []).slice(0, 3).map(name => ({ name, url: '' })) }
+      scrollDown()
       status.value = n ? `Found ${n} ${n === 1 ? 'company' : 'companies'} already doing this. Thinking...` : 'Research done. Thinking...'
       break
     }
     case 'evidence_skipped':
       step(live, 'research', { status: 'failed', detail: ev.reason })
-      step(live, 'cofounder', { status: 'running', detail: 'Thinking' })
+      step(live, 'cofounder', { status: 'running', detail: 'thinking' })
       live.notice = ev.reason
       break
     case 'delta':
       status.value = ''
       if (!live.content) {
-        if (live.trace?.find(s => s.id === 'research')?.status === 'running') step(live, 'research', { status: 'done', detail: 'Done' })
-        step(live, 'cofounder', { status: 'running', detail: 'Writing' })
+        if (live.trace?.find(s => s.id === 'research')?.status === 'running') step(live, 'research', { status: 'done', detail: 'done' })
+        step(live, 'cofounder', { status: 'running', detail: 'writing' })
       }
       live.content += ev.text
+      live.tail = ev.text.length
       scrollDown()
       break
     case 'reply':
@@ -562,8 +599,12 @@ function onEvent(ev, live) {
       if (Array.isArray(ev.actions)) live.actions = ev.actions
       status.value = ''
       updating.value = true
-      step(live, 'cofounder', { status: 'done', detail: ev.source === 'scripted' ? 'Used a scripted question' : 'Replied' })
-      step(live, 'analyst', { status: 'running', detail: 'Updating the live idea' })
+      step(live, 'cofounder', { status: 'done', detail: ev.source === 'scripted' ? 'used a scripted question' : 'replied' })
+      step(live, 'analyst', { status: 'running', detail: 'updating the live idea' })
+      live.tail = 0
+      live.ask = ev.ask || null
+      if (ev.research) live.research = ev.research
+      scrollDown()
       setLive('cofounder', { status: 'done', at: Date.now() })
       setLive('analyst', { status: 'running' })
       break
@@ -572,7 +613,7 @@ function onEvent(ev, live) {
       {
         const n = (ev.applied || []).length
         const labels = [...new Set((ev.applied || []).map(labelFor))].slice(0, 3).join(', ')
-        step(live, 'analyst', { status: 'done', detail: n ? `${n} ${n === 1 ? 'field' : 'fields'} updated${labels ? ': ' + labels : ''}` : 'Nothing new to record' })
+        step(live, 'analyst', { status: 'done', detail: n ? `${n} ${n === 1 ? 'field' : 'fields'} updated${labels ? ': ' + labels : ''}` : 'nothing new to record' })
       }
       setLive('analyst', { status: 'done', at: Date.now() })
       state.value = ev.state
@@ -613,11 +654,13 @@ function openDetail(sectionId) {
 
 function useStarter(s) {
   draft.value = s.text
+  nextTick(autoGrow)
   focusComposer(true)
 }
 
 function draftAbout(text) {
   draft.value = text
+  nextTick(autoGrow)
   tab.value = 'chat'
   focusComposer(true)
 }
@@ -673,9 +716,24 @@ function render(text) {
     .replace(/\n/g, '<br>')
 }
 
-function scrollDown() {
-  nextTick(() => { if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
+// Stick to the newest message unless the founder scrolled up to read
+function scrollDown(force = false) {
+  if (force) atBottom.value = true
+  if (!atBottom.value) return
+  nextTick(() => { const el = scroller.value; if (el) el.scrollTo({ top: el.scrollHeight, behavior: force ? 'smooth' : 'auto' }) })
 }
+function onScroll() {
+  const el = scroller.value
+  if (el) atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+function autoGrow() {
+  const el = composer.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 180) + 'px'
+}
+function answerNow() { answering.value = true; focusComposer(true) }
+function stop() { controller?.abort() }
 
 function focusComposer(toEnd = false) {
   nextTick(() => {
@@ -694,6 +752,8 @@ function onKey(e) {
 }
 function onDocClick() { privacyOpen.value = false }
 onUnmounted(() => {
+  resizeObs?.disconnect()
+  controller?.abort()
   window.removeEventListener('keydown', onKey)
   document.removeEventListener('click', onDocClick)
 })
@@ -701,6 +761,11 @@ watch(confidential, save)
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  // Content grows while streaming and while cards animate in: keep the newest in view
+  if ('ResizeObserver' in window) {
+    resizeObs = new ResizeObserver(() => scrollDown())
+    nextTick(() => threadInner.value && resizeObs.observe(threadInner.value))
+  }
   document.addEventListener('click', onDocClick)
   if (!load()) await startNew()
   scrollDown()
@@ -735,17 +800,6 @@ onMounted(async () => {
 .bar-sub { font-size: 12.5px; color: var(--text-tertiary); margin-left: 6px; font-weight: 400; }
 .saved { font-size: 11.5px; color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 6px; }
 .saved::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
-.starters { display: grid; grid-template-columns: 1fr; gap: 8px; margin-left: 38px; }
-.starters > * { animation: rise-in var(--dur-3) var(--ease-out) both; }
-.starters > *:nth-child(2) { animation-delay: 70ms; }
-.starters > *:nth-child(3) { animation-delay: 140ms; }
-.starter {
-  text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;
-  border: 1px solid #222; border-radius: 10px; background: #0b0b0b; transition: border-color 0.15s;
-}
-.starter:hover { border-color: var(--accent); }
-.starter-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
-.starter-desc { font-size: 12.5px; color: var(--text-tertiary); }
 .bar-spacer { flex: 1; }
 .menu { display: flex; gap: 6px; }
 .btn-ghost {
@@ -771,94 +825,78 @@ onMounted(async () => {
 }
 
 /* Chat */
-.chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #1a1a1a; }
-.messages { flex: 1; overflow-y: auto; padding: 24px 22px 12px; display: flex; flex-direction: column; gap: 20px;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px); mask-image: linear-gradient(180deg, transparent 0, #000 18px); }
-.msg { display: flex; gap: 10px; max-width: 100%; animation: rise-in var(--dur-2) var(--ease-out) both; }
-.msg--user { justify-content: flex-end; }
-@property --ring { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-.avatar {
-  position: relative; width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px; display: grid; place-items: center; isolation: isolate;
-  background: linear-gradient(145deg, rgba(59, 130, 246, 0.22), rgba(59, 130, 246, 0.06)); border: 1px solid rgba(96, 165, 250, 0.3);
-}
-.avatar svg { width: 14px; height: 14px; fill: none; stroke: #93c5fd; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-/* While the team works on this reply, a light orbits the avatar */
-.msg.working .avatar { border-color: transparent; }
-.msg.working .avatar::before { content: ''; position: absolute; inset: -1px; border-radius: 10px; padding: 1px; z-index: -1;
-  background: conic-gradient(from var(--ring), transparent 0 60%, #60a5fa 85%, transparent 100%) border-box;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: ring 1.6s linear infinite; }
-@keyframes ring { to { --ring: 360deg; } }
-/* Streaming caret */
-.bubble-text.streaming::after { content: ''; display: inline-block; width: 7px; height: 15px; margin-left: 2px; vertical-align: -2px;
-  border-radius: 2px; background: #60a5fa; animation: caret 1s steps(1) infinite; }
-@keyframes caret { 50% { opacity: 0; } }
-.bubble { max-width: 86%; }
-.msg--user .bubble { background: linear-gradient(180deg, #181818, #131313); border: 1px solid #242424; border-radius: 14px 14px 4px 14px;
-  padding: 10px 14px; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
-.msg--user { animation: send-in var(--dur-3) var(--ease-out) both; }
-@keyframes send-in { from { opacity: 0; transform: translate(10px, 6px) scale(0.98); } to { opacity: 1; transform: none; } }
-.msg--assistant .bubble { flex: 1; min-width: 0; }
-.bubble-text { font-size: 14.5px; line-height: 1.6; color: var(--text-primary); overflow-wrap: anywhere; }
-.msg--assistant .bubble-text :deep(strong) { display: inline; color: #fff; font-weight: 650; }
-.notice { margin-top: 8px; font-size: 12px; color: #fcd34d; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 7px; padding: 6px 9px; }
-.typing { display: inline-flex; gap: 4px; padding: 6px 0; }
-.typing i { width: 6px; height: 6px; border-radius: 50%; background: #555; animation: blink 1.2s infinite; }
-.typing i:nth-child(2) { animation-delay: 0.2s; }
-.typing i:nth-child(3) { animation-delay: 0.4s; }
-@keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
-.status { animation: fade-in var(--dur-2) ease both; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-secondary); padding-left: 38px; }
-.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #333; border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.error { animation: pop-in var(--dur-2) var(--ease-out) both; font-size: 12.5px; color: #fca5a5; padding-left: 38px; }
-.link { background: none; border: none; color: #93c5fd; text-decoration: underline; font-size: 12.5px; padding: 0; }
+.chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #161616; background: #000; }
+.thread-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+.messages { flex: 1; overflow-y: auto; padding: 28px 24px 24px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px); mask-image: linear-gradient(180deg, transparent 0, #000 20px); }
+.thread { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
 
-.composer { position: relative; display: flex; gap: 8px; align-items: flex-end; margin: 0 16px; padding: 10px; border: 1px solid #262626;
-  border-radius: 14px; background: #0b0b0b; isolation: isolate; transition: border-color var(--dur-2) ease, box-shadow var(--dur-2) ease; }
-.composer:focus-within { border-color: rgba(96, 165, 250, 0.45); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08), 0 8px 30px -12px rgba(59, 130, 246, 0.35); }
-/* While the team works, a light travels along the composer edge */
-.studio[data-busy="true"] .composer { border-color: transparent; }
-.composer-glow { position: absolute; inset: -1px; border-radius: 15px; padding: 1px; z-index: -1; pointer-events: none; opacity: 0;
-  background: conic-gradient(from var(--ring), transparent 0 70%, #60a5fa 85%, #2dd4bf 92%, transparent 100%) border-box;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  transition: opacity var(--dur-2) ease; }
-.studio[data-busy="true"] .composer-glow { opacity: 1; animation: ring 2.4s linear infinite; }
-.hint { font-size: 10.5px; color: #444; padding: 6px 20px 0; opacity: 0; transition: opacity var(--dur-2) ease; }
-.chat:focus-within .hint { opacity: 1; }
-.hint kbd { font-family: inherit; font-size: 10px; padding: 0 4px; border-radius: 4px; border: 1px solid #2a2a2a; color: #777; }
-.composer textarea {
-  flex: 1; resize: none; border: none; background: transparent; color: var(--text-primary);
-  font: inherit; font-size: 14.5px; line-height: 1.5; max-height: 160px; outline: none;
-}
-.send {
-  width: 34px; height: 34px; border-radius: 9px; border: none; background: var(--accent); color: #fff;
-  display: grid; place-items: center; flex-shrink: 0;
-}
-.send:disabled { background: #1f1f1f; color: #555; }
-.send:not(:disabled) { box-shadow: 0 4px 14px -4px rgba(59, 130, 246, 0.6); }
-.send:not(:disabled):hover svg { transform: translateX(2px); }
-.send svg { transition: transform var(--dur-1) var(--ease-out); }
-.send:not(:disabled):active svg { transform: translate(6px, -6px); opacity: 0; transition: transform 160ms ease-in, opacity 160ms ease-in; }
-.send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.fine { font-size: 11px; line-height: 1.45; color: #555; padding: 8px 18px 12px; }
-.fine { position: relative; }
-/* Action chips: what the app actually did with the message */
-.acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.act { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 11.5px; line-height: 1.3; padding: 4px 10px 4px 8px;
-  border-radius: 999px; border: 1px solid #262626; background: #0d0d0d; color: var(--text-secondary);
-  animation: pop-in var(--dur-2) var(--ease-out) both; animation-delay: calc(var(--j, 0) * 60ms + 80ms); }
-.act[role="button"] { cursor: pointer; }
-.act[role="button"]:hover { border-color: #3a3a3a; color: var(--text-primary); }
-.act svg { width: 12px; height: 12px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.act-label { font-weight: 650; color: var(--text-primary); flex-shrink: 0; }
-.act-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.act-top { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #fcd34d; flex-shrink: 0; }
-.act--parked, .act--already_parked { border-color: rgba(245, 158, 11, 0.3); }
-.act--parked svg, .act--already_parked svg { color: #fcd34d; }
-.act--idea_updated { border-color: rgba(59, 130, 246, 0.35); }
-.act--idea_updated svg { color: #93c5fd; }
-.act--researched svg { color: #2dd4bf; }
-.act--research_skipped { color: #fca5a5; border-color: rgba(248, 113, 113, 0.3); }
+/* Welcome */
+.welcome { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding-top: 6vh; }
+.welcome-faces { display: flex; margin-bottom: 4px; }
+.welcome-faces span { width: 18px; height: 18px; border-radius: 50%; margin-left: -5px; border: 2px solid #000;
+  background: radial-gradient(circle at 35% 35%, color-mix(in srgb, var(--c) 80%, #fff), var(--c));
+  animation: face-in 500ms var(--ease-out) both, float 3.2s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 60ms), calc(600ms + var(--i) * 0.25s); }
+.welcome-faces span:first-child { margin-left: 0; }
+@keyframes face-in { from { opacity: 0; transform: translateY(8px) scale(0.6); } to { opacity: 1; transform: none; } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.welcome h2 { font-family: 'Space Grotesk', var(--font-sans); font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15;
+  text-wrap: balance; animation: rise-in var(--dur-3) var(--ease-out) 120ms both; }
+.welcome p { font-size: 14.5px; line-height: 1.6; color: var(--text-secondary); max-width: 52ch; animation: rise-in var(--dur-3) var(--ease-out) 200ms both; }
+.starters { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.starter { position: relative; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 14px;
+  border: 1px solid #1f1f1f; background: #0a0a0a; color: inherit; overflow: hidden;
+  animation: rise-in var(--dur-3) var(--ease-out) both; animation-delay: calc(280ms + var(--i) * 70ms);
+  transition: border-color var(--dur-2) ease, transform var(--dur-2) var(--ease-out), background var(--dur-2) ease; }
+.starter:hover { border-color: #333; background: #0e0e0e; transform: translateY(-2px); }
+.starter-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; margin-bottom: 6px;
+  background: rgba(59, 130, 246, 0.1); box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.25); }
+.starter-icon svg { width: 14px; height: 14px; fill: none; stroke: #93c5fd; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.starter-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.starter-desc { font-size: 12.5px; line-height: 1.45; color: var(--text-tertiary); }
+
+.error { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #fca5a5; padding: 10px 12px; border-radius: 10px;
+  background: rgba(248, 113, 113, 0.06); border: 1px solid rgba(248, 113, 113, 0.2); animation: pop-in var(--dur-2) var(--ease-out) both; }
+.link { background: none; border: none; color: #93c5fd; text-decoration: underline; font-size: 13px; padding: 0; }
+
+.jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid #2a2a2a; background: rgba(20, 20, 20, 0.9);
+  color: var(--text-primary); backdrop-filter: blur(6px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.jump svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.jump-enter-active, .jump-leave-active { transition: opacity var(--dur-2) ease, transform var(--dur-2) var(--ease-out); }
+.jump-enter-from, .jump-leave-to { opacity: 0; transform: translate(-50%, 6px); }
+
+/* Composer */
+.composer { position: relative; max-width: 680px; width: calc(100% - 32px); margin: 0 auto; padding: 12px 12px 8px; overflow: hidden;
+  border: 1px solid #262626; border-radius: 18px; background: #0c0c0c;
+  transition: border-color var(--dur-2) ease, box-shadow var(--dur-2) ease; }
+.composer:focus-within { border-color: #3a3f4a; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.07); }
+.progress { position: absolute; top: 0; left: 0; right: 0; height: 2px; overflow: hidden; }
+.progress::after { content: ''; position: absolute; top: 0; left: 0; width: 40%; height: 100%;
+  background: linear-gradient(90deg, transparent, #60a5fa, #5eead4, transparent); animation: travel 1.4s ease-in-out infinite; }
+@keyframes travel { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+.composer textarea { display: block; width: 100%; resize: none; border: none; background: transparent; color: var(--text-primary);
+  font: inherit; font-size: 15px; line-height: 1.5; min-height: 24px; max-height: 180px; outline: none; padding: 2px 4px; }
+.composer textarea::placeholder { color: #5a5a5a; }
+.tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.tool { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid #262626; background: transparent; color: var(--text-secondary); }
+.tool:hover:not(:disabled) { color: var(--text-primary); border-color: rgba(45, 212, 191, 0.5); }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.tool svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.tool-note { font-size: 11.5px; color: var(--text-tertiary); }
+.tools-spacer { flex: 1; }
+.kbd-hint { font-size: 11px; color: #4a4a4a; white-space: nowrap; }
+.kbd-hint kbd { font-family: inherit; font-size: 10.5px; padding: 0 4px; border-radius: 4px; border: 1px solid #2a2a2a; color: #6b6b6b; }
+.send { width: 32px; height: 32px; border-radius: 50%; border: none; display: grid; place-items: center; flex-shrink: 0;
+  background: #f5f5f5; color: #000; transition: transform var(--dur-1) var(--ease-out), background var(--dur-2) ease, opacity var(--dur-2) ease; }
+.send:hover:not(:disabled) { transform: scale(1.06); }
+.send:disabled { background: #222; color: #555; }
+.send svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.send--stop { background: #222; color: #f5f5f5; box-shadow: 0 0 0 1px #3a3a3a; animation: pop-in var(--dur-2) var(--ease-out) both; }
+.send--stop svg { fill: currentColor; stroke: none; }
+.fine { position: relative; max-width: 680px; width: 100%; margin: 0 auto; font-size: 11px; line-height: 1.45; color: #4a4a4a; padding: 8px 20px 12px; }
 .privacy-link {
   background: none; border: none; padding: 0; margin-left: 4px; font-size: 11px;
   color: #8a8a8a; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
@@ -940,6 +978,9 @@ onMounted(async () => {
   .tabs button.on { color: var(--text-primary); border-bottom-color: var(--accent); }
   .tab-score { font-size: 11px; color: #93c5fd; margin-left: 4px; }
   .tab-working { font-size: 10.5px; color: #93c5fd; margin-left: 6px; }
+  .starters { grid-template-columns: 1fr; }
+  .kbd-hint { display: none; }
+  .messages { padding: 20px 14px; }
   .tab-dot { position: absolute; top: 8px; right: 28%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
   .body { grid-template-columns: 1fr; }
   .chat { border-right: none; }

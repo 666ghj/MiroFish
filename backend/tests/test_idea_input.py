@@ -209,3 +209,9 @@ def test_headings_and_list_labels_are_not_treated_as_names():
     reply = '1. Customer Focus: look at teachers.\n2. Constraint Flip: reward thinking.\n\n**Which angle?**'
     assert inp.ground(reply, '')[1] == []
     assert inp.plain_markup('**Constraint Flip**: reward it. **Which one?**') == 'Constraint Flip: reward it. **Which one?**'
+
+
+def test_hint_gets_a_nudge_not_answers():
+    assert 'hint' in inp.read_by_rules('I am not sure. Can you give me a hint, without answering it for me?', [])['kinds']
+    g = inp.guidance({'kinds': ['dont_know', 'hint', 'ask_ai'], 'question_to_ai': 'give me a hint'}, [], None)
+    assert 'ONE short hint' in g and 'Answer it first' not in g

@@ -23,7 +23,7 @@ from . import idea_state as st
 
 logger = get_logger('mirofish.idea_input')
 
-KINDS = ['answer', 'park', 'unpark', 'research', 'dont_know', 'ask_ai', 'brainstorm_help', 'idea_update', 'other']
+KINDS = ['answer', 'park', 'unpark', 'research', 'dont_know', 'hint', 'ask_ai', 'brainstorm_help', 'idea_update', 'other']
 FIELD_HINTS = sorted(st.PARK_FIELDS)
 
 READ_SYSTEM = f"""You read ONE message a founder just sent to their AI co-founder and say what it asks for.
@@ -44,6 +44,7 @@ kinds (all that apply): {', '.join(KINDS)}
 - unpark: they want to return to a parked topic now. List the PARKED ids they mean.
 - research: they ask who already does this, about competitors, or to look something up.
 - dont_know: they say they do not know or are unsure about the question asked.
+- hint: they ask for a hint or a nudge on the question asked.
 - ask_ai: they ask the AI a direct question or its opinion. Copy it into question_to_ai.
 - brainstorm_help: they ask the AI to help come up with ideas, options, or directions.
 - idea_update: set it when record_check finds a part that no longer fits.
@@ -66,6 +67,7 @@ _PARK_CUE = re.compile(r"\b(pending|park|parked|later|aside|on hold|hold off|com
 _TOP_RE = re.compile(r'\b(top|high|highest)[- ]priority\b|\burgent\b|\bimportant\b', re.I)
 _RESEARCH_RE = re.compile(r"\bwho (else )?(already )?(does|is doing|builds|built|makes|offers)\b|\bcompetit|\blook (it |this |that )?up\b"
                           r"|\b(search|research)\b|\banyone (else )?(doing|tried|built)\b", re.I)
+_HINT_RE = re.compile(r'\b(hint|nudge|clue)\b', re.I)
 _IDK_RE = re.compile(r"^\s*(idk|i (really )?(don'?t|do not) know|not sure|no idea|unsure|no clue)\b", re.I)
 
 
@@ -88,6 +90,8 @@ def read_by_rules(message: str, history: List[Dict[str, Any]]) -> Dict[str, Any]
         kinds.append('research')
     if _IDK_RE.search(message):
         kinds.append('dont_know')
+    if _HINT_RE.search(message):
+        kinds.append('hint')
     return {'kinds': kinds or ['answer'], 'park': park, 'unpark': [], 'idea_update': {},
             'question_to_ai': '', 'summary': '', 'source': 'rules'}
 
@@ -163,7 +167,7 @@ def read_input(state: Dict[str, Any], history: List[Dict[str, Any]], message: st
                 reading['kinds'].remove('park')
             reading['kinds'] = reading['kinds'] or ['answer']
         # a clear keyword hit is never dropped by the model
-        for k in ('park', 'research'):
+        for k in ('park', 'research', 'hint'):
             if k in rules['kinds'] and k not in reading['kinds']:
                 reading['kinds'].append(k)
                 if k == 'park' and not reading['park']:
@@ -233,6 +237,11 @@ def guidance(reading: Dict[str, Any], actions: List[Dict[str, Any]], research: O
                          "their idea using EVIDENCE only; if the results look unrelated to what they are building now, say so "
                          "and suggest they correct the search.")
     kinds = reading.get('kinds') or []
+    if 'hint' in kinds:
+        lines.append("The founder asked for a hint on your last question. Give ONE short hint that shows where to look, never the answer "
+                     "and never a list of options: a question to ask themselves, a person or moment to recall, or what a good answer "
+                     "would contain (\"a good answer names a job title and a company size\"). Then ask the same question again, more simply.")
+        return '\n'.join(f"- {l}" for l in lines)
     if 'dont_know' in kinds:
         lines.append("The founder does not know the answer. Do not answer it for them. Offer either a smaller, easier version "
                      "of the question or one concrete way to find out within a day, then ask that.")
@@ -362,7 +371,7 @@ def keep_on_track(reply: str, directive: Dict[str, Any], reading: Dict[str, Any]
     """
     if not directive.get('enforce'):
         return reply, False
-    if set(reading.get('kinds') or []) & {'dont_know', 'ask_ai', 'brainstorm_help', 'research', 'unpark'}:
+    if set(reading.get('kinds') or []) & {'dont_know', 'hint', 'ask_ai', 'brainstorm_help', 'research', 'unpark'}:
         return reply, False
     bold = re.findall(r'\*\*([^*]+\?)\*\*', reply)
     plain = re.findall(r'[^.!?\n]*\?', reply.replace('**', ''))
