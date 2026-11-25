@@ -67,3 +67,19 @@ def get_language_instruction() -> str:
     locale = get_locale()
     lang_config = _languages.get(locale, _languages.get('zh', {}))
     return lang_config.get('llmInstruction', '请使用中文回答。')
+
+
+def get_strict_language_instruction() -> str:
+    """Language instruction for simulated agents, which carry chat memory.
+
+    An agent that has already answered in another language tends to keep
+    using it, so the plain instruction is not always enough on its own.
+    """
+    instruction = get_language_instruction()
+    if get_locale() == 'zh':
+        return instruction
+    return (
+        f"IMPORTANT: {instruction} Write every answer in that language, even if "
+        "earlier messages in this conversation or the instructions above are "
+        "in a different language."
+    )

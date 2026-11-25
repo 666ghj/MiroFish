@@ -416,7 +416,7 @@ import { useI18n } from 'vue-i18n'
 import { chatWithReport, getReport, getAgentLog } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   reportId: String,
@@ -719,12 +719,18 @@ const sendToAgent = async (message) => {
   // Build prompt with chat history
   let prompt = message
   if (chatHistory.value.length > 1) {
+    // A Chinese wrapper around the history pulls the agent's reply into Chinese.
+    const isZh = locale.value === 'zh'
     const historyContext = chatHistory.value
       .slice(0, -1)
       .slice(-6)
-      .map(msg => `${msg.role === 'user' ? '提问者' : '你'}：${msg.content}`)
+      .map(msg => (isZh
+        ? `${msg.role === 'user' ? '提问者' : '你'}：${msg.content}`
+        : `${msg.role === 'user' ? 'Interviewer' : 'You'}: ${msg.content}`))
       .join('\n')
-    prompt = `以下是我们之前的对话：\n${historyContext}\n\n现在我的新问题是：${message}`
+    prompt = isZh
+      ? `以下是我们之前的对话：\n${historyContext}\n\n现在我的新问题是：${message}`
+      : `Here is our conversation so far:\n${historyContext}\n\nMy new question is: ${message}`
   }
   
   const res = await interviewAgents({

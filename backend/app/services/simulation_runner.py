@@ -651,10 +651,19 @@ class SimulationRunner:
                         reddit_actions_log, reddit_position, state, "reddit"
                     )
                 
+                # The script keeps the environment alive for interviews after
+                # the last round, so the process exit alone can never signal
+                # completion. Publish it as soon as every platform has ended.
+                if (
+                    state.runner_status == RunnerStatus.RUNNING
+                    and cls._check_all_platforms_completed(state)
+                ):
+                    cls._complete_with_env_alive(simulation_id, state)
+
                 # 更新状态
                 cls._save_run_state(state)
                 time.sleep(2)
-            
+
             # 进程结束后，最后读取一次日志
             if os.path.exists(twitter_actions_log):
                 cls._read_action_log(twitter_actions_log, twitter_position, state, "twitter")
@@ -676,9 +685,13 @@ class SimulationRunner:
                 if latest_state is not None:
                     state = latest_state
 
+                # COMPLETED here means _complete_with_env_alive already drained
+                # Zep and published the result; the later exit of the idle
+                # interview environment must not rewrite it.
                 if state.runner_status not in {
                     RunnerStatus.STOPPED,
                     RunnerStatus.FAILED,
+                    RunnerStatus.COMPLETED,
                 }:
                     manual_stop = simulation_id in cls._manual_stop_requests
                     desired_status = (
@@ -904,7 +917,55 @@ class SimulationRunner:
         
         # 至少有一个平台被启用且已完成
         return twitter_enabled or reddit_enabled
-    
+
+    @classmethod
+    def _complete_with_env_alive(
+        cls,
+        simulation_id: str,
+        state: SimulationRunState,
+    ) -> None:
+        """Publish COMPLETED while the process idles in wait-for-commands mode.
+
+        Keeps the same ordering as the exit path: Zep ingestion is drained
+        behind the STOPPING barrier before COMPLETED becomes observable.
+        """
+        with cls._finalization_lock(simulation_id):
+            if (
+                state.runner_status != RunnerStatus.RUNNING
+                or simulation_id in cls._manual_stop_requests
+            ):
+                return
+
+            state.twitter_running = False
+            state.reddit_running = False
+
+            if cls._graph_memory_enabled.get(simulation_id, False):
+                state.runner_status = RunnerStatus.STOPPING
+                cls._save_run_state(state)
+                cls._sync_simulation_status(simulation_id, RunnerStatus.STOPPING)
+                try:
+                    ZepGraphMemoryManager.stop_updater(simulation_id)
+                    cls._graph_memory_enabled.pop(simulation_id, None)
+                except Exception as error:
+                    logger.error(f"停止图谱记忆更新器失败: {error}")
+                    state.runner_status = RunnerStatus.FAILED
+                    state.error = f"Zep图谱写入未完整完成: {error}"
+                    state.completed_at = datetime.now().isoformat()
+                    cls._save_run_state(state)
+                    cls._sync_simulation_status(
+                        simulation_id,
+                        RunnerStatus.FAILED,
+                        state.error,
+                    )
+                    return
+
+            state.runner_status = RunnerStatus.COMPLETED
+            state.error = None
+            state.completed_at = datetime.now().isoformat()
+            cls._save_run_state(state)
+            cls._sync_simulation_status(simulation_id, RunnerStatus.COMPLETED)
+            logger.info(f"模拟完成（环境保持运行以供采访）: {simulation_id}")
+
     @classmethod
     def _terminate_process(cls, process: subprocess.Popen, simulation_id: str, timeout: int = 10):
         """
@@ -969,6 +1030,20 @@ class SimulationRunner:
             if not state:
                 raise ValueError(f"模拟不存在: {simulation_id}")
             if state.runner_status == RunnerStatus.STOPPED:
+                return state
+
+            # Already finalized with only the interview environment left
+            # running: shut that process down and keep the COMPLETED result.
+            idle_process = cls._processes.get(simulation_id)
+            if (
+                state.runner_status == RunnerStatus.COMPLETED
+                and idle_process is not None
+                and idle_process.poll() is None
+            ):
+                try:
+                    cls._terminate_process(idle_process, simulation_id)
+                except ProcessLookupError:
+                    pass
                 return state
 
             pending_updater = ZepGraphMemoryManager.get_updater(simulation_id)

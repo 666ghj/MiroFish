@@ -10,11 +10,34 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 
+CLAUDE_MIN_MAX_TOKENS = 4096
+
+
 def is_gpt5_family(model: Optional[str]) -> bool:
     """Return True when model belongs to GPT-5 family aliases/snapshots."""
     if not model:
         return False
     return model.strip().lower().startswith("gpt-5")
+
+
+def is_claude_family(model: Optional[str]) -> bool:
+    """Return True for Anthropic Claude models served via the OpenAI-compatible API."""
+    if not model:
+        return False
+    return model.strip().lower().startswith("claude")
+
+
+def _claude_response_format(
+    response_format: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Claude's compatibility endpoint accepts only json_schema; anything else is a 400.
+
+    Dropping json_object/text leaves the prompt's own JSON instructions in charge,
+    which is the same fallback LLMClient.chat_json uses for other providers.
+    """
+    if response_format and response_format.get("type") == "json_schema":
+        return response_format
+    return None
 
 
 def create_chat_completion(
@@ -40,13 +63,24 @@ def create_chat_completion(
         "messages": messages,
     }
 
+    claude_family = is_claude_family(model)
+    if claude_family:
+        response_format = _claude_response_format(response_format)
+
     if response_format is not None:
         kwargs["response_format"] = response_format
 
     gpt5_family = is_gpt5_family(model)
 
-    if temperature is not None and not gpt5_family:
+    # Current Claude models reject any temperature below 1, so omit it for them.
+    if temperature is not None and not gpt5_family and not claude_family:
         kwargs["temperature"] = temperature
+
+    # Claude counts its hidden reasoning against max_tokens, so a small cap can
+    # be used up before any visible text is produced and the reply comes back
+    # empty. The floor only raises the ceiling; prompts still set the length.
+    if claude_family and max_tokens is not None:
+        max_tokens = max(max_tokens, CLAUDE_MIN_MAX_TOKENS)
 
     if max_tokens is not None:
         if gpt5_family:
