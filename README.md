@@ -176,6 +176,50 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
+### Option 3: Remote / VPS Deployment Note
+
+When deploying MiroFish on a remote server (VPS/Cloud VM) and accessing it from an external browser, pay attention to the frontend API address and proxy mechanics:
+
+#### 1. Why Does "Network Error" Occur?
+The frontend Axios instance (`frontend/src/api/index.js`) falls back to the absolute URL `http://localhost:5001` by default.
+- Vite's development server can proxy same-origin `/api` requests from remote browsers to the backend via `server.proxy` in `vite.config.js`; the dev proxy is **not restricted** to local browsers.
+- However, because the fallback `baseURL` is an absolute URL (`http://localhost:5001`), remote browsers send API requests directly to `localhost:5001` on the **visitor's local machine**, completely bypassing the Vite development server proxy and triggering a Network Error.
+
+#### 2. Configuration & Deployment Paths
+
+You can configure `VITE_API_BASE_URL` to explicitly specify the backend API address (e.g., `http://your_server_ip:5001`):
+
+- **Source Deployment:**
+  Running `npm run dev` from the repository root executes `cd frontend && npm run dev`. Vite starts within the `frontend/` directory and **does not automatically load the root `.env`**.
+  To pass the variable to Vite, use either of the following methods:
+  1. Add it to `frontend/.env` or `frontend/.env.local`:
+     ```env
+     VITE_API_BASE_URL=http://your_server_ip:5001
+     ```
+  2. Pass the environment variable explicitly when starting:
+     ```bash
+     VITE_API_BASE_URL=http://your_server_ip:5001 npm run dev
+     ```
+
+- **Docker Container Deployment:**
+  The default `docker-compose.yml` uses the pre-built image `ghcr.io/666ghj/mirofish:latest` (without a `build` context):
+  - The container runs in development mode (`npm run dev`) and inherits container environment variables. After adding `VITE_API_BASE_URL=http://your_server_ip:5001` to the root `.env`, restart the container to apply changes:
+    ```bash
+    docker compose down && docker compose up -d
+    ```
+    > ⚠️ **Note:** Because Compose uses `image` without a `build` definition, `docker compose up --build` will not rebuild the image. A standard restart (`down` then `up -d`) is all that is required.
+
+- **Static Frontend Build:**
+  If you run `npm run build` (or deploy static assets via a web server like Nginx):
+  - Vite embeds `import.meta.env.VITE_*` variables into the static JavaScript bundles at **build/compilation time**.
+  - Once built, runtime container environment variables or server environment variables **cannot** override the embedded API address.
+  - To customize the API address for a static build, supply the variable at build time:
+    ```bash
+    cd frontend && VITE_API_BASE_URL=http://your_server_ip:5001 npm run build
+    ```
+
+> 💡 **Tip:** If setting `VITE_API_BASE_URL=http://your_server_ip:5001`, ensure your firewall and cloud security groups allow inbound traffic on both port `3000` (frontend) and port `5001` (backend API).
+
 ## 📬 Join the Conversation
 
 <div align="center">

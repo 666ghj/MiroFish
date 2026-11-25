@@ -176,6 +176,50 @@ docker compose up -d
 
 > 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
 
+### 三、远程 / VPS 部署说明
+
+当将 MiroFish 部署在远程服务器（VPS/云主机）并从外部网络访问时，需注意前端 API 地址与代理机制：
+
+#### 1. 为什么会出现“网络错误”（Network Error）？
+前端 Axios 实例（`frontend/src/api/index.js`）默认将 `baseURL` 回退为绝对地址 `http://localhost:5001`。
+- Vite 开发服务器本身支持代理来自远程浏览器的同源 `/api` 请求（通过 `vite.config.js` 的 `server.proxy` 转发至后端），代理功能**并不限制**仅本地浏览器使用；
+- 但由于默认的绝对地址 `http://localhost:5001`，远程浏览器会直接向**访问者本机**的 `localhost:5001` 发起请求，从而完全绕过了 Vite 开发服务器的反向代理，导致请求失败并报错。
+
+#### 2. 配置与部署方式
+
+可以通过配置 `VITE_API_BASE_URL` 显式指定后端 API 地址（例如 `http://your_server_ip:5001`）：
+
+- **源码部署（Source Deployment）：**
+  根目录的 `npm run dev` 通过 `cd frontend && npm run dev` 启动前端。Vite 默认只在 `frontend/` 目录下查找环境配置文件，**不会自动读取根目录的 `.env`**。
+  若要传入该变量，可以选择以下任一方式：
+  1. 在 `frontend/.env` 或 `frontend/.env.local` 文件中添加：
+     ```env
+     VITE_API_BASE_URL=http://your_server_ip:5001
+     ```
+  2. 启动时显式传入环境变量：
+     ```bash
+     VITE_API_BASE_URL=http://your_server_ip:5001 npm run dev
+     ```
+
+- **Docker 容器部署（Docker Deployment）：**
+  项目默认的 `docker-compose.yml` 使用官方预构建镜像 `ghcr.io/666ghj/mirofish:latest`（不包含 `build` 上下文）：
+  - 容器以开发模式启动（`npm run dev`），会继承容器内的环境变量。在项目根目录 `.env` 中设置 `VITE_API_BASE_URL=http://your_server_ip:5001` 后，执行重启即可生效：
+    ```bash
+    docker compose down && docker compose up -d
+    ```
+    > ⚠️ **注意：** 由于 compose 未配置 `build`，运行 `docker compose up --build` 不会重新构建镜像，只需正常重启容器即可。
+
+- **静态前端构建（Static Build）：**
+  若执行 `npm run build`（或单独构建前端静态文件）：
+  - Vite 的 `import.meta.env.VITE_*` 环境变量会在**编译打包阶段**被硬编码静态内嵌到 JavaScript 产物中；
+  - 打包完成后，运行时通过 Docker 容器环境或系统环境变量传入的值**均无法改变**静态产物中的 API 地址；
+  - 如需自定义静态构建的 API 地址，必须在打包执行时传入：
+    ```bash
+    cd frontend && VITE_API_BASE_URL=http://your_server_ip:5001 npm run build
+    ```
+
+> 💡 **提示：** 若设置了 `VITE_API_BASE_URL=http://your_server_ip:5001`，请确保云服务器防火墙和安全组已同时开放 `3000`（前端）和 `5001`（后端 API）端口。
+
 ## 📬 更多交流
 
 <div align="center">
