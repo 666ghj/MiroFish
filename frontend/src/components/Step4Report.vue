@@ -1346,7 +1346,8 @@ const InterviewDisplay = {
       let match
 
       // 优先尝试 "问题X：" 格式
-      const cnPattern = /(?:^|[\r\n]+)问题(\d+)[：:]\s*/g
+      // "Question X:" is what the backend asks for when the UI is not Chinese.
+      const cnPattern = /(?:^|[\r\n]+)(?:问题|問題|Question\s*)(\d+)[：:]\s*/gi
       while ((match = cnPattern.exec(answerText)) !== null) {
         matches.push({
           num: parseInt(match[1]),
@@ -1370,7 +1371,7 @@ const InterviewDisplay = {
       // 如果没有找到编号或只找到一个，返回整体
       if (matches.length <= 1) {
         const cleaned = answerText
-          .replace(/^问题\d+[：:]\s*/, '')
+          .replace(/^(?:问题|問題|Question\s*)\d+[：:]\s*/i, '')
           .replace(/^\d+\.\s+/, '')
           .trim()
         return [cleaned || answerText]

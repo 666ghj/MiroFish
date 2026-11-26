@@ -74,6 +74,55 @@ def test_legacy_model_preserves_original_request_shape():
     ]
 
 
+def test_claude_omits_temperature_and_json_object_mode():
+    recorder = CompletionRecorder()
+    messages = [{"role": "user", "content": "hello"}]
+
+    create_chat_completion(
+        client_for(recorder),
+        model="claude-haiku-5-5",
+        messages=messages,
+        temperature=0.3,
+        max_tokens=789,
+        response_format={"type": "json_object"},
+    )
+
+    # 789 is raised to the Claude floor so hidden reasoning cannot use it all up.
+    assert recorder.calls == [
+        {"model": "claude-haiku-5-5", "messages": messages, "max_tokens": 4096}
+    ]
+
+
+def test_claude_keeps_max_tokens_above_the_floor():
+    recorder = CompletionRecorder()
+
+    create_chat_completion(
+        client_for(recorder),
+        model="claude-haiku-5-5",
+        messages=[],
+        max_tokens=8000,
+    )
+
+    assert recorder.calls[0]["max_tokens"] == 8000
+
+
+def test_claude_keeps_json_schema_response_format():
+    recorder = CompletionRecorder()
+    schema_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "x", "strict": True, "schema": {"type": "object"}},
+    }
+
+    create_chat_completion(
+        client_for(recorder),
+        model=" Claude-Sonnet-5-5 ",
+        messages=[],
+        response_format=schema_format,
+    )
+
+    assert recorder.calls[0]["response_format"] == schema_format
+
+
 def test_provider_error_is_propagated_without_guessing_or_retrying():
     provider_error = RuntimeError("unsupported max_tokens due to a server outage")
     recorder = CompletionRecorder(error=provider_error)

@@ -17,7 +17,12 @@ from zep_cloud import NotFoundError
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
-from ..utils.locale import get_locale, t
+from ..utils.locale import (
+    get_locale,
+    get_language_instruction,
+    get_strict_language_instruction,
+    t,
+)
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from ..utils.zep import (
     call_zep_read_with_retry,
@@ -1106,6 +1111,8 @@ class ZepToolsService:
 2. 子问题应该覆盖原问题的不同维度（如：谁、什么、为什么、怎么样、何时、何地）
 3. 子问题应该与模拟场景相关
 4. 返回JSON格式：{"sub_queries": ["子问题1", "子问题2", ...]}"""
+        # Sub-queries are shown in the report's tool panel.
+        system_prompt += f"\n\n{get_language_instruction()}"
 
         user_prompt = f"""模拟需求背景：
 {simulation_requirement}
@@ -1356,9 +1363,36 @@ class ZepToolsService:
             "3. 不要使用Markdown标题（如#、##、###）\n"
             "4. 按问题编号逐一回答，每个回答以「问题X：」开头（X为问题编号）\n"
             "5. 每个问题的回答之间用空行分隔\n"
-            "6. 回答要有实质内容，每个问题至少回答2-3句话\n\n"
+            "6. 回答要有实质内容，每个问题至少回答2-3句话\n"
+            # The「问题X：」marker stays as written because the answer parser
+            # and the report view split on it; only the answer text switches.
+            f"7. 回答正文的语言要求：{get_language_instruction()}"
+            "（「问题X：」标记保持原样）\n\n"
         )
-        optimized_prompt = f"{INTERVIEW_PROMPT_PREFIX}{combined_prompt}"
+        if get_locale() != 'zh':
+            # A Chinese prefix plus a mandatory「问题X：」opener makes some
+            # agents answer in Chinese despite the language instruction, so
+            # other locales get an English prefix and a "Question X:" marker.
+            INTERVIEW_PROMPT_PREFIX = (
+                "You are being interviewed. Drawing on your persona and all "
+                "your past memories and actions, answer the following "
+                "questions directly in plain text.\n"
+                "Requirements:\n"
+                "1. Answer in natural language; do not call any tools\n"
+                "2. Do not return JSON or a tool-call format\n"
+                "3. Do not use Markdown headings (#, ##, ###)\n"
+                "4. Answer the questions one by one in order, starting each "
+                'answer with "Question X:" (X is the question number)\n'
+                "5. Separate the answers with a blank line\n"
+                "6. Give substantive answers, at least 2-3 sentences each\n\n"
+            )
+
+        # Repeated as the final line: an agent whose memory holds earlier
+        # answers in another language otherwise tends to keep using it.
+        optimized_prompt = (
+            f"{INTERVIEW_PROMPT_PREFIX}{combined_prompt}"
+            f"\n\n{get_strict_language_instruction()}"
+        )
         
         # Step 4: 调用真实的采访API（不指定platform，默认双平台同时采访）
         try:
@@ -1425,7 +1459,12 @@ class ZepToolsService:
                 clean_text = re.sub(r'#{1,6}\s+', '', combined_responses)
                 clean_text = re.sub(r'\{[^}]*tool_name[^}]*\}', '', clean_text)
                 clean_text = re.sub(r'[*_`|>~\-]{2,}', '', clean_text)
-                clean_text = re.sub(r'问题\d+[：:]\s*', '', clean_text)
+                clean_text = re.sub(
+                    r'(?:问题|問題|Question\s*)\d+[：:]\s*',
+                    '',
+                    clean_text,
+                    flags=re.IGNORECASE,
+                )
                 clean_text = re.sub(r'【[^】]+】', '', clean_text)
 
                 # 策略1（主）: 提取完整的有实质内容的句子
@@ -1588,6 +1627,8 @@ class ZepToolsService:
     "selected_indices": [选中Agent的索引列表],
     "reasoning": "选择理由说明"
 }"""
+        # "reasoning" is shown to the user in the report's interview panel.
+        system_prompt += f"\n\n{get_language_instruction()}"
 
         user_prompt = f"""采访需求：
 {interview_requirement}
@@ -1650,6 +1691,7 @@ class ZepToolsService:
 6. 直接提问，不要包含背景说明或前缀
 
 返回JSON格式：{"questions": ["问题1", "问题2", ...]}"""
+        system_prompt += f"\n\n{get_language_instruction()}"
 
         user_prompt = f"""采访需求：{interview_requirement}
 
@@ -1708,7 +1750,9 @@ class ZepToolsService:
 - 不要使用Markdown标题（如#、##、###）
 - 不要使用分割线（如---、***）
 - {quote_instruction}
-- 可以使用**加粗**标记关键词，但不要使用其他Markdown语法"""
+- 可以使用**加粗**标记关键词，但不要使用其他Markdown语法
+
+{get_language_instruction()}"""
 
         user_prompt = f"""采访主题：{interview_requirement}
 
