@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import json
 import uuid
 import shutil
@@ -104,6 +105,16 @@ class Project:
         )
 
 
+# Project ids are minted as f"proj_{uuid.uuid4().hex[:12]}". Anything else must
+# never be joined into a filesystem path.
+PROJECT_ID_PATTERN = re.compile(r'^proj_[0-9a-f]{12}$')
+
+
+def is_valid_project_id(project_id) -> bool:
+    """True only for a well-formed project id."""
+    return isinstance(project_id, str) and PROJECT_ID_PATTERN.fullmatch(project_id) is not None
+
+
 class ProjectManager:
     """项目管理器 - 负责项目的持久化存储和检索"""
     
@@ -117,7 +128,9 @@ class ProjectManager:
     
     @classmethod
     def _get_project_dir(cls, project_id: str) -> str:
-        """获取项目目录路径"""
+        """获取项目目录路径（拒绝格式非法的 project_id，防止路径穿越）"""
+        if not is_valid_project_id(project_id):
+            raise ValueError(f"Invalid project_id: {project_id!r}")
         return os.path.join(cls.PROJECTS_DIR, project_id)
     
     @classmethod
@@ -190,6 +203,8 @@ class ProjectManager:
         Returns:
             Project对象，如果不存在返回None
         """
+        if not is_valid_project_id(project_id):
+            return None
         meta_path = cls._get_project_meta_path(project_id)
         
         if not os.path.exists(meta_path):
@@ -245,9 +260,15 @@ class ProjectManager:
         Returns:
             是否删除成功
         """
+        if not is_valid_project_id(project_id):
+            return False
         project_dir = cls._get_project_dir(project_id)
         
         if not os.path.exists(project_dir):
+            return False
+        
+        # 仅删除确实位于 PROJECTS_DIR 之下的目录
+        if os.path.dirname(os.path.realpath(project_dir)) != os.path.realpath(cls.PROJECTS_DIR):
             return False
         
         shutil.rmtree(project_dir)

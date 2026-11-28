@@ -10,7 +10,7 @@ from flask import request, jsonify, send_file
 
 from . import report_bp
 from ..config import Config
-from ..services.report_agent import ReportAgent, ReportManager, ReportStatus
+from ..services.report_agent import ReportAgent, ReportManager, ReportStatus, is_valid_report_id
 from ..services.simulation_manager import SimulationManager
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
@@ -25,6 +25,23 @@ from ..utils.zep_lifecycle import (
 )
 
 logger = get_logger('mirofish.api.report')
+
+
+@report_bp.before_request
+def _reject_invalid_report_id():
+    """Reject a malformed report_id (URL path segment or JSON body) with 400
+    before any route can join it into a filesystem path."""
+    candidates = []
+    if request.view_args and 'report_id' in request.view_args:
+        candidates.append(request.view_args['report_id'])
+    if request.is_json:
+        body = request.get_json(silent=True)
+        if isinstance(body, dict) and body.get('report_id') is not None:
+            candidates.append(body['report_id'])
+    for value in candidates:
+        if not is_valid_report_id(value):
+            return jsonify({"success": False, "error": "Invalid report_id"}), 400
+    return None
 
 
 # ============== 报告生成接口 ==============
