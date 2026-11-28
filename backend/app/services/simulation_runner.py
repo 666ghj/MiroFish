@@ -1011,6 +1011,9 @@ class SimulationRunner:
                         process.wait(timeout=5)
                     except Exception:
                         process.kill()
+            else:
+                # 进程不在 _processes 中（如后端重启后）：按记录的 process_pid 终止进程组
+                cls.kill_untracked_process_group(simulation_id)
 
         # Let the monitor consume the final action-log tail and own the single
         # updater drain. It will publish STOPPED (rather than COMPLETED) because
@@ -1441,7 +1444,311 @@ class SimulationRunner:
             "cleaned_files": cleaned_files,
             "errors": errors if errors else None
         }
-    
+
+    # ============== 启动时对账（孤儿模拟进程） ==============
+
+    # 防止重复对账的标志（每个进程最多执行一次）
+    _reconcile_done = False
+
+    # 后端重启时写入 run_state.json 的错误信息
+    BACKEND_RESTART_ERROR = "后端重启，模拟进程已失去监控并被终止"
+
+    @staticmethod
+    def _read_proc_cmdline(pid: int) -> Optional[List[str]]:
+        """读取进程命令行参数（Linux 用 /proc，其他 Unix 回退到 ps）；无法读取返回 None"""
+        proc_file = f"/proc/{pid}/cmdline"
+        if os.path.isdir("/proc/self"):
+            try:
+                with open(proc_file, 'rb') as f:
+                    raw = f.read()
+            except OSError:
+                return None
+            if not raw:
+                return None  # 僵尸进程或内核线程
+            return [a.decode('utf-8', errors='replace') for a in raw.split(b'\0') if a]
+        try:
+            result = subprocess.run(
+                ['ps', '-p', str(pid), '-o', 'args='],
+                capture_output=True, text=True, timeout=5
+            )
+        except Exception:
+            return None
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        return result.stdout.strip().split()
+
+    @staticmethod
+    def _is_pid_alive(pid: int) -> bool:
+        """检查进程是否存活（僵尸进程视为已退出）"""
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True  # 进程存在但属于其他用户
+        except OSError:
+            return False
+        try:
+            with open(f"/proc/{pid}/stat", 'r') as f:
+                stat = f.read()
+            if stat.rsplit(')', 1)[1].split()[0] == 'Z':
+                return False
+        except (OSError, IndexError):
+            pass
+        return True
+
+    @classmethod
+    def _list_process_group_members(cls, pgid: int) -> List[int]:
+        """列出进程组内存活的成员 PID（仅 Linux /proc 可用，其他平台返回空列表）"""
+        members = []
+        if not os.path.isdir("/proc/self"):
+            return members
+        try:
+            entries = os.listdir("/proc")
+        except OSError:
+            return members
+        for entry in entries:
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat", 'r') as f:
+                    fields = f.read().rsplit(')', 1)[1].split()
+                # fields: state, ppid, pgrp, ...
+                if fields[0] != 'Z' and int(fields[2]) == pgid:
+                    members.append(int(entry))
+            except (OSError, IndexError, ValueError):
+                continue
+        return members
+
+    @classmethod
+    def _cmdline_matches_simulation(cls, cmdline: Optional[List[str]], simulation_id: str) -> bool:
+        """命令行是否引用了该模拟目录下的 simulation_config.json（防止 PID 复用误杀）"""
+        if not cmdline:
+            return False
+        for arg in cmdline:
+            norm = os.path.normpath(arg)
+            if (os.path.basename(norm) == "simulation_config.json"
+                    and os.path.basename(os.path.dirname(norm)) == simulation_id):
+                return True
+        return False
+
+    @classmethod
+    def _confirm_simulation_process_group(cls, pid: int, simulation_id: str) -> Optional[bool]:
+        """
+        确认 pid 对应的进程组仍属于该模拟
+
+        Returns:
+            True  - 进程组存活且身份已确认（可以终止）
+            False - 进程组已不存在
+            None  - 进程组存活但无法确认身份（不可终止）
+        """
+        leader_alive = cls._is_pid_alive(pid)
+        if leader_alive:
+            return True if cls._cmdline_matches_simulation(cls._read_proc_cmdline(pid), simulation_id) else None
+
+        # 组长已退出，但组内其他子进程可能仍存活
+        try:
+            os.killpg(pid, 0)
+        except (ProcessLookupError, OSError):
+            return False
+        members = cls._list_process_group_members(pid)
+        if not members:
+            # 只剩僵尸或无法枚举成员
+            return False if os.path.isdir("/proc/self") else None
+        for member in members:
+            if cls._cmdline_matches_simulation(cls._read_proc_cmdline(member), simulation_id):
+                return True
+        return None
+
+    @classmethod
+    def _kill_orphan_process_group(cls, pid: int, simulation_id: str, timeout: float = 5.0) -> bool:
+        """
+        终止不属于当前 Flask 进程的孤儿模拟进程组（Unix）
+
+        由于启动时使用了 start_new_session=True，进程组 ID 等于主进程 PID。
+        先 SIGTERM，超时后 SIGKILL。返回进程组是否已结束。
+        """
+        def group_alive() -> bool:
+            try:
+                os.killpg(pid, 0)
+            except (ProcessLookupError, OSError):
+                return False
+            if os.path.isdir("/proc/self"):
+                return bool(cls._list_process_group_members(pid))
+            return True
+
+        logger.info(f"终止孤儿模拟进程组: simulation={simulation_id}, pgid={pid}")
+        for sig, wait in ((signal.SIGTERM, timeout), (signal.SIGKILL, 3.0)):
+            try:
+                os.killpg(pid, sig)
+            except ProcessLookupError:
+                return True
+            deadline = time.time() + wait
+            while time.time() < deadline:
+                if not group_alive():
+                    return True
+                time.sleep(0.1)
+            if sig == signal.SIGTERM:
+                logger.warning(f"孤儿进程组未响应 SIGTERM，强制终止: {simulation_id}")
+        return not group_alive()
+
+    @classmethod
+    def _kill_recorded_process_group(cls, pid: Any, simulation_id: str, context: str) -> str:
+        """
+        终止 run_state.json 中记录的 process_pid 对应的进程组（仅在身份确认后）
+
+        Returns:
+            no_pid / self_pid_skipped / unverified_not_killed / process_dead / killed / kill_failed
+        """
+        if not (isinstance(pid, int) and not isinstance(pid, bool) and pid > 0):
+            return "no_pid"
+        if pid == os.getpid():
+            return "self_pid_skipped"
+        if IS_WINDOWS:
+            # Windows 没有安全的身份校验手段，不终止进程
+            logger.warning(
+                f"{context}: Windows 上无法确认 pid={pid} 是否属于模拟 {simulation_id}，不终止该进程"
+            )
+            return "unverified_not_killed"
+        identity = cls._confirm_simulation_process_group(pid, simulation_id)
+        if identity is False:
+            return "process_dead"
+        if identity is None:
+            logger.warning(
+                f"{context}: pid={pid} 仍存活但无法确认属于模拟 {simulation_id}"
+                f"（可能是 PID 复用），不终止该进程"
+            )
+            return "unverified_not_killed"
+        try:
+            own_pgid = os.getpgid(0)
+        except OSError:
+            own_pgid = None
+        if pid == own_pgid:
+            return "self_pid_skipped"
+        if cls._kill_orphan_process_group(pid, simulation_id):
+            return "killed"
+        logger.error(f"{context}: 无法终止孤儿进程组 pgid={pid}: {simulation_id}")
+        return "kill_failed"
+
+    @classmethod
+    def kill_untracked_process_group(cls, simulation_id: str) -> str:
+        """
+        强制重启/停止前：终止 run_state.json 记录的 process_pid 进程组，
+        即使它不在 _processes 中（例如后端重启后遗留的孤儿进程）
+
+        不依赖 runner_status：只要记录的进程组仍存活且身份确认（命令行引用该模拟的
+        simulation_config.json），就终止；无法确认身份时只记录警告，不终止。
+
+        Returns:
+            tracked（由 _processes 中的句柄管理，交给 stop_simulation）或
+            _kill_recorded_process_group 的结果，异常时返回 error
+        """
+        try:
+            process = cls._processes.get(simulation_id)
+            state = cls._load_run_state(simulation_id) or cls._run_states.get(simulation_id)
+            pid = state.process_pid if state else None
+            if process is not None and process.poll() is None and (pid is None or pid == process.pid):
+                return "tracked"
+            outcome = cls._kill_recorded_process_group(pid, simulation_id, "强制停止")
+            if outcome not in ("no_pid", "process_dead"):
+                logger.info(f"强制停止未跟踪的模拟进程组: {simulation_id}, pid={pid}, result={outcome}")
+            return outcome
+        except Exception as e:
+            logger.error(f"强制停止未跟踪的模拟进程组失败: {simulation_id}, error={e}")
+            return "error"
+
+    @classmethod
+    def _write_env_status_stopped(cls, sim_dir: str):
+        """将 env_status.json 重写为 stopped，避免 Interview 信任过期的 alive 状态"""
+        status_file = os.path.join(sim_dir, "env_status.json")
+        with open(status_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                "status": "stopped",
+                "twitter_available": False,
+                "reddit_available": False,
+                "timestamp": datetime.now().isoformat()
+            }, f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def _reconcile_one_stale_run(cls, simulation_id: str) -> Optional[str]:
+        """对账单个模拟；返回处理结果描述，未处理返回 None"""
+        sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
+        if not os.path.exists(os.path.join(sim_dir, "run_state.json")):
+            return None
+
+        state = cls._load_run_state(simulation_id)
+        if state is None:
+            logger.warning(f"启动对账: run_state.json 无法解析，跳过: {simulation_id}")
+            return None
+        if state.runner_status not in (RunnerStatus.RUNNING, RunnerStatus.STARTING):
+            return None
+
+        # 本进程自己管理的模拟不处理（register_cleanup 正常在启动时调用，此处为防御）
+        if simulation_id in cls._processes:
+            return None
+
+        pid = state.process_pid
+        outcome = cls._kill_recorded_process_group(pid, simulation_id, "启动对账")
+        if outcome == "no_pid":
+            logger.warning(f"启动对账: run_state.json 缺少有效 process_pid: {simulation_id}")
+
+        state.runner_status = RunnerStatus.STOPPED
+        state.twitter_running = False
+        state.reddit_running = False
+        state.completed_at = datetime.now().isoformat()
+        state.error = cls.BACKEND_RESTART_ERROR
+        cls._save_run_state(state)
+
+        try:
+            cls._write_env_status_stopped(sim_dir)
+        except Exception as e:
+            logger.warning(f"启动对账: 重写 env_status.json 失败: {simulation_id}, error={e}")
+
+        logger.warning(f"启动对账: 过期运行状态已标记为 stopped: {simulation_id}, pid={pid}, result={outcome}")
+        return outcome
+
+    @classmethod
+    def reconcile_stale_runs(cls) -> Dict[str, str]:
+        """
+        启动时对账：处理上次后端异常退出（崩溃/OOM/SIGKILL）遗留的模拟
+
+        遍历所有 run_state.json，对 running/starting 状态的模拟：
+        1. 检查记录的 process_pid，若进程组仍存活且身份确认，终止整个进程组
+        2. 将 run_state.json 标记为 stopped，并写入后端重启错误信息
+        3. 将 env_status.json 重写为 stopped
+
+        每个进程最多执行一次；任何异常都不会影响应用启动。
+
+        Returns:
+            simulation_id -> 处理结果
+        """
+        if cls._reconcile_done:
+            return {}
+        cls._reconcile_done = True
+
+        results: Dict[str, str] = {}
+        try:
+            if not os.path.isdir(cls.RUN_STATE_DIR):
+                return results
+            entries = sorted(os.listdir(cls.RUN_STATE_DIR))
+        except Exception as e:
+            logger.error(f"启动对账: 无法读取模拟目录: {e}")
+            return results
+
+        for simulation_id in entries:
+            try:
+                if not os.path.isdir(os.path.join(cls.RUN_STATE_DIR, simulation_id)):
+                    continue
+                outcome = cls._reconcile_one_stale_run(simulation_id)
+                if outcome is not None:
+                    results[simulation_id] = outcome
+            except Exception as e:
+                logger.error(f"启动对账失败: {simulation_id}, error={e}")
+
+        if results:
+            logger.info(f"启动对账完成: {len(results)} 个过期模拟已标记为 stopped")
+        return results
+
     # 防止重复清理的标志
     _cleanup_done = False
     
@@ -1572,7 +1879,13 @@ class SimulationRunner:
         if is_debug_mode and not is_reloader_process:
             _cleanup_registered = True  # 标记已注册，防止子进程再次尝试
             return
-        
+
+        # 启动对账：处理上次后端异常退出遗留的 running/starting 模拟（每进程一次，失败不影响启动）
+        try:
+            cls.reconcile_stale_runs()
+        except Exception as e:
+            logger.error(f"启动对账异常: {e}")
+
         # 保存原有的信号处理器
         original_sigint = signal.getsignal(signal.SIGINT)
         original_sigterm = signal.getsignal(signal.SIGTERM)

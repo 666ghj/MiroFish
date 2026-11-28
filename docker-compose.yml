@@ -6,9 +6,12 @@ services:
     container_name: mirofish
     env_file:
       - .env
+    environment:
+      # 容器内需监听所有接口以便端口映射生效；宿主机侧仅发布到 127.0.0.1
+      - FLASK_HOST=0.0.0.0
     ports:
       - "3000:3000"
-      - "5001:5001"
+      - "127.0.0.1:5001:5001"
     restart: unless-stopped
     volumes:
       - ./backend/uploads:/app/backend/uploads

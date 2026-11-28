@@ -10,10 +10,18 @@ const service = axios.create({
   }
 })
 
+// Optional shared-secret token for the backend's MIROFISH_API_TOKEN gate.
+// Read at build time from VITE_API_TOKEN (frontend/.env*, or the process env);
+// it ends up in the bundle, so it only gates casual network callers.
+const apiToken = import.meta.env.VITE_API_TOKEN
+
 // 请求拦截器
 service.interceptors.request.use(
   config => {
     config.headers['Accept-Language'] = i18n.global.locale.value
+    if (apiToken) {
+      config.headers['X-API-Token'] = apiToken
+    }
     return config
   },
   error => {

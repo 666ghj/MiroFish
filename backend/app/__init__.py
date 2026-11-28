@@ -41,6 +41,10 @@ def create_app(config_class=Config):
     
     # 启用CORS
     CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+    # 可选的共享密钥 API 令牌（设置 MIROFISH_API_TOKEN 时对 /api/* 强制校验 X-API-Token）
+    from .utils.api_auth import register_api_auth
+    register_api_auth(app)
     
     # 注册模拟进程清理函数（确保服务器关闭时终止所有模拟进程）
     from .services.simulation_runner import SimulationRunner

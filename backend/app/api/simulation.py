@@ -4,7 +4,6 @@ Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化�
 """
 
 import os
-import traceback
 from contextlib import nullcontext
 from flask import request, jsonify, send_file
 
@@ -12,7 +11,7 @@ from . import simulation_bp
 from ..config import Config
 from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
-from ..services.simulation_manager import SimulationManager, SimulationStatus
+from ..services.simulation_manager import SimulationManager, SimulationStatus, is_valid_simulation_id
 from ..services.simulation_runner import (
     SimulationRunner,
     RunnerStatus,
@@ -73,6 +72,30 @@ def optimize_interview_prompt(prompt: str) -> str:
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
 
 
+@simulation_bp.before_request
+def _reject_invalid_simulation_id():
+    """
+    Reject any malformed simulation_id (URL path segment or JSON body)
+    with 400 before a route can join it into a filesystem path.
+    A well-formed id that does not exist falls through to the route's own not-found handling;
+    a missing id is left to each route's existing required-field check.
+    """
+    candidates = []
+    if request.view_args and 'simulation_id' in request.view_args:
+        candidates.append(request.view_args['simulation_id'])
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict) and data.get('simulation_id') is not None:
+            candidates.append(data['simulation_id'])
+    for simulation_id in candidates:
+        if not is_valid_simulation_id(simulation_id):
+            return jsonify({
+                "success": False,
+                "error": "Invalid simulation_id: expected 'sim_' followed by 12 lowercase hex characters"
+            }), 400
+    return None
+
+
 # ============== 实体读取接口 ==============
 
 @simulation_bp.route('/entities/<graph_id>', methods=['GET'])
@@ -112,11 +135,10 @@ def get_graph_entities(graph_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取图谱实体失败: {str(e)}")
+        logger.error(f"获取图谱实体失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -145,11 +167,10 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
         })
         
     except Exception as e:
-        logger.error(f"获取实体详情失败: {str(e)}")
+        logger.error(f"获取实体详情失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -182,11 +203,10 @@ def get_entities_by_type(graph_id: str, entity_type: str):
         })
         
     except Exception as e:
-        logger.error(f"获取实体失败: {str(e)}")
+        logger.error(f"获取实体失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -259,11 +279,10 @@ def create_simulation():
         })
         
     except Exception as e:
-        logger.error(f"创建模拟失败: {str(e)}")
+        logger.error(f"创建模拟失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -497,6 +516,15 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
+        try:
+            parallel_profile_count = int(parallel_profile_count)
+        except (ValueError, TypeError):
+            return jsonify({
+                "success": False,
+                "error": "parallel_profile_count must be an integer"
+            }), 400
+        # 服务端上限：将并行人设生成数量限制在 [1, MAX_PARALLEL_PROFILE_COUNT]
+        parallel_profile_count = max(1, min(parallel_profile_count, Config.MAX_PARALLEL_PROFILE_COUNT))
         
         # ========== 同步获取实体数量（在后台任务启动前） ==========
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
@@ -666,11 +694,10 @@ def prepare_simulation():
         }), 404
         
     except Exception as e:
-        logger.error(f"启动准备任务失败: {str(e)}")
+        logger.error(f"启动准备任务失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -812,11 +839,10 @@ def get_simulation(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取模拟状态失败: {str(e)}")
+        logger.error(f"获取模拟状态失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -841,11 +867,10 @@ def list_simulations():
         })
         
     except Exception as e:
-        logger.error(f"列出模拟失败: {str(e)}")
+        logger.error(f"列出模拟失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1014,11 +1039,10 @@ def get_simulation_history():
         })
         
     except Exception as e:
-        logger.error(f"获取历史模拟失败: {str(e)}")
+        logger.error(f"获取历史模拟失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1052,11 +1076,10 @@ def get_simulation_profiles(simulation_id: str):
         }), 404
         
     except Exception as e:
-        logger.error(f"获取Profile失败: {str(e)}")
+        logger.error(f"获取Profile失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1167,11 +1190,10 @@ def get_simulation_profiles_realtime(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"实时获取Profile失败: {str(e)}")
+        logger.error(f"实时获取Profile失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1297,11 +1319,10 @@ def get_simulation_config_realtime(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"实时获取Config失败: {str(e)}")
+        logger.error(f"实时获取Config失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1333,11 +1354,10 @@ def get_simulation_config(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取配置失败: {str(e)}")
+        logger.error(f"获取配置失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1362,11 +1382,10 @@ def download_simulation_config(simulation_id: str):
         )
         
     except Exception as e:
-        logger.error(f"下载配置失败: {str(e)}")
+        logger.error(f"下载配置失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1414,11 +1433,10 @@ def download_simulation_script(script_name: str):
         )
         
     except Exception as e:
-        logger.error(f"下载脚本失败: {str(e)}")
+        logger.error(f"下载脚本失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1488,11 +1506,10 @@ def generate_profiles():
         })
         
     except Exception as e:
-        logger.error(f"生成Profile失败: {str(e)}")
+        logger.error(f"生成Profile失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1578,6 +1595,8 @@ def start_simulation():
                     "success": False,
                     "error": t('api.maxRoundsInvalid')
                 }), 400
+            # 服务端上限：max_rounds 不超过 MAX_SIMULATION_ROUNDS
+            max_rounds = min(max_rounds, Config.MAX_SIMULATION_ROUNDS)
 
         if platform not in ['twitter', 'reddit', 'parallel']:
             return jsonify({
@@ -1654,6 +1673,8 @@ def start_simulation():
 
                 # 如果是强制模式，清理运行日志
                 if force:
+                    # 先终止记录的 process_pid 进程组（即使不在 _processes 中），再清理日志
+                    SimulationRunner.kill_untracked_process_group(simulation_id)
                     logger.info(f"强制模式：清理模拟日志 {simulation_id}")
                     cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
                     if not cleanup_result.get("success"):
@@ -1777,11 +1798,10 @@ def start_simulation():
         }), 400
         
     except Exception as e:
-        logger.error(f"启动模拟失败: {str(e)}")
+        logger.error(f"启动模拟失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1844,7 +1864,7 @@ def stop_simulation():
         }), 400
         
     except Exception as e:
-        logger.error(f"停止模拟失败: {str(e)}")
+        logger.error(f"停止模拟失败: {str(e)}", exc_info=True)
         simulation_id = (request.get_json(silent=True) or {}).get('simulation_id')
         if simulation_id:
             manager = SimulationManager()
@@ -1855,8 +1875,7 @@ def stop_simulation():
                 manager._save_simulation_state(state)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -1912,11 +1931,10 @@ def get_run_status(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取运行状态失败: {str(e)}")
+        logger.error(f"获取运行状态失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2013,11 +2031,10 @@ def get_run_status_detail(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取详细状态失败: {str(e)}")
+        logger.error(f"获取详细状态失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2067,11 +2084,10 @@ def get_simulation_actions(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取动作历史失败: {str(e)}")
+        logger.error(f"获取动作历史失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2107,11 +2123,10 @@ def get_simulation_timeline(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取时间线失败: {str(e)}")
+        logger.error(f"获取时间线失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2134,11 +2149,10 @@ def get_agent_stats(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取Agent统计失败: {str(e)}")
+        logger.error(f"获取Agent统计失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2214,11 +2228,10 @@ def get_simulation_posts(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取帖子失败: {str(e)}")
+        logger.error(f"获取帖子失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2291,11 +2304,10 @@ def get_simulation_comments(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取评论失败: {str(e)}")
+        logger.error(f"获取评论失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2422,11 +2434,10 @@ def interview_agent():
         }), 504
         
     except Exception as e:
-        logger.error(f"Interview失败: {str(e)}")
+        logger.error(f"Interview失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2560,11 +2571,10 @@ def interview_agents_batch():
         }), 504
 
     except Exception as e:
-        logger.error(f"批量Interview失败: {str(e)}")
+        logger.error(f"批量Interview失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2663,11 +2673,10 @@ def interview_all_agents():
         }), 504
 
     except Exception as e:
-        logger.error(f"全局Interview失败: {str(e)}")
+        logger.error(f"全局Interview失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2735,11 +2744,10 @@ def get_interview_history():
         })
 
     except Exception as e:
-        logger.error(f"获取Interview历史失败: {str(e)}")
+        logger.error(f"获取Interview历史失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2800,11 +2808,10 @@ def get_env_status():
         })
 
     except Exception as e:
-        logger.error(f"获取环境状态失败: {str(e)}")
+        logger.error(f"获取环境状态失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500
 
 
@@ -2870,9 +2877,8 @@ def close_simulation_env():
         }), 400
         
     except Exception as e:
-        logger.error(f"关闭环境失败: {str(e)}")
+        logger.error(f"关闭环境失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
         }), 500

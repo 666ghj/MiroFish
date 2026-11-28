@@ -5,6 +5,7 @@ OASIS模拟管理器
 """
 
 import os
+import re
 import json
 import shutil
 from typing import Dict, Any, List, Optional
@@ -20,6 +21,15 @@ from .simulation_config_generator import SimulationConfigGenerator, SimulationPa
 from ..utils.locale import t
 
 logger = get_logger('mirofish.simulation')
+
+# Simulation ids are minted by create_simulation as f"sim_{uuid4().hex[:12]}".
+# Anything else must never be joined into a filesystem path.
+SIMULATION_ID_PATTERN = re.compile(r'^sim_[0-9a-f]{12}$')
+
+
+def is_valid_simulation_id(simulation_id) -> bool:
+    """Return True only for ids shaped like the ones create_simulation mints."""
+    return isinstance(simulation_id, str) and SIMULATION_ID_PATTERN.fullmatch(simulation_id) is not None
 
 
 class SimulationStatus(str, Enum):
@@ -149,15 +159,16 @@ class SimulationManager:
         # 内存中的模拟状态缓存
         self._simulations: Dict[str, SimulationState] = {}
     
-    def _get_simulation_dir(self, simulation_id: str) -> str:
-        """获取模拟数据目录"""
+    def _get_simulation_dir(self, simulation_id: str, create: bool = False) -> str:
+        """获取模拟数据目录（仅写路径传 create=True 时才创建目录）"""
         sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
-        os.makedirs(sim_dir, exist_ok=True)
+        if create:
+            os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     
     def _save_simulation_state(self, state: SimulationState):
         """保存模拟状态到文件"""
-        sim_dir = self._get_simulation_dir(state.simulation_id)
+        sim_dir = self._get_simulation_dir(state.simulation_id, create=True)
         state_file = os.path.join(sim_dir, "state.json")
         
         state.updated_at = datetime.now().isoformat()
@@ -285,7 +296,7 @@ class SimulationManager:
             state.config_reasoning = ""
             self._save_simulation_state(state)
             
-            sim_dir = self._get_simulation_dir(simulation_id)
+            sim_dir = self._get_simulation_dir(simulation_id, create=True)
             
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
