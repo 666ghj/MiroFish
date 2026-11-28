@@ -1011,6 +1011,9 @@ class SimulationRunner:
                         process.wait(timeout=5)
                     except Exception:
                         process.kill()
+            else:
+                # 进程不在 _processes 中（如后端重启后）：按记录的 process_pid 终止进程组
+                cls.kill_untracked_process_group(simulation_id)
 
         # Let the monitor consume the final action-log tail and own the single
         # updater drain. It will publish STOPPED (rather than COMPLETED) because
@@ -1590,6 +1593,71 @@ class SimulationRunner:
         return not group_alive()
 
     @classmethod
+    def _kill_recorded_process_group(cls, pid: Any, simulation_id: str, context: str) -> str:
+        """
+        终止 run_state.json 中记录的 process_pid 对应的进程组（仅在身份确认后）
+
+        Returns:
+            no_pid / self_pid_skipped / unverified_not_killed / process_dead / killed / kill_failed
+        """
+        if not (isinstance(pid, int) and not isinstance(pid, bool) and pid > 0):
+            return "no_pid"
+        if pid == os.getpid():
+            return "self_pid_skipped"
+        if IS_WINDOWS:
+            # Windows 没有安全的身份校验手段，不终止进程
+            logger.warning(
+                f"{context}: Windows 上无法确认 pid={pid} 是否属于模拟 {simulation_id}，不终止该进程"
+            )
+            return "unverified_not_killed"
+        identity = cls._confirm_simulation_process_group(pid, simulation_id)
+        if identity is False:
+            return "process_dead"
+        if identity is None:
+            logger.warning(
+                f"{context}: pid={pid} 仍存活但无法确认属于模拟 {simulation_id}"
+                f"（可能是 PID 复用），不终止该进程"
+            )
+            return "unverified_not_killed"
+        try:
+            own_pgid = os.getpgid(0)
+        except OSError:
+            own_pgid = None
+        if pid == own_pgid:
+            return "self_pid_skipped"
+        if cls._kill_orphan_process_group(pid, simulation_id):
+            return "killed"
+        logger.error(f"{context}: 无法终止孤儿进程组 pgid={pid}: {simulation_id}")
+        return "kill_failed"
+
+    @classmethod
+    def kill_untracked_process_group(cls, simulation_id: str) -> str:
+        """
+        强制重启/停止前：终止 run_state.json 记录的 process_pid 进程组，
+        即使它不在 _processes 中（例如后端重启后遗留的孤儿进程）
+
+        不依赖 runner_status：只要记录的进程组仍存活且身份确认（命令行引用该模拟的
+        simulation_config.json），就终止；无法确认身份时只记录警告，不终止。
+
+        Returns:
+            tracked（由 _processes 中的句柄管理，交给 stop_simulation）或
+            _kill_recorded_process_group 的结果，异常时返回 error
+        """
+        try:
+            process = cls._processes.get(simulation_id)
+            state = cls._load_run_state(simulation_id) or cls._run_states.get(simulation_id)
+            pid = state.process_pid if state else None
+            if process is not None and process.poll() is None and (pid is None or pid == process.pid):
+                return "tracked"
+            outcome = cls._kill_recorded_process_group(pid, simulation_id, "强制停止")
+            if outcome not in ("no_pid", "process_dead"):
+                logger.info(f"强制停止未跟踪的模拟进程组: {simulation_id}, pid={pid}, result={outcome}")
+            return outcome
+        except Exception as e:
+            logger.error(f"强制停止未跟踪的模拟进程组失败: {simulation_id}, error={e}")
+            return "error"
+
+    @classmethod
     def _write_env_status_stopped(cls, sim_dir: str):
         """将 env_status.json 重写为 stopped，避免 Interview 信任过期的 alive 状态"""
         status_file = os.path.join(sim_dir, "env_status.json")
@@ -1620,40 +1688,8 @@ class SimulationRunner:
             return None
 
         pid = state.process_pid
-        outcome = "no_pid"
-        if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
-            if pid == os.getpid():
-                outcome = "self_pid_skipped"
-            elif IS_WINDOWS:
-                # Windows 没有安全的身份校验手段，不终止进程
-                logger.warning(
-                    f"启动对账: Windows 上无法确认 pid={pid} 是否属于模拟 {simulation_id}，"
-                    f"不终止该进程，仅标记为 stopped"
-                )
-                outcome = "unverified_not_killed"
-            else:
-                identity = cls._confirm_simulation_process_group(pid, simulation_id)
-                if identity is False:
-                    outcome = "process_dead"
-                elif identity is None:
-                    logger.warning(
-                        f"启动对账: pid={pid} 仍存活但无法确认属于模拟 {simulation_id}"
-                        f"（可能是 PID 复用），不终止该进程，仅标记为 stopped"
-                    )
-                    outcome = "unverified_not_killed"
-                else:
-                    try:
-                        own_pgid = os.getpgid(0)
-                    except OSError:
-                        own_pgid = None
-                    if pid == own_pgid:
-                        outcome = "self_pid_skipped"
-                    elif cls._kill_orphan_process_group(pid, simulation_id):
-                        outcome = "killed"
-                    else:
-                        logger.error(f"启动对账: 无法终止孤儿进程组 pgid={pid}: {simulation_id}")
-                        outcome = "kill_failed"
-        else:
+        outcome = cls._kill_recorded_process_group(pid, simulation_id, "启动对账")
+        if outcome == "no_pid":
             logger.warning(f"启动对账: run_state.json 缺少有效 process_pid: {simulation_id}")
 
         state.runner_status = RunnerStatus.STOPPED

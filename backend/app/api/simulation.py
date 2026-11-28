@@ -1678,6 +1678,8 @@ def start_simulation():
 
                 # 如果是强制模式，清理运行日志
                 if force:
+                    # 先终止记录的 process_pid 进程组（即使不在 _processes 中），再清理日志
+                    SimulationRunner.kill_untracked_process_group(simulation_id)
                     logger.info(f"强制模式：清理模拟日志 {simulation_id}")
                     cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
                     if not cleanup_result.get("success"):
