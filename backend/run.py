@@ -51,7 +51,8 @@ def main():
     app = create_app()
     
     # 获取运行配置
-    host = os.environ.get('FLASK_HOST', '0.0.0.0')
+    # 默认仅监听本机回环地址；设置 FLASK_HOST=0.0.0.0 会将未鉴权的 API 暴露到网络（见 R-003）
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 5001))
     debug = Config.DEBUG
     # 自动重载默认关闭，避免源码修改触发重载杀死正在运行的模拟（R-002）
