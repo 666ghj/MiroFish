@@ -5,7 +5,7 @@ MiroFish Backend 启动入口
     FLASK_USE_RELOADER  是否启用 Werkzeug 自动重载（默认 false，与 FLASK_DEBUG 无关）。
                         取值 true/1/yes（不区分大小写）为启用，其余或未设置均为禁用。
                         注意：重载会退出当前服务进程，触发 atexit 清理并终止所有
-                        正在运行的模拟子进程，因此默认关闭（见 R-002）。
+                        正在运行的模拟子进程，因此默认关闭。
 """
 
 import os
@@ -51,11 +51,11 @@ def main():
     app = create_app()
     
     # 获取运行配置
-    # 默认仅监听本机回环地址；设置 FLASK_HOST=0.0.0.0 会将未鉴权的 API 暴露到网络（见 R-003）
+    # 默认仅监听本机回环地址；设置 FLASK_HOST=0.0.0.0 会将未鉴权的 API 暴露到网络
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 5001))
     debug = Config.DEBUG
-    # 自动重载默认关闭，避免源码修改触发重载杀死正在运行的模拟（R-002）
+    # 自动重载默认关闭，避免源码修改触发重载杀死正在运行的模拟
     use_reloader = _env_flag('FLASK_USE_RELOADER', default=False)
     
     # 启动服务

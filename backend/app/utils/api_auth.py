@@ -1,5 +1,5 @@
 """
-Optional shared-secret API token for /api routes (mitigates R-003).
+Optional shared-secret API token for /api routes.
 
 When the MIROFISH_API_TOKEN environment variable is set (non-empty) at app
 creation, every request whose path starts with /api/ must carry a matching

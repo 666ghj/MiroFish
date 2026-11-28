@@ -75,7 +75,7 @@ def optimize_interview_prompt(prompt: str) -> str:
 @simulation_bp.before_request
 def _reject_invalid_simulation_id():
     """
-    R-003: reject any malformed simulation_id (URL path segment or JSON body)
+    Reject any malformed simulation_id (URL path segment or JSON body)
     with 400 before a route can join it into a filesystem path.
     A well-formed id that does not exist falls through to the route's own not-found handling;
     a missing id is left to each route's existing required-field check.

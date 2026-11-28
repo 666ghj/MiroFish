@@ -22,8 +22,8 @@ from ..utils.locale import t
 
 logger = get_logger('mirofish.simulation')
 
-# Simulation ids are minted by create_simulation as f"sim_{uuid4().hex[:12]}" (D-010).
-# Anything else must never be joined into a filesystem path (R-003).
+# Simulation ids are minted by create_simulation as f"sim_{uuid4().hex[:12]}".
+# Anything else must never be joined into a filesystem path.
 SIMULATION_ID_PATTERN = re.compile(r'^sim_[0-9a-f]{12}$')
 
 
