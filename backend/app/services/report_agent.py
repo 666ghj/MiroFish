@@ -1928,6 +1928,16 @@ class ReportAgent:
         }
 
 
+# Report ids are minted as f"report_{uuid.uuid4().hex[:12]}". Anything else must
+# never be joined into a filesystem path (e.g. ".." would resolve to uploads/).
+REPORT_ID_PATTERN = re.compile(r'^report_[0-9a-f]{12}$')
+
+
+def is_valid_report_id(report_id) -> bool:
+    """True only for a well-formed report id."""
+    return isinstance(report_id, str) and REPORT_ID_PATTERN.fullmatch(report_id) is not None
+
+
 class ReportManager:
     """
     报告管理器
@@ -1956,7 +1966,9 @@ class ReportManager:
     
     @classmethod
     def _get_report_folder(cls, report_id: str) -> str:
-        """获取报告文件夹路径"""
+        """获取报告文件夹路径（拒绝格式非法的 report_id，防止路径穿越）"""
+        if not is_valid_report_id(report_id):
+            raise ValueError(f"Invalid report_id: {report_id!r}")
         return os.path.join(cls.REPORTS_DIR, report_id)
     
     @classmethod
@@ -2493,6 +2505,8 @@ class ReportManager:
     @classmethod
     def get_report(cls, report_id: str) -> Optional[Report]:
         """获取报告"""
+        if not is_valid_report_id(report_id):
+            return None
         path = cls._get_report_path(report_id)
         
         if not os.path.exists(path):
@@ -2596,9 +2610,16 @@ class ReportManager:
         """删除报告（整个文件夹）"""
         import shutil
         
+        if not is_valid_report_id(report_id):
+            return False
+        
         folder_path = cls._get_report_folder(report_id)
         
-        # 新格式：删除整个文件夹
+        # 新格式：删除整个文件夹（仅当其确实位于 REPORTS_DIR 之下）
+        reports_root = os.path.realpath(cls.REPORTS_DIR)
+        if os.path.dirname(os.path.realpath(folder_path)) != reports_root:
+            logger.error(f"Refusing to delete report folder outside REPORTS_DIR: {folder_path}")
+            return False
         if os.path.exists(folder_path) and os.path.isdir(folder_path):
             shutil.rmtree(folder_path)
             logger.info(t('report.reportFolderDeleted', reportId=report_id))

@@ -21,7 +21,7 @@ from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..utils.zep_lifecycle import get_graph_readers, graph_lifecycle_lock
 from ..models.task import TaskManager, TaskStatus
-from ..models.project import ProjectManager, ProjectStatus
+from ..models.project import ProjectManager, ProjectStatus, is_valid_project_id
 from ..services.simulation_manager import SimulationManager
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..services.zep_graph_memory_updater import ZepGraphMemoryManager
@@ -29,6 +29,23 @@ from ..utils.llm_client import LLMResponseError
 
 # 获取日志器
 logger = get_logger('mirofish.api')
+
+
+@graph_bp.before_request
+def _reject_invalid_project_id():
+    """Reject a malformed project_id (URL path segment or JSON body) with 400
+    before any route can join it into a filesystem path."""
+    candidates = []
+    if request.view_args and 'project_id' in request.view_args:
+        candidates.append(request.view_args['project_id'])
+    if request.is_json:
+        body = request.get_json(silent=True)
+        if isinstance(body, dict) and body.get('project_id') is not None:
+            candidates.append(body['project_id'])
+    for value in candidates:
+        if not is_valid_project_id(value):
+            return jsonify({"success": False, "error": "Invalid project_id"}), 400
+    return None
 _build_locks: dict[str, threading.Lock] = {}
 _build_locks_guard = threading.Lock()
 
