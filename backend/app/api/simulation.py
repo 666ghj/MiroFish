@@ -12,7 +12,7 @@ from . import simulation_bp
 from ..config import Config
 from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
-from ..services.simulation_manager import SimulationManager, SimulationStatus
+from ..services.simulation_manager import SimulationManager, SimulationStatus, is_valid_simulation_id
 from ..services.simulation_runner import (
     SimulationRunner,
     RunnerStatus,
@@ -71,6 +71,30 @@ def optimize_interview_prompt(prompt: str) -> str:
     if prompt.startswith(INTERVIEW_PROMPT_PREFIX):
         return prompt
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
+
+
+@simulation_bp.before_request
+def _reject_invalid_simulation_id():
+    """
+    R-003: reject any malformed simulation_id (URL path segment or JSON body)
+    with 400 before a route can join it into a filesystem path.
+    A well-formed id that does not exist falls through to the route's own not-found handling;
+    a missing id is left to each route's existing required-field check.
+    """
+    candidates = []
+    if request.view_args and 'simulation_id' in request.view_args:
+        candidates.append(request.view_args['simulation_id'])
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict) and data.get('simulation_id') is not None:
+            candidates.append(data['simulation_id'])
+    for simulation_id in candidates:
+        if not is_valid_simulation_id(simulation_id):
+            return jsonify({
+                "success": False,
+                "error": "Invalid simulation_id: expected 'sim_' followed by 12 lowercase hex characters"
+            }), 400
+    return None
 
 
 # ============== 实体读取接口 ==============
