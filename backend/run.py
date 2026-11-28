@@ -1,5 +1,11 @@
 """
 MiroFish Backend 启动入口
+
+环境变量:
+    FLASK_USE_RELOADER  是否启用 Werkzeug 自动重载（默认 false，与 FLASK_DEBUG 无关）。
+                        取值 true/1/yes（不区分大小写）为启用，其余或未设置均为禁用。
+                        注意：重载会退出当前服务进程，触发 atexit 清理并终止所有
+                        正在运行的模拟子进程，因此默认关闭（见 R-002）。
 """
 
 import os
@@ -22,6 +28,14 @@ from app import create_app
 from app.config import Config
 
 
+def _env_flag(name, default=False):
+    """宽松解析布尔型环境变量：true/1/yes（不区分大小写）为 True，其余为 False"""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('true', '1', 'yes')
+
+
 def main():
     """主函数"""
     # 验证配置
@@ -40,9 +54,11 @@ def main():
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     port = int(os.environ.get('FLASK_PORT', 5001))
     debug = Config.DEBUG
+    # 自动重载默认关闭，避免源码修改触发重载杀死正在运行的模拟（R-002）
+    use_reloader = _env_flag('FLASK_USE_RELOADER', default=False)
     
     # 启动服务
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    app.run(host=host, port=port, debug=debug, use_reloader=use_reloader, threaded=True)
 
 
 if __name__ == '__main__':
