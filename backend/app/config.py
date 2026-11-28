@@ -45,6 +45,10 @@ class Config:
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
     OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
     
+    # 客户端可提交参数的服务端上限（R-003：防止任意调用方放大LLM开销）
+    MAX_PARALLEL_PROFILE_COUNT = int(os.environ.get('MAX_PARALLEL_PROFILE_COUNT', '10'))
+    MAX_SIMULATION_ROUNDS = int(os.environ.get('MAX_SIMULATION_ROUNDS', '500'))
+    
     # OASIS平台可用动作配置
     OASIS_TWITTER_ACTIONS = [
         'CREATE_POST', 'LIKE_POST', 'REPOST', 'FOLLOW', 'DO_NOTHING', 'QUOTE_POST'

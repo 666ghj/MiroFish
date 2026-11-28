@@ -516,6 +516,15 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
+        try:
+            parallel_profile_count = int(parallel_profile_count)
+        except (ValueError, TypeError):
+            return jsonify({
+                "success": False,
+                "error": "parallel_profile_count must be an integer"
+            }), 400
+        # 服务端上限：将并行人设生成数量限制在 [1, MAX_PARALLEL_PROFILE_COUNT]
+        parallel_profile_count = max(1, min(parallel_profile_count, Config.MAX_PARALLEL_PROFILE_COUNT))
         
         # ========== 同步获取实体数量（在后台任务启动前） ==========
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
@@ -1586,6 +1595,8 @@ def start_simulation():
                     "success": False,
                     "error": t('api.maxRoundsInvalid')
                 }), 400
+            # 服务端上限：max_rounds 不超过 MAX_SIMULATION_ROUNDS
+            max_rounds = min(max_rounds, Config.MAX_SIMULATION_ROUNDS)
 
         if platform not in ['twitter', 'reddit', 'parallel']:
             return jsonify({
